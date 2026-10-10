@@ -1,5 +1,6 @@
 //! Native IronRDP transport and GTK framebuffer, independent of the PTY daemon.
 //! No competitor source is copied; IronRDP is MIT OR Apache-2.0.
+use crate::cliprdr::{Backend, Bridge, Event, Format};
 use adw::prelude::*;
 use gtk::{gdk, glib};
 use ironrdp::{
@@ -18,7 +19,12 @@ use ironrdp::{
     },
     session::{ActiveStageBuilder, ActiveStageOutput, image::DecodedImage},
 };
+use ironrdp_cliprdr::{
+    CliprdrClient,
+    pdu::{ClipboardFormat, ClipboardFormatId, FormatDataResponse},
+};
 use ironrdp_tokio::FramedWrite;
+use ruwac_clipboard::{ClipPolicy, ClipScope, OfferDecision, RemoteOffer};
 use std::{
     cell::{Cell, RefCell},
     collections::HashSet,
@@ -30,6 +36,12 @@ use std::{
     time::Duration,
 };
 use x509_cert::der::Decode;
+enum Command {
+    Input(Vec<FastPathInputEvent>),
+    Copy(Vec<ClipboardFormat>),
+    Request(ClipboardFormatId),
+    Reply(Option<Vec<u8>>),
+}
 #[derive(Clone)]
 struct Profile {
     host: String,
@@ -46,43 +58,52 @@ struct Frame {
 #[derive(Default)]
 struct State {
     frame: Option<Frame>,
+    bridge: Bridge,
     status: Option<String>,
 }
 struct Connection {
-    tx: tokio::sync::mpsc::Sender<Vec<FastPathInputEvent>>,
+    tx: tokio::sync::mpsc::Sender<Command>,
     stop: Arc<AtomicBool>,
     state: Arc<Mutex<State>>,
 }
 impl Connection {
     fn start(p: Profile) -> Self {
+        Self::start_with_secret(p, None)
+    }
+    fn start_with_secret(p: Profile, fixture_secret: Option<String>) -> Self {
         let (tx, rx) = tokio::sync::mpsc::channel(128);
         let stop = Arc::new(AtomicBool::new(false));
         let state = Arc::new(Mutex::new(State::default()));
         let (halt, st) = (stop.clone(), state.clone());
         std::thread::spawn(move || {
             let result = (|| -> Result<(), String> {
-                let output = std::process::Command::new("timeout")
-                    .args([
-                        "5",
-                        "secret-tool",
-                        "lookup",
-                        "application",
-                        "RUWAC",
-                        "profile",
-                        &p.reference,
-                    ])
-                    .output()
-                    .map_err(|_| "Secret Service helper unavailable".to_string())?;
-                if !output.status.success()
-                    || output.stdout.is_empty()
-                    || output.stdout.len() > 4096
-                {
-                    return Err("Secret reference missing, locked, or oversized".into());
-                }
-                let password = String::from_utf8(output.stdout)
-                    .map_err(|_| "Secret is not UTF-8".to_string())?
-                    .trim_end_matches('\n')
-                    .to_string();
+                let password = if let Some(secret) = fixture_secret {
+                    secret
+                } else {
+                    let output = std::process::Command::new("timeout")
+                        .args([
+                            "5",
+                            "secret-tool",
+                            "lookup",
+                            "application",
+                            "RUWAC",
+                            "profile",
+                            &p.reference,
+                        ])
+                        .output()
+                        .map_err(|_| "Secret Service helper unavailable".to_string())?;
+                    if !output.status.success()
+                        || output.stdout.is_empty()
+                        || output.stdout.len() > 4096
+                    {
+                        return Err("Secret reference missing, locked, or oversized".into());
+                    }
+                    let password = String::from_utf8(output.stdout)
+                        .map_err(|_| "Secret is not UTF-8".to_string())?
+                        .trim_end_matches('\n')
+                        .to_string();
+                    password
+                };
                 let rt = tokio::runtime::Builder::new_current_thread()
                     .enable_all()
                     .build()
@@ -96,7 +117,7 @@ impl Connection {
     }
     fn send(&self, events: Vec<FastPathInputEvent>) -> Result<(), String> {
         self.tx
-            .try_send(events)
+            .try_send(Command::Input(events))
             .map_err(|_| "RDP input queue full or disconnected; input not sent".into())
     }
     fn close(&self) {
@@ -111,7 +132,59 @@ impl Drop for Connection {
 async fn run(
     p: Profile,
     password: String,
-    mut input: tokio::sync::mpsc::Receiver<Vec<FastPathInputEvent>>,
+    mut input: tokio::sync::mpsc::Receiver<Command>,
+    halt: Arc<AtomicBool>,
+    state: Arc<Mutex<State>>,
+) -> Result<(), String> {
+    for attempt in 0..=3 {
+        if halt.load(Ordering::Relaxed) {
+            return Ok(());
+        }
+        if attempt > 0 {
+            {
+                let mut st = state.lock().unwrap();
+                st.frame = None;
+                st.bridge.reset();
+                st.status = Some(format!(
+                    "Reconnecting · attempt {attempt}/3 · bounded backoff"
+                ));
+            }
+            while input.try_recv().is_ok() {}
+            for _ in 0..(5 * (1 << (attempt - 1))) {
+                if halt.load(Ordering::Relaxed) {
+                    return Ok(());
+                }
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+        }
+        let result = run_session(
+            p.clone(),
+            password.clone(),
+            &mut input,
+            halt.clone(),
+            state.clone(),
+        )
+        .await;
+        let retry = result.as_ref().err().is_some_and(|e| {
+            matches!(
+                e.as_str(),
+                "RDP TCP connection failed"
+                    | "RDP stream disconnected"
+                    | "RDP connect timed out"
+                    | "RDP response write timeout"
+                    | "RDP response write failed"
+            )
+        });
+        if !retry || attempt == 3 {
+            return result;
+        }
+    }
+    unreachable!()
+}
+async fn run_session(
+    p: Profile,
+    password: String,
+    input: &mut tokio::sync::mpsc::Receiver<Command>,
     halt: Arc<AtomicBool>,
     state: Arc<Mutex<State>>,
 ) -> Result<(), String> {
@@ -160,7 +233,9 @@ async fn run(
             alternate_shell: String::new(),
             work_dir: String::new(),
         };
-        let mut connector = connector::ClientConnector::new(config, addr);
+        let bridge = state.lock().unwrap().bridge.clone();
+        let mut connector = connector::ClientConnector::new(config, addr)
+            .with_static_channel(CliprdrClient::new(Box::new(Backend::new(bridge))));
         let mut framed = ironrdp_tokio::TokioFramed::new(tcp);
         let upgrade = ironrdp_tokio::connect_begin(&mut framed, &mut connector)
             .await
@@ -234,6 +309,10 @@ async fn run(
         result.desktop_size.width,
         result.desktop_size.height,
     );
+    let clip_channel = result
+        .static_channels
+        .get_channel_id_by_type::<CliprdrClient>();
+    let mut fragments = crate::cliprdr::FragmentGuard::default();
     let mut active = ActiveStageBuilder {
         static_channels: result.static_channels,
         user_channel_id: result.user_channel_id,
@@ -246,15 +325,51 @@ async fn run(
     }
     .build();
     state.lock().unwrap().status =
-        Some("Connected · embedded IronRDP · clipboard redirection disabled".into());
+        Some("Connected · embedded IronRDP · CLIPRDR text and images".into());
     let (mut reader, mut writer) = ironrdp_tokio::split_tokio_framed(framed);
     loop {
+        if state
+            .lock()
+            .unwrap()
+            .bridge
+            .overflow
+            .load(Ordering::Relaxed)
+        {
+            return Err("CLIPRDR queue exceeded safety bounds".into());
+        }
         if halt.load(Ordering::Relaxed) {
+            // Give queued modifier/button releases a bounded flush before closing the socket.
+            let _ = tokio::time::timeout(Duration::from_millis(250), async {
+                for _ in 0..128 {
+                    match input.try_recv() {
+                        Ok(Command::Input(events)) => {
+                            if let Ok(outputs) = active.process_fastpath_input(&mut image, &events)
+                            {
+                                for output in outputs {
+                                    if let ActiveStageOutput::ResponseFrame(bytes) = output {
+                                        if writer.write_all(&bytes).await.is_err() {
+                                            return;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        Ok(_) => (),
+                        Err(_) => break,
+                    }
+                }
+            })
+            .await;
             return Ok(());
         }
         let outputs = tokio::select! {
-         pdu=reader.read_pdu()=>{let(action,bytes)=pdu.map_err(|_|"RDP stream disconnected".to_string())?;active.process(&mut image,action,&bytes).map_err(|_|"RDP decode failed".to_string())?},
-         events=input.recv()=>{let Some(events)=events else{return Ok(());};active.process_fastpath_input(&mut image,&events).map_err(|_|"RDP input encoding failed".to_string())?},
+         pdu=reader.read_pdu()=>{let(action,bytes)=pdu.map_err(|_|"RDP stream disconnected".to_string())?;if action==ironrdp::pdu::Action::X224{if let Ok(ctx)=ironrdp::pdu::mcs::decode_send_data_indication(&bytes){if Some(ctx.channel_id)==clip_channel{fragments.check(ctx.user_data)?;}}}active.process(&mut image,action,&bytes).map_err(|_|"RDP decode failed".to_string())?},
+         command=input.recv()=>{let Some(command)=command else{return Ok(());};match command {
+            Command::Input(events)=>active.process_fastpath_input(&mut image,&events).map_err(|_|"RDP input encoding failed".to_string())?,
+            command=>{let clip=active.get_svc_processor_mut::<CliprdrClient>().ok_or("CLIPRDR not negotiated")?;
+            let messages=match command{Command::Copy(f)=>clip.initiate_copy(&f),Command::Request(f)=>clip.initiate_paste(f),Command::Reply(data)=>clip.submit_format_data(match data{Some(b)=>FormatDataResponse::new_data(b),None=>FormatDataResponse::new_error()}),_=>unreachable!()}.map_err(|_|"CLIPRDR command failed".to_string())?;
+            let bytes=active.process_svc_processor_messages(messages).map_err(|_|"CLIPRDR encoding failed".to_string())?;vec![ActiveStageOutput::ResponseFrame(bytes)]}
+         }},
          _=tokio::time::sleep(Duration::from_millis(50))=>continue,
         };
         for output in outputs {
@@ -330,11 +445,26 @@ pub struct RdpView {
     pointer_position: Cell<(u16, u16)>,
     broker: crate::clipboard::Broker,
     id: String,
+    policy: Cell<ClipPolicy>,
+    serial: Cell<u64>,
+    bridge: RefCell<Bridge>,
+    advertised: Cell<u64>,
+    received_generation: Cell<u64>,
+    remote: Cell<Option<(ClipboardFormatId, Format, u64, u64)>>,
+    pending: RefCell<Option<(Format, u64, u64, std::time::Instant)>>,
+    replying: Cell<bool>,
+    decoding: Cell<bool>,
+    pending_paste: Cell<bool>,
+    provider: RefCell<Option<gdk::ContentProvider>>,
+    entries: [gtk::Entry; 4],
 }
 impl RdpView {
     pub fn new(broker: crate::clipboard::Broker) -> Rc<Self> {
         let root = gtk::Box::new(gtk::Orientation::Vertical, 4);
-        let controls = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+        let controls = gtk::Grid::builder()
+            .column_spacing(4)
+            .row_spacing(4)
+            .build();
         let host = gtk::Entry::builder()
             .placeholder_text("Authorized host:port")
             .build();
@@ -347,15 +477,18 @@ impl RdpView {
             .build();
         let connect = gtk::Button::with_label("Connect / reconnect");
         let disconnect = gtk::Button::with_label("Disconnect");
-        for e in [&host, &user, &secret, &ca] {
-            controls.append(e);
+        for (i, e) in [&host, &user, &secret, &ca].iter().enumerate() {
+            e.set_hexpand(true);
+            controls.attach(*e, (i % 2) as i32, (i / 2) as i32, 1, 1);
         }
-        controls.append(&connect);
-        controls.append(&disconnect);
+        controls.attach(&connect, 0, 2, 1, 1);
+        controls.attach(&disconnect, 1, 2, 1, 1);
         root.append(&controls);
         let status = gtk::Label::new(Some(
             "Embedded IronRDP · enter an authorized endpoint and a RUWAC Secret Service reference",
         ));
+        status.set_wrap(true);
+        status.set_max_width_chars(80);
         root.append(&status);
         let area = gtk::DrawingArea::builder()
             .hexpand(true)
@@ -376,22 +509,37 @@ impl RdpView {
             pointer_position: Cell::new((0, 0)),
             broker,
             id: ruwac_protocol::id("rdp"),
+            policy: Cell::new(ClipPolicy::Bidirectional),
+            serial: Cell::new(0),
+            bridge: RefCell::new(Bridge::default()),
+            advertised: Cell::new(0),
+            received_generation: Cell::new(0),
+            remote: Cell::new(None),
+            pending: RefCell::new(None),
+            replying: Cell::new(false),
+            decoding: Cell::new(false),
+            pending_paste: Cell::new(false),
+            provider: RefCell::new(None),
+            entries: [host.clone(), user.clone(), secret.clone(), ca.clone()],
         });
         let weak = Rc::downgrade(&v);
         connect.connect_clicked(move |_| {
             if let Some(v) = weak.upgrade() {
                 let address = host.text();
-                let (h, p) = address
-                    .rsplit_once(':')
-                    .map(|(h, p)| (h.to_string(), p.parse::<u16>().unwrap_or(0)))
-                    .unwrap_or((address.to_string(), 3389));
+                let (h, p) = match crate::profiles::endpoint(&address, 3389) {
+                    Ok(endpoint) => endpoint,
+                    Err(e) => {
+                        v.status.set_text(&e);
+                        return;
+                    }
+                };
                 if h.is_empty() || p == 0 || user.text().is_empty() || secret.text().is_empty() {
                     v.status
                         .set_text("Host, user and secret reference are required");
                     return;
                 }
                 v.close();
-                *v.connection.borrow_mut() = Some(Connection::start(Profile {
+                let c = Connection::start(Profile {
                     host: h,
                     port: p,
                     user: user.text().into(),
@@ -401,7 +549,10 @@ impl RdpView {
                     } else {
                         Some(ca.text().into())
                     },
-                }));
+                });
+                *v.bridge.borrow_mut() = c.state.lock().unwrap().bridge.clone();
+                *v.connection.borrow_mut() = Some(c);
+                v.focus();
                 v.status.set_text("Connecting with certificate validation…");
             }
         });
@@ -411,14 +562,20 @@ impl RdpView {
                 v.close();
             }
         });
-        let tools = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+        let tools = gtk::FlowBox::builder()
+            .selection_mode(gtk::SelectionMode::None)
+            .min_children_per_line(1)
+            .max_children_per_line(8)
+            .column_spacing(4)
+            .row_spacing(4)
+            .build();
         for (name, mode) in [
             ("Fit", Scale::Fit),
             ("Native pixels", Scale::Native),
             ("Stretch", Scale::Stretch),
         ] {
             let b = gtk::Button::with_label(name);
-            tools.append(&b);
+            tools.insert(&b, -1);
             let w = Rc::downgrade(&v);
             b.connect_clicked(move |_| {
                 if let Some(v) = w.upgrade() {
@@ -428,7 +585,7 @@ impl RdpView {
             });
         }
         let full = gtk::Button::with_label("Fullscreen");
-        tools.append(&full);
+        tools.insert(&full, -1);
         let w = Rc::downgrade(&v);
         full.connect_clicked(move |_| {
             if let Some(v) = w.upgrade() {
@@ -452,7 +609,7 @@ impl RdpView {
             ("AltGr", vec![(0x38, true)]),
         ] {
             let b = gtk::Button::with_label(name);
-            tools.append(&b);
+            tools.insert(&b, -1);
             let w = Rc::downgrade(&v);
             b.connect_clicked(move |_| {
                 if let Some(v) = w.upgrade() {
@@ -482,6 +639,64 @@ impl RdpView {
                 }
             });
         }
+        let policy = gtk::DropDown::from_strings(&[
+            "Clipboard: bidirectional",
+            "Local → remote",
+            "Remote → local",
+            "Manual",
+            "Off",
+        ]);
+        tools.insert(&policy, -1);
+        let w = Rc::downgrade(&v);
+        policy.connect_selected_notify(move |p| {
+            if let Some(v) = w.upgrade() {
+                v.policy.set(match p.selected() {
+                    0 => ClipPolicy::Bidirectional,
+                    1 => ClipPolicy::LocalToRemote,
+                    2 => ClipPolicy::RemoteToLocal,
+                    3 => ClipPolicy::Manual,
+                    _ => ClipPolicy::Disabled,
+                });
+                v.broker.borrow_mut().local_copy();
+                v.advertised.set(0);
+                v.advertise(false);
+            }
+        });
+        for (label, receive) in [("Send clipboard", false), ("Receive clipboard", true)] {
+            let b = gtk::Button::with_label(label);
+            tools.insert(&b, -1);
+            let w = Rc::downgrade(&v);
+            b.connect_clicked(move |_| {
+                if let Some(v) = w.upgrade() {
+                    if receive {
+                        v.receive(true);
+                    } else {
+                        v.advertise(true);
+                    }
+                }
+            });
+        }
+        let w = Rc::downgrade(&v);
+        v.area.display().clipboard().connect_changed(move |clip| {
+            if let Some(v) = w.upgrade() {
+                if v.provider
+                    .borrow()
+                    .as_ref()
+                    .is_some_and(|p| clip.content().as_ref() == Some(p))
+                {
+                    return;
+                }
+                v.advertise(false);
+            }
+        });
+        let paste = gtk::Button::with_label("Paste clipboard into remote");
+        tools.insert(&paste, -1);
+        let w = Rc::downgrade(&v);
+        paste.connect_clicked(move |_| {
+            if let Some(v) = w.upgrade() {
+                v.paste();
+            }
+        });
         root.prepend(&tools);
         let w = Rc::downgrade(&v);
         v.area.set_draw_func(move |_, cr, width, height| {
@@ -510,9 +725,13 @@ impl RdpView {
         });
         let key = gtk::EventControllerKey::new();
         let w = Rc::downgrade(&v);
-        key.connect_key_pressed(move |_, k, code, _| {
+        key.connect_key_pressed(move |_, k, code, modifiers| {
             if let Some(v) = w.upgrade() {
-                v.key(k, code, false);
+                if k == gdk::Key::v && modifiers.contains(gdk::ModifierType::CONTROL_MASK) {
+                    v.paste();
+                } else {
+                    v.key(k, code, false);
+                }
             }
             glib::Propagation::Stop
         });
@@ -564,6 +783,307 @@ impl RdpView {
             glib::ControlFlow::Continue
         });
         v
+    }
+    pub fn fixture_connect(&self, port: u16, ca: &std::path::Path) {
+        self.close();
+        let c = Connection::start_with_secret(
+            Profile {
+                host: "127.0.0.1".into(),
+                port,
+                user: "fixture".into(),
+                reference: String::new(),
+                ca: Some(ca.to_string_lossy().into_owned()),
+            },
+            Some("generated-local-only".into()),
+        );
+        *self.bridge.borrow_mut() = c.state.lock().unwrap().bridge.clone();
+        *self.connection.borrow_mut() = Some(c);
+        self.focus();
+    }
+    pub fn fixture_inspect(&self) -> serde_json::Value {
+        serde_json::json!({"status":self.status.text().as_str(),"size":self.size.get(),"viewport":[self.area.width(),self.area.height()],"window_width":self.root.root().and_then(|r|r.downcast::<gtk::Window>().ok()).map(|w|w.width()),"active":self.broker.borrow().active()==Some(self.id.as_str()),"epoch":self.broker.borrow().epoch(),"pending":self.pending.borrow().is_some(),"received_generation":self.received_generation.get(),"policy":format!("{:?}",self.policy.get())})
+    }
+    pub fn fixture_policy(&self, index: u32) {
+        fn find(w: &gtk::Widget) -> Option<gtk::DropDown> {
+            if let Some(d) = w.downcast_ref::<gtk::DropDown>() {
+                return Some(d.clone());
+            }
+            let mut c = w.first_child();
+            while let Some(child) = c {
+                c = child.next_sibling();
+                if let Some(d) = find(&child) {
+                    return Some(d);
+                }
+            }
+            None
+        }
+        if let Some(drop) = find(self.root.upcast_ref()) {
+            drop.set_selected(index.min(4));
+        }
+    }
+    pub fn fixture_clipboard(&self, receive: bool) {
+        if receive {
+            self.receive(true);
+        } else {
+            self.advertise(true);
+        }
+    }
+    pub fn set_profile(&self, host: &str, user: &str, reference: &str, ca: &str) {
+        for (e, value) in self.entries.iter().zip([host, user, reference, ca]) {
+            e.set_text(value);
+        }
+    }
+    pub fn inactive(&self) {
+        self.bridge.borrow().epoch.store(0, Ordering::Release);
+        self.release_keys();
+    }
+    fn command(&self, c: Command) {
+        if let Some(conn) = self.connection.borrow().as_ref() {
+            if conn.tx.try_send(c).is_err() {
+                self.status
+                    .set_text("CLIPRDR queue full; transfer not sent");
+                conn.close();
+            }
+        }
+    }
+    fn allowed(&self, receive: bool, manual: bool) -> bool {
+        self.broker.borrow().desktop_enabled()
+            && self.broker.borrow().active() == Some(self.id.as_str())
+            && match self.policy.get() {
+                ClipPolicy::Disabled => false,
+                ClipPolicy::Manual => manual,
+                ClipPolicy::LocalToRemote => !receive,
+                ClipPolicy::RemoteToLocal => receive,
+                ClipPolicy::Bidirectional => true,
+            }
+    }
+    fn advertise(&self, manual: bool) {
+        if !self.allowed(false, manual) {
+            return;
+        }
+        let clip = self.area.display().clipboard();
+        if self
+            .provider
+            .borrow()
+            .as_ref()
+            .is_some_and(|p| clip.content().as_ref() == Some(p))
+        {
+            return;
+        }
+        let f = clip.formats();
+        let formats = crate::cliprdr::formats(
+            f.contain_mime_type("text/plain;charset=utf-8") || f.contain_mime_type("text/plain"),
+            f.contain_mime_type("image/png"),
+        );
+        self.advertised.set(self.broker.borrow().epoch());
+        self.command(Command::Copy(formats));
+    }
+    fn paste(&self) {
+        if self.allowed(false, true) {
+            self.release_keys();
+            self.pending_paste.set(true);
+            self.advertise(true);
+        } else {
+            self.status
+                .set_text("Clipboard policy prevents local paste");
+        }
+    }
+    fn receive(&self, manual: bool) {
+        if !self.allowed(true, manual) || self.pending.borrow().is_some() {
+            return;
+        }
+        let Some((id, kind, generation, offered_epoch)) = self.remote.get() else {
+            return;
+        };
+        let epoch = self.broker.borrow().epoch();
+        if !manual && offered_epoch != epoch {
+            return;
+        }
+        *self.pending.borrow_mut() = Some((kind, epoch, generation, std::time::Instant::now()));
+        self.command(Command::Request(id));
+    }
+    fn clip_event(self: &Rc<Self>, e: Event) {
+        match e {
+            Event::Reset => {
+                self.serial.set(self.serial.get().saturating_add(1));
+                let active = self.broker.borrow().active() == Some(self.id.as_str());
+                self.broker.borrow_mut().disconnect(&self.id);
+                self.pending.borrow_mut().take();
+                self.remote.set(None);
+                self.advertised.set(0);
+                self.replying.set(false);
+                self.decoding.set(false);
+                self.held.borrow_mut().clear();
+                self.buttons.borrow_mut().clear();
+                self.surface.borrow_mut().take();
+                self.size.set((0, 0));
+                if active {
+                    self.focus();
+                }
+                self.area.queue_draw();
+            }
+            Event::Initialize => self.command(Command::Copy(Vec::new())),
+            Event::Ready => self.advertise(false),
+            Event::Accepted(ok) => {
+                if self.pending_paste.replace(false) && ok && self.allowed(false, true) {
+                    self.send(vec![
+                        FastPathInputEvent::KeyboardEvent(KeyboardFlags::empty(), 0x1d),
+                        FastPathInputEvent::KeyboardEvent(KeyboardFlags::empty(), 0x2f),
+                        FastPathInputEvent::KeyboardEvent(KeyboardFlags::RELEASE, 0x2f),
+                        FastPathInputEvent::KeyboardEvent(KeyboardFlags::RELEASE, 0x1d),
+                    ]);
+                }
+                if !ok {
+                    self.status
+                        .set_text("Remote clipboard rejected format list");
+                }
+            }
+            Event::Offer {
+                generation,
+                epoch,
+                selected,
+            } => {
+                self.remote
+                    .set(selected.map(|(id, k)| (id, k, generation, epoch)));
+                if let Some((_, kind)) = selected {
+                    let decision = self.broker.borrow_mut().offer(
+                        RemoteOffer {
+                            view: self.id.clone(),
+                            mime: kind.mime().into(),
+                            generation,
+                            owner_focus_epoch: epoch,
+                            size: 0,
+                            scope: ClipScope::Clipboard,
+                        },
+                        self.policy.get(),
+                    );
+                    if decision == OfferDecision::Eligible {
+                        self.receive(false);
+                    }
+                }
+            }
+            Event::Request(id) => {
+                let kind = if id == Format::Text.id() {
+                    Some(Format::Text)
+                } else if id == Format::Png.id() {
+                    Some(Format::Png)
+                } else if id == Format::Dib.id() {
+                    Some(Format::Dib)
+                } else if id == Format::DibV5.id() {
+                    Some(Format::DibV5)
+                } else {
+                    None
+                };
+                let epoch = self.broker.borrow().epoch();
+                if kind.is_none()
+                    || !self.allowed(false, true)
+                    || epoch != self.advertised.get()
+                    || self.replying.replace(true)
+                {
+                    self.command(Command::Reply(None));
+                    return;
+                }
+                let kind = kind.unwrap();
+                let serial = self.serial.get();
+                let w = Rc::downgrade(self);
+                let clip = self.area.display().clipboard();
+                let broker = self.broker.clone();
+                crate::clipboard::read_bytes(&clip, broker, epoch, kind.mime(), move |result| {
+                    let Some(v) = w.upgrade() else {
+                        return;
+                    };
+                    if v.serial.get() != serial {
+                        return;
+                    }
+                    let w = Rc::downgrade(&v);
+                    let (tx, rx) = std::sync::mpsc::sync_channel(1);
+                    std::thread::spawn(move || {
+                        let _ = tx.send(result.and_then(|b| crate::cliprdr::encode(kind, &b)));
+                    });
+                    glib::timeout_add_local(Duration::from_millis(10), move || {
+                        match rx.try_recv() {
+                            Ok(r) => {
+                                if let Some(v) = w.upgrade() {
+                                    if v.serial.get() != serial {
+                                        return glib::ControlFlow::Break;
+                                    }
+                                    v.replying.set(false);
+                                    let valid = v.allowed(false, true)
+                                        && v.broker.borrow().epoch() == epoch
+                                        && v.advertised.get() == epoch;
+                                    v.command(Command::Reply(if valid { r.ok() } else { None }));
+                                }
+                                glib::ControlFlow::Break
+                            }
+                            Err(std::sync::mpsc::TryRecvError::Empty) => {
+                                glib::ControlFlow::Continue
+                            }
+                            Err(_) => glib::ControlFlow::Break,
+                        }
+                    });
+                });
+            }
+            Event::Data(data) => {
+                let Some((kind, epoch, generation, _)) = *self.pending.borrow() else {
+                    return;
+                };
+                if self.decoding.replace(true) {
+                    return;
+                }
+                let (tx, rx) = std::sync::mpsc::sync_channel(1);
+                std::thread::spawn(move || {
+                    let _ = tx.send(data.and_then(|b| crate::cliprdr::decode(kind, &b)));
+                });
+                let w = Rc::downgrade(self);
+                glib::timeout_add_local(Duration::from_millis(10), move || match rx.try_recv() {
+                    Ok(r) => {
+                        if let Some(v) = w.upgrade() {
+                            if v.pending
+                                .borrow()
+                                .as_ref()
+                                .is_some_and(|p| p.1 == epoch && p.2 == generation)
+                            {
+                                v.pending.borrow_mut().take();
+                                v.decoding.set(false);
+                            }
+                            if v.allowed(true, true)
+                                && v.broker.borrow().epoch() == epoch
+                                && v.remote.get().is_some_and(|o| o.2 == generation)
+                            {
+                                match r {
+                                    Ok(b) => {
+                                        let provider = gdk::ContentProvider::for_bytes(
+                                            if kind == Format::Text {
+                                                "text/plain;charset=utf-8"
+                                            } else {
+                                                kind.mime()
+                                            },
+                                            &glib::Bytes::from_owned(b),
+                                        );
+                                        *v.provider.borrow_mut() = Some(provider.clone());
+                                        if v.area
+                                            .display()
+                                            .clipboard()
+                                            .set_content(Some(&provider))
+                                            .is_ok()
+                                        {
+                                            v.received_generation.set(generation);
+                                            v.status.set_text(
+                                                "Remote clipboard received through CLIPRDR",
+                                            );
+                                        }
+                                    }
+                                    Err(e) => v.status.set_text(&e),
+                                }
+                            }
+                        }
+                        glib::ControlFlow::Break
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
+                    Err(_) => glib::ControlFlow::Break,
+                });
+            }
+        }
     }
     fn send(&self, e: Vec<FastPathInputEvent>) {
         if let Some(c) = self.connection.borrow().as_ref() {
@@ -666,7 +1186,13 @@ impl RdpView {
         })]);
     }
     pub fn focus(&self) {
-        self.broker.borrow_mut().focus(Some(&self.id));
+        if self.broker.borrow().active() != Some(self.id.as_str()) {
+            self.broker.borrow_mut().focus(Some(&self.id));
+        }
+        self.bridge
+            .borrow()
+            .epoch
+            .store(self.broker.borrow().epoch(), Ordering::Release);
         self.area.grab_focus();
     }
     fn release_keys(&self) {
@@ -714,10 +1240,21 @@ impl RdpView {
         }
     }
     pub fn close(&self) {
+        self.serial.set(self.serial.get().saturating_add(1));
         self.release_keys();
         if let Some(c) = self.connection.borrow_mut().take() {
             c.close();
         }
+        self.bridge.borrow().epoch.store(0, Ordering::Release);
+        self.pending.borrow_mut().take();
+        self.remote.set(None);
+        self.advertised.set(0);
+        self.replying.set(false);
+        self.decoding.set(false);
+        self.pending_paste.set(false);
+        self.surface.borrow_mut().take();
+        self.size.set((0, 0));
+        self.area.queue_draw();
         self.broker.borrow_mut().disconnect(&self.id);
         self.status.set_text("RDP disconnected");
     }
@@ -741,7 +1278,30 @@ impl RdpView {
             .set_text("Synthetic framebuffer fixture · no remote connection");
         self.area.queue_draw();
     }
-    fn update(&self) {
+    fn update(self: &Rc<Self>) {
+        let epoch = if self.broker.borrow().active() == Some(self.id.as_str()) {
+            self.broker.borrow().epoch()
+        } else {
+            0
+        };
+        self.bridge.borrow().epoch.store(epoch, Ordering::Release);
+        if self
+            .pending
+            .borrow()
+            .as_ref()
+            .is_some_and(|p| p.3.elapsed() > Duration::from_secs(5))
+        {
+            self.close();
+            self.status.set_text(
+                "CLIPRDR response timed out; disconnected to prevent stale response reuse",
+            );
+            return;
+        }
+        let events = self.bridge.borrow().drain();
+        for e in events {
+            self.clip_event(e);
+        }
+
         let frame = {
             let c = self.connection.borrow();
             let Some(c) = c.as_ref() else {
@@ -887,3 +1447,6 @@ mod tests {
         );
     }
 }
+#[cfg(test)]
+#[path = "rdp_fixture.rs"]
+mod authenticated_fixture;

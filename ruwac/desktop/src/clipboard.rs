@@ -227,3 +227,86 @@ pub fn ingest_png(
         },
     );
 }
+
+/// CLIPRDR delayed rendering: bounded async GDK bytes, no decoding on GTK thread.
+pub fn read_bytes(
+    clip: &gdk::Clipboard,
+    broker: Broker,
+    epoch: u64,
+    mime: &'static str,
+    done: impl FnOnce(Result<Vec<u8>, String>) + 'static,
+) {
+    let limit = if mime == "text/plain" {
+        MAX_DESKTOP_TEXT
+    } else {
+        MAX_IMAGE_BYTES
+    };
+    let types = if mime == "text/plain" {
+        vec!["text/plain;charset=utf-8", "text/plain"]
+    } else {
+        vec!["image/png"]
+    };
+    let view = broker.borrow().active().map(str::to_owned);
+    let started = std::time::Instant::now();
+    let cancel = gio::Cancellable::new();
+    let timeout_cancel = cancel.clone();
+    glib::timeout_add_local_once(std::time::Duration::from_secs(5), move || {
+        timeout_cancel.cancel()
+    });
+    clip.read_async(
+        &types,
+        glib::Priority::DEFAULT,
+        Some(&cancel),
+        move |result| {
+            glib::MainContext::default().spawn_local(async move {
+                let read = async {
+                    let (stream, _) =
+                        result.map_err(|_| "Desktop clipboard read failed".to_string())?;
+                    let result = async {
+                        let mut bytes = Vec::new();
+                        loop {
+                            if broker.borrow().epoch() != epoch
+                                || broker.borrow().active() != view.as_deref()
+                            {
+                                return Err("Clipboard owner/focus changed".into());
+                            }
+                            let chunk = stream
+                                .read_bytes_future(65536, glib::Priority::DEFAULT)
+                                .await
+                                .map_err(|_| "Clipboard stream failed".to_string())?;
+                            if broker.borrow().epoch() != epoch
+                                || broker.borrow().active() != view.as_deref()
+                            {
+                                return Err("Clipboard owner/focus changed".into());
+                            }
+                            if bytes.len() + chunk.len() > limit {
+                                return Err("Clipboard transfer exceeds cap".into());
+                            }
+                            if chunk.is_empty() {
+                                return Ok(bytes);
+                            }
+                            bytes.extend_from_slice(&chunk);
+                        }
+                    }
+                    .await;
+                    let _ = stream.close_future(glib::Priority::DEFAULT).await;
+                    result
+                };
+                let result = match futures_util::future::select(
+                    Box::pin(read),
+                    Box::pin(glib::timeout_future(
+                        std::time::Duration::from_secs(5).saturating_sub(started.elapsed()),
+                    )),
+                )
+                .await
+                {
+                    futures_util::future::Either::Left((r, _)) => r,
+                    futures_util::future::Either::Right(_) => {
+                        Err("Clipboard read deadline exceeded".into())
+                    }
+                };
+                done(result);
+            });
+        },
+    );
+}

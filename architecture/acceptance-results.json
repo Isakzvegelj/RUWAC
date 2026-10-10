@@ -1,750 +1,416 @@
 {
-  "run_directory": "evidence/spike-4jw0njyz",
-  "binary": "target/debug/ruwac",
-  "binary_sha256": "3e27e9aa7d01ceb23604e12d1b8793fc0d8cd8c418ded19750f16017ac7ed17f",
-  "server_exit": 0,
-  "results": [
+  "baseline": "v0.1.2",
+  "scope": "Actual loopback RDP/native GDK with generated credentials, frames and input; external hosts and physical desktop unqualified",
+  "native_rdp": [
     {
-      "id": "C01_LITERAL_CLI",
+      "id": "RDP-NATIVE-AUTH-3",
       "status": "PASS",
-      "seconds": 0.007492815999285085,
       "details": {
-        "expected_hex": "24484f4d452022646f75626c6522202773696e676c6527205c736c61736809c5bd69766a6f20c582c3b364c5ba20f09fa7aa2065cc810a7365636f6e64206c696e65202d2d7461726765743d6f746865720d",
-        "actual_hex": "24484f4d452022646f75626c6522202773696e676c6527205c736c61736809c5bd69766a6f20c582c3b364c5ba20f09fa7aa2065cc810a7365636f6e64206c696e65202d2d7461726765743d6f746865720d",
-        "cli_exit": 0
-      }
-    },
-    {
-      "id": "C02_STARTUP_100",
-      "status": "PASS",
-      "seconds": 7.462389909000194,
-      "details": {
-        "runs": 100,
-        "exact": true,
-        "samples": [
-          {
-            "iteration": 0,
-            "injection_delay_ms": 0,
-            "receipt_bytes": 101,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 1,
-            "injection_delay_ms": 1.0,
-            "receipt_bytes": 120,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 2,
-            "injection_delay_ms": 2.0,
-            "receipt_bytes": 139,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 3,
-            "injection_delay_ms": 5.0,
-            "receipt_bytes": 158,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 4,
-            "injection_delay_ms": 0,
-            "receipt_bytes": 177,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 5,
-            "injection_delay_ms": 1.0,
-            "receipt_bytes": 196,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 6,
-            "injection_delay_ms": 2.0,
-            "receipt_bytes": 215,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 7,
-            "injection_delay_ms": 5.0,
-            "receipt_bytes": 234,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 8,
-            "injection_delay_ms": 0,
-            "receipt_bytes": 253,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 9,
-            "injection_delay_ms": 1.0,
-            "receipt_bytes": 272,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 10,
-            "injection_delay_ms": 2.0,
-            "receipt_bytes": 291,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 11,
-            "injection_delay_ms": 5.0,
-            "receipt_bytes": 310,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 12,
-            "injection_delay_ms": 0,
-            "receipt_bytes": 329,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 13,
-            "injection_delay_ms": 1.0,
-            "receipt_bytes": 348,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 14,
-            "injection_delay_ms": 2.0,
-            "receipt_bytes": 367,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 15,
-            "injection_delay_ms": 5.0,
-            "receipt_bytes": 386,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 16,
-            "injection_delay_ms": 0,
-            "receipt_bytes": 405,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 17,
-            "injection_delay_ms": 1.0,
-            "receipt_bytes": 424,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 18,
-            "injection_delay_ms": 2.0,
-            "receipt_bytes": 443,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 19,
-            "injection_delay_ms": 5.0,
-            "receipt_bytes": 462,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 20,
-            "injection_delay_ms": 0,
-            "receipt_bytes": 481,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 21,
-            "injection_delay_ms": 1.0,
-            "receipt_bytes": 500,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 22,
-            "injection_delay_ms": 2.0,
-            "receipt_bytes": 519,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 23,
-            "injection_delay_ms": 5.0,
-            "receipt_bytes": 538,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 24,
-            "injection_delay_ms": 0,
-            "receipt_bytes": 557,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 25,
-            "injection_delay_ms": 1.0,
-            "receipt_bytes": 576,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 26,
-            "injection_delay_ms": 2.0,
-            "receipt_bytes": 595,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 27,
-            "injection_delay_ms": 5.0,
-            "receipt_bytes": 614,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 28,
-            "injection_delay_ms": 0,
-            "receipt_bytes": 633,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 29,
-            "injection_delay_ms": 1.0,
-            "receipt_bytes": 652,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 30,
-            "injection_delay_ms": 2.0,
-            "receipt_bytes": 671,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 31,
-            "injection_delay_ms": 5.0,
-            "receipt_bytes": 690,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 32,
-            "injection_delay_ms": 0,
-            "receipt_bytes": 709,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 33,
-            "injection_delay_ms": 1.0,
-            "receipt_bytes": 728,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 34,
-            "injection_delay_ms": 2.0,
-            "receipt_bytes": 747,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 35,
-            "injection_delay_ms": 5.0,
-            "receipt_bytes": 766,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 36,
-            "injection_delay_ms": 0,
-            "receipt_bytes": 785,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 37,
-            "injection_delay_ms": 1.0,
-            "receipt_bytes": 804,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 38,
-            "injection_delay_ms": 2.0,
-            "receipt_bytes": 823,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 39,
-            "injection_delay_ms": 5.0,
-            "receipt_bytes": 842,
-            "early_before_first_grid": false
-          },
-          {
-            "iteration": 40,
-            "injection_delay_ms": 0,
-            "receipt_bytes": 861,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 41,
-            "injection_delay_ms": 1.0,
-            "receipt_bytes": 880,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 42,
-            "injection_delay_ms": 2.0,
-            "receipt_bytes": 899,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 43,
-            "injection_delay_ms": 5.0,
-            "receipt_bytes": 918,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 44,
-            "injection_delay_ms": 0,
-            "receipt_bytes": 937,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 45,
-            "injection_delay_ms": 1.0,
-            "receipt_bytes": 956,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 46,
-            "injection_delay_ms": 2.0,
-            "receipt_bytes": 975,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 47,
-            "injection_delay_ms": 5.0,
-            "receipt_bytes": 994,
-            "early_before_first_grid": false
-          },
-          {
-            "iteration": 48,
-            "injection_delay_ms": 0,
-            "receipt_bytes": 1013,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 49,
-            "injection_delay_ms": 1.0,
-            "receipt_bytes": 1032,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 50,
-            "injection_delay_ms": 2.0,
-            "receipt_bytes": 1051,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 51,
-            "injection_delay_ms": 5.0,
-            "receipt_bytes": 1070,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 52,
-            "injection_delay_ms": 0,
-            "receipt_bytes": 1089,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 53,
-            "injection_delay_ms": 1.0,
-            "receipt_bytes": 1108,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 54,
-            "injection_delay_ms": 2.0,
-            "receipt_bytes": 1127,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 55,
-            "injection_delay_ms": 5.0,
-            "receipt_bytes": 1146,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 56,
-            "injection_delay_ms": 0,
-            "receipt_bytes": 1165,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 57,
-            "injection_delay_ms": 1.0,
-            "receipt_bytes": 1184,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 58,
-            "injection_delay_ms": 2.0,
-            "receipt_bytes": 1203,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 59,
-            "injection_delay_ms": 5.0,
-            "receipt_bytes": 1222,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 60,
-            "injection_delay_ms": 0,
-            "receipt_bytes": 1241,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 61,
-            "injection_delay_ms": 1.0,
-            "receipt_bytes": 1260,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 62,
-            "injection_delay_ms": 2.0,
-            "receipt_bytes": 1279,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 63,
-            "injection_delay_ms": 5.0,
-            "receipt_bytes": 1298,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 64,
-            "injection_delay_ms": 0,
-            "receipt_bytes": 1317,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 65,
-            "injection_delay_ms": 1.0,
-            "receipt_bytes": 1336,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 66,
-            "injection_delay_ms": 2.0,
-            "receipt_bytes": 1355,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 67,
-            "injection_delay_ms": 5.0,
-            "receipt_bytes": 1374,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 68,
-            "injection_delay_ms": 0,
-            "receipt_bytes": 1393,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 69,
-            "injection_delay_ms": 1.0,
-            "receipt_bytes": 1412,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 70,
-            "injection_delay_ms": 2.0,
-            "receipt_bytes": 1431,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 71,
-            "injection_delay_ms": 5.0,
-            "receipt_bytes": 1450,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 72,
-            "injection_delay_ms": 0,
-            "receipt_bytes": 1469,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 73,
-            "injection_delay_ms": 1.0,
-            "receipt_bytes": 1488,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 74,
-            "injection_delay_ms": 2.0,
-            "receipt_bytes": 1507,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 75,
-            "injection_delay_ms": 5.0,
-            "receipt_bytes": 1526,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 76,
-            "injection_delay_ms": 0,
-            "receipt_bytes": 1545,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 77,
-            "injection_delay_ms": 1.0,
-            "receipt_bytes": 1564,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 78,
-            "injection_delay_ms": 2.0,
-            "receipt_bytes": 1583,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 79,
-            "injection_delay_ms": 5.0,
-            "receipt_bytes": 1602,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 80,
-            "injection_delay_ms": 0,
-            "receipt_bytes": 1621,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 81,
-            "injection_delay_ms": 1.0,
-            "receipt_bytes": 1640,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 82,
-            "injection_delay_ms": 2.0,
-            "receipt_bytes": 1659,
-            "early_before_first_grid": false
-          },
-          {
-            "iteration": 83,
-            "injection_delay_ms": 5.0,
-            "receipt_bytes": 1678,
-            "early_before_first_grid": false
-          },
-          {
-            "iteration": 84,
-            "injection_delay_ms": 0,
-            "receipt_bytes": 1697,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 85,
-            "injection_delay_ms": 1.0,
-            "receipt_bytes": 1716,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 86,
-            "injection_delay_ms": 2.0,
-            "receipt_bytes": 1735,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 87,
-            "injection_delay_ms": 5.0,
-            "receipt_bytes": 1754,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 88,
-            "injection_delay_ms": 0,
-            "receipt_bytes": 1773,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 89,
-            "injection_delay_ms": 1.0,
-            "receipt_bytes": 1792,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 90,
-            "injection_delay_ms": 2.0,
-            "receipt_bytes": 1811,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 91,
-            "injection_delay_ms": 5.0,
-            "receipt_bytes": 1830,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 92,
-            "injection_delay_ms": 0,
-            "receipt_bytes": 1849,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 93,
-            "injection_delay_ms": 1.0,
-            "receipt_bytes": 1868,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 94,
-            "injection_delay_ms": 2.0,
-            "receipt_bytes": 1887,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 95,
-            "injection_delay_ms": 5.0,
-            "receipt_bytes": 1906,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 96,
-            "injection_delay_ms": 0,
-            "receipt_bytes": 1925,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 97,
-            "injection_delay_ms": 1.0,
-            "receipt_bytes": 1944,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 98,
-            "injection_delay_ms": 2.0,
-            "receipt_bytes": 1963,
-            "early_before_first_grid": true
-          },
-          {
-            "iteration": 99,
-            "injection_delay_ms": 5.0,
-            "receipt_bytes": 1982,
-            "early_before_first_grid": true
+        "server": {
+          "generated_desktop": [
+            320,
+            180
+          ],
+          "ports": [
+            37249,
+            41685,
+            33269
+          ],
+          "security": "TLS verified + CredSSP/NLA",
+          "server": "ironrdp-server 0.13.0"
+        },
+        "connections": [
+          {
+            "active": true,
+            "epoch": 7,
+            "pending": false,
+            "policy": "Bidirectional",
+            "received_generation": 0,
+            "size": [
+              320,
+              180
+            ],
+            "status": "Connected \u00b7 embedded IronRDP \u00b7 CLIPRDR text and images",
+            "viewport": [
+              800,
+              374
+            ],
+            "window_width": 1054,
+            "connect_to_decoded_frame_ms": 328.20555999933276
+          },
+          {
+            "active": true,
+            "epoch": 10,
+            "pending": false,
+            "policy": "Bidirectional",
+            "received_generation": 0,
+            "size": [
+              320,
+              180
+            ],
+            "status": "Connected \u00b7 embedded IronRDP \u00b7 CLIPRDR text and images",
+            "viewport": [
+              800,
+              374
+            ],
+            "window_width": 1054,
+            "connect_to_decoded_frame_ms": 277.386473993829
+          },
+          {
+            "active": true,
+            "epoch": 13,
+            "pending": false,
+            "policy": "Bidirectional",
+            "received_generation": 0,
+            "size": [
+              320,
+              180
+            ],
+            "status": "Connected \u00b7 embedded IronRDP \u00b7 CLIPRDR text and images",
+            "viewport": [
+              800,
+              374
+            ],
+            "window_width": 1054,
+            "connect_to_decoded_frame_ms": 275.9694869964733
           }
         ],
-        "receipt_sha256": "d59878e1a79b8073d78a552a2a92ff2890970138562b156bd1bef42710c31e7b",
-        "note": "injected at 0/1/2/5 ms after process spawn; delayed DA/OSC replies excluded; dedicated PTY transcripts"
+        "authentication": "actual CredSSP/NLA",
+        "frames": "decoded live loopback server frames, generated desktop"
       }
     },
     {
-      "id": "C03_MULTI_FOCUS_SPLIT",
+      "id": "RDP-NATIVE-TEXT-60",
       "status": "PASS",
-      "seconds": 0.09754922200045257,
-      "details": {
-        "stable_pid": 46780,
-        "window2": {
-          "pane": "pane_5455d4a94da4481b9d9b0b4fd53f9a19",
-          "pid": 47093,
-          "window": "window_c0659bef264c4b33b47d16b94baff8f6"
+      "details": [
+        {
+          "tab": 0,
+          "bytes": 41,
+          "sha256": "6b08a40187084c7296543140ff58e6632615bc51a07e9085b073a103d94acd1b",
+          "directions": 2
         },
-        "split": {
-          "pane": "pane_43737768e4de4be7a85d9f4356e47cad",
-          "pid": 47097
+        {
+          "tab": 0,
+          "bytes": 41,
+          "sha256": "60e24e469140a14482dc1f462cb77c4553b75e678462f369ebdb4898cddd47c0",
+          "directions": 2
         },
-        "shared_focus": true,
-        "minimum_size": [
-          20,
-          70
-        ],
-        "detach_local": true
-      }
-    },
-    {
-      "id": "C04_CONCURRENT_IDEMPOTENCY",
-      "status": "PASS",
-      "seconds": 0.00795405499957269,
-      "details": {
-        "unordered_exact_chunks_hex": "57524954455f305fc5bd57524954455f315fc5bd57524954455f325fc5bd57524954455f335fc5bd57524954455f345fc5bd",
-        "idempotent_single_write": true
-      }
-    },
-    {
-      "id": "C05_MOUSE_PASTE_BUFFER",
-      "status": "PASS",
-      "seconds": 0.19285943800059613,
-      "details": {
-        "mouse_enabled_forwarded": true,
-        "disabled_discarded": true,
-        "paste_hex": "1b5b3230307e6c69746572616c0164090a1b5b3230317e",
-        "internal_separate_synthetic_only": true
-      }
-    },
-    {
-      "id": "C06_LIFECYCLE",
-      "status": "PASS",
-      "seconds": 0.2110082759991201,
-      "details": {
-        "detach_sigterm_sigkill_preserve_pid": [
-          46780,
-          46780,
-          46780
-        ],
-        "sigkill_terminal_restore": "cannot guarantee; process cannot run cleanup"
-      }
-    },
-    {
-      "id": "C07_SOCKET_FRAMES_LOCK",
-      "status": "PASS",
-      "seconds": 0.0057348980008100625,
-      "details": {
-        "socket_mode": "0600",
-        "same_uid": 1005,
-        "duplicate_start_rejected": true,
-        "bad_frames_rejected": true,
-        "owned_tcp_listeners": 0,
-        "cross_uid": "source policy; separate UID test unverified"
-      }
-    },
-    {
-      "id": "C08_EVENTS_WAIT",
-      "status": "PASS",
-      "seconds": 0.05792906900023809,
-      "details": {
-        "event": {
-          "event": "state.changed",
-          "revision": 748,
-          "version": 0
+        {
+          "tab": 0,
+          "bytes": 41,
+          "sha256": "1c96a865f8a3394764987f89404e947bd8ef089725d6a7c2ee96215340958080",
+          "directions": 2
         },
-        "wait_matched": true,
-        "timeout_error": true
+        {
+          "tab": 0,
+          "bytes": 41,
+          "sha256": "86f99636689ca8e5d9c112818ad12229f5f624074566427adefc59539f1e4f5b",
+          "directions": 2
+        },
+        {
+          "tab": 0,
+          "bytes": 41,
+          "sha256": "d488d6590c9f0cd337841486de1093938e06841e2d9ff3730ff684842c7636e3",
+          "directions": 2
+        },
+        {
+          "tab": 0,
+          "bytes": 41,
+          "sha256": "9988a4a3bb24a6687a661c82abf60e32222457ffefbd9edf137f5de53b28bcc9",
+          "directions": 2
+        },
+        {
+          "tab": 0,
+          "bytes": 41,
+          "sha256": "5d77bb455b4c4d084e3df8fe0bbeff4aedd3f88cbbe26d96809e9a325ec4ca69",
+          "directions": 2
+        },
+        {
+          "tab": 0,
+          "bytes": 41,
+          "sha256": "21967a62818533b92919b5796ab076f78a6b0fba423881c9e2d958bdc0c78989",
+          "directions": 2
+        },
+        {
+          "tab": 0,
+          "bytes": 10240,
+          "sha256": "04f8f86af2cd14ffe9bbe8da1518ce9c980ae13fba87feb386b103544e9c4c6b",
+          "directions": 2
+        },
+        {
+          "tab": 0,
+          "bytes": 1048576,
+          "sha256": "3ac3338d67611f3edb444a8f730d5e3a6559d4640e7b1a2d5fa58bafbda3254a",
+          "directions": 2
+        },
+        {
+          "tab": 1,
+          "bytes": 41,
+          "sha256": "6b08a40187084c7296543140ff58e6632615bc51a07e9085b073a103d94acd1b",
+          "directions": 2
+        },
+        {
+          "tab": 1,
+          "bytes": 41,
+          "sha256": "60e24e469140a14482dc1f462cb77c4553b75e678462f369ebdb4898cddd47c0",
+          "directions": 2
+        },
+        {
+          "tab": 1,
+          "bytes": 41,
+          "sha256": "1c96a865f8a3394764987f89404e947bd8ef089725d6a7c2ee96215340958080",
+          "directions": 2
+        },
+        {
+          "tab": 1,
+          "bytes": 41,
+          "sha256": "86f99636689ca8e5d9c112818ad12229f5f624074566427adefc59539f1e4f5b",
+          "directions": 2
+        },
+        {
+          "tab": 1,
+          "bytes": 41,
+          "sha256": "d488d6590c9f0cd337841486de1093938e06841e2d9ff3730ff684842c7636e3",
+          "directions": 2
+        },
+        {
+          "tab": 1,
+          "bytes": 41,
+          "sha256": "9988a4a3bb24a6687a661c82abf60e32222457ffefbd9edf137f5de53b28bcc9",
+          "directions": 2
+        },
+        {
+          "tab": 1,
+          "bytes": 41,
+          "sha256": "5d77bb455b4c4d084e3df8fe0bbeff4aedd3f88cbbe26d96809e9a325ec4ca69",
+          "directions": 2
+        },
+        {
+          "tab": 1,
+          "bytes": 41,
+          "sha256": "21967a62818533b92919b5796ab076f78a6b0fba423881c9e2d958bdc0c78989",
+          "directions": 2
+        },
+        {
+          "tab": 1,
+          "bytes": 10240,
+          "sha256": "04f8f86af2cd14ffe9bbe8da1518ce9c980ae13fba87feb386b103544e9c4c6b",
+          "directions": 2
+        },
+        {
+          "tab": 1,
+          "bytes": 1048576,
+          "sha256": "3ac3338d67611f3edb444a8f730d5e3a6559d4640e7b1a2d5fa58bafbda3254a",
+          "directions": 2
+        },
+        {
+          "tab": 2,
+          "bytes": 41,
+          "sha256": "6b08a40187084c7296543140ff58e6632615bc51a07e9085b073a103d94acd1b",
+          "directions": 2
+        },
+        {
+          "tab": 2,
+          "bytes": 41,
+          "sha256": "60e24e469140a14482dc1f462cb77c4553b75e678462f369ebdb4898cddd47c0",
+          "directions": 2
+        },
+        {
+          "tab": 2,
+          "bytes": 41,
+          "sha256": "1c96a865f8a3394764987f89404e947bd8ef089725d6a7c2ee96215340958080",
+          "directions": 2
+        },
+        {
+          "tab": 2,
+          "bytes": 41,
+          "sha256": "86f99636689ca8e5d9c112818ad12229f5f624074566427adefc59539f1e4f5b",
+          "directions": 2
+        },
+        {
+          "tab": 2,
+          "bytes": 41,
+          "sha256": "d488d6590c9f0cd337841486de1093938e06841e2d9ff3730ff684842c7636e3",
+          "directions": 2
+        },
+        {
+          "tab": 2,
+          "bytes": 41,
+          "sha256": "9988a4a3bb24a6687a661c82abf60e32222457ffefbd9edf137f5de53b28bcc9",
+          "directions": 2
+        },
+        {
+          "tab": 2,
+          "bytes": 41,
+          "sha256": "5d77bb455b4c4d084e3df8fe0bbeff4aedd3f88cbbe26d96809e9a325ec4ca69",
+          "directions": 2
+        },
+        {
+          "tab": 2,
+          "bytes": 41,
+          "sha256": "21967a62818533b92919b5796ab076f78a6b0fba423881c9e2d958bdc0c78989",
+          "directions": 2
+        },
+        {
+          "tab": 2,
+          "bytes": 10240,
+          "sha256": "04f8f86af2cd14ffe9bbe8da1518ce9c980ae13fba87feb386b103544e9c4c6b",
+          "directions": 2
+        },
+        {
+          "tab": 2,
+          "bytes": 1048576,
+          "sha256": "3ac3338d67611f3edb444a8f730d5e3a6559d4640e7b1a2d5fa58bafbda3254a",
+          "directions": 2
+        }
+      ]
+    },
+    {
+      "id": "RDP-NATIVE-PNG-18",
+      "status": "PASS",
+      "details": [
+        {
+          "tab": 0,
+          "size": [
+            64,
+            64
+          ],
+          "remote_format": "png",
+          "pixel_sha256": "3baf66aa506a631b48603118a438e65fa691a8816f819b8b5198de15baf25524",
+          "directions": 2
+        },
+        {
+          "tab": 0,
+          "size": [
+            2560,
+            1440
+          ],
+          "remote_format": "png",
+          "pixel_sha256": "4db98c7268950fc6d7ccce11a716632a84a80f24764666530f12c9c38769ecdf",
+          "directions": 2
+        },
+        {
+          "tab": 0,
+          "size": [
+            64,
+            64
+          ],
+          "remote_format": "dibv5",
+          "pixel_sha256": "1f7668e6e067bbb078bba82211ee3a3065deee98eb6e834a47801aac67accc74",
+          "directions": 2
+        },
+        {
+          "tab": 1,
+          "size": [
+            64,
+            64
+          ],
+          "remote_format": "png",
+          "pixel_sha256": "ce4ee06ef9c392c1c7d07db0ae29c75194a86542cba97575550be3e5dc4112e8",
+          "directions": 2
+        },
+        {
+          "tab": 1,
+          "size": [
+            2560,
+            1440
+          ],
+          "remote_format": "png",
+          "pixel_sha256": "17aa1736e0d0a49ffc0ec2d020f112166cdbfb92488d23b8f22e4f720a313385",
+          "directions": 2
+        },
+        {
+          "tab": 1,
+          "size": [
+            64,
+            64
+          ],
+          "remote_format": "dibv5",
+          "pixel_sha256": "78e53cd5001d2ada5e904316c904942dc9ab8f3adc78a4b8d20d3a864dfbac7a",
+          "directions": 2
+        },
+        {
+          "tab": 2,
+          "size": [
+            64,
+            64
+          ],
+          "remote_format": "png",
+          "pixel_sha256": "5de816aff2433d4b22b1e87d07937dbb431eab296f2a2b14367c85aa7db9c514",
+          "directions": 2
+        },
+        {
+          "tab": 2,
+          "size": [
+            2560,
+            1440
+          ],
+          "remote_format": "png",
+          "pixel_sha256": "9d32bafcb93ae1f226c7386c66c96db09ba109ae85b8fc2901f3ed8872505838",
+          "directions": 2
+        },
+        {
+          "tab": 2,
+          "size": [
+            64,
+            64
+          ],
+          "remote_format": "dibv5",
+          "pixel_sha256": "07b78dbdb923850b990c8bcc8db588a5114f178af6c987ee184f31cd11d7cb2a",
+          "directions": 2
+        }
+      ]
+    },
+    {
+      "id": "RDP-NATIVE-POLICIES-5",
+      "status": "PASS",
+      "details": {
+        "policies": 5,
+        "manual_receive": "explicit action",
+        "directional_gates": "real GDK and CLIPRDR"
       }
     },
     {
-      "id": "C09_PNG_STAGE",
+      "id": "RDP-NATIVE-RECONNECT",
       "status": "PASS",
-      "seconds": 0.01688515199930407,
       "details": {
-        "attached": false,
-        "bytes": 76,
-        "height": 2,
-        "mime": "image/png",
-        "path": "evidence/spike-4jw0njyz/stage/820d7455911c4b668017a97cbd98b7bc.png",
-        "sha256": "d434b065e245cf06ed44895f78f8a75f9e5b43d03d503a43e90212f232455312",
-        "width": 2,
-        "owned_stage_cleaned": true
+        "reconnect_to_frame_ms": 1395.8025009997073,
+        "same_tab": true,
+        "clipboard_after_reconnect": "PASS",
+        "bounded_backoff": true
       }
     },
     {
-      "id": "C11_SCREEN_PREFIX",
+      "id": "RDP-NATIVE-OWNERSHIP-200",
       "status": "PASS",
-      "seconds": 0.12122951399942394,
       "details": {
-        "create_next_previous_detach": true,
-        "literal_ctrl_a_hex": "0101",
-        "stable_receiver_pid": 46780
+        "focus_switches": 200,
+        "inactive_offers_checked": 450,
+        "peer_clipboard_hash": "2af137530afc484be39b19c4013c216860b849aaa770f7203d1a16cf481f0e70",
+        "physical_input": false
       }
     },
     {
-      "id": "C10_STOP_WITHOUT_READER",
+      "id": "MACHINES-NATIVE-70",
       "status": "PASS",
-      "seconds": 0.6297403589996975,
       "details": {
-        "disconnected_before_ack": true,
-        "daemon_exit": 0
+        "imported": 70,
+        "same_leaf_different_full_groups": true,
+        "search_rows": 1,
+        "favorite_rows": 1,
+        "credentials_excluded": true,
+        "source_files_unchanged": true,
+        "store_mode": "0600"
       }
     }
   ],
-  "desktop": "BLOCKED",
-  "second_host": "BLOCKED"
+  "rss_mib": {
+    "gtk": 153.66015625,
+    "rdp_server": 32.19921875
+  },
+  "headless_unit_tests": 18,
+  "desktop_unit_tests": 10,
+  "headless_integration_groups": 14,
+  "terminal_native_pass": 21,
+  "primary": "BLOCKED on Weston"
 }

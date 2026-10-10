@@ -24,6 +24,24 @@ def tick():
     text=c.read_text_finish(result);data=text.encode();reply({'bytes':len(data),'sha256':hashlib.sha256(data).hexdigest()})
    except Exception as e:reply({'error':str(e)})
   clip.read_text_async(None,read)
+ elif q['action']=='read-png':
+  def opened(c,result):
+   try:stream,mime=c.read_finish(result)
+   except Exception as e:reply({'error':str(e)});return
+   payload=bytearray()
+   def chunk(s,result):
+    try:
+     data=s.read_bytes_finish(result).get_data()
+     if data:
+      payload.extend(data)
+      if len(payload)>64*1024*1024:raise ValueError('PNG fixture cap')
+      s.read_bytes_async(65536,GLib.PRIORITY_DEFAULT,None,chunk);return
+     from PIL import Image
+     import io
+     image=Image.open(io.BytesIO(payload)).convert('RGBA');reply({'bytes':len(payload),'sha256':hashlib.sha256(payload).hexdigest(),'pixel_sha256':hashlib.sha256(image.tobytes()).hexdigest(),'width':image.width,'height':image.height});s.close(None)
+    except Exception as e:reply({'error':str(e)})
+   stream.read_bytes_async(65536,GLib.PRIORITY_DEFAULT,None,chunk)
+  clip.read_async(['image/png'],GLib.PRIORITY_DEFAULT,None,opened)
  elif q['action']=='quit':reply({'quit':True});loop.quit();return False
  return True
 GLib.timeout_add(20,tick);loop.run()

@@ -1,5 +1,5 @@
 {
-  "source": "Locked core and optional desktop Cargo metadata; Linux target declarations, not distribution clearance",
+  "source": "Locked core and optional desktop Cargo metadata; Linux target declarations, including test dependencies, not distribution clearance",
   "packages": [
     {
       "name": "addchain",
@@ -84,6 +84,12 @@
       "version": "1.2.0",
       "license": "MIT OR Apache-2.0",
       "repository": "https://github.com/dcchut/async-recursion"
+    },
+    {
+      "name": "async-trait",
+      "version": "0.1.92",
+      "license": "MIT OR Apache-2.0",
+      "repository": "https://github.com/dtolnay/async-trait"
     },
     {
       "name": "atomic-waker",
@@ -914,6 +920,18 @@
       "repository": "https://github.com/Devolutions/IronRDP"
     },
     {
+      "name": "ironrdp-acceptor",
+      "version": "0.10.0",
+      "license": "MIT OR Apache-2.0",
+      "repository": "https://github.com/Devolutions/IronRDP"
+    },
+    {
+      "name": "ironrdp-ainput",
+      "version": "0.8.0",
+      "license": "MIT OR Apache-2.0",
+      "repository": "https://github.com/Devolutions/IronRDP"
+    },
+    {
       "name": "ironrdp-async",
       "version": "0.10.0",
       "license": "MIT OR Apache-2.0",
@@ -926,6 +944,18 @@
       "repository": "https://github.com/Devolutions/IronRDP"
     },
     {
+      "name": "ironrdp-cliprdr",
+      "version": "0.7.0",
+      "license": "MIT OR Apache-2.0",
+      "repository": "https://github.com/Devolutions/IronRDP"
+    },
+    {
+      "name": "ironrdp-cliprdr-format",
+      "version": "0.2.0",
+      "license": "MIT OR Apache-2.0",
+      "repository": "https://github.com/Devolutions/IronRDP"
+    },
+    {
       "name": "ironrdp-connector",
       "version": "0.10.0",
       "license": "MIT OR Apache-2.0",
@@ -933,7 +963,7 @@
     },
     {
       "name": "ironrdp-core",
-      "version": "0.2.1",
+      "version": "0.2.0",
       "license": "MIT OR Apache-2.0",
       "repository": "https://github.com/Devolutions/IronRDP"
     },
@@ -946,6 +976,12 @@
     {
       "name": "ironrdp-dvc",
       "version": "0.8.0",
+      "license": "MIT OR Apache-2.0",
+      "repository": "https://github.com/Devolutions/IronRDP"
+    },
+    {
+      "name": "ironrdp-echo",
+      "version": "0.4.0",
       "license": "MIT OR Apache-2.0",
       "repository": "https://github.com/Devolutions/IronRDP"
     },
@@ -964,6 +1000,18 @@
     {
       "name": "ironrdp-pdu",
       "version": "0.9.0",
+      "license": "MIT OR Apache-2.0",
+      "repository": "https://github.com/Devolutions/IronRDP"
+    },
+    {
+      "name": "ironrdp-rdpsnd",
+      "version": "0.9.0",
+      "license": "MIT OR Apache-2.0",
+      "repository": "https://github.com/Devolutions/IronRDP"
+    },
+    {
+      "name": "ironrdp-server",
+      "version": "0.13.0",
       "license": "MIT OR Apache-2.0",
       "repository": "https://github.com/Devolutions/IronRDP"
     },
@@ -1550,6 +1598,12 @@
       "repository": "https://github.com/rustls/rustls"
     },
     {
+      "name": "rustls-pemfile",
+      "version": "2.2.0",
+      "license": "Apache-2.0 OR ISC OR MIT",
+      "repository": "https://github.com/rustls/pemfile"
+    },
+    {
       "name": "rustls-pki-types",
       "version": "1.15.1",
       "license": "MIT OR Apache-2.0",
@@ -1560,6 +1614,60 @@
       "version": "0.103.15",
       "license": "ISC",
       "repository": "https://github.com/rustls/webpki"
+    },
+    {
+      "name": "ruwac-cli",
+      "version": "0.1.2",
+      "license": null,
+      "repository": null
+    },
+    {
+      "name": "ruwac-clipboard",
+      "version": "0.1.2",
+      "license": null,
+      "repository": null
+    },
+    {
+      "name": "ruwac-core",
+      "version": "0.1.2",
+      "license": null,
+      "repository": null
+    },
+    {
+      "name": "ruwac-daemon",
+      "version": "0.1.2",
+      "license": null,
+      "repository": null
+    },
+    {
+      "name": "ruwac-desktop",
+      "version": "0.1.2",
+      "license": null,
+      "repository": null
+    },
+    {
+      "name": "ruwac-protocol",
+      "version": "0.1.2",
+      "license": null,
+      "repository": null
+    },
+    {
+      "name": "ruwac-pty",
+      "version": "0.1.2",
+      "license": null,
+      "repository": null
+    },
+    {
+      "name": "ruwac-term",
+      "version": "0.1.2",
+      "license": null,
+      "repository": null
+    },
+    {
+      "name": "ruwac-tui",
+      "version": "0.1.2",
+      "license": null,
+      "repository": null
     },
     {
       "name": "ryu",

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## v0.1.3 — 2026-10-11 — Prerelease
+
+- Complete authenticated embedded IronRDP lifecycle, bidirectional CLIPRDR Unicode/PNG transfer and active-tab ownership gates; add the native machine sidebar and read-only Remmina metadata preview.
+- Validate disposable loopback authentication/frame decoding, separate GDK clipboard consumers, directional policies, terminal regressions and matched CLI benchmarks; preserve the independent headless engine.
+
 ## v0.1.2 — 2026-10-10 — Prerelease
 
 - Complete native Screen navigation, keyboard marking/search, persistent nested horizontal/vertical splits, ratio resize and zoom; retain daemon-owned sessions.
