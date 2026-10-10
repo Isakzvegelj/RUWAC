@@ -1,9 +1,0 @@
-[package]
-name = "zmux-pty"
-version.workspace = true
-edition.workspace = true
-publish.workspace = true
-
-[dependencies]
-portable-pty.workspace = true
-libc.workspace = true

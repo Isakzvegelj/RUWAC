@@ -1,0 +1,9 @@
+# Next bounded milestone after v3-native-20261010
+
+The compiled native Rust GUI and real GDK text/image staging are functioning local candidates. Next, qualify canonical drag/copy/search and keyboard-driven internal selection on a compositor with PRIMARY, including two application-owned clipboards and persistence; exercise Vim/less/htop through actual native key controllers rather than counting the headless application tests as GUI acceptance.
+
+Complete remaining input gaps: vertical split, command prompt, full numeric/window chooser cards, legacy application mouse encodings, hover/motion modes, Ctrl/Alt mouse modifiers, AltGr/IME, accessible widgets and physical touchpad boundaries. Keep daemon ownership and exact target IDs; retain the lightweight worker/coalescing design. Add crash-time staging cleanup and clipboard persistence without reading owner content in fixtures.
+
+Real RDP is still blocked. Keep embedded IronRDP first for future authorized Windows/Fedora measurements, FreeRDP3 embedded fallback; do not claim network or CLIPRDR functionality from the typed synthetic RdpView. Use the fail-closed acceptance scaffold for three views, text/PNG, shortcuts, transforms and resolutions once an actual backend and authorized hosts exist. No competitor source is currently copied.
+
+S015 remains the later release authority. Qualify the shared app-linux package/promotion handler before RPM distribution or runtime promotion. Source backup prereleases use the installed standard template and controller. Retain build modes and release.sh intent interface, portable permitted export and private operational exclusions. The candidate validation round did not allocate a version or publish; the subsequent source release is recorded by the Git tag and changelog. RPM assembly/install/rollback is blocked until that infrastructure exists.

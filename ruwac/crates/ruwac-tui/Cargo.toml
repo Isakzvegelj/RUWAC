@@ -1,0 +1,10 @@
+[package]
+name = "ruwac-tui"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+ruwac-protocol = { path = "../ruwac-protocol" }
+serde_json.workspace = true
+libc.workspace = true

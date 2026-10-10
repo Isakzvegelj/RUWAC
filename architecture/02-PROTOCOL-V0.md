@@ -40,4 +40,4 @@ Idempotency keys are bounded (1024-entry FIFO), daemon-lifetime, and scoped to e
 
 Grid cells are arrays `[text,wide_spacer,foreground,background,bold,inverse]`; colors are RGB triplets or indexed/named numbers. Capture strips trailing cell spaces and separates rows with newlines. Shared focus and minimum attached size are documented in the architecture; automation always names its target. Revision events coalesce output and mutations, not individual raw-byte delivery.
 
-Remote use can pipe a JSON request into `ssh EXISTING_HOST zmux request` using existing authenticated SSH. The request body stays on stdin. Host selection, remote installation, transfer and disconnect behavior have not been tested on a second host; there is no custom TCP listener or implemented --host convenience flag.
+Remote use can pipe a JSON request into `ssh EXISTING_HOST ruwac request` using existing authenticated SSH. The request body stays on stdin. Host selection, remote installation, transfer and disconnect behavior have not been tested on a second host; there is no custom TCP listener or implemented --host convenience flag.

@@ -1,6 +1,6 @@
 # Acceptance evidence
 
-Canonical real-daemon run: `/app/zMux/evidence/spike-4jw0njyz/acceptance.json`; full unit/build log: `/app/zMux/evidence/build-test-complete.log`. Seven focused Rust tests passed. All eleven integration groups passed. Earlier harness failure (Python function shadowed a module) is retained and excluded from product failures. Binary hashes and immutable report links are in [evidence-index.json](evidence-index.json); portable receipt copy: [acceptance-results.json](acceptance-results.json).
+Canonical real-daemon run: `evidence/spike-4jw0njyz/acceptance.json`; full unit/build log: `evidence/build-test-complete.log`. Seven focused Rust tests passed. All eleven integration groups passed. Earlier harness failure (Python function shadowed a module) is retained and excluded from product failures. Binary hashes and immutable report links are in [evidence-index.json](evidence-index.json); portable receipt copy: [acceptance-results.json](acceptance-results.json).
 
 | Case | Status | Observed proof / limits |
 | --- | --- | --- |
@@ -28,6 +28,6 @@ Canonical real-daemon run: `/app/zMux/evidence/spike-4jw0njyz/acceptance.json`; 
 | Second-host SSH/remote PNG/lifecycle | BLOCKED | no evaluation host designated; GitHub authentication is unrelated to this gate |
 | API performance | PASS | 30 samples at 1/5/20/40 panes, all 12 median ratios within 2× tmux; idle qualification and raw samples in benchmark report |
 | Keystroke-to-render | PASS | separate 30-sample instrumented TUI measurement; not physical photon or real visual judgment |
-| Historical evidence preservation | PASS | all 4,960 manifest entries verified unchanged after relocation to /app/zMux/evaluation |
+| Historical evidence preservation | PASS | all 4,960 manifest entries verified unchanged after relocation to evaluation |
 
-**Decision: GO for the next bounded TUI reliability milestone.** Core correctness and the measured API target support continued experimentation. Production deployment, binary release, full multiplexer replacement and desktop/image claims remain NO-GO until their separate gates pass. If a hard correctness gate regresses or performance misses its target, profile and reconsider tmux/frontend or ttmux repair before expansion.
+**Decision: GO for the next bounded TUI reliability milestone.** Core correctness and the measured API target support continued experimentation. Production deployment, production binary distribution, full multiplexer replacement and desktop/image claims remain NO-GO until their separate gates pass. If a hard correctness gate regresses or performance misses its target, profile and reconsider tmux/frontend or ttmux repair before expansion.

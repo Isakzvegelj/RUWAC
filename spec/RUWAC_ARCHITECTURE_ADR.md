@@ -1,0 +1,17 @@
+# ADR-002 — Optional Rust GTK frontend, streaming desktop transport
+
+Status: accepted for the tested candidate. Round `v3-native-20261010`, 2026-10-10. The implementation was validated as a local engineering candidate. Subsequent owner authorization requires tagged source prerelease publication through the project build/release workflow; runtime promotion and RPM qualification remain separate. Original candidate reports are preserved privately in build results.
+
+Retain the existing Rust daemon, alacritty canonical terminal state, authenticated owner-only Unix protocol v0, CLI and TUI. No cmux-tui replacement or broad market re-evaluation. Add `ruwac/desktop` as an independent Cargo workspace: gtk4 0.11.5 and libadwaita 0.9.2 compile into `ruwac-desktop`; the headless workspace never resolves graphical dependencies.
+
+GTK draws canonical cells using Pango/Cairo, including RGB/indexed colors, inverse/bold, combining/wide characters and cursor outline. Backgrounds are painted before glyphs to avoid erasing wide-cell continuations. Rendering uses full snapshots and redraws on revisions; precise dirty rectangles, underline/italic/hyperlinks, arbitrary cursor styles and complete accessibility remain unqualified. No nested TUI or second VT parser is embedded.
+
+One worker per session authenticates socket ownership/mode and SO_PEERCRED UID, checks schema/capabilities and response version/correlation, owns attach/render/input/resize/detach. Input queues bound 128 commands and 2 MiB total payload per view. A coalesced latest-frame slot bounds GTK delivery; revisions cannot regress. GTK drains state on a 16 ms timer. RPC timeout is 2 seconds and remains off the GTK thread. Failed/queue-full input produces a persistent visible warning requiring acknowledgement. Closing a view detaches and cancels future work without killing PTYs.
+
+Adwaita TabView/TabBar provides reorderable terminal tabs. Existing horizontal pane layout remains daemon-owned, at most two panes per window. Local focus targets exact panes, while automation never infers a target from GUI focus. The native GNOME test passed 200 switches without the previous GI stall. Coalesced state and GTK-thread-only widget ownership avoid scheduling unbounded idle callbacks; this is evidence of the new client, not a proven root cause for every old GI failure.
+
+Clipboard control and binary payload are separate. GDK async input streams use 64 KiB reads; UTF-8 text caps at 1 MiB and is queued as 32 KiB UTF-8 chunks through the existing 256 KiB input API. Each chunk receives its own bracketed-paste wrapper when the app requests it. The 1 MiB JSON frame never carries images. PNG streams stage into private 0600 files in an owned 0700 directory, cap encoded/decoded bytes at 64 MiB and dimensions at 4096², then validate/hash off-thread. No agent or CLIPRDR transfer is implied.
+
+FocusBroker records metadata tickets: source view, selection kind, MIME, generation, direction, state, size and focus epoch. Changes of focus, desktop owner, explicit copy, policy or newer read invalidate callbacks. Stream cancellation removes partial staging; completed GUI-owned images are removed on orderly client close. Abrupt process death or compositor failure during a transfer can leave private scratch files; crash recovery is pending.
+
+Typed RdpView/clipboard-adapter interfaces are synthetic readiness boundaries. Embedded IronRDP remains the first future measurement candidate, FreeRDP3 an embedded fallback. No network backend, real host or detached RDP executable is implemented.

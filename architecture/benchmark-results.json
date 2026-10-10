@@ -1,6 +1,6 @@
 {
   "api": {
-    "run_directory": "/app/zMux/evidence/benchmark-zn_xpdss",
+    "run_directory": "evidence/benchmark-zn_xpdss",
     "environment": {
       "before": {
         "busy_fraction": 0.0074906367041198685,
@@ -21,7 +21,7 @@
       {
         "panes": 1,
         "action": "list",
-        "zMux": {
+        "ruwac": {
           "n": 30,
           "median_ms": 1.2538654999999999,
           "p95_ms": 1.400231,
@@ -101,7 +101,7 @@
       {
         "panes": 1,
         "action": "send",
-        "zMux": {
+        "ruwac": {
           "n": 30,
           "median_ms": 1.2831450000000002,
           "p95_ms": 1.462449,
@@ -181,7 +181,7 @@
       {
         "panes": 1,
         "action": "capture",
-        "zMux": {
+        "ruwac": {
           "n": 30,
           "median_ms": 1.2834605,
           "p95_ms": 1.464001,
@@ -261,7 +261,7 @@
       {
         "panes": 5,
         "action": "list",
-        "zMux": {
+        "ruwac": {
           "n": 30,
           "median_ms": 1.328551,
           "p95_ms": 1.452822,
@@ -341,7 +341,7 @@
       {
         "panes": 5,
         "action": "send",
-        "zMux": {
+        "ruwac": {
           "n": 30,
           "median_ms": 1.324514,
           "p95_ms": 1.421452,
@@ -421,7 +421,7 @@
       {
         "panes": 5,
         "action": "capture",
-        "zMux": {
+        "ruwac": {
           "n": 30,
           "median_ms": 1.288636,
           "p95_ms": 1.380685,
@@ -501,7 +501,7 @@
       {
         "panes": 20,
         "action": "list",
-        "zMux": {
+        "ruwac": {
           "n": 30,
           "median_ms": 1.4090025000000002,
           "p95_ms": 1.506321,
@@ -581,7 +581,7 @@
       {
         "panes": 20,
         "action": "send",
-        "zMux": {
+        "ruwac": {
           "n": 30,
           "median_ms": 1.2994215,
           "p95_ms": 1.432833,
@@ -661,7 +661,7 @@
       {
         "panes": 20,
         "action": "capture",
-        "zMux": {
+        "ruwac": {
           "n": 30,
           "median_ms": 1.348369,
           "p95_ms": 1.517763,
@@ -741,7 +741,7 @@
       {
         "panes": 40,
         "action": "list",
-        "zMux": {
+        "ruwac": {
           "n": 30,
           "median_ms": 1.512258,
           "p95_ms": 1.623803,
@@ -821,7 +821,7 @@
       {
         "panes": 40,
         "action": "send",
-        "zMux": {
+        "ruwac": {
           "n": 30,
           "median_ms": 1.2936505,
           "p95_ms": 1.38379,
@@ -901,7 +901,7 @@
       {
         "panes": 40,
         "action": "capture",
-        "zMux": {
+        "ruwac": {
           "n": 30,
           "median_ms": 1.352671,
           "p95_ms": 1.44756,
@@ -1028,9 +1028,9 @@
     "all_api_within_2x": true
   },
   "startup": {
-    "run_directory": "/app/zMux/evidence/startup-6z__h0wu",
+    "run_directory": "evidence/startup-6z__h0wu",
     "daemon_start_to_health": {
-      "zMux": {
+      "ruwac": {
         "n": 30,
         "median_ms": 5.701401000000001,
         "p95_ms": 6.348428,
@@ -1143,7 +1143,7 @@
       ]
     },
     "observer_granularity_ms": 5,
-    "note": "zMux health only; tmux new-session creates a cat child then list-sessions; startup definitions differ; warm page cache, not cold filesystem",
+    "note": "ruwac health only; tmux new-session creates a cat child then list-sessions; startup definitions differ; warm page cache, not cold filesystem",
     "binary_sha256": "c6c31c4edde232453b0c405d1a43fc0f7359ee83fa4d7918c0be0a2abfb00ba6"
   }
 }

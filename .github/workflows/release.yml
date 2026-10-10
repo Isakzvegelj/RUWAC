@@ -1,0 +1,45 @@
+name: Source prerelease
+on:
+  push:
+    tags:
+      - 'v*-beta.*'
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Verify public source and tag
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          python3 scripts/public-files.py --tracked
+          python3 - <<'PYCODE'
+          import os, re, tomllib
+          from pathlib import Path
+          tag = os.environ['RELEASE_TAG']
+          version = tomllib.loads(Path('ruwac/Cargo.toml').read_text())['workspace']['package']['version']
+          assert re.fullmatch(r'v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+', tag)
+          assert tag == 'v' + version, 'Tag and package version differ'
+          PYCODE
+      - name: Publish source prerelease
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          if ! gh release view "$RELEASE_TAG" --json url >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" --verify-tag --prerelease \
+              --title "RUWAC $RELEASE_TAG" --notes-file RELEASE-NOTES.md
+          fi
+          gh release view "$RELEASE_TAG" --json url,isPrerelease,tagName

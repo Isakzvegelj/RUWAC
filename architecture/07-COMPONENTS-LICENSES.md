@@ -13,6 +13,6 @@ Direct crates are pinned in Cargo.toml; Cargo.lock pins transitives and registry
 | sha2 | 0.10.9 | MIT OR Apache-2.0 | PNG receipt |
 | png | 0.18.0 | MIT OR Apache-2.0 | PNG validation |
 
-Verify licenses from the downloaded registry manifests and preserve dependency notices before binary distribution. No source from ttmux, cmux, Ghostty or either existing zmux repository is incorporated. cmux's Cargo license is not assumed to override its root/cloud terms. This document records declared component terms, not legal clearance or a license grant for newly authored zMux code.
+Verify licenses from the downloaded registry manifests and preserve dependency notices before binary distribution. No source from ttmux, cmux, Ghostty or either existing zmux repository is incorporated. cmux's Cargo license is not assumed to override its root/cloud terms. This document records declared component terms, not legal clearance or a license grant for newly authored ruwac code.
 
 Primary references: [Alacritty source](https://github.com/alacritty/alacritty), [portable-pty source](https://github.com/wezterm/wezterm/tree/main/pty), [Tokio](https://github.com/tokio-rs/tokio), [vte](https://github.com/alacritty/vte).

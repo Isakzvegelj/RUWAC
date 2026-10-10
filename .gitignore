@@ -47,3 +47,14 @@ evidence/
 .cargo/
 .tmp/
 .build/
+
+/build
+/release.sh
+
+/reuse/
+
+/zmux/
+
+/build.sh
+/release.sh
+

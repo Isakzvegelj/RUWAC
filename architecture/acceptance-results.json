@@ -1,6 +1,6 @@
 {
-  "run_directory": "/app/zMux/evidence/spike-4jw0njyz",
-  "binary": "/app/zMux/target/debug/zmux",
+  "run_directory": "evidence/spike-4jw0njyz",
+  "binary": "target/debug/ruwac",
   "binary_sha256": "3e27e9aa7d01ceb23604e12d1b8793fc0d8cd8c418ded19750f16017ac7ed17f",
   "server_exit": 0,
   "results": [
@@ -719,7 +719,7 @@
         "bytes": 76,
         "height": 2,
         "mime": "image/png",
-        "path": "/app/zMux/evidence/spike-4jw0njyz/stage/820d7455911c4b668017a97cbd98b7bc.png",
+        "path": "evidence/spike-4jw0njyz/stage/820d7455911c4b668017a97cbd98b7bc.png",
         "sha256": "d434b065e245cf06ed44895f78f8a75f9e5b43d03d503a43e90212f232455312",
         "width": 2,
         "owned_stage_cleaned": true
