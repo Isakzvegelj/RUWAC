@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source_root="$(cd "$(dirname "$0")" && pwd)"
+build_root="${ZMUX_BUILD_ROOT:-/app/zMux}"
+case "${1:-check}" in
+  check) exec python3 "$source_root/scripts/public-files.py" --check ;;
+  test|release|sync) mode="$1" ;;
+  *) echo 'Usage: ./build check|sync|test|release' >&2; exit 2 ;;
+esac
+[[ "$build_root" == /app/* ]] || { echo 'Build workspace must be under /app.' >&2; exit 2; }
+python3 "$source_root/scripts/public-files.py" --check
+mkdir -p "$build_root"
+build_root="$(cd "$build_root" && pwd -P)"
+[[ "$build_root" == /app/* ]] || { echo 'Unsafe build workspace.' >&2; exit 2; }
+if [[ "$source_root" != "$build_root" ]]; then
+  inventory="$(mktemp)"
+  trap 'rm -f "$inventory"' EXIT
+  python3 "$source_root/scripts/public-files.py" > "$inventory"
+  bridge="${ZMUX_COPY_BRIDGE:-/oclaw/.local/share/0rig/tools/rsyn}"
+  [[ -x "$bridge" ]] || { echo 'Set ZMUX_COPY_BRIDGE to the configured local source-copy command.' >&2; exit 2; }
+  # The node's interactive alias carries a network-only password-file option.
+  # Local copy explicitly selects the bridge's installed executable interface.
+  ORIG_RSYN_EXECUTABLE="${ORIG_RSYN_EXECUTABLE:-/usr/bin/rsync}" "$bridge" -ac --files-from="$inventory" "$source_root/" "$build_root/"
+fi
+[[ "$mode" == sync ]] && exit 0
+cd "$build_root/zmux"
+export CARGO_TARGET_DIR="$build_root/target"
+export CARGO_HOME="${ZMUX_CARGO_HOME:-$build_root/.cargo}"
+export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-2}"
+export TMPDIR="$build_root/.tmp"
+mkdir -p "$TMPDIR" "$build_root/evidence"
+[[ -f Cargo.lock ]] || { echo 'Cargo.lock required; dependency updates are explicit.' >&2; exit 2; }
+if [[ "$mode" == test ]]; then
+  cargo test --locked --workspace
+  cargo build --locked
+  PYTHONDONTWRITEBYTECODE=1 python3 tests/integration/spike.py --binary "$CARGO_TARGET_DIR/debug/zmux" --evidence "$build_root/evidence"
+else
+  cargo build --release --locked
+fi
