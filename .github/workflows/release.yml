@@ -1,12 +1,14 @@
 name: Source prerelease
 on:
   push:
+    branches:
+      - main
     tags:
       - 'v*-beta.*'
 permissions:
   contents: read
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ github.sha }}
   cancel-in-progress: false
 jobs:
   release:
@@ -19,9 +21,17 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
+      - name: Resolve controller-assigned release tag
+        run: |
+          tag="$(python3 - <<'PYCODE'
+          import tomllib
+          from pathlib import Path
+          print('v' + tomllib.loads(Path('ruwac/Cargo.toml').read_text())['workspace']['package']['version'])
+          PYCODE
+          )"
+          test "$(git rev-parse "$tag^{commit}")" = "$(git rev-parse HEAD)"
+          echo "RELEASE_TAG=$tag" >> "$GITHUB_ENV"
       - name: Verify public source and tag
-        env:
-          RELEASE_TAG: ${{ github.ref_name }}
         run: |
           python3 scripts/public-files.py --tracked
           python3 - <<'PYCODE'
@@ -36,10 +46,31 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
-          RELEASE_TAG: ${{ github.ref_name }}
         run: |
           if ! gh release view "$RELEASE_TAG" --json url >/dev/null 2>&1; then
             gh release create "$RELEASE_TAG" --verify-tag --prerelease \
               --title "RUWAC $RELEASE_TAG" --notes-file RELEASE-NOTES.md
           fi
           gh release view "$RELEASE_TAG" --json url,isPrerelease,tagName
+      - name: Recover missing earlier source prerelease pages
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          for tag in $(git tag --list 'v*-beta.*' --sort=v:refname); do
+            git merge-base --is-ancestor "$tag^{commit}" HEAD || continue
+            gh release view "$tag" --json url >/dev/null 2>&1 && continue
+            export RECOVERY_TAG="$tag"
+            python3 - <<'PYCODE'
+          import os, re, subprocess, tomllib
+          tag = os.environ['RECOVERY_TAG']
+          assert re.fullmatch(r'v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+', tag)
+          content = subprocess.check_output(['git', 'show', tag + ':ruwac/Cargo.toml']).decode()
+          assert tag == 'v' + tomllib.loads(content)['workspace']['package']['version']
+          PYCODE
+            notes="$(mktemp)"
+            git show "$tag:RELEASE-NOTES.md" > "$notes"
+            gh release create "$tag" --verify-tag --prerelease --latest=false \
+              --title "RUWAC $tag" --notes-file "$notes"
+            rm -f "$notes"
+          done

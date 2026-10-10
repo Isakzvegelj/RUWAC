@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v0.1.0-beta.2 — 2026-10-10 — Prerelease
+
+- Recover missing GitHub source prerelease pages with a main-branch release trigger and validated earlier-tag recovery.
+
 ## v0.1.0-beta.1 — 2026-10-10 — Prerelease
 
 - Add separately compiled Rust GTK4/adwaita frontend, canonical renderer and bounded authenticated workers.
