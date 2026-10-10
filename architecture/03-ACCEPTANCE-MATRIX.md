@@ -1,5 +1,8 @@
 # Acceptance evidence
 
+Current desktop interaction and embedded IronRDP state is recorded in [the acceptance report](../spec/RUWAC_ACCEPTANCE_STATUS.md) and [current architecture decisions](../spec/RUWAC_ARCHITECTURE_ADR.md). Earlier measurements and design limits below are historical evidence.
+
+
 Canonical real-daemon run: `evidence/spike-4jw0njyz/acceptance.json`; full unit/build log: `evidence/build-test-complete.log`. Seven focused Rust tests passed. All eleven integration groups passed. Earlier harness failure (Python function shadowed a module) is retained and excluded from product failures. Binary hashes and immutable report links are in [evidence-index.json](evidence-index.json); portable receipt copy: [acceptance-results.json](acceptance-results.json).
 
 | Case | Status | Observed proof / limits |

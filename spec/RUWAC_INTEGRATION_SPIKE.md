@@ -1,35 +1,14 @@
-# Native Rust implementation and evidence — v3-native-20261010
+# RUWAC native integration evidence
 
-Round `v3-native-20261010`, 2026-10-10. The implementation was validated as a local engineering candidate. Subsequent owner authorization requires tagged source prerelease publication through the project build/release workflow; runtime promotion and RPM qualification remain separate. Original candidate reports are preserved privately in build results.
+Desktop interaction and embedded RDP increment, 2026-10-10. Earlier reports are retained privately; this report supersedes their current-state claims.
+Compiled desktop source now includes interactive copy/search, native chooser and command entry, persistent nested splits, zoom, mouse motion/modifier/legacy routing and locked per-client PNG staging namespaces. A real embedded IronRDP tab connects through verified TLS/NLA and renders decoded framebuffer updates in-process.
 
-Implemented `ruwac/desktop` with compiled Rust GTK4/libadwaita widgets, Adwaita reorderable tabs, canonical Pango/Cairo terminal cells, focused panes, native key/drag/click/wheel controllers, resize, bounded asynchronous workers and detach-preserving close. Python GI remains only the old oracle and independent generated clipboard peer. CLI gui starts the compiled executable.
+Validation executes the existing 17 headless unit tests, 11 integration groups (including 100 startup races), three additional real-daemon state groups and three desktop units. Desktop units include crash-time staging reclamation, pointer transform geometry and real loopback TLS negotiation: an untrusted certificate is rejected, while an explicitly trusted CA reaches NLA before the intentionally incomplete mock closes. This does not test real credentials or authenticated desktop frames.
 
-Implemented GDK CLIPBOARD and PRIMARY request paths, actual Unicode text streams, independent internal Screen buffer, metadata transfer tickets with focus/generation cancellation, disabled transport policy and image/png staging. Large PNG fixture transfers outside JSON; 64 MiB encoded/decoded allocation limits, 4096² dimensions, safe file modes, SHA-256 and cancellation/cleanup were exercised. The Stage clipboard PNG button is an explicit staging action, not agent delivery.
+Native compositor fixture uses an independent real GDK peer, generated clipboard content and compiled GTK callbacks. It covers 200 exact input switches, window creation/navigation, native Vim Unicode file save, less end-of-file navigation, htop exit, split/zoom, keyboard mark/internal copy/paste/search, mouse enabled/disabled routing, text 10 KiB/1 MiB, PNG 64-square/1440p, cap/cancel/cleanup and asynchronous delayed IPC. Embedded-frame rendering is explicitly synthetic. No owner clipboard is read.
 
-Canonical selection is copied through a separate GDK consumer. Terminal Shift+drag selects instead of reporting mouse; normal clicks/wheel report SGR only when requested and focused, with pane-relative coordinates and daemon mode recheck. Legacy X10/UTF-8 mouse, hover-only motion modes, modifier-rich mouse, full AltGr/IME/accessibility and complete Screen compatibility remain unqualified. Existing bounded history capture is searchable in a native text view; selected history can be copied to the internal buffer with Enter. Physical drag, full history-search interaction and RDP key routing are not accepted by synthetic tests alone.
+Failed exploratory fixture receipts remain retained alongside successful receipts. The owned compositor has a real Wayland/GDK transport but synthetic user input. Physical keys, touchpad gestures and real remote frames are not certified by it. Exact commands, executable hashes, environment, snapshots, test logs and source inventory live in the private desktop-interaction results receipt.
 
-Native callback cards passed c/n/p/0, pane Tab and literal nested Ctrl+A. Numeric 0–9 and window listing use daemon discovery; horizontal S uses existing two-pane limits. Vertical | and : command prompt remain explicit gaps; help reports them. No second parser or PTY lifecycle was imported.
+Physical GNOME keyboard/touchpad/PRIMARY acceptance is unqualified. Weston does not provide PRIMARY. Real authenticated RDP requires an explicitly authorized endpoint, username, Secret Service profile and trusted server certificate/CA; none is designated. RDP CLIPRDR, dynamic remote resizing, clipboard image attachment acknowledgement, IME, accessible terminal semantics and RPM distribution remain unfinished. TUI copy remains bounded capture rather than the desktop interactive copy UI. Foreground/EOF terminal mouse and alternate-screen state reset is implemented; restoration of termios after an abruptly killed child is not certified. Daemon or host failure still loses in-memory sessions.
 
-Real Weston native fixture: two session tabs and three panes, 200 switches, key-handler bytes, SGR enable/disable, 1 MiB paste, delayed IPC/backpressure, clipboard MIME/size/hash, PNG/negative caps/cancellation and close/reattach. A separate GDK process supplies/consumes generated payloads. A valid synthetic input serial is needed for compositor clipboard ownership; fake-seat diagnostics are not accepted as cross-process proof. PRIMARY failed because the Weston registry exposes no primary-selection manager. Owned live GNOME smoke passed the previously stalled tab-switch case with synthetic callbacks; clipboard operations were excluded.
-
-Regression: 15 unit tests, all 11 real-daemon groups including 100 startup races, named CLI and isolated Vim/less/htop. Headless dependencies remain graphical-free. Performance script retested current and preserved previous candidates against tmux, 30 samples per action/count; host noise disclosed in acceptance report.
-
-Exact optimized SHA-256:
-
-- headless: `e65701ddaa7ae7e694b0c34c4945530d2389d5fb050cf14fb72a3e4392bf9c56`
-- desktop: `77361f9a1d1e3baac69c650f1995bcf30bf7da43072b1d3ac3384bcdbee4ff03`
-
-Private local entrypoints:
-
-```sh
-./build --release --test --desktop
-./build --debug --desktop
-./build.sh --help
-./release.sh --help
-```
-
-`RUWAC_CARGO_HOME` is recorded in the private command receipt for this node. Compilers run only in the registered build binding through the existing source bridge. GTK/GLib system development headers are required only for desktop builds.
-
-Candidate bundle: `artifacts/ruwac-v3-native`; launch `run serve` in one terminal and `run gui` in another. Use Ctrl+A S for a horizontal split. `run --version` verifies the retained package identity. Closing GUI keeps the demo daemon/shells alive; `run rpc daemon.stop` ends only that bundle's demo socket. No stable pointer or installation is modified. This is a local development bundle, not an RPM, release or complete desktop application.
-
-Logs, source manifests, exact paths/tool versions/dependency graphs, previous immutable receipts, synthetic PNGs and all pass/fail diagnostics remain under build results/evidence. Current receipt links each executed check to its tested binaries. Abrupt shutdown cleanup, full gesture/keyboard cards, native application-mode GUI cards and physical PRIMARY/browser/editor persistence remain the next input qualification work.
+Final optimized native receipts: 21 PASS/one compositor PRIMARY blocker on Weston, nine PASS GNOME smoke cards without clipboard reads. A real GUI SIGKILL then restart reclaimed abandoned PNG staging while preserving the same daemon-owned PTYs. Native GTK divider signals and search pass. GNOME exposed GtkTextView implicit PRIMARY participation; removing its buffer selection-clipboard registration fixed the search-selection loss and protected independent internal selection. Delayed search notification was also replaced by immediate editable change handling.

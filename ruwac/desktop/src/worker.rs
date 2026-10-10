@@ -2,6 +2,7 @@
 use ruwac_protocol::{read_frame, request, write_frame};
 use serde_json::{Value, json};
 use std::{
+    collections::VecDeque,
     fs, io,
     os::unix::{
         fs::{FileTypeExt, MetadataExt},
@@ -76,12 +77,16 @@ impl Rpc {
 pub enum Command {
     Rpc(String, Value),
     Paste(String, String),
+    History(String),
+    Close,
 }
 impl Command {
     fn bytes(&self) -> usize {
         match self {
             Self::Rpc(_, v) => v.to_string().len(),
             Self::Paste(_, s) => s.len(),
+            Self::History(s) => s.len(),
+            Self::Close => 0,
         }
     }
 }
@@ -89,7 +94,7 @@ impl Command {
 pub struct State {
     pub frame: Option<Value>,
     pub error: Option<String>,
-    pub reply: Option<(String, Value)>,
+    pub reply: VecDeque<(String, Value)>,
     pub acknowledgements: u64,
     pub coalesced: u64,
 }
@@ -125,6 +130,43 @@ impl Worker {
                         let size = cmd.bytes();
                         let result = match cmd {
                             Command::Rpc(m, p) => rpc.call(&m, p).map(|v| (m, v)),
+                            Command::Close => {
+                                halt.store(true, Ordering::Relaxed);
+                                Ok(("close".into(), json!({})))
+                            }
+                            Command::History(pane) => {
+                                let mut text = String::new();
+                                let mut offset = 0;
+                                let mut total = 0;
+                                let mut truncated = false;
+                                let mut epoch = None;
+                                let result = (|| -> io::Result<()> {
+                                    loop {
+                                        let page = rpc.call(
+                                            "pane.history",
+                                            json!({"pane":pane,"offset":offset,"lines":500,"epoch":epoch}),
+                                        )?;
+                                        epoch = page["epoch"].as_u64();
+                                        let part = page["text"].as_str().unwrap_or("");
+                                        let next = page["next_offset"].as_u64().unwrap_or(0);
+                                        total = page["total_lines"].as_u64().unwrap_or(0);
+                                        if text.len() + part.len() > 8 * 1024 * 1024 {
+                                            truncated = true;
+                                            break;
+                                        }
+                                        text.push_str(part);
+                                        if next >= total
+                                            || next <= offset
+                                            || halt.load(Ordering::Relaxed)
+                                        {
+                                            break;
+                                        }
+                                        offset = next;
+                                    }
+                                    Ok(())
+                                })();
+                                result.map(|()|("pane.history".into(),json!({"pane":pane,"text":text,"total_lines":total,"truncated":truncated})))
+                            }
                             Command::Paste(pane, text) => {
                                 let mut rest = text.as_str();
                                 let mut sent = 0;
@@ -164,12 +206,21 @@ impl Worker {
                         match result {
                             Ok(reply) => {
                                 s.acknowledgements += 1;
-                                if reply.0 == "pane.capture"
+                                if reply.0 == "pane.history"
+                                    || reply.0.starts_with("window.")
+                                    || reply.0 == "pane.create"
+                                    || reply.0 == "pane.capture"
                                     || reply.0 == "buffer.get"
                                     || reply.0 == "paste"
                                     || reply.0 == "window.list"
                                 {
-                                    s.reply = Some(reply);
+                                    if s.reply.len() < 32 {
+                                        s.reply.push_back(reply);
+                                    } else {
+                                        s.error = Some(
+                                            "Reply queue full; command response unavailable".into(),
+                                        );
+                                    }
                                 }
                             }
                             Err(e) => s.error = Some(format!("Input/command delivery failed: {e}")),
@@ -233,7 +284,11 @@ impl Worker {
         Ok(())
     }
     pub fn close(&self) {
-        self.stop.store(true, Ordering::Relaxed);
+        if self.tx.try_send(Command::Close).is_err() {
+            self.stop.store(true, Ordering::Relaxed);
+            self.state.lock().unwrap().error =
+                Some("Detach queue saturated; pending input may be undelivered".into());
+        }
     }
 }
 impl Drop for Worker {

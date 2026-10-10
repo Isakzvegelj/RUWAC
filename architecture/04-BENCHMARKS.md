@@ -1,5 +1,8 @@
 # Benchmark evidence
 
+Current desktop interaction and embedded IronRDP state is recorded in [the acceptance report](../spec/RUWAC_ACCEPTANCE_STATUS.md) and [current architecture decisions](../spec/RUWAC_ARCHITECTURE_ADR.md). Earlier measurements and design limits below are historical evidence.
+
+
 CVF, Fedora Rust 1.98.1, tmux 3.7c, kernel 7.2.9-200.fc44.x86_64. Historical pre-rename optimized binary SHA-256 `b117dc99981695a658e2b1c7a2b02774ed70eba5e2b42f92aa5cb94d98f886b3`. Six virtual CPUs. Before/after machine CPU busy fractions were 0.75%/0.79%; both meet the declared <20% idle qualification. These snapshots do not eliminate all VM scheduling noise. No other owned build ran during measurements.
 
 30 samples per operation/size, three warmups, alternating product order. Both use real subprocess CLI RTT against isolated Unix sockets and identical non-executing Python raw receivers. Pane counts are windows with one pane each. Send acknowledges queue admission. Capture is bounded canonical text; tmux has different text/format semantics. This measures process/API latency, not physical display latency.

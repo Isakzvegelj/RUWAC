@@ -1,4 +1,6 @@
 mod clipboard;
+mod rdp;
+mod staging;
 mod view;
 mod worker;
 use adw::prelude::*;
@@ -102,6 +104,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             return Err("staging directory must be owned and 0700".into());
         }
     }
+    let stage_guard = stage.as_ref().map(|p| staging::Stage::new(p)).transpose()?;
+    stage = stage_guard.as_ref().map(|s| s.path.clone());
     let app = adw::Application::builder()
         .application_id("si.z4.ruwac.desktop")
         .flags(gtk::gio::ApplicationFlags::NON_UNIQUE)
@@ -115,6 +119,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
   broker.borrow_mut().set_desktop_disabled(clipboard_disabled);
   let b=broker.clone();gtk::prelude::WidgetExt::display(&window).clipboard().connect_changed(move|_|b.borrow_mut().local_copy());
   let b=broker.clone();gtk::prelude::WidgetExt::display(&window).primary_clipboard().connect_changed(move|_|b.borrow_mut().local_copy());
+  let rdp_views:Rc<RefCell<Vec<Rc<rdp::RdpView>>>>=Rc::new(RefCell::new(Vec::new()));
+  let rdp_button=gtk::Button::with_label("New RDP tab");header.pack_start(&rdp_button);let rv=rdp_views.clone();let t=tabs.clone();let b=broker.clone();rdp_button.connect_clicked(move|_|{let v=rdp::RdpView::new(b.clone());let p=t.append(&v.root);p.set_title("RDP · embedded IronRDP");rv.borrow_mut().push(v.clone());t.set_selected_page(&p);v.focus();});
+  let rv=rdp_views.clone();tabs.connect_selected_page_notify(move|t|{if let Some(page)=t.selected_page(){for v in rv.borrow().iter(){if page.child()==v.root{v.focus();}}}});
+  let rv=rdp_views.clone();tabs.connect_close_page(move|_,page|{for v in rv.borrow().iter(){if page.child()==v.root{v.close();}}glib::Propagation::Proceed});
+  let rv=rdp_views.clone();window.connect_close_request(move|_|{for v in rv.borrow().iter(){v.close();}glib::Propagation::Proceed});
   let owned_images:Rc<RefCell<Vec<PathBuf>>>=Rc::new(RefCell::new(Vec::new()));
   let clear=gtk::Button::with_label("Clear message");header.pack_end(&clear);let vc=all.clone();let tc=tabs.clone();clear.connect_clicked(move|_|{if let Some(page)=tc.selected_page(){for v in vc.borrow().iter(){if page.child()==v.root{*v.warning.borrow_mut()=None;v.status.set_text("Delivery warning acknowledged");}}}});
   let image_button=gtk::Button::with_label("Stage clipboard PNG");header.pack_end(&image_button);
@@ -129,7 +138,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
   glib::timeout_add_local(Duration::from_millis(16),move||{
    tick.set(tick.get()+1);let now=Instant::now();max_gap.set(max_gap.get().max(now.duration_since(last.replace(now)).as_millis()));for v in vv.borrow().iter(){v.update();}
    if let Some(dir)=fixture.as_ref(){let request=dir.join("gui-request.json");if let Ok(bytes)=std::fs::read(&request){if let Ok(q)=serde_json::from_slice::<Value>(&bytes){let seq=q["seq"].as_u64().unwrap_or(0);if seq>sequence.get(){sequence.set(seq);let index=q["view"].as_u64().unwrap_or(0)as usize;let view=vv.borrow().get(index).cloned();let reply_dir=dir.clone();let reply=move|result:Value|{let path=reply_dir.join("gui-response.json");let temp=reply_dir.join("gui-response.tmp");let _=std::fs::write(&temp,json!({"seq":seq,"result":result}).to_string());let _=std::fs::rename(temp,path);};if let Some(v)=view{match q["action"].as_str().unwrap_or(""){
-    "switch"=>{let page=tabs.page(&v.root);tabs.set_selected_page(&page);if let Some(pane)=q["pane"].as_str(){*v.target.borrow_mut()=pane.into();v.command("pane.select",json!({"pane":pane}));}v.focus();if let Some(text)=q["text"].as_str(){for c in text.chars(){let key=unsafe{glib::translate::from_glib(gdk::ffi::gdk_unicode_to_keyval(c as u32))};v.key(key,gdk::ModifierType::empty());}}reply(json!({"queued":true}));},
+    "switch"=>{v.show_terminal();let page=tabs.page(&v.root);tabs.set_selected_page(&page);if let Some(pane)=q["pane"].as_str(){*v.target.borrow_mut()=pane.into();v.command("pane.select",json!({"pane":pane}));}v.focus();if let Some(text)=q["text"].as_str(){for c in text.chars(){let key=unsafe{glib::translate::from_glib(gdk::ffi::gdk_unicode_to_keyval(c as u32))};v.key(key,gdk::ModifierType::empty());}}reply(json!({"queued":true}));},
+    "rdp-open"=>{rdp_button.emit_clicked();if let Some(r)=rdp_views.borrow().last(){r.fixture_frame();}reply(json!({"tabs":tabs.n_pages(),"backend":"IronRDP","synthetic_frame":true}));},
+    "command"=>{v.run_command(q["text"].as_str().unwrap_or(""));reply(json!({"queued":true}));},
+    "divider-drag"=>{reply(v.fixture_root_drag());},
+    "search"=>{v.search.set_text(q["text"].as_str().unwrap_or(""));reply(json!({"queued":true}));},
+    "copy-state"=>{let b=v.copy.buffer();let text=v.selected();reply(json!({"selection":text,"visible":v.copy.is_mapped(),"search":v.search.text().as_str(),"contains_ready":b.text(&b.start_iter(),&b.end_iter(),true).contains("RUWAC"),"chars":b.char_count(),"cursor":b.iter_at_mark(&b.get_insert()).offset()}));},
     "key"=>{if let Some(key)=q["key"].as_str().and_then(gdk::Key::from_name){let mods=gdk::ModifierType::from_bits_truncate(q["mods"].as_u64().unwrap_or(0)as u32);v.key(key,mods);}reply(json!({"handler":"synthetic GTK callback"}));},
     "copy"=>{v.select_fixture();v.copy_clipboard(q["primary"]==true);reply(json!({"offered":true}));},
     "paste"=>{v.paste_clipboard(q["primary"]==true);reply(json!({"async":true}));},
@@ -141,7 +155,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     "grid-copy"=>{v.select_grid_fixture();v.copy_clipboard(false);reply(json!({"offered":true}));},
     "cancel"=>{v.broker.borrow_mut().local_copy();reply(json!({"epoch":v.broker.borrow().epoch()}));},
     "snapshot"=>{let paint=gtk::WidgetPaintable::new(Some(&window));let snap=gtk::Snapshot::new();paint.snapshot(&snap,window.width()as f64,window.height()as f64);if let(Some(node),Some(renderer))=(snap.to_node(),window.renderer()){let texture=renderer.render_texture(&node,None);let _=texture.save_to_png(dir.join("native-rust.png"));}reply(json!({"image":"native-rust.png"}));},
-    "inspect"=>reply(json!({"display":v.area.display().type_().name(),"active":window.is_active(),"tabs":tabs.n_pages(),"drawn":vv.borrow().iter().map(|v|v.drawn.get()).collect::<Vec<_>>(),"panes":vv.borrow().iter().map(|v|v.frame.borrow().as_ref().and_then(|f|f["panes"].as_array()).map(|a|a.len()).unwrap_or(0)).collect::<Vec<_>>(),"ticks":tick.get(),"max_tick_gap_ms":max_gap.get(),"acknowledgements":v.worker.state.lock().unwrap().acknowledgements,"status":v.status.text().to_string()})),
+    "inspect"=>reply(json!({"display":v.area.display().type_().name(),"active":window.is_active(),"tabs":tabs.n_pages(),"layout":v.frame.borrow().as_ref().map(|f|f["layout"].clone()),"zoom":v.frame.borrow().as_ref().map(|f|f["zoom"].clone()),"target":*v.target.borrow(),"drawn":vv.borrow().iter().map(|v|v.drawn.get()).collect::<Vec<_>>(),"panes":vv.borrow().iter().map(|v|v.frame.borrow().as_ref().and_then(|f|f["panes"].as_array()).map(|a|a.len()).unwrap_or(0)).collect::<Vec<_>>(),"ticks":tick.get(),"max_tick_gap_ms":max_gap.get(),"acknowledgements":v.worker.state.lock().unwrap().acknowledgements,"status":v.status.text().to_string()})),
     "quit"=>{for v in vv.borrow().iter(){v.close();}for path in owned.borrow_mut().drain(..){let _=std::fs::remove_file(path);}reply(json!({"detached":true}));app.quit();return glib::ControlFlow::Break;},
     _=>reply(json!({"error":"unknown fixture action"}))
    }}else{reply(json!({"error":"view not found"}));}}}}}

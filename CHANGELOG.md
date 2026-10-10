@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## v0.1.2 — 2026-10-10 — Prerelease
+
+- Complete native Screen navigation, keyboard marking/search, persistent nested horizontal/vertical splits, ratio resize and zoom; retain daemon-owned sessions.
+- Add bounded 50,000-line paged scrollback, coherent history checks, legacy/motion mouse routing and crash-safe PNG staging.
+- Embed an asynchronous IronRDP tab with verified TLS, Secret Service reference, native framebuffer, scaling and input/send-key actions; real-host and CLIPRDR acceptance remain open.
+- Validate native Vim/less/htop handlers, independent GDK clipboard transfers, lifecycle, startup races and local TLS trust behavior.
+
 ## v0.1.1 — 2026-10-10 — Prerelease
 
 - Correct release numbering to bare numeric versions: odd minor beta, even minor stable; preserve earlier suffix tags as historical publications.

@@ -70,6 +70,43 @@ try:
   prefix('0');spike.eventually(lambda:active()==one['window']);time.sleep(.2);command('gui','switch',view=0,pane=targets[0])
   return {'native_callback_cards':['Ctrl+A Ctrl+A','Ctrl+A Tab','Ctrl+A c','Ctrl+A n','Ctrl+A p','Ctrl+A 0'],'window_creation_and_cycles':'PASS','nested_control_byte':'exact','copy_search_and_physical_keys':'PARTIAL / UNTESTED'}
  case('GUI-R5-Screen',screen_keys)
+ def daily_interaction():
+  command('gui','switch',view=0,pane=targets[0]);time.sleep(.2)
+  def panes():return [p for p in rpc('pane.list',{'session':one['session']}) if p['window']==one['window']]
+  old={p['id'] for p in panes()};command('gui','command',text='split vertical')
+  new=spike.eventually(lambda:next((p for p in panes() if p['id'] not in old),None));time.sleep(.3)
+  assert len(panes())==3
+  state=command('gui','inspect');assert state['layout']['orientation']=='horizontal';assert state['layout']['first']['orientation']=='vertical',state
+  command('gui','switch',view=0,pane=new['id'],text="printf 'GUI_SPLIT_OK\\n'\r")
+  spike.eventually(lambda:'GUI_SPLIT_OK' in rpc('pane.capture',{'pane':new['id']})['text'])
+  print('DIVIDER',command('gui','divider-drag'),flush=True);spike.eventually(lambda:command('gui','inspect')['layout']['ratio']>500)
+  command('gui','command',text='zoom');spike.eventually(lambda:command('gui','inspect')['panes'][0]==1)
+  command('gui','command',text='zoom');spike.eventually(lambda:command('gui','inspect')['panes'][0]==3)
+  before_pid=new['pid'];rpc('pane.close',{'pane':new['id']});command('gui','switch',view=0,pane=targets[0]);time.sleep(.3)
+  command('gui','command',text='copy');spike.eventually(lambda:command('gui','copy-state')['chars']>0)
+  command('gui','search',text='RUWAC');spike.eventually(lambda:command('gui','copy-state')['selection']=='RUWAC');command('gui','search',text='');time.sleep(.2)
+  command('gui','key',key='g');command('gui','key',key='space')
+  for _ in range(5):command('gui','key',key='Right')
+  selected=command('gui','copy-state')['selection'];assert selected=='RUWAC',selected
+  command('gui','key',key='Return');spike.eventually(lambda:rpc('buffer.get',{'session':one['session']})['text']=='RUWAC')
+  prior=files[0].read_bytes();command('gui','key',key='a',mods=4);command('gui','key',key='bracketright')
+  spike.eventually(lambda:files[0].read_bytes()==prior+b'RUWAC')
+  command('gui','command',text='unsupported');assert 'Unknown command' in command('gui','inspect')['status']
+  command('gui','switch',view=0,pane=targets[0]);return {'vertical_inside_horizontal':True,'zoom_restore':True,'native_keyboard_mark_selection':'RUWAC','internal_paste_exact':True,'new_shell_pid':before_pid,'unknown_command_visible':True,'events':'compiled GTK callbacks, synthetic keys'}
+ case('GUI-daily-interaction',daily_interaction)
+ def native_applications():
+  import shutil
+  details={}
+  def launch(argv):
+   w=rpc('window.create',{'session':one['session'],'argv':argv});index=next(i for i,x in enumerate(rpc('window.list',{'session':one['session']})) if x['id']==w['window']);command('gui','command',text='select '+str(index));spike.eventually(lambda:command('gui','inspect')['target']==w['pane']);return w
+  vim=shutil.which('vim');less=shutil.which('less');htop=shutil.which('htop');assert vim and less and htop,'Required native application fixtures missing'
+  out=root/'native-vim.txt';w=launch([vim,'-u','NONE','-i','NONE','-n',str(out)]);time.sleep(.3)
+  command('gui','switch',view=0,pane=w['pane'],text='iNative Vim ž界')
+  command('gui','key',key='Escape');command('gui','switch',view=0,pane=w['pane'],text=':wq');command('gui','key',key='Return');spike.eventually(lambda:out.exists() and out.read_text()=='Native Vim ž界\n');details['vim']='Exact Unicode file written through native handlers'
+  file=root/'native-less.txt';file.write_text(''.join(f'NATIVE_LESS_{n:05}\n' for n in range(5000)));w=launch([less,'-R',str(file)]);time.sleep(.3);command('gui','key',key='G');spike.eventually(lambda:'NATIVE_LESS_04999' in rpc('pane.capture',{'pane':w['pane']})['text']);command('gui','key',key='q');details['less']='Native G scroll and q exit'
+  w=launch([htop]);time.sleep(.5);assert rpc('pane.capture',{'pane':w['pane']})['text'].strip();command('gui','key',key='q');spike.eventually(lambda:next(p['ended'] for p in rpc('pane.list',{'session':one['session']}) if p['id']==w['pane']));details['htop']='Native q exited daemon-owned process'
+  command('gui','command',text='select 0');spike.eventually(lambda:command('gui','inspect')['target'] in targets[:2]);command('gui','switch',view=0,pane=targets[0]);return {'apps':details,'input':'compiled GTK callbacks; physical typing untested'}
+ case('GUI-native-applications',native_applications)
  def mouse():
   before=files[0].read_bytes();command('gui','mouse',view=0,x=15.0,y=15.0,button=0);time.sleep(.1);assert files[0].read_bytes()==before
   rpc('pane.sendText',{'pane':targets[0],'text':'/mouse-on/'});time.sleep(.3);command('gui','mouse',view=0,x=15.0,y=15.0,button=0);spike.eventually(lambda:files[0].read_bytes().endswith(b'\x1b[<0;2;1M'))
@@ -125,6 +162,19 @@ try:
   with spike.Client(sock) as c:
    c.call('session.attach',{'session':one['session'],'rows':30,'cols':90});c.call('client.resize',{'rows':34,'cols':94});frame=c.call('client.render');assert all(p['grid']['cols']==94 for p in frame['panes']);before=files[0].read_bytes();c.call('client.input',{'pane':targets[0],'kind':'keyboard','text':'AFTER_NATIVE'});spike.eventually(lambda:files[0].read_bytes()==before+b'AFTER_NATIVE');c.call('session.detach')
   tui=spike.Tui(binary,sock,one['session'],root/'reattach.pty');spike.eventually(lambda:b'\x1b[H\x1b[2J' in tui.data);tui.finish();return {'same_pids':pids,'tui_reattach':'PASS','resize':'PASS'}
+ def embedded_frame():
+  r=command('gui','rdp-open');assert r['tabs']==3 and r['backend']=='IronRDP';time.sleep(.2);command('gui','snapshot');assert (root/'native-rust.png').stat().st_size>1000
+  command('gui','switch',view=0,pane=targets[0]);return {'same_window_tabs':3,'native_framebuffer':'synthetic 320x180 draw','backend_compiled':'IronRDP','real_authenticated_host':'BLOCKED: endpoint, trusted certificate and RUWAC Secret Service reference required'}
+ if not a.no_clipboard:
+  def crash_cleanup():
+   global native
+   focus('peer');command('peer','set-png',file='fixture-64.png');time.sleep(.1);focus('gui');r=command('gui','read-image');assert 'path' in r,r;abandoned=Path(r['path']).parent;assert abandoned.exists()
+   native.kill();native.wait(timeout=5)
+   for pid in pids:os.kill(pid,0)
+   native=start([str(gui),'--socket',str(sock),'--session',one['session'],'--session',two['session'],'--fixture-dir',str(root),'--staging-dir',str(stage)],'gui-after-crash')
+   spike.eventually(lambda:command('gui','inspect').get('panes')==[2,1],15);assert not abandoned.exists(),'crashed namespace not reclaimed';return {'gui_termination':'SIGKILL','reclaimed_abandoned_png_namespace':True,'same_daemon_owned_pids':pids}
+  case('IMAGE-real-crash-cleanup',crash_cleanup)
+ case('RDP-embedded-frame',embedded_frame)
  case('GUI-R3',detach)
  assert not list(stage.iterdir()),'completed staging files not cleaned on GUI quit'
 finally:

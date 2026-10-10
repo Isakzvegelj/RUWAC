@@ -1,5 +1,8 @@
 # Implementation roadmap
 
+Current desktop interaction and embedded IronRDP state is recorded in [the acceptance report](../spec/RUWAC_ACCEPTANCE_STATUS.md) and [current architecture decisions](../spec/RUWAC_ARCHITECTURE_ADR.md). Earlier measurements and design limits below are historical evidence.
+
+
 The bounded slice and its measured gates determine whether to expand. Established tmux remains the fallback. No full replacement promise follows from one successful local run.
 
 | Milestone | Prerequisite | Work and exit evidence |

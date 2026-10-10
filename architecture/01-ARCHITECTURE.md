@@ -1,5 +1,8 @@
 # ruwac architecture and decisions
 
+Current desktop interaction and embedded IronRDP state is recorded in [the acceptance report](../spec/RUWAC_ACCEPTANCE_STATUS.md) and [current architecture decisions](../spec/RUWAC_ARCHITECTURE_ADR.md). Earlier measurements and design limits below are historical evidence.
+
+
 1. **PTY ownership:** portable-pty 0.9.0 opens real PTYs and spawns direct argv. The daemon owns master, input queue and child. Client detach never closes them. Process cleanup is limited to verified owned child groups; restart/reboot does not recover processes.
 2. **Terminal state:** alacritty_terminal 0.26.0 owns each pane's grid and capped 2,000-line history. Its vte parser consumes output. Clients receive canonical cell snapshots, not arbitrary escape replay. Graphics are unsupported. OSC 52 clipboard events are ignored; application capability replies return to that application's PTY.
 3. **Concurrency:** one bounded Tokio actor serializes session/window/pane state. Blocking PTY readers and writers run separately with bounded queues. Slow connections have frame and time limits. Spawn may briefly block the actor; benchmark before expansion.

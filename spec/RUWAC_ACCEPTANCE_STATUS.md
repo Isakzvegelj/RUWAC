@@ -1,47 +1,51 @@
-# Acceptance status — compiled native candidate
+# RUWAC acceptance — native daily interaction and embedded RDP
 
-Round `v3-native-20261010`, 2026-10-10. The implementation was validated as a local engineering candidate. Subsequent owner authorization requires tagged source prerelease publication through the project build/release workflow; runtime promotion and RPM qualification remain separate. Original candidate reports are preserved privately in build results.
+Desktop interaction increment, 2026-10-10. Previous reports and failed exploratory receipts remain preserved privately. This table distinguishes working compiled code from physical-desktop and real-host qualification.
 
-| Gate | Result | Executed evidence |
+| Gate | State | Evidence and limit |
 |---|---|---|
-| GUI-R1 | PASS | Compiled gtk4 0.11.5/adwaita 0.9.2, two tabs, three daemon-owned panes, native snapshot |
-| GUI-R2 | PASS | 200 tab/pane switches through native key handler, exact receiver bytes, no cross-pane input |
-| GUI-R3 | PASS | Same three PTY PIDs after close; independent TUI reattach, targeted input and resize |
-| GUI-R4 | PASS within fixture | 1 MiB async read/paste, 1-second delayed RPC, saturated bounded queue; UI keeps ticking |
-| GUI-R5 | PARTIAL | Native c/n/p/0/Tab/nested Ctrl+A cards PASS; full copy/search/gesture/app cards unqualified |
-| INPUT-R1 | PASS synthetic | SGR routing enabled; no disabled-mode leakage; physical touchpad remains untested |
-| CLIP-R1 | PASS native integration | Independent GDK peer, canonical and Unicode selection, exact text transfer |
-| CLIP-R2 | PARTIAL / BLOCKED PRIMARY | Internal/desktop separation PASS; Weston primary protocol unavailable |
-| CLIP-R3 | PASS tested scope | 10 KiB / 1 MiB payloads, delayed stale cancellation, disabled transport |
-| IMAGE-R1 | PASS staging | 64²/1440p encoded stream, SHA/dimensions/0600/caps/cancellation/cleanup |
-| CORE-R1 | PASS | 15 unit tests, 11 groups, 100 startup input races; named CLI and Vim/less/htop |
-| PERF-R1 | PARTIAL | 30 samples/cell at 1/5/20/40 panes; no observed 2× median regression, host not idle-qualified |
-| RDP-R0 | PARTIAL | Typed interface and synthetic 3-view focus tests only; no embedded RDP |
-| RELEASE-R0 | Numeric source release workflow | Bare numeric tag/package versions; odd minor beta, even minor stable; tested lane semantics through shared controller; allowlisted source and GitHub publication verified separately |
+| Core regression and security | PASS | 17 units, 11 integration groups, including 100 startup-input races; authenticated private socket, client-close/reattach and PNG caps |
+| Persistent layout/history/mouse API | PASS | Three added real-daemon groups: nested layout/ratio/zoom across reconnect, stale history rejection, exact SGR modifiers/X10/motion/disabled bytes |
+| Native terminal desktop | PASS fixture | Screen c/n/p/0/Tab/literal Ctrl-A, command errors, split/zoom, keyboard marking/internal paste, 200 exact target switches |
+| Native application input | PASS fixture | Real Vim Unicode file save, less last-page navigation and htop exit through compiled GTK handlers |
+| GDK text and PNG transport | PASS fixture | Separate GDK peer on isolated Weston, 10 KiB/1 MiB text, PNG 64-square/1440p, caps/cancel/cleanup; no owner clipboard read |
+| Crash-time PNG staging | PASS unit | Per-client locks preserve live namespaces and reclaim abandoned owned files; staging does not imply attachment |
+| PRIMARY / physical GNOME input | BLOCKED / UNQUALIFIED | Weston lacks PRIMARY; physical gestures/layouts/AltGr not exercised |
+| Embedded RDP | PARTIAL | Genuine IronRDP TLS/NLA/decoder integration and same-window native framebuffer compile; synthetic frame drawing and pointer transforms pass |
+| RDP TLS trust | PASS local integration | Real loopback RDP negotiation/TLS rejects unknown CA and reaches NLA with explicit trusted CA; mock intentionally ends before login |
+| Authenticated remote RDP / performance | BLOCKED | No designated endpoint, username, Secret Service profile and trusted certificate/CA fixture |
+| RDP CLIPRDR / dynamic remote resize | UNIMPLEMENTED | Existing focus broker boundary retained; no remote clipboard synchronization claim |
+| Abrupt-child termios restoration | UNQUALIFIED | Foreground/EOF resets mouse and alternate-screen state; raw termios recovery is not certified |
+| TUI interactive copy | PARTIAL | Existing bounded capture retained; new keyboard selection/search is desktop-only |
+| Packaged distribution / runtime promotion | BLOCKED | This increment uses source publication; qualified RPM pipeline not available |
 
-Latest native acceptance: `evidence/native-rust-ethkw0mc/acceptance.json` under the build binding, 17 PASS and one BLOCKED. Owned GNOME smoke: `evidence/native-rust-_s7tzm8p/acceptance.json`, five PASS, synthetic callbacks and no clipboard access. Final core receipt: `evidence/spike-xq84zbzw/acceptance.json`. Full command/log/hash inventory: `results/v3-native/candidate-receipt.json`. Earlier failed seat/focus/PRIMARY diagnostics remain retained. No physical keys, photon latency, real RDP or agent attachment is certified.
+The native fixture is actual compiled GTK4/libadwaita and real cross-process GDK Wayland clipboard transport with synthetic callbacks and generated payloads. It is not physical desktop acceptance. Synthetic embedded RDP rendering does not establish authenticated remote operation. Daemon-owned PTYs survive GUI detach/close; daemon/host failure still loses in-memory sessions.
 
-The 1 MiB clipboard read/paste pass recorded maximum 16 ms timer gap 49 ms across the fixture; this is main-loop responsiveness, not FPS or keystroke-to-photon latency. Worker queue-full errors remain visible until acknowledged. Image decode/hashing occurs outside GTK; stream writes are bounded 64 KiB local file writes, which are still synchronous disk operations and can delay a frame on unusually slow storage.
+Scrollback defaults to 50,000 lines, constrained by RUWAC_SCROLLBACK_MIB (approximate cell storage, default 256 MiB). History pages are capped at 500 lines/128 KiB, copy view at 8 MiB with visible truncation, internal buffer at 256 KiB and external desktop text at 1 MiB. Continuous output during paging can yield a visible STALE_HISTORY retry rather than incoherent content. Grid mouse selection across wrapped rows and physical divider gestures require further qualification.
 
-## Measured API RTT (milliseconds)
+Raw receipts, exact commands, hashes, environment, snapshots and retained failures are private build evidence in the desktop-interaction results. Public source contains no local build paths, prompts or private configuration. Release state is established by the existing release.sh workflow and verified remote refs, rather than inferred from this report.
 
-Latest repeat after fixture cleanup, same matched raw receiver workload, alternating RUWAC/tmux order, 30 real CLI process samples per cell. Host aggregate CPU was 28.6% before and 29.7% after; an earlier paired candidate/previous run was 21–31% busy. These are non-idle observations, not performance acceptance under a quiet host.
+## API benchmark
 
-| Panes | Action | RUWAC p50 / p95 | tmux p50 / p95 | Median ratio |
+Matched RUWAC/tmux receiver workload, 30 CLI samples per cell, alternating order, 1/5/20/40 panes. These are CLI round trips, not physical keyboard-to-photon measurements. The test host was not idle-qualified.
+
+| Panes | Action | RUWAC p50 / p95 ms | tmux p50 / p95 ms | Median ratio |
 |---|---|---|---|---|
-| 1 | list | 1.607 / 2.492 | 2.671 / 4.818 | 0.60 |
-| 1 | send | 1.598 / 3.468 | 2.731 / 4.420 | 0.58 |
-| 1 | capture | 1.611 / 3.090 | 2.861 / 4.960 | 0.56 |
-| 5 | list | 1.689 / 3.106 | 2.851 / 5.741 | 0.59 |
-| 5 | send | 1.548 / 3.251 | 2.599 / 4.336 | 0.60 |
-| 5 | capture | 1.662 / 3.410 | 2.766 / 4.847 | 0.60 |
-| 20 | list | 1.694 / 2.499 | 2.824 / 4.455 | 0.60 |
-| 20 | send | 1.664 / 3.431 | 2.742 / 3.984 | 0.61 |
-| 20 | capture | 1.807 / 4.514 | 2.864 / 5.190 | 0.63 |
-| 40 | list | 1.752 / 3.289 | 2.833 / 4.370 | 0.62 |
-| 40 | send | 1.520 / 3.451 | 2.631 / 4.417 | 0.58 |
-| 40 | capture | 1.658 / 2.544 | 2.649 / 4.689 | 0.63 |
+| 1 | list | 1.617 / 3.049 | 2.866 / 4.878 | 0.56 |
+| 1 | send | 1.574 / 3.196 | 2.767 / 4.015 | 0.57 |
+| 1 | capture | 1.703 / 2.857 | 2.694 / 5.496 | 0.63 |
+| 5 | list | 1.637 / 2.729 | 2.668 / 5.159 | 0.61 |
+| 5 | send | 1.644 / 2.919 | 2.889 / 5.290 | 0.57 |
+| 5 | capture | 1.598 / 3.634 | 2.736 / 4.942 | 0.58 |
+| 20 | list | 1.707 / 2.672 | 2.931 / 5.038 | 0.58 |
+| 20 | send | 1.582 / 3.486 | 2.723 / 5.250 | 0.58 |
+| 20 | capture | 1.868 / 4.021 | 3.311 / 5.288 | 0.56 |
+| 40 | list | 1.841 / 2.461 | 3.422 / 6.621 | 0.54 |
+| 40 | send | 1.536 / 2.934 | 2.743 / 4.629 | 0.56 |
+| 40 | capture | 1.599 / 3.596 | 2.646 / 4.931 | 0.60 |
 
-At 40 panes: daemon RSS 13.80 MiB, TUI 5.12 MiB, excluding child receivers and GTK. The preserved previous candidate was independently retested with the same script; its 40-pane p50 list/send/capture was 1.990/1.916/1.864 ms under non-idle conditions. None of the observed median ratios exceeded 2×; variation and host activity prevent a certified regression conclusion. Raw paired comparison and the retry are retained in private results.
+At 40 panes, daemon RSS 13.86 MiB and TUI RSS 5.28 MiB, excluding child programs and GTK. No observed median ratio exceeds 2×; this does not certify a quiet-host performance gate. Host CPU busy fractions before/after were 0.296/0.327. Benchmark hashes identify the optimized pre-publication binary; release version stamping does not change these product paths.
 
-GTK remains outside headless Cargo and ELF dependencies. System changes this round installed about 2 MiB of Xvfb/xdotool test dependencies; DNF again invalidated a pre-existing pending offline-update transaction. No full upgrade, reboot, owner-session termination or manual update rescheduling occurred. This concrete operational side effect is recorded in `logs/v3-test-input-install.log`.
+## Final compositor qualification
+
+The optimized desktop passes 21 native Weston cards with one PRIMARY blocker (`native-rust-wfswhwr6`), including synthetic native divider gestures, search and a real SIGKILL/restart PNG-reclamation card. GNOME Wayland passes nine rendering/input/lifecycle cards (`native-rust-se6u7slm`) with synthetic callbacks and no desktop clipboard reads. Physical keys/gestures and GNOME clipboard transfer remain unqualified. Internal GtkTextView selection now explicitly unregisters implicit PRIMARY participation; this fixes the reproducible GNOME search-selection failure and keeps internal copy scope independent. Earlier failed receipts are retained.

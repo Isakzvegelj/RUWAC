@@ -252,26 +252,28 @@ fn safe(s: &str) -> String {
 }
 fn draw(v: &Value, size: (u16, u16), status: &str) -> io::Result<()> {
     let mut out = String::from("\x1b[?25l\x1b[0m\x1b[H\x1b[2J");
-    let mut offset = 0;
+
     let active = v["active_pane"].as_str().unwrap_or("");
     let mut cursor = None;
     let mut mouse = false;
     if let Some(panes) = v["panes"].as_array() {
         for p in panes {
             let g = &p["grid"];
+            let offset = p["rect"]["y"].as_u64().unwrap_or(0);
+            let left = p["rect"]["x"].as_u64().unwrap_or(0);
             if p["id"] == active {
                 let c = &g["cursor"];
                 if c["visible"] == true {
                     cursor = Some((
                         offset + c["row"].as_u64().unwrap_or(0),
-                        c["col"].as_u64().unwrap_or(0),
+                        left + c["col"].as_u64().unwrap_or(0),
                     ))
                 }
                 mouse = g["mouse"] == true;
             }
             if let Some(rows) = g["cells"].as_array() {
                 for (r, cells) in rows.iter().enumerate() {
-                    out.push_str(&format!("\x1b[{};1H", offset + r as u64 + 1));
+                    out.push_str(&format!("\x1b[{};{}H", offset + r as u64 + 1, left + 1));
                     let mut style = String::new();
                     for cell in cells.as_array().unwrap() {
                         if cell[1] == true {
@@ -291,7 +293,6 @@ fn draw(v: &Value, size: (u16, u16), status: &str) -> io::Result<()> {
                         out.push_str(&safe(cell[0].as_str().unwrap_or(" ")));
                     }
                 }
-                offset += rows.len() as u64;
             }
         }
     }
@@ -433,11 +434,11 @@ pub fn attach(socket: &Path, session: &str) -> io::Result<()> {
                                             json!({"session":session,"previous":x==b'p'}),
                                         )?;
                                     }
-                                    b'S' => {
+                                    b'S' | b'|' => {
                                         call(
                                             &mut s,
                                             "pane.create",
-                                            json!({"window":snapshot["window"]}),
+                                            json!({"window":snapshot["window"],"orientation":if x==b'|'{"vertical"}else{"horizontal"}}),
                                         )?;
                                     }
                                     b'[' => {

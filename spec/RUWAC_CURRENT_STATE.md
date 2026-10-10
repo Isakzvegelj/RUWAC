@@ -1,22 +1,10 @@
-# RUWAC current state — native Rust candidate
+# RUWAC current state
 
-Round `v3-native-20261010`, 2026-10-10. The implementation was validated as a local engineering candidate. Subsequent owner authorization requires tagged source prerelease publication through the project build/release workflow; runtime promotion and RPM qualification remain separate. Original candidate reports are preserved privately in build results.
+Desktop interaction and embedded RDP increment, 2026-10-10. Earlier reports are retained privately; this report supersedes their current-state claims.
+The existing daemon and canonical alacritty terminal engine remain the foundation. The CLI/headless workspace has no GTK or RDP dependencies. The separate compiled GTK4/libadwaita desktop now has Screen window navigation, native chooser/command/help dialogs, interactive keyboard selection and search, internal paste, two split orientations, divider ratio updates, zoom and daemon-owned layout persistence.
 
-Canonical source retains the owner-renamed uppercase RUWAC binding; build/Git authority retains lowercase ruwac. Exact detected paths, owner, leases, source hashes and dirty inventory are in `results/v3-native/preflight.json`. Branch `main`, HEAD `7abbf537d1f608b8555a027bd9e97d172d937e22`. Existing staged/index changes remain byte-for-byte unchanged; new source edits remain unstaged. No second repository, daemon replacement or directory rename.
+Scrollback defaults to 50,000 lines, capped by configurable approximate cell-storage budget. History is paged over protocol v0; stale history epochs fail visibly. Copy view is bounded to 8 MiB, with a visible truncation warning. Internal Screen buffer stays separate from GDK CLIPBOARD and PRIMARY.
 
-| Component | Current state |
-|---|---|
-| Persistent headless daemon / PTY / canonical grid | retained, optimized regression PASS |
-| Compiled Rust GTK4/libadwaita frontend | implemented, separate optional Cargo workspace |
-| Desktop text clipboard | real cross-process GDK Wayland copy/read/paste PASS with generated fixtures |
-| PRIMARY | implemented through GDK; test compositor lacks protocol, BLOCKED |
-| Internal Screen buffer | independent daemon state, bounded 256 KiB |
-| PNG clipboard staging | real MIME stream into owned files, 64 MiB encoded/decoded caps, hash and cleanup PASS |
-| Native input/selection | tested subset; physical gestures and complete Screen map remain partial |
-| RDP / library / agent attachment / RPM | not integrated; real-host acceptance BLOCKED |
+A genuine embedded IronRDP client is implemented in the same Adwaita TabView: asynchronous connection/NLA, certificate and hostname validation, Secret Service reference, decoded native framebuffer, scaling, pointer/key routing, send-key actions and disconnect/reconnect. Local TLS rejection/trust tests execute real protocol negotiation and TLS. No real remote login has been performed.
 
-Fedora 44; Rust 1.98.1; GTK 4.22.5; libadwaita 1.9.4; Weston 15.0.1. Native Rust uses gtk4 0.11.5, libadwaita 0.9.2 and GLib/Pango 0.22. Headless Cargo dependencies and ELF linkage exclude GTK/adwaita/VTE/RDP/WebKit/Secret Service. The GTK process owns widgets; the daemon remains sole parser and PTY owner.
-
-Owner cmux PID 62168 remained running. All test daemons and sockets were owned disposable fixtures, then stopped. The normal default RUWAC socket was not stopped or replaced. No owner clipboard payload was read. Live GNOME tests excluded clipboard operations.
-
-The installed 0rig exposes its own release workflow and version controller, but no qualified S015 app-linux handler was found. Local supervisor read-only check returned `local-check-failed`; no instructions were executed. Development used local installed contracts and the supplied handoff, without a new Drive fetch.
+Physical GNOME keyboard/touchpad/PRIMARY acceptance is unqualified. Weston does not provide PRIMARY. Real authenticated RDP requires an explicitly authorized endpoint, username, Secret Service profile and trusted server certificate/CA; none is designated. RDP CLIPRDR, dynamic remote resizing, clipboard image attachment acknowledgement, IME, accessible terminal semantics and RPM distribution remain unfinished. TUI copy remains bounded capture rather than the desktop interactive copy UI. Foreground/EOF terminal mouse and alternate-screen state reset is implemented; restoration of termios after an abruptly killed child is not certified. Daemon or host failure still loses in-memory sessions.

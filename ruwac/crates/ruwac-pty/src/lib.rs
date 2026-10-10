@@ -74,6 +74,9 @@ impl Pty {
             child,
         })
     }
+    pub fn foreground_group(&self) -> Option<i32> {
+        self.master.process_group_leader()
+    }
     pub fn send(&self, b: Vec<u8>) -> Result<(), String> {
         self.input
             .as_ref()

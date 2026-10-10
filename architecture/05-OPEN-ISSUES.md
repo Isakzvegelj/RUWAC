@@ -1,5 +1,8 @@
 # Open issues
 
+Current desktop interaction and embedded IronRDP state is recorded in [the acceptance report](../spec/RUWAC_ACCEPTANCE_STATUS.md) and [current architecture decisions](../spec/RUWAC_ARCHITECTURE_ADR.md). Earlier measurements and design limits below are historical evidence.
+
+
 The spike is not a daily-driver or release candidate. No desktop pass is inferred from headless tests.
 
 - **BLOCKED — desktop acceptance:** Wayland CLIPBOARD/PRIMARY, outer-terminal Ctrl-Shift-C/V, physical touchpad/divider drag, actual image attachment and nested desktop clipboard. A real authorized graphical workstation is required. No personal clipboard contents were accessed.

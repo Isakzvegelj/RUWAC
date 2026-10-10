@@ -1,6 +1,6 @@
 [package]
 name = "ruwac-desktop"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 publish = false
 [workspace]
@@ -13,6 +13,12 @@ ruwac-protocol = { path = "../crates/ruwac-protocol" }
 ruwac-clipboard = { path = "../crates/ruwac-clipboard" }
 libc = "=0.2.189"
 sha2 = "=0.10.9"
+ironrdp = { version = "=0.17.0", features = ["connector", "session", "graphics", "pdu"] }
+ironrdp-tokio = { version = "=0.10.0", features = ["reqwest-native-tls"] }
+tokio = { version = "=1.53.1", features = ["rt", "net", "io-util", "time", "sync", "macros"] }
+native-tls = "=0.2.18"
+tokio-native-tls = "=0.3.1"
+x509-cert = "=0.2.5"
 [profile.dev]
 debug = 0
 [profile.release]

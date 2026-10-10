@@ -1,30 +1,18 @@
-# Desktop clipboard, input and RDP contract — v3-native-20261010
+# RUWAC clipboard, input and RDP matrix
 
-Round `v3-native-20261010`, 2026-10-10. The implementation was validated as a local engineering candidate. Subsequent owner authorization requires tagged source prerelease publication through the project build/release workflow; runtime promotion and RPM qualification remain separate. Original candidate reports are preserved privately in build results.
-
-Actual GDK CLIPBOARD copy/read/paste is connected to FocusBroker. Selection copy uses Ctrl+Shift+C; paste Ctrl+Shift+V. Selection offers PRIMARY and middle click requests PRIMARY when the compositor supports it. Screen history selection/Internal buffer remains independent of both desktop selections. Disabled desktop policy rejects transfers; it never changes the daemon buffer.
-
-| Case | Result | Evidence / boundary |
+Desktop interaction and embedded RDP increment, 2026-10-10. Earlier reports are retained privately; this report supersedes their current-state claims.
+| Gate | State | Scope |
 |---|---|---|
-| Canonical terminal selection → independent GDK peer | PASS | Real Wayland data device; synthetic selection range, exact text hash |
-| Unicode/multiline selected text copy | PASS | Rust GTK owner → separate Python GDK consumer |
-| 10 KiB and 1 MiB external text read/paste | PASS | Separate GDK peer → Rust async stream → raw PTY, exact UTF-8/hash |
-| PRIMARY/middle click | BLOCKED on test compositor | Weston 15 does not advertise primary-selection manager; failed attempt retained |
-| Internal A / external B independence | PASS | Native fixture and daemon buffer, survives client detach |
-| Owner/focus generation and disabled policy | PASS for tested boundaries | Metadata unit tests, delayed native read cancellation and disabled GDK transport |
-| 64² and 2560×1440 PNG staging | PASS | Actual image/png stream; 0600, dimensions and SHA-256; large encoded fixture exceeds 8 MiB |
-| Cap rejection / invalid PNG / dimension bound / symlink | PASS | Real GDK cap test plus owned file unit tests; rejected outputs removed |
-| PNG cancellation / orderly cleanup | PASS | Async read fault delay, no partial/completed staged files after client close |
-| Mouse/Screen prefix callbacks | PASS subset / PARTIAL complete map | SGR enabled/disabled test, 200 focus switches, c/n/p/0/a/Tab cards |
-| Vim/less/htop | PASS headless | Isolated real application PTYs and TUI; full Rust-GUI app cards remain UNTESTED |
-| Native GNOME tab-switch reproduction | PASS owned smoke | Real GdkWaylandDisplay, synthetic callbacks, clipboard excluded |
-| Physical GNOME/browser/editor/touchpad/PRIMARY persistence | BLOCKED / UNTESTED | No physical acceptance card executed; no owner clipboard read |
-| Typed three-view RDP producer/focus ownership | PASS synthetic / PARTIAL RDP | 200 rounds in unit tests; no embedded backend |
-| Windows/Fedora embedded RDP text/images/keys/FPS | BLOCKED | No authorized hosts or implemented backend |
-| Agent image attachment/acknowledgement | NOT IMPLEMENTED | Staging is not delivery |
+| Screen navigation/keyboard mark/search/internal paste | PASS fixture | Compiled native GTK callbacks; physical input unqualified |
+| Vim, less, htop | PASS fixture | Real programs, Unicode Vim save and actual GTK input handlers |
+| Split ratio, nested orientations, zoom and reconnect | PASS | Real daemon API; native split/zoom callbacks; physical divider drag unqualified |
+| GDK CLIPBOARD text and independent internal buffer | PASS | Separate GDK peer on isolated Weston; synthetic content |
+| PRIMARY | BLOCKED | Compositor lacks protocol; no owner clipboard access |
+| SGR modifiers / legacy X10 / motion / disabled routing | PASS | Canonical daemon modes and exact receiver bytes |
+| PNG size/hash/caps/cancel/normal and crash cleanup | PASS | Private namespace locking and generated PNGs; staging only |
+| Embedded RDP view and pointer transforms | PASS fixture | Same GTK window, synthetic framebuffer and pure geometry |
+| RDP TLS validation | PASS | Real loopback RDP negotiation/TLS, trust rejection/explicit-CA continuation |
+| Authenticated RDP host / performance | BLOCKED | Missing designated endpoint/secret/certificate fixture |
+| CLIPRDR text/image ownership | UNIMPLEMENTED | Existing per-view broker boundary prepared; no remote transport yet |
 
-Native fixtures use a disposable Weston Wayland display nested in Xvfb, with XTEST Shift events to acquire valid input serials. This is real GDK inter-process negotiation using synthetic input, not physical desktop acceptance. A seatless/fake-seat Weston run could only see local offers and is retained as a failed diagnostic, never counted as clipboard PASS.
-
-GUI image default cap 64 MiB; staging API permits a smaller configured cap. Text cap 1 MiB; internal buffer/control input 256 KiB; frame 1 MiB. Compressed PNG bytes and decoded pixel allocation are independently limited. No payload text is written to diagnostic logs; only generated fixture files and hash/size metadata are retained privately.
-
-`ruwac/tests/integration/rdp_acceptance.py` records fail-closed cards for three embedded tabs, bidirectional text/PNG, active ownership, modifier keys, 1440p/3K fit/stretch/dynamic/fullscreen, touchpad transforms and disconnect. It performs no network operation and returns blocked without a backend. Real-host selection remains open until explicit connection fixtures exist.
+Physical GNOME keyboard/touchpad/PRIMARY acceptance is unqualified. Weston does not provide PRIMARY. Real authenticated RDP requires an explicitly authorized endpoint, username, Secret Service profile and trusted server certificate/CA; none is designated. RDP CLIPRDR, dynamic remote resizing, clipboard image attachment acknowledgement, IME, accessible terminal semantics and RPM distribution remain unfinished. TUI copy remains bounded capture rather than the desktop interactive copy UI. Foreground/EOF terminal mouse and alternate-screen state reset is implemented; restoration of termios after an abruptly killed child is not certified. Daemon or host failure still loses in-memory sessions.

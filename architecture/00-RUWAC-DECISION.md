@@ -1,5 +1,8 @@
 # ruwac decision: independent Rust spike
 
+Current desktop interaction and embedded IronRDP state is recorded in [the acceptance report](../spec/RUWAC_ACCEPTANCE_STATUS.md) and [current architecture decisions](../spec/RUWAC_ARCHITECTURE_ADR.md). Earlier measurements and design limits below are historical evidence.
+
+
 2026-10-10. Status: bounded experiment; no production or desktop acceptance.
 
 The previous evaluation conditionally preferred tmux plus a frontend. That conclusion remains valid: coverage scores were not maturity rankings. The owner now chooses an independent Rust vertical slice to test consistent daemon/client/API ownership. This is a strategic preference, not proof that established cores are inadequate. If correctness or the 2× tmux API latency target fails, profile and reconsider tmux or a ttmux repair before expanding.

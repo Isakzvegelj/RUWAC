@@ -1,3 +1,5 @@
+mod layout;
+use layout::{Layout, Rect};
 use ruwac_protocol::{Error, Request, Result, checked_text, id, target, text};
 use ruwac_pty::Pty;
 use ruwac_term::Terminal;
@@ -10,6 +12,7 @@ struct Pane {
     pty: Pty,
     term: Terminal,
     ended: bool,
+    foreground: Option<i32>,
 }
 struct Window {
     id: String,
@@ -17,6 +20,8 @@ struct Window {
     name: String,
     panes: Vec<String>,
     active: String,
+    layout: Layout,
+    zoom: bool,
 }
 struct Session {
     id: String,
@@ -96,6 +101,7 @@ pub fn start() -> Handle {
                             | "session.list"
                             | "window.list"
                             | "pane.list"
+                            | "pane.history"
                             | "pane.capture"
                             | "pane.wait"
                             | "buffer.get"
@@ -110,8 +116,14 @@ pub fn start() -> Handle {
                 }
                 Message::Output(p, b) => {
                     if let Some(p) = s.panes.get_mut(&p) {
+                        let foreground = p.pty.foreground_group();
+                        if p.foreground != foreground {
+                            p.term.reset_input_modes();
+                            p.foreground = foreground;
+                        }
                         if b.is_empty() {
                             p.ended = true;
+                            p.term.reset_input_modes();
                         } else {
                             for reply in p.term.feed(&b) {
                                 let _ = p.pty.send(reply.into_bytes());
@@ -241,6 +253,7 @@ impl State {
             Pane {
                 id: pid.clone(),
                 window: w.into(),
+                foreground: pty.foreground_group(),
                 pty,
                 term: Terminal::new(rows, cols),
                 ended: false,
@@ -272,6 +285,8 @@ impl State {
                 name,
                 panes: vec![p.clone()],
                 active: p.clone(),
+                layout: Layout::Leaf(p.clone()),
+                zoom: false,
             },
         );
         let session = self.sessions.get_mut(s).unwrap();
@@ -300,13 +315,33 @@ impl State {
             let Some(w) = self.windows.get(&w) else {
                 continue;
             };
-            let n = w.panes.len().max(1) as u16;
-            for (i, p) in w.panes.iter().enumerate() {
-                let h = (rows / n + if i == 0 { rows % n } else { 0 }).max(1);
-                if let Some(p) = self.panes.get_mut(p) {
-                    if p.term.rows != h || p.term.cols != cols {
-                        let _ = p.pty.resize(h, cols);
-                        p.term.resize(h, cols)
+            let mut rects = Vec::new();
+            if w.zoom {
+                rects.push((
+                    w.active.clone(),
+                    Rect {
+                        x: 0,
+                        y: 0,
+                        rows,
+                        cols,
+                    },
+                ));
+            } else {
+                w.layout.rects(
+                    Rect {
+                        x: 0,
+                        y: 0,
+                        rows,
+                        cols,
+                    },
+                    &mut rects,
+                );
+            }
+            for (id, r) in rects {
+                if let Some(p) = self.panes.get_mut(&id) {
+                    if p.term.rows != r.rows || p.term.cols != r.cols {
+                        let _ = p.pty.resize(r.rows, r.cols);
+                        p.term.resize(r.rows, r.cols);
                     }
                 }
             }
@@ -321,7 +356,7 @@ impl State {
                 json!({"name":"ruwac","implementation":"spike","package":env!("CARGO_PKG_VERSION"),"protocol":0}),
             ),
             "capabilities" => Ok(
-                json!({"desktop_clipboard":false,"primary":false,"graphics":false,"image_attachment":false,"ssh_transport":"external authenticated SSH only","shared_focus":true,"split":"horizontal, two panes","capture_limit":2000,"max_text_bytes":ruwac_protocol::MAX_TEXT}),
+                json!({"desktop_clipboard":false,"primary":false,"graphics":false,"image_attachment":false,"ssh_transport":"external authenticated SSH only","shared_focus":true,"split":"persistent horizontal/vertical tree, sixteen panes","capture_limit":2000,"history_page_limit":500,"scrollback_default":50000,"max_text_bytes":ruwac_protocol::MAX_TEXT}),
             ),
             "schema" => Ok(schema()),
             "daemon.stop" => Ok(json!({"stopped":true})),
@@ -442,13 +477,40 @@ impl State {
                     .windows
                     .get(&w)
                     .ok_or_else(|| Error::new("STALE_ID", "window does not exist"))?;
-                if window.panes.len() >= 2 {
-                    return Err(Error::new("LIMIT", "spike allows two panes per window"));
+                if window.panes.len() >= 16 {
+                    return Err(Error::new("LIMIT", "maximum sixteen panes per window"));
+                }
+                let orientation = v
+                    .get("orientation")
+                    .and_then(Value::as_str)
+                    .unwrap_or("horizontal");
+                if !matches!(orientation, "horizontal" | "vertical") {
+                    return Err(Error::new(
+                        "INVALID_PARAMS",
+                        "orientation must be horizontal or vertical",
+                    ));
+                }
+                let selected = v
+                    .get("pane")
+                    .and_then(Value::as_str)
+                    .unwrap_or(&window.active)
+                    .to_string();
+                if !window.panes.contains(&selected) {
+                    return Err(Error::new("TARGET_WINDOW", "split target is not in window"));
+                }
+                let source = &self.panes[&selected];
+                if (orientation == "vertical" && source.term.cols < 12)
+                    || (orientation == "horizontal" && source.term.rows < 6)
+                {
+                    return Err(Error::new("LIMIT", "pane too small to split"));
                 }
                 let s = window.session.clone();
                 let ss = &self.sessions[&s];
                 let p = self.create_pane(&w, argv(v)?, ss.rows / 2, ss.cols)?;
                 let w = self.windows.get_mut(&w).unwrap();
+                w.layout
+                    .split(&selected, p.clone(), orientation == "vertical");
+                w.zoom = false;
                 w.panes.push(p.clone());
                 w.active = p.clone();
                 self.layout(&s);
@@ -470,6 +532,10 @@ impl State {
                 self.panes.remove(&pid);
                 let window = self.windows.get_mut(&w).unwrap();
                 window.panes.retain(|p| p != &pid);
+                if let Some(l) = window.layout.clone().remove(&pid) {
+                    window.layout = l;
+                }
+                window.zoom = false;
                 if let Some(first) = window.panes.first() {
                     if window.active == pid {
                         window.active = first.clone();
@@ -495,7 +561,47 @@ impl State {
                 let id = p.id.clone();
                 let w = p.window.clone();
                 self.windows.get_mut(&w).unwrap().active = id.clone();
+                let session = self.windows[&w].session.clone();
+                self.layout(&session);
                 Ok(json!({"selected":id}))
+            }
+            "pane.layout" => {
+                let id = target(v, "window", "window")?;
+                let w = self
+                    .windows
+                    .get_mut(&id)
+                    .ok_or_else(|| Error::new("STALE_ID", "window does not exist"))?;
+                if let Some(zoom) = v.get("zoom").and_then(Value::as_bool) {
+                    w.zoom = zoom;
+                }
+                if let Some(split) = v.get("split").and_then(Value::as_str) {
+                    let ratio = num(v, "ratio", 500, 100, 900)?;
+                    if !w.layout.resize(split, ratio) {
+                        return Err(Error::new("STALE_ID", "split does not exist"));
+                    }
+                }
+                let session = w.session.clone();
+                self.layout(&session);
+                Ok(json!({"updated":true}))
+            }
+            "pane.history" => {
+                let p = self.pane(v)?;
+                if v.get("epoch")
+                    .and_then(Value::as_u64)
+                    .is_some_and(|e| e != p.term.history_epoch)
+                {
+                    return Err(Error::new(
+                        "STALE_HISTORY",
+                        "History changed while paging; retry copy mode",
+                    ));
+                }
+                let offset = v
+                    .get("offset")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(0)
+                    .min(1000000) as usize;
+                let n = num(v, "lines", 500, 1, 500)? as usize;
+                Ok(p.term.history_page(offset, n))
             }
             "pane.capture" | "pane.wait" => {
                 let p = self.pane(v)?;
@@ -592,6 +698,14 @@ impl State {
                 Ok(json!({"resized":true}))
             }
             "client.render" => {
+                for p in self.panes.values_mut() {
+                    let group = p.pty.foreground_group();
+                    if group != p.foreground {
+                        p.term.reset_input_modes();
+                        p.foreground = group;
+                        self.revision += 1;
+                    }
+                }
                 let c = self
                     .clients
                     .get(client)
@@ -601,16 +715,34 @@ impl State {
                 if v.get("revision").and_then(Value::as_u64) == Some(self.revision) {
                     return Ok(json!({"revision":self.revision,"unchanged":true}));
                 }
-                let panes = w
-                    .panes
-                    .iter()
-                    .filter_map(|p| self.panes.get(p))
-                    .map(|p| json!({"id":p.id,"grid":p.term.snapshot(),"ended":p.ended}))
-                    .collect::<Vec<_>>();
+                let mut rects = Vec::new();
+                if w.zoom {
+                    rects.push((
+                        w.active.clone(),
+                        Rect {
+                            x: 0,
+                            y: 0,
+                            rows: s.rows,
+                            cols: s.cols,
+                        },
+                    ));
+                } else {
+                    w.layout.rects(
+                        Rect {
+                            x: 0,
+                            y: 0,
+                            rows: s.rows,
+                            cols: s.cols,
+                        },
+                        &mut rects,
+                    );
+                }
+                let panes=rects.iter().filter_map(|(id,r)|self.panes.get(id).map(|p|json!({"id":p.id,"grid":p.term.snapshot(),"ended":p.ended,"rect":{"x":r.x,"y":r.y,"rows":r.rows,"cols":r.cols}}))).collect::<Vec<_>>();
                 Ok(
-                    json!({"revision":self.revision,"session":s.id,"window":w.id,"name":w.name,"active_pane":w.active,"panes":panes}),
+                    json!({"revision":self.revision,"session":s.id,"window":w.id,"name":w.name,"active_pane":w.active,"layout":w.layout.json(),"zoom":w.zoom,"panes":panes}),
                 )
             }
+
             "client.input" => {
                 let p = self.pane(v)?;
                 let c = self
@@ -628,6 +760,29 @@ impl State {
                 checked_text(&t)?;
                 let b = match kind.as_str() {
                     "mouse" if !p.term.mouse() => return Ok(json!({"discarded":"mouse disabled"})),
+                    "mouse" if v.get("mouse_event").is_some() => {
+                        let event = &v["mouse_event"];
+                        let button = num(event, "button", 0, 0, 127)?;
+                        let x = num(event, "x", 1, 1, p.term.cols as u64)?;
+                        let y = num(event, "y", 1, 1, p.term.rows as u64)?;
+                        let release = event["release"] == true;
+                        if p.term.sgr_mouse() {
+                            format!("\x1b[<{button};{x};{y}{}", if release { 'm' } else { 'M' })
+                                .into_bytes()
+                        } else {
+                            if x > 223 || y > 223 {
+                                return Ok(json!({"discarded":"legacy mouse coordinate overflow"}));
+                            }
+                            vec![
+                                27,
+                                b'[',
+                                b'M',
+                                (if release { 3 + (button & 28) } else { button }) as u8 + 32,
+                                x as u8 + 32,
+                                y as u8 + 32,
+                            ]
+                        }
+                    }
                     "mouse" | "keyboard" => t.into_bytes(),
                     "paste" => {
                         if t.contains("\x1b[201~") {
@@ -663,5 +818,5 @@ impl State {
     }
 }
 pub fn schema() -> Value {
-    json!({"protocol":0,"framing":"u32 big-endian byte length + UTF-8 JSON","max_frame_bytes":ruwac_protocol::MAX_FRAME,"methods":["health","version","capabilities","schema","session.create","session.list","session.attach","session.detach","window.create","window.list","window.rename","window.select","window.cycle","pane.create","pane.close","pane.list","pane.select","pane.sendText","pane.sendKey","pane.capture","pane.wait","buffer.set","buffer.get","buffer.paste","client.resize","client.render","client.input","events.subscribe","daemon.stop"],"targets":{"session":"session_ + 32 hex","window":"window_ + 32 hex","pane":"pane_ + 32 hex"},"request":{"version":0,"id":"JSON request correlation value","method":"method name","params":"object","idempotency_key":"optional 1..128 byte daemon-lifetime key"}})
+    json!({"protocol":0,"framing":"u32 big-endian byte length + UTF-8 JSON","max_frame_bytes":ruwac_protocol::MAX_FRAME,"methods":["health","version","capabilities","schema","session.create","session.list","session.attach","session.detach","window.create","window.list","window.rename","window.select","window.cycle","pane.create","pane.layout","pane.history","pane.close","pane.list","pane.select","pane.sendText","pane.sendKey","pane.capture","pane.wait","buffer.set","buffer.get","buffer.paste","client.resize","client.render","client.input","events.subscribe","daemon.stop"],"targets":{"session":"session_ + 32 hex","window":"window_ + 32 hex","pane":"pane_ + 32 hex"},"request":{"version":0,"id":"JSON request correlation value","method":"method name","params":"object","idempotency_key":"optional 1..128 byte daemon-lifetime key"}})
 }
