@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## v0.1.1 — 2026-10-10 — Prerelease
+
+- Correct release numbering to bare numeric versions: odd minor beta, even minor stable; preserve earlier suffix tags as historical publications.
+- Validate same-channel patch increments, lane transitions, minor promotion and rollover against the S015 reference.
+
 ## v0.1.0-beta.2 — 2026-10-10 — Prerelease
 
 - Recover missing GitHub source prerelease pages with a main-branch release trigger and validated earlier-tag recovery.

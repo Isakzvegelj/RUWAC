@@ -17,7 +17,7 @@ Round `v3-native-20261010`, 2026-10-10. The implementation was validated as a lo
 | CORE-R1 | PASS | 15 unit tests, 11 groups, 100 startup input races; named CLI and Vim/less/htop |
 | PERF-R1 | PARTIAL | 30 samples/cell at 1/5/20/40 panes; no observed 2× median regression, host not idle-qualified |
 | RDP-R0 | PARTIAL | Typed interface and synthetic 3-view focus tests only; no embedded RDP |
-| RELEASE-R0 | Source prerelease workflow | Installed standard release template/controller, allowlisted source, annotated tag and automated GitHub prerelease; no runtime promotion |
+| RELEASE-R0 | Numeric source release workflow | Bare numeric tag/package versions; odd minor beta, even minor stable; tested lane semantics through shared controller; allowlisted source and GitHub publication verified separately |
 
 Latest native acceptance: `evidence/native-rust-ethkw0mc/acceptance.json` under the build binding, 17 PASS and one BLOCKED. Owned GNOME smoke: `evidence/native-rust-_s7tzm8p/acceptance.json`, five PASS, synthetic callbacks and no clipboard access. Final core receipt: `evidence/spike-xq84zbzw/acceptance.json`. Full command/log/hash inventory: `results/v3-native/candidate-receipt.json`. Earlier failed seat/focus/PRIMARY diagnostics remain retained. No physical keys, photon latency, real RDP or agent attachment is certified.
 

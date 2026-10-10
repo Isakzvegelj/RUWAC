@@ -1,4 +1,6 @@
-# RUWAC native engineering prerelease
+# RUWAC numeric release-policy correction
+
+Release numbering now uses bare `major.minor.patch`: odd minors are beta and even minors stable. Repeated releases in a lane advance the patch; channel transitions and rollover follow the standard. Historical suffix tags remain intact.
 
 The persistent headless engine and separately compiled Rust GTK4/libadwaita frontend are operational. This source prerelease preserves the product rename, daemon/CLI implementation and native desktop milestone in Git history.
 

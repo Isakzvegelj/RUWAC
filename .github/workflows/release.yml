@@ -1,10 +1,10 @@
-name: Source prerelease
+name: Source release
 on:
   push:
     branches:
       - main
     tags:
-      - 'v*-beta.*'
+      - 'v*.*.*'
 permissions:
   contents: read
 concurrency:
@@ -31,6 +31,13 @@ jobs:
           )"
           test "$(git rev-parse "$tag^{commit}")" = "$(git rev-parse HEAD)"
           echo "RELEASE_TAG=$tag" >> "$GITHUB_ENV"
+          python3 - <<'PYCODE' >> "$GITHUB_ENV"
+          import tomllib
+          from pathlib import Path
+          version = tomllib.loads(Path('ruwac/Cargo.toml').read_text())['workspace']['package']['version']
+          minor = int(version.split('.')[1])
+          print('RELEASE_PRERELEASE=' + str(minor % 2 == 1).lower())
+          PYCODE
       - name: Verify public source and tag
         run: |
           python3 scripts/public-files.py --tracked
@@ -39,38 +46,39 @@ jobs:
           from pathlib import Path
           tag = os.environ['RELEASE_TAG']
           version = tomllib.loads(Path('ruwac/Cargo.toml').read_text())['workspace']['package']['version']
-          assert re.fullmatch(r'v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+', tag)
+          assert re.fullmatch(r'v(0|[1-9][0-9]*)\.[0-9]\.([0-9]|[1-9][0-9])', tag)
           assert tag == 'v' + version, 'Tag and package version differ'
           PYCODE
-      - name: Publish source prerelease
+      - name: Publish source release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
         run: |
           if ! gh release view "$RELEASE_TAG" --json url >/dev/null 2>&1; then
-            gh release create "$RELEASE_TAG" --verify-tag --prerelease \
+            gh release create "$RELEASE_TAG" --verify-tag --prerelease="$RELEASE_PRERELEASE" \
               --title "RUWAC $RELEASE_TAG" --notes-file RELEASE-NOTES.md
           fi
           gh release view "$RELEASE_TAG" --json url,isPrerelease,tagName
-      - name: Recover missing earlier source prerelease pages
+      - name: Recover missing earlier numeric source release pages
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
         run: |
-          for tag in $(git tag --list 'v*-beta.*' --sort=v:refname); do
+          for tag in $(git tag --list 'v*.*.*' --sort=v:refname | python3 -c 'import re,sys; print(" ".join(t for t in sys.stdin.read().split() if re.fullmatch(r"v(0|[1-9][0-9]*)\.[0-9]\.([0-9]|[1-9][0-9])",t)))'); do
             git merge-base --is-ancestor "$tag^{commit}" HEAD || continue
             gh release view "$tag" --json url >/dev/null 2>&1 && continue
             export RECOVERY_TAG="$tag"
             python3 - <<'PYCODE'
           import os, re, subprocess, tomllib
           tag = os.environ['RECOVERY_TAG']
-          assert re.fullmatch(r'v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+', tag)
+          assert re.fullmatch(r'v(0|[1-9][0-9]*)\.[0-9]\.([0-9]|[1-9][0-9])', tag)
           content = subprocess.check_output(['git', 'show', tag + ':ruwac/Cargo.toml']).decode()
           assert tag == 'v' + tomllib.loads(content)['workspace']['package']['version']
           PYCODE
             notes="$(mktemp)"
             git show "$tag:RELEASE-NOTES.md" > "$notes"
-            gh release create "$tag" --verify-tag --prerelease --latest=false \
+            beta="$(python3 -c 'import sys; print(str(int(sys.argv[1].split(".")[1]) % 2 == 1).lower())' "$tag")"
+            gh release create "$tag" --verify-tag --prerelease="$beta" --latest=false \
               --title "RUWAC $tag" --notes-file "$notes"
             rm -f "$notes"
           done
