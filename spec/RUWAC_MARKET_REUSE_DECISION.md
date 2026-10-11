@@ -1,5 +1,10 @@
 # RUWAC component provenance
 
+## Current native shortcuts, appearance and safe diagnostics — 2026-10-11
+
+The existing Rust engine, GTK/libadwaita frontend and IronRDP remain the foundation. The owner’s installed Ptyxis supplies an appearance reference; no terminal replacement or market reevaluation was performed.
+
+
 ## Current authenticated host CLI and discovery — 2026-10-11
 
 Existing Rust engine and OpenSSH provide host control without new dependencies or market reevaluation. GTK/IronRDP/libssh2 remain unchanged.

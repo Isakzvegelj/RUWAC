@@ -164,6 +164,16 @@ impl Remote {
         }
         Ok(v)
     }
+    pub fn doctor(&self, args: &[String]) -> io::Result<Value> {
+        let mut command = vec!["doctor"];
+        command.extend(args.iter().map(String::as_str));
+        let v = self.exchange(&command, Vec::new())?;
+        if v["version"] != 0 || !v["result"]["ok"].is_boolean() || !v["result"]["checks"].is_array()
+        {
+            return Err(io::Error::other("remote diagnostics response rejected"));
+        }
+        Ok(v)
+    }
     pub fn attach(&self, session: &str) -> io::Result<()> {
         if !ruwac_protocol::valid_id(session, "session") {
             return Err(io::Error::new(

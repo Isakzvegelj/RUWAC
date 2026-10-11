@@ -48,7 +48,7 @@ The full product is not yet complete. A runnable source prerelease and isolated 
 | F-08 public hygiene | Explicit permitted source inventory, outgoing-history checks | PASS for verified source publications |
 | Mixed workspace | Live mixed GTK trees and all-view checkpoints/crash restore | PARTIAL: individual mixed view move/close now qualified; stable GUI view IDs and exact leaf focus remain open |
 | Persistent metadata/history after daemon loss | PTYs persist across client loss | OPEN: restore history/metadata after daemon restart with ended state |
-| Native accessibility and diagnostics | GTK controls and configurable keys | PARTIAL: keyboard coverage, accessibility matrix and targeted doctor |
+| Native accessibility and diagnostics | GTK controls and configurable keys | PARTIAL: global Alt-number navigation and safe targeted doctor implemented; physical keyboard/accessibility matrix open |
 | Distribution/governance | Locked dependency license inventory and source release receipts | PARTIAL: Apache-2.0 approved; package qualification, contributor/security docs and broader CI |
 
 External-host and physical-seat gates remain separate from implementation. No owner clipboard/keyring/session may be used as an acceptance fixture. Optional browser/structured agent adapters and later macOS builds remain staged scope; no protocol or scheduler replacement is justified by those features.

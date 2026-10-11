@@ -1,10 +1,10 @@
 {
-  "baseline_commit": "6b4a889a164dc144c75497c5173ec72795a31393",
+  "baseline_commit": "4cc1a08b2d15a03bd4972b0442773a2fd5e54f71",
   "current_report": "spec/RUWAC_INTEGRATION_SPIKE.md",
   "public_evidence": [
     "architecture/acceptance-results.json",
     "architecture/benchmark-results.json",
     "architecture/dependency-licenses.json"
   ],
-  "private_capsule": "remote-r9: optimized headless builds/units/100 races/state; actual authorized SSH --host literal control/discovery and three PTY cycles; eleven synthetic subprocess cases including 70-second stalled-peer bound; named CLI; read-only older-live-daemon discovery; standard controller publication and matching CVF/EVF installations"
+  "private_capsule": "doctor-r10: local foreground-PTY diagnostic/repair safety; authorized SSH read-only diagnostics; nested-Wayland XTest Alt-number shortcuts and actual GTK dark-window export; final workspace, terminal/GDK and authenticated RDP mixed regressions; standard controller publication and matching installations"
 }

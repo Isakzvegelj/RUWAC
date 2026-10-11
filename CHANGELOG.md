@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## v0.1.9 — 2026-10-11 — Prerelease
+
+- Add global Alt+1…9/0 workspace tab navigation across terminal, RDP and Files, with modifier guards and missing-tab no-op behavior.
+- Introduce a dark native desktop default, optional dark/light/system theme and a compact header with separate workspace actions.
+- Add bounded read-only local/SSH diagnostics and explicit foreground-only terminal attribute repair; preserve other terminals and running sessions.
+- Validate compositor-delivered shortcuts, isolated terminal repair, actual SSH diagnostics and workspace/clipboard/RDP regressions; external and physical acceptance remain open.
+
 ## v0.1.8 — 2026-10-11 — Prerelease
 
 - Add authenticated OpenSSH host control, literal local-file/JSON request delivery and real remote terminal attachment through explicit --host targeting.

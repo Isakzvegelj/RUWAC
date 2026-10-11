@@ -1,5 +1,10 @@
 # RUWAC desktop / protocol test matrix
 
+## Current native shortcuts, appearance and safe diagnostics — 2026-10-11
+
+Window-level Alt-number tab changes retain the existing focus/clipboard ownership transitions. The authenticated isolated RDP clipboard regression is repeated separately from the synthetic shortcut RDP view. External Windows/Fedora and physical desktop clipboard remain unqualified.
+
+
 ## Current authenticated host CLI and discovery — 2026-10-11
 
 No graphical clipboard/RDP transport changes. Retain the preceding native compositor and authenticated loopback evidence; SSH input acceptance does not establish external RDP login, agent attachment or physical input.

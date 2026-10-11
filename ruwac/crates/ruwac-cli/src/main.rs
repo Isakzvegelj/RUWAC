@@ -1,3 +1,4 @@
+mod doctor;
 mod remote;
 mod startup;
 use ruwac_protocol::{Request, read_frame, request, write_frame};
@@ -187,6 +188,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(remote) = &remote {
         remote.validate()?;
         match a.first().map(String::as_str){
+            Some("doctor")=>{doctor::options(&a[1..])?;if a[1..].iter().any(|s|s=="--repair"){return Err("remote terminal repair requires running doctor directly in its foreground TTY".into());}let v=remote.doctor(&a[1..])?;println!("{v}");if v["result"]["ok"]!=true{return Err("remote diagnostics failed".into());}return Ok(());},
             Some("start")=>{if a.len()!=1{return Err("start takes no command options".into());}println!("{}",remote.start()?);return Ok(());},
             Some("attach")=>{if a.len()!=3||a[1]!="--session"{return Err("attach --session session_ID".into());}remote.attach(&a[2])?;return Ok(());},
             Some("gui"|"serve"|"image-stage"|"rdp"|"workspace")=>return Err("--host supports headless control/start/attach; desktop actions require the local GUI".into()),
@@ -198,6 +200,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         None => rpc(&socket, request),
     };
     match a.first().map(String::as_str) {
+        Some("doctor") => {
+            let v = doctor::run(&socket, &a[1..])?;
+            println!("{v}");
+            if v["result"]["ok"] != true {
+                return Err("requested diagnostics failed".into());
+            }
+        }
         Some("--version") => println!("RUWAC {}", env!("CARGO_PKG_VERSION")),
         Some("session" | "window" | "pane") => println!("{}", call(&named_request(&a)?)?),
         Some("gui") => {
@@ -318,7 +327,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         Some("--help" | "help") | None => {
             println!(
-                "RUWAC\n  ruwac --version\n  ruwac start  # starts/reuses a private persistent daemon\n  ruwac gui [--session session_ID]\n  ruwac session create --name NAME --detach --json\n  ruwac session list --json\n  ruwac pane list --session session_ID --json\n  ruwac pane send-text --id pane_ID --text TEXT --json\n  ruwac pane send-text --id pane_ID --file UTF8_FILE --json\n  ruwac pane send-key --id pane_ID --key Enter --json\n  ruwac pane capture --id pane_ID --lines 250 --json\n  ruwac pane wait --id pane_ID --contains TEXT --timeout-ms 5000 --json\n  ruwac --socket PATH serve\n  ruwac --socket PATH rpc METHOD --params JSON [--idempotency KEY]\n  ruwac --socket PATH request < request.json\n  ruwac --socket PATH attach --session session_ID\n  ruwac image-stage PNG PRIVATE_DIRECTORY\n  ruwac --socket PATH health|version|capabilities|schema|describe\nRemote: ruwac --host SSH_HOST [--remote-binary PATH] [--socket REMOTE_PATH] COMMAND.\n  ruwac --host SSH_HOST describe\n  ruwac --host SSH_HOST pane send-text --id pane_ID --file LOCAL_UTF8_FILE\n  ruwac --host SSH_HOST attach --session session_ID\nUses existing SSH keys/config and verified host keys; no credential or agent forwarding. Without explicit --socket, the remote CLI selects its own private default.\nNo desktop clipboard, image attachment, recovery after daemon loss or full Screen compatibility claim."
+                "RUWAC\n  ruwac doctor [--desktop] [--terminal [--repair]] [--json]\n  ruwac --version\n  ruwac start  # starts/reuses a private persistent daemon\n  ruwac gui [--session session_ID]\n  ruwac session create --name NAME --detach --json\n  ruwac session list --json\n  ruwac pane list --session session_ID --json\n  ruwac pane send-text --id pane_ID --text TEXT --json\n  ruwac pane send-text --id pane_ID --file UTF8_FILE --json\n  ruwac pane send-key --id pane_ID --key Enter --json\n  ruwac pane capture --id pane_ID --lines 250 --json\n  ruwac pane wait --id pane_ID --contains TEXT --timeout-ms 5000 --json\n  ruwac --socket PATH serve\n  ruwac --socket PATH rpc METHOD --params JSON [--idempotency KEY]\n  ruwac --socket PATH request < request.json\n  ruwac --socket PATH attach --session session_ID\n  ruwac image-stage PNG PRIVATE_DIRECTORY\n  ruwac --socket PATH health|version|capabilities|schema|describe\nRemote: ruwac --host SSH_HOST [--remote-binary PATH] [--socket REMOTE_PATH] COMMAND.\n  ruwac --host SSH_HOST describe\n  ruwac --host SSH_HOST pane send-text --id pane_ID --file LOCAL_UTF8_FILE\n  ruwac --host SSH_HOST attach --session session_ID\nUses existing SSH keys/config and verified host keys; no credential or agent forwarding. Without explicit --socket, the remote CLI selects its own private default.\nNo desktop clipboard, image attachment, recovery after daemon loss or full Screen compatibility claim."
             );
         }
         _ => return Err("unknown command; use --help".into()),

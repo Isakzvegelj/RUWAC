@@ -1,5 +1,16 @@
 # RUWAC current state — machine workspaces, display and files
 
+## Current native shortcuts, appearance and safe diagnostics — 2026-10-11
+
+The native desktop now captures Alt+1 through Alt+9 and Alt+0 at window level, selecting workspace positions 1–10 across terminal, RDP and Files views. Missing positions are a no-op. Ctrl+Alt/AltGr-style combinations, Shift and Super chords are not captured; Caps Lock is allowed. Tab selection retains existing focus/clipboard ownership handling and persistent connections.
+
+The appearance follows the owner’s installed Ptyxis reference: native dark libadwaita chrome, a compact header, and workspace/PNG actions on a separate toolbar. `--theme dark|light|system` selects the desktop appearance (dark is the default). This is incremental styling of the existing compiled GTK client; the terminal engine and application-supplied terminal colors remain unchanged.
+
+`ruwac doctor` provides bounded read-only socket ownership/permissions and daemon-health checks. `--desktop` checks executable/display/session-bus availability, without claiming a working graphical connection from environment variables alone. `--terminal` inspects only stdin’s TTY. Explicit `--terminal --repair` restores canonical input, echo, signals and newline processing only when this process owns the invoking TTY foreground group. Queued input/custom control characters are retained; no terminal escape reset is emitted. Existing paths are never repaired or deleted. Remote read-only diagnostics use the authenticated SSH transport; remote repair is refused.
+
+The full product is not complete. Remaining gates include external Windows/Fedora RDP and physical GNOME input, stable view IDs and permission-scoped desktop automation, durable daemon-crash history, real agent image consumers, recursive/resumable files and encrypted-key UI, broader accessibility, matched/idle performance and qualified RPM/binary publication. Desktop styling still needs refinement beyond the current dark/compact native presentation. The authorized Windows endpoint is waiting for a credential entered through the profile editor; no password is inferred from “same as here.”
+
+
 ## Current authenticated host CLI and discovery — 2026-10-11
 
 `ruwac --host SSH_HOST` now sends named commands, raw RPC and JSON stdin requests through authenticated OpenSSH. `--remote-binary` selects the endpoint executable; an explicit `--socket` selects the endpoint socket. Without it, the remote CLI chooses its own private default: the local RUWAC_SOCKET is not forwarded. Existing SSH config and keys are used with BatchMode and strict host-key checking; agent and configured port forwarding are disabled. Request data travels as JSON on stdin, never as a remote shell argument. Executable/socket arguments are individually shell-quoted. Destination/option validation rejects malformed hosts, duplicate globals and remote desktop actions.

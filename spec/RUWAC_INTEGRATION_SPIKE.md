@@ -1,5 +1,31 @@
 # RUWAC implementation and qualification evidence
 
+## Current native shortcuts, appearance and safe diagnostics — 2026-10-11
+
+The native desktop now captures Alt+1 through Alt+9 and Alt+0 at window level, selecting workspace positions 1–10 across terminal, RDP and Files views. Missing positions are a no-op. Ctrl+Alt/AltGr-style combinations, Shift and Super chords are not captured; Caps Lock is allowed. Tab selection retains existing focus/clipboard ownership handling and persistent connections.
+
+The appearance follows the owner’s installed Ptyxis reference: native dark libadwaita chrome, a compact header, and workspace/PNG actions on a separate toolbar. `--theme dark|light|system` selects the desktop appearance (dark is the default). This is incremental styling of the existing compiled GTK client; the terminal engine and application-supplied terminal colors remain unchanged.
+
+`ruwac doctor` provides bounded read-only socket ownership/permissions and daemon-health checks. `--desktop` checks executable/display/session-bus availability, without claiming a working graphical connection from environment variables alone. `--terminal` inspects only stdin’s TTY. Explicit `--terminal --repair` restores canonical input, echo, signals and newline processing only when this process owns the invoking TTY foreground group. Queued input/custom control characters are retained; no terminal escape reset is emitted. Existing paths are never repaired or deleted. Remote read-only diagnostics use the authenticated SSH transport; remote repair is refused.
+
+Seven disposable local diagnostic cases pass, including a one-second stalled-listener bound, preservation of unsafe paths, read-only health/revision, missing graphical dependencies and repair confined to one foreground PTY while a second PTY stays unchanged. Three additional actual authorized SSH diagnostic checks pass: health/revision unchanged, structured no-TTY failure and remote repair rejection. Named CLI regression passes.
+
+Four native shortcut/appearance groups pass using XTest events through isolated nested Weston into the actual GTK capture controller: eight terminal tabs plus an RDP view and Files view, all ten Alt-number positions, missing-tab behavior, modifier guards/Caps Lock, and a PNG exported from the actual dark GTK window. The shortcut fixture’s RDP frame is synthetic, not a remote login. Separate regressions exercise eight workspace persistence groups, native terminal/GDK clipboard checks and three authenticated local RDP mixed-workspace/clipboard groups. Physical GNOME keyboard/AltGr and external Windows interoperability remain separate gates.
+
+Initial harness failures are preserved privately: Python changes the representation of PTY VMIN/VTIME after disabling canonical input, an unsupported named CLI fixture argument, and inspection before GTK window activation. The test now compares attributes read back from the PTY, uses canonical RPC for fixture argv and waits for activation. The toolbar was rebuilt after overlapping source synchronization. The final regression then found that moving PNG staging out of the header cleared the terminal target; the focus handler now preserves the target for both action containers while clearing remote ownership. Native regression is repeated after that fix.
+
+```sh
+./build.sh --release --test --desktop
+python3 ruwac/tests/integration/doctor.py --binary "$CARGO_TARGET_DIR/release/ruwac" --evidence "$RUWAC_EVIDENCE_DIR"
+python3 ruwac/tests/integration/desktop_shortcuts.py --binary "$CARGO_TARGET_DIR/release/ruwac" --gui "$CARGO_TARGET_DIR/release/ruwac-desktop" --evidence "$RUWAC_EVIDENCE_DIR"
+python3 ruwac/tests/integration/native_rust.py --binary "$CARGO_TARGET_DIR/release/ruwac" --gui "$CARGO_TARGET_DIR/release/ruwac-desktop" --evidence "$RUWAC_EVIDENCE_DIR" --primary-unavailable
+./release.sh beta
+./release.sh --verify
+./build.sh --release --desktop --install-user
+```
+Graphical tests require an isolated compositor and RUWAC_XTEST_DISPLAY. Exact node commands, hashes, retained failed attempts, authenticated SSH checks and publication/install receipts remain in the private doctor-r10 evidence capsule. The existing controller owns version allocation and publication.
+
+
 ## Current authenticated host CLI and discovery — 2026-10-11
 
 `ruwac --host SSH_HOST` now sends named commands, raw RPC and JSON stdin requests through authenticated OpenSSH. `--remote-binary` selects the endpoint executable; an explicit `--socket` selects the endpoint socket. Without it, the remote CLI chooses its own private default: the local RUWAC_SOCKET is not forwarded. Existing SSH config and keys are used with BatchMode and strict host-key checking; agent and configured port forwarding are disabled. Request data travels as JSON on stdin, never as a remote shell argument. Executable/socket arguments are individually shell-quoted. Destination/option validation rejects malformed hosts, duplicate globals and remote desktop actions.
