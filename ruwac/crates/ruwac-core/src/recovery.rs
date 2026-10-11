@@ -275,6 +275,7 @@ impl State {
                     term,
                     ended: true,
                     foreground: None,
+                    job: None,
                 },
             );
         }

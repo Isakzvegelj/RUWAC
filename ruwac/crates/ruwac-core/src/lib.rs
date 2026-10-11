@@ -1,4 +1,5 @@
 mod layout;
+mod jobs;
 mod recovery;
 use layout::{Layout, Rect};
 pub use recovery::Store;
@@ -16,6 +17,7 @@ struct Pane {
     term: Terminal,
     ended: bool,
     foreground: Option<i32>,
+    job: Option<jobs::Job>,
 }
 impl Pane {
     fn live_pty(&self) -> Result<&Pty> {
@@ -177,6 +179,8 @@ pub fn start_with_store(store: Option<Store>) -> std::io::Result<Handle> {
                             | "session.list"
                             | "window.list"
                             | "pane.list"
+                            | "job.list"
+                            | "job.query"
                             | "pane.history"
                             | "pane.history.freeze"
                             | "pane.history.release"
@@ -204,6 +208,7 @@ pub fn start_with_store(store: Option<Store>) -> std::io::Result<Handle> {
                             p.exit_code = p.pty.as_ref().and_then(Pty::exit_code);
                             p.term.reset_input_modes();
                         } else {
+                            if let Some(job)=p.job.as_mut(){job.output();}
                             for reply in p.term.feed(&b) {
                                 if let Some(pty) = &p.pty {
                                     let _ = pty.send(reply.into_bytes());
@@ -295,6 +300,8 @@ impl State {
                     | "session.detach"
                     | "client.render"
                     | "client.input"
+                    | "job.list"
+                    | "job.query"
                     | "pane.history.freeze"
                     | "pane.history.release"
                     | "daemon.stop"
@@ -351,6 +358,7 @@ impl State {
                 id: pid.clone(),
                 window: w.into(),
                 foreground: pty.foreground_group(),
+                job: Some(jobs::Job::new(&args[0],pty.pid)),
                 pty: Some(pty),
                 exit_code: None,
                 term: Terminal::new(rows, cols),
@@ -459,7 +467,7 @@ impl State {
                 json!({"name":"ruwac","implementation":"spike","package":env!("CARGO_PKG_VERSION"),"protocol":0}),
             ),
             "capabilities" => Ok(
-                json!({"recovery":self.store.is_some(),"history_checkpoints":"private canonical tail, 50000 lines or 512 KiB per pane; processes restore ended","desktop_clipboard":false,"primary":false,"graphics":false,"image_attachment":false,"ssh_transport":"authenticated OpenSSH through CLI --host","shared_focus":true,"split":"persistent horizontal/vertical tree, sixteen panes","capture_limit":2000,"history_page_limit":500,"scrollback_default":50000,"max_text_bytes":ruwac_protocol::MAX_TEXT}),
+                json!({"job_metadata":true,"job_metadata_no_argv":true,"structured_agent_state":false,"recovery":self.store.is_some(),"history_checkpoints":"private canonical tail, 50000 lines or 512 KiB per pane; processes restore ended","desktop_clipboard":false,"primary":false,"graphics":false,"image_attachment":false,"ssh_transport":"authenticated OpenSSH through CLI --host","shared_focus":true,"split":"persistent horizontal/vertical tree, sixteen panes","capture_limit":2000,"history_page_limit":500,"scrollback_default":50000,"max_text_bytes":ruwac_protocol::MAX_TEXT}),
             ),
             "schema" => Ok(schema()),
             "describe" => Ok(
@@ -638,6 +646,8 @@ impl State {
                 self.layout(&s);
                 Ok(json!({"pane":p,"pid":self.panes[&p].pty.as_ref().map(|p|p.pid)}))
             }
+            "job.list" => self.job_list(v),
+            "job.query" => self.job_query(v),
             "pane.list" => {
                 let s = target(v, "session", "session")?;
                 let s = self
@@ -975,5 +985,5 @@ impl State {
     }
 }
 pub fn schema() -> Value {
-    json!({"protocol":0,"framing":"u32 big-endian byte length + UTF-8 JSON","max_frame_bytes":ruwac_protocol::MAX_FRAME,"methods":["health","version","capabilities","schema","describe","session.create","session.list","session.attach","session.detach","window.create","window.list","window.rename","window.select","window.cycle","window.previous","pane.create","pane.layout","pane.history","pane.history.freeze","pane.history.release","pane.close","pane.list","pane.select","pane.sendText","pane.sendKey","pane.capture","pane.wait","buffer.set","buffer.get","buffer.paste","client.resize","client.render","client.input","events.subscribe","daemon.checkpoint","daemon.stop"],"targets":{"session":"session_ + 32 hex","window":"window_ + 32 hex","pane":"pane_ + 32 hex"},"request":{"version":0,"id":"JSON request correlation value","method":"method name","params":"object","idempotency_key":"optional 1..128 byte daemon-lifetime key"}})
+    json!({"protocol":0,"framing":"u32 big-endian byte length + UTF-8 JSON","max_frame_bytes":ruwac_protocol::MAX_FRAME,"methods":["job.list","job.query","health","version","capabilities","schema","describe","session.create","session.list","session.attach","session.detach","window.create","window.list","window.rename","window.select","window.cycle","window.previous","pane.create","pane.layout","pane.history","pane.history.freeze","pane.history.release","pane.close","pane.list","pane.select","pane.sendText","pane.sendKey","pane.capture","pane.wait","buffer.set","buffer.get","buffer.paste","client.resize","client.render","client.input","events.subscribe","daemon.checkpoint","daemon.stop"],"targets":{"session":"session_ + 32 hex","window":"window_ + 32 hex","pane":"pane_ + 32 hex"},"request":{"version":0,"id":"JSON request correlation value","method":"method name","params":"object","idempotency_key":"optional 1..128 byte daemon-lifetime key"}})
 }

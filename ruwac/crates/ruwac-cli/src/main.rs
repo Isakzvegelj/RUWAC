@@ -136,6 +136,16 @@ fn named_request(a: &[String]) -> io::Result<Request> {
     Ok(request(method, params))
 }
 
+fn job_request(args:&[String])->io::Result<Request> {
+    let bad=||io::Error::other("job list [--session ID] [--query TEXT] [--offset N] [--limit N] | job query --id pane_ID [--json]");
+    let verb=args.first().ok_or_else(bad)?;let mut params=json!({});let mut i=1;
+    while i<args.len(){if args[i]=="--json"&&i+1==args.len(){i+=1;continue;}if i+1>=args.len(){return Err(bad());}
+        let key=match (verb.as_str(),args[i].as_str()) {("list","--session")=>"session",("list","--query")=>"query",("list","--offset")=>"offset",("list","--limit")=>"limit",("query","--id")=>"pane",_=>return Err(bad())};
+        if params.get(key).is_some(){return Err(bad());}params[key]=if matches!(key,"offset"|"limit"){json!(args[i+1].parse::<u64>().map_err(|_|bad())?)}else{json!(args[i+1])};i+=2;
+    }
+    if verb=="query"&&params.get("pane").is_none(){return Err(bad());}if !matches!(verb.as_str(),"list"|"query"){return Err(bad());}Ok(request(&format!("job.{verb}"),params))
+}
+
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut a: Vec<_> = std::env::args().skip(1).collect();
     let mut socket = PathBuf::from(std::env::var("RUWAC_SOCKET").unwrap_or_else(|_| {
@@ -211,6 +221,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         Some("--version") => println!("RUWAC {}", env!("CARGO_PKG_VERSION")),
         Some("session" | "window" | "pane") => println!("{}", call(&named_request(&a)?)?),
+        Some("job") => println!("{}",call(&job_request(&a[1..])?)?),
         Some("gui") => {
             use std::os::unix::process::CommandExt;
             let binary = std::env::current_exe()?;
@@ -335,7 +346,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         Some("--help" | "help") | None => {
             println!(
-                "RUWAC\n  ruwac workspace describe|list [--json]\n  ruwac rdp list --json\n  ruwac rdp query|reconnect|disconnect --id view_ID --json\n  ruwac rdp open --profile endpoint_ID [--activate] --json\n  ruwac workspace activate --id tab_ID --json\n  ruwac workspace focus --id view_ID --json\n  ruwac doctor [--desktop] [--terminal [--repair]] [--json]\n  ruwac --version\n  ruwac start  # starts/reuses a private persistent daemon\n  ruwac gui [--session session_ID]\n  ruwac session create --name NAME --detach --json\n  ruwac session list --json\n  ruwac pane list --session session_ID --json\n  ruwac pane send-text --id pane_ID --text TEXT --json\n  ruwac pane send-text --id pane_ID --file UTF8_FILE --json\n  ruwac pane send-key --id pane_ID --key Enter --json\n  ruwac pane capture --id pane_ID --lines 250 --json\n  ruwac pane wait --id pane_ID --contains TEXT --timeout-ms 5000 --json\n  ruwac --socket PATH serve\n  ruwac --socket PATH rpc METHOD --params JSON [--idempotency KEY]\n  ruwac --socket PATH request < request.json\n  ruwac --socket PATH attach --session session_ID\n  ruwac image-stage PNG PRIVATE_DIRECTORY\n  ruwac --socket PATH health|version|capabilities|schema|describe\nRemote: ruwac --host SSH_HOST [--remote-binary PATH] [--socket REMOTE_PATH] COMMAND.\n  ruwac --host SSH_HOST describe\n  ruwac --host SSH_HOST pane send-text --id pane_ID --file LOCAL_UTF8_FILE\n  ruwac --host SSH_HOST attach --session session_ID\nWorkspace/RDP commands address an already-running remote GUI with its explicit permissions. Uses existing SSH keys/config and verified host keys; no credential or agent forwarding. Without explicit --socket, the remote CLI selects its own private default.\nNo desktop clipboard, image attachment, recovery after daemon loss or full Screen compatibility claim."
+                "RUWAC\n  ruwac job list [--session session_ID] [--query TEXT] --json\n  ruwac job query --id pane_ID --json\n  ruwac workspace describe|list [--json]\n  ruwac rdp list --json\n  ruwac rdp query|reconnect|disconnect --id view_ID --json\n  ruwac rdp open --profile endpoint_ID [--activate] --json\n  ruwac workspace activate --id tab_ID --json\n  ruwac workspace focus --id view_ID --json\n  ruwac doctor [--desktop] [--terminal [--repair]] [--json]\n  ruwac --version\n  ruwac start  # starts/reuses a private persistent daemon\n  ruwac gui [--session session_ID]\n  ruwac session create --name NAME --detach --json\n  ruwac session list --json\n  ruwac pane list --session session_ID --json\n  ruwac pane send-text --id pane_ID --text TEXT --json\n  ruwac pane send-text --id pane_ID --file UTF8_FILE --json\n  ruwac pane send-key --id pane_ID --key Enter --json\n  ruwac pane capture --id pane_ID --lines 250 --json\n  ruwac pane wait --id pane_ID --contains TEXT --timeout-ms 5000 --json\n  ruwac --socket PATH serve\n  ruwac --socket PATH rpc METHOD --params JSON [--idempotency KEY]\n  ruwac --socket PATH request < request.json\n  ruwac --socket PATH attach --session session_ID\n  ruwac image-stage PNG PRIVATE_DIRECTORY\n  ruwac --socket PATH health|version|capabilities|schema|describe\nRemote: ruwac --host SSH_HOST [--remote-binary PATH] [--socket REMOTE_PATH] COMMAND.\n  ruwac --host SSH_HOST describe\n  ruwac --host SSH_HOST pane send-text --id pane_ID --file LOCAL_UTF8_FILE\n  ruwac --host SSH_HOST attach --session session_ID\nWorkspace/RDP commands address an already-running remote GUI with its explicit permissions. Uses existing SSH keys/config and verified host keys; no credential or agent forwarding. Without explicit --socket, the remote CLI selects its own private default.\nNo desktop clipboard, image attachment, recovery after daemon loss or full Screen compatibility claim."
             );
         }
         _ => return Err("unknown command; use --help".into()),

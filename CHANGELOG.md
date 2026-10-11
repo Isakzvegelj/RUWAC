@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## v0.1.18 — 2026-10-11 — Prerelease
+
+- Add bounded daemon-owned process metadata and CLI job list/query without arguments, environment values or inferred agent state.
+- Add a native searchable process monitor, exact persistent-pane jump and opt-in observed-exit notifications.
+- Validate real foreground processes, exit status, crash history, native GTK search/jump and private D-Bus notification delivery.
+
 ## v0.1.17 — 2026-10-11 — Prerelease
 
 - Qualify sixteen real mixed GNU Screen/tmux/RUWAC chains at two-to-five layers with common and native tmux prefix configurations.

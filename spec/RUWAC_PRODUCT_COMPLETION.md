@@ -41,7 +41,7 @@ The full product is not yet complete. A runnable source prerelease and isolated 
 | F-01 import | Explicit read-only Remmina preview, 70 imports, metadata backup | PARTIAL: explicit-ID reviewed merge, policy preservation, stale/active guards and Undo validated; broader nonsecret mapping/skip reporting remains |
 | F-02 library | Native compact sidebar/panels, CRUD, groups, favorites, recents, 1,000-profile fixture | PARTIAL: native 50-row paging and all 1,000 endpoints/search validated; inherited routes and specified SQLite inventory remain |
 | F-03 transfers | SFTP SHA-256, overwrite, cancel, slow-peer/loss and native listing | PARTIAL: recursive/resumable/rsync, encrypted keys and cleanup after loss |
-| F-04 agents | Ordinary daemon-owned terminal execution | PARTIAL: process metadata, monitor/jump/notify; optional structured adapters |
+| F-04 agents | Ordinary terminal execution, bounded process metadata, native search/exact jump and private D-Bus exit delivery | PARTIAL: observed process layer validated; supported agent image consumption, physical notification acceptance and optional structured adapters remain |
 | F-05 ordinary user/headless package | Independent graphical-free headless graph | PARTIAL: per-user installation implemented; RPM dependency/install qualification remains open |
 | F-06 install/upgrade/uninstall | Reversible private per-user installer and desktop entry | PARTIAL: per-user installer fixtures pass; Fedora RPM lifecycle remains open |
 | F-07 standard workflow | Existing build/release/controller and verified tagged source releases | PARTIAL: immutable binary/RPM publication remains unqualified |
