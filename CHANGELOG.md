@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## v0.1.8 — 2026-10-11 — Prerelease
+
+- Add authenticated OpenSSH host control, literal local-file/JSON request delivery and real remote terminal attachment through explicit --host targeting.
+- Add read-only API discovery with compatibility for older live daemons; enforce remote response bounds, correlation and process deadlines without graphical dependencies.
+- Validate actual Fedora SSH control and persistent PTYs, synthetic malformed/stalled transport cases and existing headless regressions; preserve running sessions.
+
 ## v0.1.7 — 2026-10-11 — Prerelease
 
 - Add native individual mixed-view move and close actions; collapse dividers while preserving neighboring terminals, RDP transports and profile protection.

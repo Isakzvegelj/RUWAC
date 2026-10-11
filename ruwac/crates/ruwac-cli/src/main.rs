@@ -1,3 +1,4 @@
+mod remote;
 mod startup;
 use ruwac_protocol::{Request, read_frame, request, write_frame};
 use serde_json::{Value, json};
@@ -20,6 +21,21 @@ fn rpc(socket: &std::path::Path, r: &Request) -> io::Result<Value> {
         return Err(io::Error::other("request failed"));
     }
     Ok(v)
+}
+// Older live daemons are preserved: discover their schema before invoking a new method.
+fn describe(call: impl Fn(&Request) -> io::Result<Value>) -> io::Result<Value> {
+    let schema = call(&request("schema", json!({})))?;
+    let methods = schema["result"]["methods"]
+        .as_array()
+        .ok_or_else(|| io::Error::other("daemon discovery schema rejected"))?;
+    if methods.iter().any(|m| m == "describe") {
+        return call(&request("describe", json!({})));
+    }
+    let capabilities = call(&request("capabilities", json!({})))?;
+    let version = call(&request("version", json!({})))?;
+    Ok(
+        json!({"version":0,"id":ruwac_protocol::id("request"),"result":{"protocol":0,"native_describe":false,"schema":schema["result"],"capabilities":capabilities["result"],"version":version["result"],"transport":{"local":"same-UID authenticated Unix socket","remote":"authenticated OpenSSH CLI --host","gui":"independent optional service"}}}),
+    )
 }
 fn main() {
     if let Err(e) = run() {
@@ -128,16 +144,62 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .unwrap_or_else(|_| format!("/tmp/ruwac-{}", unsafe { libc::geteuid() }))
         )
     }));
-    if a.first().map(String::as_str) == Some("--socket") {
+    let mut host = None;
+    let mut remote_binary = None;
+    let mut explicit_socket = None;
+    while a
+        .first()
+        .is_some_and(|v| matches!(v.as_str(), "--socket" | "--host" | "--remote-binary"))
+    {
         if a.len() < 3 {
-            return Err("--socket requires path and command".into());
+            return Err("global option requires a value and command".into());
         }
-        socket = PathBuf::from(a.remove(1));
-        a.remove(0);
+        let option = a.remove(0);
+        let value = a.remove(0);
+        match option.as_str() {
+            "--socket" => {
+                if explicit_socket.replace(PathBuf::from(&value)).is_some() {
+                    return Err("duplicate --socket".into());
+                }
+                socket = PathBuf::from(value);
+            }
+            "--host" => {
+                if host.replace(value).is_some() {
+                    return Err("duplicate --host".into());
+                }
+            }
+            "--remote-binary" => {
+                if remote_binary.replace(value).is_some() {
+                    return Err("duplicate --remote-binary".into());
+                }
+            }
+            _ => unreachable!(),
+        }
     }
+    if remote_binary.is_some() && host.is_none() {
+        return Err("--remote-binary requires --host".into());
+    }
+    let remote = host.map(|host| remote::Remote {
+        host,
+        binary: remote_binary.unwrap_or_else(|| "ruwac".into()),
+        socket: explicit_socket,
+    });
+    if let Some(remote) = &remote {
+        remote.validate()?;
+        match a.first().map(String::as_str){
+            Some("start")=>{if a.len()!=1{return Err("start takes no command options".into());}println!("{}",remote.start()?);return Ok(());},
+            Some("attach")=>{if a.len()!=3||a[1]!="--session"{return Err("attach --session session_ID".into());}remote.attach(&a[2])?;return Ok(());},
+            Some("gui"|"serve"|"image-stage"|"rdp"|"workspace")=>return Err("--host supports headless control/start/attach; desktop actions require the local GUI".into()),
+            _=>(),
+        }
+    }
+    let call = |request: &Request| match &remote {
+        Some(remote) => remote.rpc(request),
+        None => rpc(&socket, request),
+    };
     match a.first().map(String::as_str) {
         Some("--version") => println!("RUWAC {}", env!("CARGO_PKG_VERSION")),
-        Some("session" | "window" | "pane") => println!("{}", rpc(&socket, &named_request(&a)?)?),
+        Some("session" | "window" | "pane") => println!("{}", call(&named_request(&a)?)?),
         Some("gui") => {
             use std::os::unix::process::CommandExt;
             let binary = std::env::current_exe()?;
@@ -215,7 +277,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 i += 2;
             }
-            println!("{}", rpc(&socket, &r)?);
+            println!("{}", call(&r)?);
         }
         Some("request") => {
             let mut b = String::new();
@@ -226,7 +288,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 return Err("request exceeds 1 MiB".into());
             }
             let r: Request = serde_json::from_str(&b)?;
-            println!("{}", rpc(&socket, &r)?);
+            println!("{}", call(&r)?);
         }
         Some("image-stage") => {
             if a.len() != 3 {
@@ -242,12 +304,21 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 json!({"path":r.path,"mime":"image/png","bytes":r.bytes,"sha256":r.sha256,"width":r.width,"height":r.height,"attached":false})
             );
         }
+        Some("describe") => {
+            if a.len() > 2 || (a.len() == 2 && a[1] != "--json") {
+                return Err("describe takes only optional --json".into());
+            }
+            println!("{}", describe(call)?);
+        }
         Some("health" | "version" | "capabilities" | "schema") => {
-            println!("{}", rpc(&socket, &request(&a[0], json!({})))?);
+            if a.len() > 2 || (a.len() == 2 && a[1] != "--json") {
+                return Err("discovery takes only optional --json".into());
+            }
+            println!("{}", call(&request(&a[0], json!({})))?);
         }
         Some("--help" | "help") | None => {
             println!(
-                "RUWAC\n  ruwac --version\n  ruwac start  # starts/reuses a private persistent daemon\n  ruwac gui [--session session_ID]\n  ruwac session create --name NAME --detach --json\n  ruwac session list --json\n  ruwac pane list --session session_ID --json\n  ruwac pane send-text --id pane_ID --text TEXT --json\n  ruwac pane send-text --id pane_ID --file UTF8_FILE --json\n  ruwac pane send-key --id pane_ID --key Enter --json\n  ruwac pane capture --id pane_ID --lines 250 --json\n  ruwac pane wait --id pane_ID --contains TEXT --timeout-ms 5000 --json\n  ruwac --socket PATH serve\n  ruwac --socket PATH rpc METHOD --params JSON [--idempotency KEY]\n  ruwac --socket PATH request < request.json\n  ruwac --socket PATH attach --session session_ID\n  ruwac image-stage PNG PRIVATE_DIRECTORY\n  ruwac --socket PATH health|version|capabilities|schema\nRemote: pipe JSON into an existing authenticated ssh HOST ruwac request.\nNo desktop clipboard, image attachment, recovery after daemon loss or full Screen compatibility claim."
+                "RUWAC\n  ruwac --version\n  ruwac start  # starts/reuses a private persistent daemon\n  ruwac gui [--session session_ID]\n  ruwac session create --name NAME --detach --json\n  ruwac session list --json\n  ruwac pane list --session session_ID --json\n  ruwac pane send-text --id pane_ID --text TEXT --json\n  ruwac pane send-text --id pane_ID --file UTF8_FILE --json\n  ruwac pane send-key --id pane_ID --key Enter --json\n  ruwac pane capture --id pane_ID --lines 250 --json\n  ruwac pane wait --id pane_ID --contains TEXT --timeout-ms 5000 --json\n  ruwac --socket PATH serve\n  ruwac --socket PATH rpc METHOD --params JSON [--idempotency KEY]\n  ruwac --socket PATH request < request.json\n  ruwac --socket PATH attach --session session_ID\n  ruwac image-stage PNG PRIVATE_DIRECTORY\n  ruwac --socket PATH health|version|capabilities|schema|describe\nRemote: ruwac --host SSH_HOST [--remote-binary PATH] [--socket REMOTE_PATH] COMMAND.\n  ruwac --host SSH_HOST describe\n  ruwac --host SSH_HOST pane send-text --id pane_ID --file LOCAL_UTF8_FILE\n  ruwac --host SSH_HOST attach --session session_ID\nUses existing SSH keys/config and verified host keys; no credential or agent forwarding. Without explicit --socket, the remote CLI selects its own private default.\nNo desktop clipboard, image attachment, recovery after daemon loss or full Screen compatibility claim."
             );
         }
         _ => return Err("unknown command; use --help".into()),

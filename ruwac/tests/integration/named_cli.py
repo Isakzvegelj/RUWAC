@@ -14,6 +14,9 @@ try:
  with spike.Client(sock) as rpc:
   s=rpc.call('session.create',{'name':'named-fixture','argv':[sys.executable,str(receiver),str(root/'input.bin')]})
   rpc.call('pane.wait',{'pane':s['pane'],'contains':'READY','timeout_ms':5000})
+ revision=run('health')['result']['revision'];description=run('describe')['result']
+ assert 'describe'in description['schema']['methods'] and description['protocol']==0
+ assert run('health')['result']['revision']==revision
  assert run('session','list','--json')['result'][0]['id']==s['session']
  assert run('pane','list','--session',s['session'],'--json')['result'][0]['id']==s['pane']
  payload='literal $HOME "quotes" \\ žółć 🧪\t\n';file=root/'utf8.txt';file.write_text(payload)

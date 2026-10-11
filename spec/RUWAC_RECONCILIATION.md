@@ -1,5 +1,14 @@
 # RUWAC implementation reconciliation
 
+## Current authenticated host CLI and discovery — 2026-10-11
+
+`ruwac --host SSH_HOST` now sends named commands, raw RPC and JSON stdin requests through authenticated OpenSSH. `--remote-binary` selects the endpoint executable; an explicit `--socket` selects the endpoint socket. Without it, the remote CLI chooses its own private default: the local RUWAC_SOCKET is not forwarded. Existing SSH config and keys are used with BatchMode and strict host-key checking; agent and configured port forwarding are disabled. Request data travels as JSON on stdin, never as a remote shell argument. Executable/socket arguments are individually shell-quoted. Destination/option validation rejects malformed hosts, duplicate globals and remote desktop actions.
+
+`--host HOST start` starts/reuses the remote daemon only when explicitly requested. `--host HOST attach --session ID` opens a real SSH PTY, retaining daemon sessions after detach. Control does not implicitly start a daemon. Remote reply version/correlation and 1 MiB bounds are checked. Control has a 70-second response deadline and a two-second post-EOF exit bound; failure terminates/reaps the SSH process. Interactive attachment is intentionally governed by the user’s session lifetime.
+
+`describe` is an additive read-only daemon method exposing schema, capabilities, version and transport boundaries. The CLI probes the schema first and can aggregate existing read-only methods for an older live daemon, returning native_describe=false without inventing capabilities or restarting its processes. Discovery does not change daemon revision. The daemon/CLI remain independent of GTK, IronRDP and libssh2.
+
+
 ## Current individual view management — 2026-10-11
 
 **Views…** opens a native dialog for the selected mixed workspace. Each leaf offers **Move to own tab** and **Close view**. Removing a leaf collapses its divider and keeps the sibling widget/tree alive. Moving preserves the underlying connection; closing a terminal detaches its presentation while daemon programs keep running, closing RDP disconnects only that connection, and closing Files cancels its work and releases its own lease. Closing the last leaf removes the empty tab. Dialog errors remain visible if a view disappeared. The dialog takes local focus before opening; remote clipboard ownership cannot follow it.

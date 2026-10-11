@@ -14,10 +14,10 @@ The full product is not yet complete. A runnable source prerelease and isolated 
 | T-08 history/internal buffer | Canonical history, paged capture, independent internal/system clipboard tests | PASS bounded fixture |
 | T-09 SSH/nested terminals | Real authorized SSH remote-PTY detach/reattach and Unicode | PARTIAL: full 2–5-level nesting |
 | T-10 performance | Retained matched 1/5/20/40-pane measurements | PARTIAL: current idle-qualified 30-trial acceptance |
-| A-01 negotiation/discovery | Existing v0 schema/capabilities/typed errors | PARTIAL: missing describe/host/workspace API surfaces |
+| A-01 negotiation/discovery | Existing v0 schema/capabilities/typed errors | PARTIAL: describe/host implemented; GUI workspace API remains open |
 | A-02 literal input | Unicode, quotes, shell metacharacters and separate Enter | PASS |
 | A-03 concurrent routes | Idempotency, focus changes, stale IDs | PASS |
-| A-04 non-TTY/SSH | Real SSH CLI/PTY round trips | PARTIAL: explicit host option |
+| A-04 non-TTY/SSH | Real --host JSON/file control and three SSH PTY cycles | PASS authorized SSH fixture; endpoint provisioning remains explicit |
 | A-05 capture/wait/events | Bounded capture, event subscription, revision and wait tests | PASS |
 | A-06 socket/backpressure | Owned daemon socket, malformed frames, concurrency limits | PARTIAL: same-UID peer verification implemented; further fuzz/soak |
 | A-07 GUI control | Explicit unavailable response and independent headless graph | PARTIAL: usable permission-scoped GUI/RDP automation adapter |

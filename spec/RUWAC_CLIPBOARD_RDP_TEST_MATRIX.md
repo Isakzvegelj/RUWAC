@@ -1,5 +1,10 @@
 # RUWAC desktop / protocol test matrix
 
+## Current authenticated host CLI and discovery — 2026-10-11
+
+No graphical clipboard/RDP transport changes. Retain the preceding native compositor and authenticated loopback evidence; SSH input acceptance does not establish external RDP login, agent attachment or physical input.
+
+
 ## Current individual view management — 2026-10-11
 
 **Views…** opens a native dialog for the selected mixed workspace. Each leaf offers **Move to own tab** and **Close view**. Removing a leaf collapses its divider and keeps the sibling widget/tree alive. Moving preserves the underlying connection; closing a terminal detaches its presentation while daemon programs keep running, closing RDP disconnects only that connection, and closing Files cancels its work and releases its own lease. Closing the last leaf removes the empty tab. Dialog errors remain visible if a view disappeared. The dialog takes local focus before opening; remote clipboard ownership cannot follow it.

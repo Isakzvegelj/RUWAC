@@ -1,5 +1,5 @@
 {
-  "baseline": "v0.1.6",
+  "baseline": "v0.1.7",
   "scope": "Owned native Wayland compositor, authenticated loopback and authorized Fedora SSH; external RDP and physical seat unverified",
   "native_rdp": [
     {
@@ -5465,5 +5465,108 @@
       ]
     },
     "limits": "Full product completion remains unproven. Stable persisted GUI view IDs and exact per-leaf focus restoration, permission-scoped automation/host CLI, durable daemon-crash history, supported local/remote agent image consumers, recursive/resumable files and encrypted-key UI, external Windows/Fedora RDP interoperability, physical GNOME input/accessibility, idle-qualified/matched performance and qualified RPM/binary publication remain open. No external RDP login is claimed. Original source remains Apache-2.0; dependencies retain their licenses."
+  },
+  "remote_r9": {
+    "actual_ssh_host_cli": {
+      "cases": [
+        {
+          "id": "HOST-START-DESCRIBE",
+          "status": "PASS",
+          "authenticated_ssh": true,
+          "literal_remote_socket_path": true,
+          "reuse_existing_daemon": true,
+          "describe_does_not_change_revision": true
+        },
+        {
+          "id": "HOST-LITERAL-CONTROL",
+          "status": "PASS",
+          "exact_unicode_and_metacharacters": true,
+          "local_file_read_remote_literal_delivery": true,
+          "separate_enter": true,
+          "request_correlation": true,
+          "stale_target_error": true,
+          "missing_target_rejected": true,
+          "remote_gui_rejected": true
+        },
+        {
+          "id": "HOST-PTY-PERSISTENCE",
+          "status": "PASS",
+          "cycles": 3,
+          "same_child_pid": true,
+          "unicode_exact": true,
+          "rows": 30,
+          "cols": 105
+        }
+      ],
+      "binary_sha256": "eea7288972927d8bb03a22239f4b4451922e3e40046b7264def8ed8014e22989",
+      "transport": "actual existing SSH key and verified host key; generated private remote daemon/socket; no owner sessions touched"
+    },
+    "synthetic_subprocess_contract": {
+      "cases": [
+        {
+          "case": "ok",
+          "status": "PASS",
+          "elapsed_ms": 34.48
+        },
+        {
+          "case": "wrong-id",
+          "status": "PASS",
+          "elapsed_ms": 37.5
+        },
+        {
+          "case": "wrong-version",
+          "status": "PASS",
+          "elapsed_ms": 37.32
+        },
+        {
+          "case": "error",
+          "status": "PASS",
+          "elapsed_ms": 33.24
+        },
+        {
+          "case": "oversize",
+          "status": "PASS",
+          "elapsed_ms": 38.49
+        },
+        {
+          "case": "invalid-json",
+          "status": "PASS",
+          "elapsed_ms": 35.35
+        },
+        {
+          "case": "exit-failed",
+          "status": "PASS",
+          "elapsed_ms": 38.33
+        },
+        {
+          "case": "eof-live",
+          "status": "PASS",
+          "elapsed_ms": 2044.14
+        },
+        {
+          "case": "silent-live",
+          "status": "PASS",
+          "elapsed_ms": 70005.81
+        },
+        {
+          "case": "global-option-validation",
+          "status": "PASS",
+          "no_ssh_invocation": true
+        },
+        {
+          "case": "remote-default-socket",
+          "status": "PASS",
+          "local_environment_not_forwarded": true
+        }
+      ],
+      "qualification": "synthetic SSH subprocess contract; does not establish remote login"
+    },
+    "legacy_daemon": {
+      "compatible_read_only_discovery": true,
+      "native_describe": false,
+      "health_revision_preserved": true
+    },
+    "named_cli": "PASS",
+    "limits": "Remaining full-product gates include stable GUI view IDs and permission-scoped GUI/RDP automation, durable daemon-crash metadata/history, actual agent image consumers, recursive/resumable files and encrypted-key UI, external Windows/Fedora RDP and physical GNOME acceptance, complete nested Screen behavior, idle-qualified/matched performance and qualified RPM/binary publication. Host control requires a compatible endpoint CLI, pre-established SSH authentication and verified host key; it does not provision credentials or forward a desktop. Original source remains Apache-2.0. No shared release infrastructure or manually allocated versions were introduced."
   }
 }

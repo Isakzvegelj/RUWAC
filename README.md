@@ -87,3 +87,18 @@ The full headless suite and three genuine SSH remote-PTY detach/reattach cycles 
 Use **Split tabs…** to place existing terminal, RDP or Files views side by side or above/below each other. **Separate views** returns them to tabs while preserving connections. RDP connection/display/clipboard actions are under **RDP controls**. Clipboard ownership follows the focused canvas; local controls and Files cannot let inactive RDP sessions take over CLIPBOARD.
 
 **Views…** lets you move one mixed view to its own tab or close it. Closing a terminal view detaches it; use Sessions to reopen its still-running programs. Closing RDP disconnects just that view. Closing Files cancels its work. Neighboring views and connections remain open. Empty workspaces can create a new terminal from the toolbar.
+
+## Control another host
+
+Use an existing SSH alias/key and verified host key. The endpoint must have RUWAC installed:
+
+```sh
+ruwac --host SSH_HOST describe
+ruwac --host SSH_HOST start
+ruwac --host SSH_HOST session list --json
+ruwac --host SSH_HOST pane send-text --id pane_ID --file local-input.txt --json
+ruwac --host SSH_HOST pane send-key --id pane_ID --key Enter --json
+ruwac --host SSH_HOST attach --session session_ID
+```
+
+Global `--remote-binary PATH` and `--socket REMOTE_PATH` select an explicit executable/socket. Remote request content is literal JSON over stdin. Password prompting, agent forwarding and desktop forwarding are disabled. `describe` exposes actual endpoint capabilities and supports older live daemons through read-only aggregation; it does not upgrade or restart them.

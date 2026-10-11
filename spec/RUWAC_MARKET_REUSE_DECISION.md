@@ -1,5 +1,10 @@
 # RUWAC component provenance
 
+## Current authenticated host CLI and discovery — 2026-10-11
+
+Existing Rust engine and OpenSSH provide host control without new dependencies or market reevaluation. GTK/IronRDP/libssh2 remain unchanged.
+
+
 ## Current individual view management — 2026-10-11
 
 Retain the existing Rust engine, native GTK, IronRDP and libssh2. This increment uses existing GTK widgets and resource registries; no market reevaluation or dependency addition.

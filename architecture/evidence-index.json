@@ -1,10 +1,10 @@
 {
-  "baseline_commit": "1b40266015c7f168958c77c85208520a98fff66a",
+  "baseline_commit": "6b4a889a164dc144c75497c5173ec72795a31393",
   "current_report": "spec/RUWAC_INTEGRATION_SPIKE.md",
   "public_evidence": [
     "architecture/acceptance-results.json",
     "architecture/benchmark-results.json",
     "architecture/dependency-licenses.json"
   ],
-  "private_capsule": "views-r8: optimized native build; eight workspace/native-dialog cases; three authenticated mixed-RDP/ownership groups; 21 native terminal passes with separate PRIMARY block; six real SFTP groups with panel move/refresh/close; retained failed resource-index assumptions; final controller publication and matching per-user installations"
+  "private_capsule": "remote-r9: optimized headless builds/units/100 races/state; actual authorized SSH --host literal control/discovery and three PTY cycles; eleven synthetic subprocess cases including 70-second stalled-peer bound; named CLI; read-only older-live-daemon discovery; standard controller publication and matching CVF/EVF installations"
 }
