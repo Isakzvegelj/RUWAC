@@ -1,5 +1,10 @@
 # RUWAC component provenance
 
+## Current individual view management — 2026-10-11
+
+Retain the existing Rust engine, native GTK, IronRDP and libssh2. This increment uses existing GTK widgets and resource registries; no market reevaluation or dependency addition.
+
+
 ## Current mixed workspace increment — 2026-10-11
 
 No new market investigation or component substitution. Existing GTK Paned and IronRDP transports provide mixed views; existing private metadata primitives provide restoration. No dependency additions.

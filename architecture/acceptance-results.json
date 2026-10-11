@@ -1,5 +1,5 @@
 {
-  "baseline": "v0.1.5",
+  "baseline": "v0.1.6",
   "scope": "Owned native Wayland compositor, authenticated loopback and authorized Fedora SSH; external RDP and physical seat unverified",
   "native_rdp": [
     {
@@ -4712,5 +4712,758 @@
     },
     "original_source_license": "Apache-2.0; owner approved",
     "limits": "Individual mixed-pane management and exact focus restoration; daemon-crash history; supported image consumers; external RDP and physical input; resumable/recursive files; qualified RPM/binary publication."
+  },
+  "views_r8": {
+    "workspace": {
+      "results": [
+        {
+          "id": "NATIVE-WORKSPACE-REOPEN",
+          "status": "PASS",
+          "terminal_tabs": 3,
+          "persistent_pids": true,
+          "closed_views_removed": true,
+          "saved_mode": "0600"
+        },
+        {
+          "id": "NATIVE-WORKSPACE-MIGRATION",
+          "status": "PASS",
+          "schema_1_to_2": true,
+          "original_backup_mode": "0600",
+          "same_terminal_pids": true
+        },
+        {
+          "id": "NATIVE-PROFILE-LEASE",
+          "status": "PASS",
+          "protected_while_open": true,
+          "deleted_after_both_views_closed": true,
+          "mixed_reparent_kept_leases": true,
+          "native_files_move_kept_lease": true,
+          "native_files_close_released_only_its_lease": true,
+          "native_terminal_close_released_last_lease": true
+        },
+        {
+          "id": "NATIVE-MIXED-RESTORE",
+          "status": "PASS",
+          "saved_schema": 2,
+          "mixed_tab_kinds": [
+            "terminal",
+            "rdp",
+            "files"
+          ],
+          "nested_orientations": [
+            "vertical",
+            "horizontal"
+          ],
+          "same_terminal_pids": true,
+          "directory_and_profile_restored": true,
+          "credentials_not_serialized": true,
+          "restored_rdp_disconnected": true,
+          "restored_profile_lease": true,
+          "autosave_survived_gui_sigkill": true
+        },
+        {
+          "id": "NATIVE-WORKSPACE-SOCKETS",
+          "status": "PASS",
+          "second_daemon_sidecar": true,
+          "original_metadata_preserved": true,
+          "original_live_pids_preserved": true
+        },
+        {
+          "id": "NATIVE-MIXED-VIEW-MANAGEMENT",
+          "status": "PASS",
+          "native_dialog_buttons": true,
+          "nested_leaf_close_collapsed_split": true,
+          "neighbor_pids_preserved": true,
+          "closed_terminal_reopened_same_pid": true,
+          "one_view_moved_to_own_tab": true,
+          "sole_view_close_removed_tab": true
+        },
+        {
+          "id": "NATIVE-EMPTY-WORKSPACE",
+          "status": "PASS",
+          "last_view_close": true,
+          "zero_view_checkpoint": true,
+          "existing_daemon_pids_preserved": true,
+          "native_new_terminal_from_empty_workspace": true
+        },
+        {
+          "id": "NATIVE-WORKSPACE-UNSAFE",
+          "status": "PASS",
+          "symlink_preserved": true
+        }
+      ]
+    },
+    "native_terminal": {
+      "results": [
+        {
+          "id": "GUI-R1",
+          "status": "PASS",
+          "details": {
+            "acknowledgements": 2,
+            "active": true,
+            "display": "GdkWaylandDisplay",
+            "drawn": [
+              3,
+              4
+            ],
+            "layout": {
+              "first": {
+                "pane": "pane_a8606754694744dba1683571c3845ab0"
+              },
+              "id": "split_pane_0a937dd4c4c04d6e81ae729a3ac3aa92",
+              "orientation": "horizontal",
+              "ratio": 500,
+              "second": {
+                "pane": "pane_0a937dd4c4c04d6e81ae729a3ac3aa92"
+              }
+            },
+            "max_tick_gap_ms": 58,
+            "panes": [
+              2,
+              1
+            ],
+            "status": "Rust native one \u2014 Ctrl+A prefix \u00b7 Shift+drag selects \u00b7 PTYs persist",
+            "tabs": 2,
+            "target": "pane_a8606754694744dba1683571c3845ab0",
+            "ticks": 46,
+            "zoom": false
+          }
+        },
+        {
+          "id": "CLIP-canonical-selection",
+          "status": "PASS",
+          "details": {
+            "canonical_grid_selection": true,
+            "copy": {
+              "bytes": 20,
+              "sha256": "3be403a16b7baa4a8fbbe8c71f30f1fc266dedc1a8295b7a98aef7ffcde7dc29"
+            },
+            "selection_events": "synthetic range; physical drag untested"
+          }
+        },
+        {
+          "id": "GUI-R2",
+          "status": "PASS",
+          "details": {
+            "switches": 200,
+            "targeted_exact": true,
+            "input": "synthetic handler and tab changes; not physical keyboard",
+            "sha256": [
+              "d637ea36ac3720a5fa8591214d6bfcbd5d019898a5da1a8423df28cfd71b9d84",
+              "b39bea694a52d463cb3742dec2ee63639d0e629578aa26367a4dcc1198e68a22",
+              "178fd141cb0d32ad241f9aa2794a53b387f7562b11098a6e30b26b726e1ef091"
+            ]
+          }
+        },
+        {
+          "id": "GUI-R5-Screen",
+          "status": "PASS",
+          "details": {
+            "native_callback_cards": [
+              "Ctrl+A Ctrl+A",
+              "Ctrl+A Tab",
+              "Ctrl+A c",
+              "Ctrl+A n",
+              "Ctrl+A p",
+              "Ctrl+A 0"
+            ],
+            "window_creation_and_cycles": "PASS",
+            "nested_control_byte": "exact",
+            "copy_search_and_physical_keys": "PARTIAL / UNTESTED"
+          }
+        },
+        {
+          "id": "GUI-daily-interaction",
+          "status": "PASS",
+          "details": {
+            "vertical_inside_horizontal": true,
+            "zoom_restore": true,
+            "native_keyboard_mark_selection": "RUWAC",
+            "internal_paste_exact": true,
+            "new_shell_pid": 391557,
+            "unknown_command_visible": true,
+            "events": "compiled GTK callbacks, synthetic keys"
+          }
+        },
+        {
+          "id": "GUI-native-applications",
+          "status": "PASS",
+          "details": {
+            "apps": {
+              "vim": "Exact Unicode file written through native handlers",
+              "less": "Native G scroll and q exit",
+              "htop": "Native q exited daemon-owned process"
+            },
+            "input": "compiled GTK callbacks; physical typing untested"
+          }
+        },
+        {
+          "id": "INPUT-R1",
+          "status": "PASS",
+          "details": {
+            "enabled_sgr": "PASS",
+            "disabled_leak": "none",
+            "physical_touchpad": "BLOCKED"
+          }
+        },
+        {
+          "id": "CLIP-R1-copy",
+          "status": "PASS",
+          "details": {
+            "bytes": 44,
+            "sha256": "90e30d374cf19d9c185bac418c0ddb7b22805b58e7003fa1c92b1d1b91be4439"
+          }
+        },
+        {
+          "id": "CLIP-R2-primary",
+          "status": "BLOCKED",
+          "reason": "Test compositor does not advertise a primary-selection protocol; failed diagnostic retained"
+        },
+        {
+          "id": "CLIP-R3-10240",
+          "status": "PASS",
+          "details": {
+            "bytes": 10240,
+            "sha256": "1be53c61bc448c56d749b9801d9481199d037aa7aef11eedfdebfa992a3c1254",
+            "exact_paste": true,
+            "responsive": {
+              "acknowledgements": 1158,
+              "active": true,
+              "display": "GdkWaylandDisplay",
+              "drawn": [
+                165,
+                63
+              ],
+              "layout": {
+                "first": {
+                  "pane": "pane_a8606754694744dba1683571c3845ab0"
+                },
+                "id": "split_pane_0a937dd4c4c04d6e81ae729a3ac3aa92",
+                "orientation": "horizontal",
+                "ratio": 583,
+                "second": {
+                  "pane": "pane_0a937dd4c4c04d6e81ae729a3ac3aa92"
+                }
+              },
+              "max_tick_gap_ms": 60,
+              "panes": [
+                2,
+                1
+              ],
+              "status": "Selection copied to CLIPBOARD",
+              "tabs": 2,
+              "target": "pane_a8606754694744dba1683571c3845ab0",
+              "ticks": 661,
+              "zoom": false
+            }
+          }
+        },
+        {
+          "id": "CLIP-R3-1048576",
+          "status": "PASS",
+          "details": {
+            "bytes": 1048576,
+            "sha256": "8f78329e92dc1ea5fc97a2221b1fca02b667780d1a86cd40ae322c3ed2c68cb4",
+            "exact_paste": true,
+            "responsive": {
+              "acknowledgements": 1159,
+              "active": true,
+              "display": "GdkWaylandDisplay",
+              "drawn": [
+                165,
+                63
+              ],
+              "layout": {
+                "first": {
+                  "pane": "pane_a8606754694744dba1683571c3845ab0"
+                },
+                "id": "split_pane_0a937dd4c4c04d6e81ae729a3ac3aa92",
+                "orientation": "horizontal",
+                "ratio": 583,
+                "second": {
+                  "pane": "pane_0a937dd4c4c04d6e81ae729a3ac3aa92"
+                }
+              },
+              "max_tick_gap_ms": 60,
+              "panes": [
+                2,
+                1
+              ],
+              "status": "Selection copied to CLIPBOARD",
+              "tabs": 2,
+              "target": "pane_a8606754694744dba1683571c3845ab0",
+              "ticks": 717,
+              "zoom": false
+            }
+          }
+        },
+        {
+          "id": "CLIP-R2-internal",
+          "status": "PASS",
+          "details": {
+            "internal_unchanged": true
+          }
+        },
+        {
+          "id": "IMAGE-R1-64",
+          "status": "PASS",
+          "details": {
+            "bytes": 16521,
+            "height": 64,
+            "path": "[private fixture path]",
+            "sha256": "253a439bb29b94820fb7ea2390113148a1e4fcf05940f4324b641c98eeba678d",
+            "width": 64
+          }
+        },
+        {
+          "id": "IMAGE-R1-2560",
+          "status": "PASS",
+          "details": {
+            "bytes": 14751608,
+            "height": 1440,
+            "path": "[private fixture path]",
+            "sha256": "640514a5c0a1a4840f3f26246a55e8ea3c14bb282e6eea9dc5ca23572b0086b6",
+            "width": 2560
+          }
+        },
+        {
+          "id": "IMAGE-cap",
+          "status": "PASS",
+          "details": {
+            "error": "Image transfer exceeds configured cap"
+          }
+        },
+        {
+          "id": "CLIP-stale-cancel",
+          "status": "PASS",
+          "details": {
+            "error": "Clipboard/image transfer cancelled after async read"
+          }
+        },
+        {
+          "id": "IMAGE-cancel-cleanup",
+          "status": "PASS",
+          "details": {
+            "error": "Clipboard/image transfer cancelled after async read"
+          }
+        },
+        {
+          "id": "CLIP-disabled-policy",
+          "status": "PASS",
+          "details": {
+            "disabled_transport_rejected": true
+          }
+        },
+        {
+          "id": "GUI-R4-delayed-IPC",
+          "status": "PASS",
+          "details": {
+            "before": {
+              "acknowledgements": 1159,
+              "active": true,
+              "display": "GdkWaylandDisplay",
+              "drawn": [
+                165,
+                63
+              ],
+              "layout": {
+                "first": {
+                  "pane": "pane_a8606754694744dba1683571c3845ab0"
+                },
+                "id": "split_pane_0a937dd4c4c04d6e81ae729a3ac3aa92",
+                "orientation": "horizontal",
+                "ratio": 583,
+                "second": {
+                  "pane": "pane_0a937dd4c4c04d6e81ae729a3ac3aa92"
+                }
+              },
+              "max_tick_gap_ms": 60,
+              "panes": [
+                2,
+                1
+              ],
+              "status": "Selection copied to CLIPBOARD",
+              "tabs": 2,
+              "target": "pane_a8606754694744dba1683571c3845ab0",
+              "ticks": 1009,
+              "zoom": false
+            },
+            "during": {
+              "acknowledgements": 1159,
+              "active": true,
+              "display": "GdkWaylandDisplay",
+              "drawn": [
+                165,
+                63
+              ],
+              "layout": {
+                "first": {
+                  "pane": "pane_a8606754694744dba1683571c3845ab0"
+                },
+                "id": "split_pane_0a937dd4c4c04d6e81ae729a3ac3aa92",
+                "orientation": "horizontal",
+                "ratio": 583,
+                "second": {
+                  "pane": "pane_0a937dd4c4c04d6e81ae729a3ac3aa92"
+                }
+              },
+              "max_tick_gap_ms": 60,
+              "panes": [
+                2,
+                1
+              ],
+              "status": "Queue full; input not sent",
+              "tabs": 2,
+              "target": "pane_a8606754694744dba1683571c3845ab0",
+              "ticks": 1011,
+              "zoom": false
+            },
+            "after": {
+              "acknowledgements": 1286,
+              "active": true,
+              "display": "GdkWaylandDisplay",
+              "drawn": [
+                165,
+                63
+              ],
+              "layout": {
+                "first": {
+                  "pane": "pane_a8606754694744dba1683571c3845ab0"
+                },
+                "id": "split_pane_0a937dd4c4c04d6e81ae729a3ac3aa92",
+                "orientation": "horizontal",
+                "ratio": 583,
+                "second": {
+                  "pane": "pane_0a937dd4c4c04d6e81ae729a3ac3aa92"
+                }
+              },
+              "max_tick_gap_ms": 60,
+              "panes": [
+                2,
+                1
+              ],
+              "status": "Input/command delivery failed: {\"code\":\"TIMEOUT\",\"message\":\"text not observed before deadline\"}",
+              "tabs": 2,
+              "target": "pane_a8606754694744dba1683571c3845ab0",
+              "ticks": 1090,
+              "zoom": false
+            }
+          }
+        },
+        {
+          "id": "IMAGE-real-crash-cleanup",
+          "status": "PASS",
+          "details": {
+            "gui_termination": "SIGKILL",
+            "reclaimed_abandoned_png_namespace": true,
+            "same_daemon_owned_pids": [
+              391462,
+              391470,
+              391466
+            ]
+          }
+        },
+        {
+          "id": "RDP-embedded-frame",
+          "status": "PASS",
+          "details": {
+            "same_window_tabs": 3,
+            "native_framebuffer": "synthetic 320x180 draw",
+            "backend_compiled": "IronRDP",
+            "real_authenticated_host": "BLOCKED: endpoint, trusted certificate and RUWAC Secret Service reference required"
+          }
+        },
+        {
+          "id": "GUI-R3",
+          "status": "PASS",
+          "details": {
+            "same_pids": [
+              391462,
+              391470,
+              391466
+            ],
+            "tui_reattach": "PASS",
+            "resize": "PASS"
+          }
+        }
+      ],
+      "binary_sha256": "4afc99360934c1a4f6c56a1c11e24cf2971b32933da431030b3aa496e1fce87a",
+      "gui_sha256": "5420880ee734d3ee035551176c3cee93a80f199759570e5526cfca711cba369a",
+      "physical_desktop": "BLOCKED",
+      "real_rdp": "BLOCKED"
+    },
+    "authenticated_mixed_rdp": {
+      "cases": [
+        {
+          "id": "RDP-NATIVE-AUTH-3",
+          "status": "PASS",
+          "details": {
+            "server": {
+              "generated_desktop": [
+                320,
+                180
+              ],
+              "ports": [
+                38823,
+                36685,
+                40939
+              ],
+              "security": "TLS verified + CredSSP/NLA",
+              "server": "ironrdp-server 0.13.0"
+            },
+            "connections": [
+              {
+                "active": true,
+                "epoch": 10,
+                "last_pixel": [
+                  63,
+                  179,
+                  90,
+                  255
+                ],
+                "metrics": {
+                  "decoded_updates": 1,
+                  "update_intervals_ms": []
+                },
+                "offers": 0,
+                "pan": [
+                  0.0,
+                  0.0
+                ],
+                "pending": false,
+                "policy": "Bidirectional",
+                "received_generation": 0,
+                "requested_size": [
+                  0,
+                  0
+                ],
+                "size": [
+                  320,
+                  180
+                ],
+                "status": "Connected \u00b7 embedded IronRDP \u00b7 CLIPRDR text and images",
+                "tab": 1,
+                "transport_id": "rdp-transport_75f5086560d9406598e393332b39a4fd",
+                "viewport": [
+                  1076,
+                  604
+                ],
+                "window_width": 1330,
+                "zoom": 1.0,
+                "connect_to_decoded_frame_ms": 231.26540498924442
+              },
+              {
+                "active": true,
+                "epoch": 14,
+                "last_pixel": [
+                  63,
+                  179,
+                  90,
+                  255
+                ],
+                "metrics": {
+                  "decoded_updates": 1,
+                  "update_intervals_ms": []
+                },
+                "offers": 0,
+                "pan": [
+                  0.0,
+                  0.0
+                ],
+                "pending": false,
+                "policy": "Bidirectional",
+                "received_generation": 0,
+                "requested_size": [
+                  0,
+                  0
+                ],
+                "size": [
+                  320,
+                  180
+                ],
+                "status": "Connected \u00b7 embedded IronRDP \u00b7 CLIPRDR text and images",
+                "tab": 2,
+                "transport_id": "rdp-transport_ad46cee023c4498c8137545ce8eedbaa",
+                "viewport": [
+                  1076,
+                  604
+                ],
+                "window_width": 1330,
+                "zoom": 1.0,
+                "connect_to_decoded_frame_ms": 183.9526819967432
+              },
+              {
+                "active": true,
+                "epoch": 18,
+                "last_pixel": [
+                  63,
+                  179,
+                  90,
+                  255
+                ],
+                "metrics": {
+                  "decoded_updates": 1,
+                  "update_intervals_ms": []
+                },
+                "offers": 0,
+                "pan": [
+                  0.0,
+                  0.0
+                ],
+                "pending": false,
+                "policy": "Bidirectional",
+                "received_generation": 0,
+                "requested_size": [
+                  0,
+                  0
+                ],
+                "size": [
+                  320,
+                  180
+                ],
+                "status": "Connected \u00b7 embedded IronRDP \u00b7 CLIPRDR text and images",
+                "tab": 3,
+                "transport_id": "rdp-transport_bd5ba13bf2144ff1bb6fb0d9e8ceed43",
+                "viewport": [
+                  1076,
+                  604
+                ],
+                "window_width": 1330,
+                "zoom": 1.0,
+                "connect_to_decoded_frame_ms": 198.64813699678052
+              }
+            ],
+            "authentication": "actual CredSSP/NLA",
+            "frames": "decoded live loopback server frames, generated desktop"
+          }
+        },
+        {
+          "id": "MIXED-NATIVE-RDP-TERMINAL",
+          "status": "PASS",
+          "details": {
+            "nested_orientation": [
+              "vertical",
+              "horizontal"
+            ],
+            "actual_authenticated_rdp_connections_preserved": 3,
+            "text_sha256": "61ef0e4303a528c4dca18ad409fb9855804eed51275c8b55b1b63686c1ee4c72",
+            "inactive_mixed_offers_refused": 2,
+            "separated_without_reconnect": true,
+            "native_move_preserved_transport": true,
+            "native_close_disconnected_only_selected_rdp": true,
+            "neighbors_kept_transport_ids": true,
+            "replacement_authenticated_and_clipboard_verified": true
+          }
+        },
+        {
+          "id": "FILES-CLIPBOARD-OWNERSHIP",
+          "status": "PASS",
+          "details": {
+            "native_files_tab": true,
+            "inactive_rdp_offers": 30,
+            "peer_clipboard_unchanged": true
+          }
+        }
+      ],
+      "rss_mib": {
+        "gtk": 84.3671875,
+        "rdp_server": 12.70703125
+      },
+      "environment": "Owned Weston/Xvfb, real native GTK/GDK peer, actual loopback IronRDP server; generated credentials and frames",
+      "limitations": [
+        "No external Windows/GNOME login",
+        "No physical keyboard/touchpad acceptance",
+        "No external Windows/GNOME Display Control or RemoteFX qualification"
+      ]
+    },
+    "sftp": {
+      "cases": [
+        {
+          "name": "SFTP-INTEGRITY-AND-OVERWRITE",
+          "status": "PASS",
+          "elapsed_ms": 1825.4280229884898,
+          "detail": [
+            {
+              "bytes": 31,
+              "sha256": "87fd3020120186d54fd85eca49aac1d49a799ae02f22eb6a81df8814c4eab847",
+              "directions": 2
+            },
+            {
+              "bytes": 1048576,
+              "sha256": "fbbab289f7f94b25736c58be46a994c441fd02552cc6022352e3d86d2fab7c83",
+              "directions": 2
+            },
+            {
+              "bytes": 98,
+              "sha256": "f9d2548e845a27e487081f6e0ae094d9986b5e9a731f8400e78f768c7a5de348",
+              "directions": 2
+            }
+          ]
+        },
+        {
+          "name": "SFTP-GUARDS",
+          "status": "PASS",
+          "elapsed_ms": 477.83477600023616,
+          "detail": {
+            "symlink": true,
+            "parent_traversal": true,
+            "permission_error": true,
+            "unknown_and_changed_host_key": true
+          }
+        },
+        {
+          "name": "SFTP-CANCEL",
+          "status": "PASS",
+          "elapsed_ms": 99.04049399483483,
+          "detail": {
+            "cancelled": true,
+            "partial_removed": true
+          }
+        },
+        {
+          "name": "SFTP-NATIVE-PANEL",
+          "status": "PASS",
+          "elapsed_ms": 1372.654966005939,
+          "detail": {
+            "native_in_window_panel": true,
+            "actual_async_directory_list": true,
+            "permissions_and_names_visible": true,
+            "recoverable_error": true,
+            "native_mixed_files_move_and_refresh": true,
+            "native_files_close_preserved_terminal_pid": true,
+            "transfer_chooser": "compiled native dialogs; byte operations qualified separately"
+          }
+        },
+        {
+          "name": "SFTP-SLOW-PEER",
+          "status": "PASS",
+          "elapsed_ms": 5011.242776003201,
+          "detail": {
+            "timeout_ms": 5009.883811013424,
+            "bounded_connection_error": true
+          }
+        },
+        {
+          "name": "SFTP-DISCONNECT",
+          "status": "PASS",
+          "elapsed_ms": 201.67269998637494,
+          "detail": {
+            "mid_transfer_transport_loss": true,
+            "original_preserved": true,
+            "visible_error": true,
+            "partials_after_lost_transport": 1,
+            "cleanup": "best effort; remote partial may remain when the transport is gone"
+          }
+        }
+      ],
+      "fixture": "isolated current-user loopback sshd, generated ed25519 identity and host keys",
+      "source": "production libssh2 adapter",
+      "limitations": [
+        "No rsync",
+        "No external SSH host",
+        "Remote namespace mutation by another actor is not an atomic SFTP snapshot"
+      ]
+    },
+    "limits": "Full product completion remains unproven. Stable persisted GUI view IDs and exact per-leaf focus restoration, permission-scoped automation/host CLI, durable daemon-crash history, supported local/remote agent image consumers, recursive/resumable files and encrypted-key UI, external Windows/Fedora RDP interoperability, physical GNOME input/accessibility, idle-qualified/matched performance and qualified RPM/binary publication remain open. No external RDP login is claimed. Original source remains Apache-2.0; dependencies retain their licenses."
   }
 }

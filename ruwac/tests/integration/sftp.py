@@ -70,7 +70,17 @@ try:
     assert any('text ž; $(literal).txt' in label for label in r['buttons']),r
     command('files-inspect',path=str(remote/'missing-directory'),refresh=True)
     spike.eventually(lambda:any('failed' in s.lower() for s in command('files-inspect')['labels']),10)
-    return {'native_in_window_panel':True,'actual_async_directory_list':True,'permissions_and_names_visible':True,'recoverable_error':True,'transfer_chooser':'compiled native dialogs; byte operations qualified separately'}
+    with spike.Client(sock)as client:pid=client.call('pane.list',{'session':session['session']})[0]['pid']
+    command('tab-select',tab=0);tree=command('mixed-join',tab=1,vertical=False);assert len(tree['tabs'])==1,tree
+    assert command('views-manage')['clicked']
+    moved=command('views-action',operation='move',index=1);assert moved['clicked'] and len(moved['layout']['tabs'])==2,moved
+    command('files-inspect',path=str(remote/'nested directory ž'),refresh=True)
+    r=spike.eventually(lambda:r if 'Remote directory ready' in (r:=command('files-inspect'))['labels'] else False,10)
+    assert any('text ž; $(literal).txt' in label for label in r['buttons']),r
+    assert command('views-manage')['clicked']
+    closed=command('views-action',operation='close',index=0);assert closed['clicked'] and len(closed['layout']['tabs'])==1 and closed['terminal_views']==1,closed
+    with spike.Client(sock)as client:assert client.call('pane.list',{'session':session['session']})[0]['pid']==pid
+    return {'native_in_window_panel':True,'actual_async_directory_list':True,'permissions_and_names_visible':True,'recoverable_error':True,'native_mixed_files_move_and_refresh':True,'native_files_close_preserved_terminal_pid':True,'transfer_chooser':'compiled native dialogs; byte operations qualified separately'}
    finally:
     for proc in [gui,daemon]:
      if proc and proc.poll()is None:proc.terminate();proc.wait(timeout=5)

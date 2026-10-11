@@ -52,11 +52,18 @@ try:
  time.sleep(.3)
  protected=command('profile-editor',operation='edit',response='delete',confirm=True)
  assert len(protected['items'])==len(r['items']),protected
- separated=command('mixed-separate');assert len(separated['tabs'])==5,separated
- for _ in range(2):command('close-tab',tab=3);time.sleep(.3)
+ assert command('views-manage')['clicked']
+ moved_file=command('views-action',operation='move',index=1);assert moved_file['clicked'] and len(moved_file['layout']['tabs'])==5,moved_file
+ time.sleep(.3)
+ protected=command('profile-editor',operation='edit',response='delete',confirm=True);assert len(protected['items'])==len(r['items']),protected
+ command('tab-select',tab=4);assert command('views-manage')['clicked']
+ assert command('views-action',operation='close',index=0)['clicked'];time.sleep(.3)
+ protected=command('profile-editor',operation='edit',response='delete',confirm=True);assert len(protected['items'])==len(r['items']),protected
+ command('tab-select',tab=3);assert command('views-manage')['clicked']
+ assert command('views-action',operation='close',index=0)['clicked'];time.sleep(.3)
  removed=command('profile-editor',operation='edit',response='delete',confirm=True)
  assert len(removed['items'])==len(r['items'])-1,removed
- results.append({'id':'NATIVE-PROFILE-LEASE','status':'PASS','protected_while_open':True,'deleted_after_both_views_closed':True,'mixed_reparent_kept_leases':True})
+ results.append({'id':'NATIVE-PROFILE-LEASE','status':'PASS','protected_while_open':True,'deleted_after_both_views_closed':True,'mixed_reparent_kept_leases':True,'native_files_move_kept_lease':True,'native_files_close_released_only_its_lease':True,'native_terminal_close_released_last_lease':True})
  # Save/restore all view kinds and a nested mixed tree. The RDP view here is deliberately
  # disconnected/synthetic; real authenticated reparenting is qualified by rdp_clipboard.py.
  command('rdp-open')
@@ -99,6 +106,35 @@ try:
  assert command('inspect')['tabs']==4
  assert before=={sid:rpc('pane.list',{'session':sid})[0]['pid']for sid in before}
  results.append({'id':'NATIVE-WORKSPACE-SOCKETS','status':'PASS','second_daemon_sidecar':True,'original_metadata_preserved':True,'original_live_pids_preserved':True})
+ # Exercise native per-view buttons on a nested tree and preserve every daemon process.
+ command('tab-select',tab=0)
+ command('mixed-join',tab=1,vertical=False)
+ tree=command('mixed-join',tab=1,vertical=True);assert len(tree['tabs'])==2,tree
+ assert command('views-manage')['clicked']
+ closed=command('views-action',operation='close',index=1);assert closed['clicked'] and closed['terminal_views']==2,closed
+ tree=closed['layout'];assert len(tree['tabs'])==2 and tree['tabs'][0]['layout']['split']=='vertical' and 'view' in tree['tabs'][0]['layout']['first'],tree
+ assert before=={sid:rpc('pane.list',{'session':sid})[0]['pid']for sid in before}
+ command('sessions-open');spike.eventually(lambda:command('sessions-open',session=list(before)[1])['clicked'])
+ spike.eventually(lambda:command('inspect')['tabs']==3)
+ command('tab-select',tab=0);assert command('views-manage')['clicked']
+ moved=command('views-action',operation='move',index=1);assert moved['clicked'] and len(moved['layout']['tabs'])==4 and moved['terminal_views']==3,moved
+ assert 'view' in moved['layout']['tabs'][0]['layout'],moved
+ assert before=={sid:rpc('pane.list',{'session':sid})[0]['pid']for sid in before}
+ # Closing a now-single terminal view removes only its presentation, and reopening is possible.
+ assert command('views-manage')['clicked']
+ sole=command('views-action',operation='close',index=0);assert sole['clicked'] and sole['terminal_views']==2 and len(sole['layout']['tabs'])==3,sole
+ command('sessions-open');spike.eventually(lambda:command('sessions-open',session=list(before)[2])['clicked'])
+ spike.eventually(lambda:command('inspect')['tabs']==4)
+ results.append({'id':'NATIVE-MIXED-VIEW-MANAGEMENT','status':'PASS','native_dialog_buttons':True,'nested_leaf_close_collapsed_split':True,'neighbor_pids_preserved':True,'closed_terminal_reopened_same_pid':True,'one_view_moved_to_own_tab':True,'sole_view_close_removed_tab':True})
+ # Close every presentation, including the last one, then use the actual New terminal button.
+ while command('inspect')['tabs']:
+  command('tab-select',tab=0);assert command('views-manage')['clicked']
+  assert command('views-action',operation='close',index=0)['clicked']
+ assert command('inspect')['terminal_views']==0
+ spike.eventually(lambda:json.loads(path.read_text())['tabs']==[],5)
+ assert before=={sid:rpc('pane.list',{'session':sid})[0]['pid']for sid in before}
+ assert command('new-terminal')['clicked'];spike.eventually(lambda:command('inspect')['tabs']==1)
+ results.append({'id':'NATIVE-EMPTY-WORKSPACE','status':'PASS','last_view_close':True,'zero_view_checkpoint':True,'existing_daemon_pids_preserved':True,'native_new_terminal_from_empty_workspace':True})
  command('workspace-close');gui.wait(timeout=10)
  path.unlink();path.symlink_to(root/'never-overwrite');gui=launch('unsafe-metadata');seq=0;command('inspect');command('workspace-close');gui.wait(timeout=10);assert path.is_symlink() and not(root/'never-overwrite').exists()
  results.append({'id':'NATIVE-WORKSPACE-UNSAFE','status':'PASS','symlink_preserved':True})

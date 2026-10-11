@@ -150,7 +150,182 @@ pub fn separate(tabs: &adw::TabView) -> Result<usize, String> {
     Ok(views.len())
 }
 
-pub fn controls(tabs: &adw::TabView) -> gtk::Box {
+/// Remove one leaf and collapse its immediate split; neighboring widgets keep their roots.
+fn take(tabs: &adw::TabView, leaf: &gtk::Widget) -> Result<(), String> {
+    if leaf.is::<gtk::Paned>() {
+        return Err("Choose an individual view".into());
+    }
+    let page = page(tabs, leaf).ok_or("This view has already closed")?;
+    let body = page
+        .child()
+        .downcast::<gtk::Box>()
+        .map_err(|_| "Invalid workspace container")?;
+    let parent = leaf.parent().ok_or("The view is detached")?;
+    if let Some(split) = parent.downcast_ref::<gtk::Paned>() {
+        let start = split.start_child().as_ref() == Some(leaf);
+        let sibling = if start {
+            split.end_child()
+        } else {
+            split.start_child()
+        }
+        .ok_or("Incomplete workspace split")?;
+        let grand = split.parent().ok_or("Detached workspace split")?;
+        if let Some(outer) = grand.downcast_ref::<gtk::Paned>() {
+            let first = outer.start_child().as_ref() == Some(&parent);
+            split.set_start_child(None::<&gtk::Widget>);
+            split.set_end_child(None::<&gtk::Widget>);
+            if first {
+                outer.set_start_child(Some(&sibling));
+            } else {
+                outer.set_end_child(Some(&sibling));
+            }
+        } else if grand == body.clone().upcast::<gtk::Widget>() {
+            split.set_start_child(None::<&gtk::Widget>);
+            split.set_end_child(None::<&gtk::Widget>);
+            body.remove(split);
+            body.append(&sibling);
+        } else {
+            return Err("Invalid workspace split parent".into());
+        }
+    } else if parent == body.clone().upcast::<gtk::Widget>() {
+        body.remove(leaf);
+    } else {
+        return Err("Invalid workspace view parent".into());
+    }
+    if let Some(tree) = body.first_child() {
+        let mut remaining = Vec::new();
+        leaves(tree, &mut remaining);
+        page.set_title(
+            &remaining
+                .iter()
+                .map(|w| {
+                    w.tooltip_text()
+                        .map(|t| t.to_string())
+                        .unwrap_or_else(|| "Workspace view".into())
+                })
+                .collect::<Vec<_>>()
+                .join(" + "),
+        );
+    } else {
+        // Empty donor callbacks cannot close the extracted view or its neighbors.
+        tabs.close_page(&page);
+    }
+    Ok(())
+}
+
+pub type CloseView = std::rc::Rc<dyn Fn(&gtk::Widget)>;
+
+pub fn move_view(tabs: &adw::TabView, leaf: &gtk::Widget) -> Result<(), String> {
+    take(tabs, leaf)?;
+    let p = append(tabs, leaf);
+    p.set_title(leaf.tooltip_text().as_deref().unwrap_or("Workspace view"));
+    tabs.set_selected_page(&p);
+    Ok(())
+}
+
+pub fn close_view(
+    tabs: &adw::TabView,
+    leaf: &gtk::Widget,
+    close: &CloseView,
+) -> Result<(), String> {
+    take(tabs, leaf)?;
+    close(leaf);
+    Ok(())
+}
+
+fn manage(tabs: &adw::TabView, button: &gtk::Button, close: CloseView) {
+    button.grab_focus();
+    let d = gtk::Dialog::builder()
+        .title("Workspace views")
+        .modal(true)
+        .default_width(600)
+        .build();
+    if let Some(w) = button.root().and_then(|w| w.downcast::<gtk::Window>().ok()) {
+        d.set_transient_for(Some(&w));
+    }
+    d.add_button("Done", gtk::ResponseType::Close);
+    d.connect_response(|d, _| d.close());
+    let message = gtk::Label::new(Some(
+        "Move or close one view. Closing a terminal detaches it; its programs keep running. Closing RDP disconnects only that view. Closing Files cancels its transfers.",
+    ));
+    message.set_wrap(true);
+    d.content_area().append(&message);
+    let status = gtk::Label::new(None);
+    status.set_wrap(true);
+    d.content_area().append(&status);
+    if let Some(tree) = tabs.selected_page().and_then(|p| p.child().first_child()) {
+        let mut views = Vec::new();
+        leaves(tree, &mut views);
+        for (index, leaf) in views.into_iter().enumerate() {
+            let row = gtk::Box::new(Orientation::Horizontal, 6);
+            let title = gtk::Label::new(leaf.tooltip_text().as_deref());
+            title.set_hexpand(true);
+            title.set_xalign(0.0);
+            title.set_ellipsize(gtk::pango::EllipsizeMode::End);
+            row.append(&title);
+            for (name, action) in [("Move to own tab", "move"), ("Close view", "close")] {
+                let b = gtk::Button::with_label(name);
+                b.set_widget_name(&format!("{action}-view-{index}"));
+                let (t, leaf, close, status, dialog) = (
+                    tabs.clone(),
+                    leaf.clone(),
+                    close.clone(),
+                    status.clone(),
+                    d.downgrade(),
+                );
+                b.connect_clicked(move |_| {
+                    let result = if action == "move" {
+                        move_view(&t, &leaf)
+                    } else {
+                        close_view(&t, &leaf, &close)
+                    };
+                    match result {
+                        Ok(()) => {
+                            if let Some(d) = dialog.upgrade() {
+                                d.close();
+                            }
+                        }
+                        Err(e) => status.set_text(&e),
+                    }
+                });
+                row.append(&b);
+            }
+            d.content_area().append(&row);
+        }
+    }
+    d.present();
+}
+
+/// Test driver invokes the same native dialog buttons as a user.
+pub fn fixture(action: &str, index: usize) -> bool {
+    fn find(w: &gtk::Widget, name: &str) -> Option<gtk::Button> {
+        if w.widget_name() == name {
+            return w.clone().downcast().ok();
+        }
+        let mut child = w.first_child();
+        while let Some(c) = child {
+            if let Some(b) = find(&c, name) {
+                return Some(b);
+            }
+            child = c.next_sibling();
+        }
+        None
+    }
+    for w in gtk::Window::list_toplevels() {
+        if let Ok(w) = w.downcast::<gtk::Window>() {
+            if w.title().as_deref() == Some("Workspace views") {
+                if let Some(b) = find(w.upcast_ref(), &format!("{action}-view-{index}")) {
+                    b.grab_focus();
+                    b.emit_clicked();
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+pub fn controls(tabs: &adw::TabView, close: CloseView) -> gtk::Box {
     let root = gtk::Box::new(Orientation::Horizontal, 4);
     let button = gtk::Button::with_label("Split tabs…");
     let separate_button = gtk::Button::with_label("Separate views");
@@ -159,6 +334,11 @@ pub fn controls(tabs: &adw::TabView) -> gtk::Box {
     ));
     root.append(&button);
     root.append(&separate_button);
+    let manage_button = gtk::Button::with_label("Views…");
+    manage_button.set_tooltip_text(Some("Move or close an individual workspace view"));
+    root.append(&manage_button);
+    let t = tabs.clone();
+    manage_button.connect_clicked(move |button| manage(&t, button, close.clone()));
     let t = tabs.clone();
     button.connect_clicked(move |button| {
         let d = gtk::Dialog::builder()

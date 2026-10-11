@@ -128,7 +128,23 @@ try:
    focus('peer');assert command('peer','read-text')['sha256']==digest(baseline.encode())
    focus('gui');command('gui','snapshot');tree=command('gui','mixed-separate');assert len(tree['tabs'])==4,tree
    for i in range(3):assert command('gui','rdp-inspect',rdp=i)['transport_id']==before[i]['transport_id']
-   return {'nested_orientation':['vertical','horizontal'],'actual_authenticated_rdp_connections_preserved':3,'text_sha256':digest(text.encode()),'inactive_mixed_offers_refused':2,'separated_without_reconnect':True}
+   # Real dialog actions move one live RDP view, then close only that view.
+   command('gui','tab-select',tab=0);command('gui','mixed-join',tab=command('gui','rdp-inspect',rdp=2)['tab'],vertical=False)
+   assert command('gui','views-manage')['clicked']
+   moved=command('gui','views-action',operation='move',index=1)
+   assert moved['clicked'] and len(moved['layout']['tabs'])==4 and moved['rdp_views']==3,moved
+   for i in range(3):assert command('gui','rdp-inspect',rdp=i)['transport_id']==before[i]['transport_id']
+   command('gui','tab-select',tab=0);command('gui','mixed-join',tab=3,vertical=True)
+   assert command('gui','views-manage')['clicked']
+   closed=command('gui','views-action',operation='close',index=1)
+   assert closed['clicked'] and closed['rdp_views']==2 and closed['terminal_views']==1 and len(closed['layout']['tabs'])==3,closed
+   for i in range(2):assert command('gui','rdp-inspect',rdp=i)['transport_id']==before[i]['transport_id']
+   command('gui','rdp-open',port=ready['ports'][2])
+   fresh=spike.eventually(lambda:r if (r:=command('gui','rdp-inspect',rdp=2)).get('size')==[320,180] else False,20)
+   assert fresh['transport_id']!=before[2]['transport_id'] and fresh['status'].startswith('Connected'),fresh
+   command('gui','rdp-switch',rdp=2)
+   received=transfer_to_remote(2,'text','mixed-text.txt');assert received['sha256']==digest(text.encode())
+   return {'nested_orientation':['vertical','horizontal'],'actual_authenticated_rdp_connections_preserved':3,'text_sha256':digest(text.encode()),'inactive_mixed_offers_refused':2,'separated_without_reconnect':True,'native_move_preserved_transport':True,'native_close_disconnected_only_selected_rdp':True,'neighbors_kept_transport_ids':True,'replacement_authenticated_and_clipboard_verified':True}
   finally:
    command('gui','tab-select',tab=0);command('gui','mixed-separate')
  case('MIXED-NATIVE-RDP-TERMINAL',mixed_workspace)

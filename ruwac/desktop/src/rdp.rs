@@ -661,6 +661,7 @@ pub struct RdpView {
 impl RdpView {
     pub fn new(broker: crate::clipboard::Broker) -> Rc<Self> {
         let root = gtk::Box::new(gtk::Orientation::Vertical, 4);
+        root.set_tooltip_text(Some("Remote desktop"));
         let controls = gtk::Grid::builder()
             .column_spacing(4)
             .row_spacing(4)

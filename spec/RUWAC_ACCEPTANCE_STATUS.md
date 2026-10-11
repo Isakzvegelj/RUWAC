@@ -1,5 +1,20 @@
 # RUWAC acceptance status
 
+## Current individual view management — 2026-10-11
+
+**Views…** opens a native dialog for the selected mixed workspace. Each leaf offers **Move to own tab** and **Close view**. Removing a leaf collapses its divider and keeps the sibling widget/tree alive. Moving preserves the underlying connection; closing a terminal detaches its presentation while daemon programs keep running, closing RDP disconnects only that connection, and closing Files cancels its work and releases its own lease. Closing the last leaf removes the empty tab. Dialog errors remain visible if a view disappeared. The dialog takes local focus before opening; remote clipboard ownership cannot follow it.
+
+Connection registries remove only the selected leaf. Profile deletion protection survives a move and remains until the last associated view closes. Workspace schema 2 records the resulting topology without a schema change; no daemon protocol, engine or dependency replacement was introduced. Existing terminal splits inside a session remain independent of mixed GUI leaves.
+
+Full product completion remains unproven. Stable persisted GUI view IDs and exact per-leaf focus restoration, permission-scoped automation/host CLI, durable daemon-crash history, supported local/remote agent image consumers, recursive/resumable files and encrypted-key UI, external Windows/Fedora RDP interoperability, physical GNOME input/accessibility, idle-qualified/matched performance and qualified RPM/binary publication remain open. No external RDP login is claimed. Original source remains Apache-2.0; dependencies retain their licenses.
+
+Eight native workspace groups pass: live same-PID reopening, migration/backup, profile leases, mixed GUI-crash restoration, separate daemon sockets, unsafe metadata, individual view management and the empty-workspace lifecycle. Actual dialog buttons close a nested terminal leaf, preserve and reopen its daemon PID, move one leaf into a tab and close a sole-view tab. Closing all presentations checkpoints zero tabs while original daemon PIDs survive; New terminal creates a usable view from that empty workspace.
+
+The focused RDP suite passes three groups against actual TLS-verified/CredSSP loopback sessions and real GTK/GDK. A moved RDP leaf retains its transport ID. Closing the selected RDP disconnects only that view; both neighboring transports remain unchanged. A replacement connection authenticates, decodes frames and transfers CLIPRDR text. Existing nested-tree and inactive-offer ownership checks also pass. The full 13-group clipboard/display/editor acceptance remains retained as preceding-batch evidence; it was not rerun in full for this view-management change.
+
+All six real isolated SSH/SFTP groups pass. The native panel moves out of a terminal/Files split, refreshes its real directory listing successfully, and closes while preserving its neighboring terminal PID. SHA-256 integrity, cancellation, slow peer and transport-loss regression groups pass. An in-flight transfer during GTK reparenting is not separately qualified. All 21 native terminal cards pass, with PRIMARY explicitly unavailable on the owned compositor. Failed test assumptions about restored tab kinds, session chooser opening and reordered RDP tabs are retained privately and corrected by locating the actual resource.
+
+
 ## Current mixed workspace increment — 2026-10-11
 
 The owned nested Wayland compositor exercises real GTK/GDK. Six workspace cases cover live same-PID reopening, schema-1 migration with private backup, profile leases during reparenting, nested terminal/RDP/Files restoration after GUI SIGKILL, separate socket metadata and unsafe symlink preservation. The restored RDP metadata test uses a disconnected placeholder; it does not establish remote login.

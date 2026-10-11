@@ -1,10 +1,10 @@
 {
-  "baseline_commit": "1bfe04a0335e91cff99d4abcdb4007cec2a6d5e3",
+  "baseline_commit": "1b40266015c7f168958c77c85208520a98fff66a",
   "current_report": "spec/RUWAC_INTEGRATION_SPIKE.md",
   "public_evidence": [
     "architecture/acceptance-results.json",
     "architecture/benchmark-results.json",
     "architecture/dependency-licenses.json"
   ],
-  "private_capsule": "mixed-r7: optimized native builds; six workspace/migration/crash/socket cases; 13 full authenticated RDP groups; six controls plus three mixed focused reruns; 21 native terminal passes and separate PRIMARY block; six SFTP groups; retained failures; 30-trial matched busy-VM benchmarks; exact final publication/install receipts"
+  "private_capsule": "views-r8: optimized native build; eight workspace/native-dialog cases; three authenticated mixed-RDP/ownership groups; 21 native terminal passes with separate PRIMARY block; six real SFTP groups with panel move/refresh/close; retained failed resource-index assumptions; final controller publication and matching per-user installations"
 }

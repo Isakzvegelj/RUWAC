@@ -85,3 +85,5 @@ The per-user installer adds a RUWAC desktop launcher and commands in the standar
 The full headless suite and three genuine SSH remote-PTY detach/reattach cycles also pass on an authorized Fedora host. This does not establish external RDP login or physical-desktop acceptance. See [all remaining product gates](spec/RUWAC_PRODUCT_COMPLETION.md).
 
 Use **Split tabs…** to place existing terminal, RDP or Files views side by side or above/below each other. **Separate views** returns them to tabs while preserving connections. RDP connection/display/clipboard actions are under **RDP controls**. Clipboard ownership follows the focused canvas; local controls and Files cannot let inactive RDP sessions take over CLIPBOARD.
+
+**Views…** lets you move one mixed view to its own tab or close it. Closing a terminal view detaches it; use Sessions to reopen its still-running programs. Closing RDP disconnects just that view. Closing Files cancels its work. Neighboring views and connections remain open. Empty workspaces can create a new terminal from the toolbar.

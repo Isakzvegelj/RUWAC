@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## v0.1.7 — 2026-10-11 — Prerelease
+
+- Add native individual mixed-view move and close actions; collapse dividers while preserving neighboring terminals, RDP transports and profile protection.
+- Validate closing all views, checkpointing an empty workspace and creating a terminal again; preserve daemon processes and same-PID session reopening.
+- Validate real authenticated RDP move/close/reconnect clipboard behavior and native SFTP panel movement, refresh and close; retain terminal and headless regressions.
+
 ## v0.1.6 — 2026-10-11 — Prerelease
 
 - Add nested native terminal/RDP/Files splits and separation while preserving live PTYs, RDP transports and profile leases; compact RDP controls into a popup.
