@@ -179,7 +179,7 @@ try:
  def profiles():
   focus('gui')
   for i in range(70):
-   name=f'machine-{i}.remmina';original=f'[remmina]\nname=Same leaf\ngroup=Team{i}/Nested\nprotocol=RDP\nserver=127.0.0.1:3389\nusername=fixture\npassword=DO-NOT-IMPORT\nssh_privatekey=/private/key\nlabels=linux,test\n';(root/name).write_text(original);r=command('gui','profiles',file=name);assert r['rows']==i+1,r;assert(root/name).read_text()==original
+   name=f'machine-{i}.remmina';original=f'[remmina]\nname=Same leaf\ngroup=Team{i}/Nested\nprotocol=RDP\nserver=127.0.0.1:3389\nusername=fixture\npassword=DO-NOT-IMPORT\nssh_privatekey=/private/key\nlabels=linux,test\n';(root/name).write_text(original);r=command('gui','profiles',file=name);assert r['rows']==min(50,i+1),r;assert(root/name).read_text()==original
   r=command('gui','profiles',search='Team69');assert r['rows']==1,r
   r=command('gui','profiles',favorite=True);assert r['favorites']==1,r
   stored=(root/'config/RUWAC/machines.json');data=stored.read_text();assert 'DO-NOT-IMPORT' not in data and '/private/key' not in data;assert stored.stat().st_mode&0o777==0o600

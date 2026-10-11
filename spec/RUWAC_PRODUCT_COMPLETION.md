@@ -12,7 +12,7 @@ The full product is not yet complete. A runnable source prerelease and isolated 
 | T-06 VT/Unicode/applications | Native Vim/less/htop, Unicode, alternate-screen and input tests | PARTIAL: complete fzf/combining/extended-input matrix |
 | T-07 mouse recovery | Native routing and disposable Bash raw-child exit | PARTIAL: physical touchpad gate blocked |
 | T-08 history/internal buffer | Canonical history, paged capture, independent internal/system clipboard tests | PASS bounded fixture |
-| T-09 SSH/nested terminals | Real authorized SSH remote-PTY detach/reattach and Unicode | PARTIAL: full 2–5-level nesting |
+| T-09 SSH/nested terminals | Real authorized SSH remote-PTY detach/reattach and Unicode | PARTIAL: actual 2–5 RUWAC layers pass; mixed GNU Screen/tmux combinations remain |
 | T-10 performance | Retained matched 1/5/20/40-pane measurements | PARTIAL: current idle-qualified 30-trial acceptance |
 | A-01 negotiation/discovery | Existing v0 schema/capabilities/typed errors | PARTIAL: describe/host and local GUI list/focus implemented; workspace open/restore and RDP automation remain open |
 | A-02 literal input | Unicode, quotes, shell metacharacters and separate Enter | PASS |
@@ -38,8 +38,8 @@ The full product is not yet complete. A runnable source prerelease and isolated 
 | C-09 remote agent image | SFTP integrity transport is available | OPEN: destination staging, receipt and separate-host consumer acceptance |
 | C-10 transactions/errors | Epoch cancellation, policies, reconnect and limits | PASS bounded fixture; further malformed/slow-server soak remains |
 | C-11 unsupported format/consumer | Visible staging errors and no fake attachment claim | PARTIAL: final destination/consumer fallback UX |
-| F-01 import | Explicit read-only Remmina preview, 70 imports, metadata backup | PARTIAL: merge only by explicit identity and detailed conflict acceptance |
-| F-02 library | Native CRUD, groups, favorites, recents, 1,000-profile fixture | PARTIAL: inherited route execution and practical large-library pagination |
+| F-01 import | Explicit read-only Remmina preview, 70 imports, metadata backup | PARTIAL: explicit-ID reviewed merge, policy preservation, stale/active guards and Undo validated; broader nonsecret mapping/skip reporting remains |
+| F-02 library | Native CRUD, groups, favorites, recents, 1,000-profile fixture | PARTIAL: native 50-row paging and all 1,000 endpoints/search validated; inherited routes and specified SQLite inventory remain |
 | F-03 transfers | SFTP SHA-256, overwrite, cancel, slow-peer/loss and native listing | PARTIAL: recursive/resumable/rsync, encrypted keys and cleanup after loss |
 | F-04 agents | Ordinary daemon-owned terminal execution | PARTIAL: process metadata, monitor/jump/notify; optional structured adapters |
 | F-05 ordinary user/headless package | Independent graphical-free headless graph | PARTIAL: per-user installation implemented; RPM dependency/install qualification remains open |

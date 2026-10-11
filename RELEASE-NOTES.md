@@ -2,11 +2,11 @@
 
 RUWAC is a compiled Rust terminal daemon/CLI and an optional native GTK4/libadwaita desktop with mixed terminal, embedded RDP and SSH/SFTP workspaces. Existing terminals and connections remain independent of desktop presentation.
 
-This increment completes bounded headless interactive copy/search, Unicode marks, rectangular selection, physical soft-wrap joining, word/page movement, window chooser, command prompt, help, zoom and configurable Control prefixes. Modal paste/mouse input cannot reach running applications. Cancellation and oversize selections preserve the previous internal buffer.
+This increment adds accessible machine-library paging with 50 profiles per page and complete search/filter behavior. Native fixtures reach all 1,000 configured endpoints. Tooltips distinguish identical names by actual address and stable identity.
 
-Canonical copy uses immutable, connection-owned history snapshots, retained for at most 30 idle seconds and reclaimed on disconnect. Each snapshot is bounded to 50,000 physical rows or 8 MiB, with a global eight-pin cap. GTK copy uses this protocol when available and retains compatible fallback for older daemons. Nine real-PTY groups include actual two-through-five-layer RUWAC nesting; three API groups validate ownership, resize/output stability, limits and actual expiry. Mixed GNU Screen/tmux nesting remains a separate gate.
+Remmina metadata can merge into an explicitly selected existing endpoint through a native field-by-field review. Imported metadata changes only the approved name/group/protocol/address/username/tags fields; local identity, credential references, trust/key paths, preferences, favorites, recency and inheritance are preserved. Active endpoints and stale reviews are rejected. Cancel writes nothing, changing the source invalidates the preview, and Undo restores the prior library. Original Remmina files and unsupported credential fields remain untouched.
 
-The Remmina-inspired native machine sidebar, visible RDP toolbar and Alt+1–9/0 workspace navigation remain available. Existing daemon sessions are preserved.
+Seven actual GTK library groups, headless canonical copy/history/nesting and native workspace regressions accompany the full authenticated local RDP clipboard/display/profile matrix. Actions are synthetic fixture callbacks on an isolated compositor; external Windows/Fedora and physical GNOME qualification remain separate.
 
 Validation distinguishes actual authenticated local RDP, GTK/GDK integration and real PTYs/SSH from physical input or external-host qualification. Detailed results are maintained in the acceptance report and sanitized evidence inventory.
 

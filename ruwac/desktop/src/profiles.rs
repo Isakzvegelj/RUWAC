@@ -1,6 +1,7 @@
 //! Non-secret machine metadata and explicit, read-only Remmina preview.
 use gtk::prelude::*;
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::{
     cell::{Cell, RefCell},
     io::Read,
@@ -200,6 +201,19 @@ impl Profile {
         }
         Ok(())
     }
+}
+/// Only explicitly reviewed imported metadata changes; local identity and policy survive.
+fn merge_metadata(current: &Profile, imported: &Profile) -> Result<Profile, String> {
+    imported.validate()?;
+    let mut merged = current.clone();
+    merged.name = imported.name.clone();
+    merged.group = imported.group.clone();
+    merged.protocol = imported.protocol.clone();
+    merged.server = imported.server.clone();
+    merged.username = imported.username.clone();
+    merged.tags = imported.tags.clone();
+    merged.validate()?;
+    Ok(merged)
 }
 /// This parser deliberately ignores credentials, certificates and key paths.
 pub fn preview(path: &Path) -> Result<Profile, String> {
@@ -604,6 +618,7 @@ pub fn sidebar(
     let filter = gtk::DropDown::from_strings(&["All machines", "Favorites", "Recent"]);
     root.append(&filter);
     let status = gtk::Label::new(None);
+    status.set_widget_name("machines-status");
     status.set_wrap(true);
     let list = gtk::Box::new(gtk::Orientation::Vertical, 4);
     let scroll = gtk::ScrolledWindow::builder()
@@ -611,6 +626,21 @@ pub fn sidebar(
         .child(&list)
         .build();
     root.append(&scroll);
+    let page = Rc::new(Cell::new(0usize));
+    let pager = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+    let previous_page = gtk::Button::from_icon_name("go-previous-symbolic");
+    previous_page.set_widget_name("machines-page-previous");
+    previous_page.set_tooltip_text(Some("Previous machine page"));
+    previous_page.update_property(&[gtk::accessible::Property::Label("Previous machine page")]);
+    let page_label = gtk::Label::new(None);
+    page_label.set_widget_name("machines-page-label");
+    page_label.set_hexpand(true);
+    let next_page = gtk::Button::from_icon_name("go-next-symbolic");
+    next_page.set_widget_name("machines-page-next");
+    next_page.set_tooltip_text(Some("Next machine page"));
+    next_page.update_property(&[gtk::accessible::Property::Label("Next machine page")]);
+    pager.append(&previous_page); pager.append(&page_label); pager.append(&next_page);
+    root.append(&pager);
     let store = Rc::new(RefCell::new(Store::load()));
     if let Some(e) = &store.borrow().error {
         status.set_text(e);
@@ -627,6 +657,7 @@ pub fn sidebar(
         let filter = filter.clone();
         let status = status.clone();
         let callback = callback.clone();
+        let (page, previous_page, next_page, page_label) = (page.clone(), previous_page.clone(), next_page.clone(), page_label.clone());
         Rc::new(move || {
             while let Some(c) = list.first_child() {
                 list.remove(&c);
@@ -654,7 +685,13 @@ pub fn sidebar(
                     p.name.clone(),
                 )
             });
-            for g in &store.borrow().groups {
+            let total = rows.len();
+            page.set(page.get().min(total.saturating_sub(1) / 50));
+            let start = page.get() * 50;
+            page_label.set_label(&format!("{}–{} of {}", if total == 0 {0} else {start+1}, (start+50).min(total), total));
+            previous_page.set_sensitive(page.get() > 0);
+            next_page.set_sensitive(start+50 < total);
+            for g in store.borrow().groups.iter().take(if page.get()==0 {50} else {0}) {
                 if !rows.iter().any(|(_, p)| p.group == g.path)
                     && (search.text().is_empty()
                         || g.path
@@ -665,7 +702,7 @@ pub fn sidebar(
                 }
             }
             let mut previous = String::new();
-            for (i, p) in rows {
+            for (i, p) in rows.into_iter().skip(start).take(50) {
                 if p.group != previous {
                     list.append(&gtk::Label::new(Some(&p.group.replace('/', " › "))));
                     previous = p.group.clone();
@@ -684,7 +721,7 @@ pub fn sidebar(
                 ));
                 let details=button.label().unwrap_or_default();
                 button.set_widget_name("machine-connect");
-                button.set_tooltip_text(Some(&details));
+                button.set_tooltip_text(Some(&format!("{details}\n{} · {}", p.server, p.id)));
                 let content=gtk::Box::new(gtk::Orientation::Horizontal,6);
                 content.append(&gtk::Image::from_icon_name(if p.protocol=="RDP" {"computer-symbolic"}else{"utilities-terminal-symbolic"}));
                 let text=gtk::Box::new(gtk::Orientation::Vertical,0);
@@ -736,6 +773,10 @@ pub fn sidebar(
             }
         })
     };
+    let (p, r) = (page.clone(), refresh.clone());
+    previous_page.connect_clicked(move |_| {p.set(p.get().saturating_sub(1)); r();});
+    let (p, r) = (page.clone(), refresh.clone());
+    next_page.connect_clicked(move |_| {p.set(p.get()+1); r();});
     let groups = gtk::Button::with_label("Network groups / defaults…");
     root.append(&groups);
     let (s, st) = (store.clone(), status.clone());
@@ -749,6 +790,7 @@ pub fn sidebar(
     let r = refresh.clone();
     refresh_button.connect_clicked(move |_| r());
     let undo = gtk::Button::with_label("Undo last metadata change");
+    undo.set_widget_name("machines-undo");
     root.append(&undo);
     let (s, st, r) = (store.clone(), status.clone(), refresh.clone());
     undo.connect_clicked(move |_| {
@@ -800,10 +842,10 @@ pub fn sidebar(
         drop(s);
         r();
     });
-    let r = refresh.clone();
-    filter.connect_selected_notify(move |_| r());
-    let r = refresh.clone();
-    search.connect_changed(move |_| r());
+    let (r, p) = (refresh.clone(), page.clone());
+    filter.connect_selected_notify(move |_| {p.set(0); r();});
+    let (r, p) = (refresh.clone(), page.clone());
+    search.connect_changed(move |_| {p.set(0); r();});
     let selected = Rc::new(RefCell::new(None::<Profile>));
     let path = gtk::Entry::builder()
         .placeholder_text("Choose Remmina file explicitly")
@@ -816,6 +858,21 @@ pub fn sidebar(
         "Import duplicate as new identity",
     ]);
     root.append(&conflict);
+    let targets = gtk::StringList::new(&["Select an existing endpoint explicitly"]);
+    let merge_target = gtk::DropDown::new(Some(targets.clone()), None::<gtk::Expression>);
+    merge_target.set_enable_search(true);
+    let factory=gtk::SignalListItemFactory::new();
+    factory.connect_setup(|_,object| {if let Some(item)=object.downcast_ref::<gtk::ListItem>() {item.set_child(Some(&gtk::Label::builder().xalign(0.0).ellipsize(gtk::pango::EllipsizeMode::End).max_width_chars(28).build()));}});
+    factory.connect_bind(|_,object| {if let Some(item)=object.downcast_ref::<gtk::ListItem>() {if let (Some(value),Some(label))=(item.item().and_then(|o|o.downcast::<gtk::StringObject>().ok()),item.child().and_then(|w|w.downcast::<gtk::Label>().ok())) {label.set_text(&value.string());label.set_tooltip_text(Some(&value.string()));}}});
+    merge_target.set_factory(Some(&factory));
+
+    merge_target.set_widget_name("machines-merge-target");
+    let target_ids = Rc::new(RefCell::new(Vec::<String>::new()));
+    root.append(&merge_target);
+    let review_merge = gtk::Button::with_label("Review merge into selected endpoint");
+    review_merge.set_widget_name("machines-merge-review");
+    review_merge.set_sensitive(false);
+    root.append(&review_merge);
     let import = gtk::Button::with_label("Import preview metadata");
     import.set_sensitive(false);
     root.append(&import);
@@ -839,15 +896,26 @@ pub fn sidebar(
             },
         );
     });
+    let (stale, disable_import, disable_merge) = (selected.clone(), import.clone(), review_merge.clone());
+    path.connect_changed(move |_| {stale.borrow_mut().take(); disable_import.set_sensitive(false); disable_merge.set_sensitive(false);});
     let sel = selected.clone();
     let st = status.clone();
     let enable = import.clone();
+    let (merge_enable, merge_model, merge_ids, merge_choice, merge_store) = (review_merge.clone(), targets.clone(), target_ids.clone(), merge_target.clone(), store.clone());
     preview_button.connect_clicked(move |_| match preview(Path::new(path.text().as_str())) {
         Ok(p) => {
             st.set_text(&format!(
                 "{} / {} · {} {}\nMetadata only; credentials excluded",
                 p.group, p.name, p.protocol, p.server
             ));
+            merge_model.splice(1, merge_model.n_items().saturating_sub(1), &[]);
+            merge_ids.borrow_mut().clear();
+            for item in &merge_store.borrow().items {
+                merge_model.append(&format!("{} / {} · {} · {}", item.group, item.name, item.server, item.id));
+                merge_ids.borrow_mut().push(item.id.clone());
+            }
+            merge_choice.set_selected(0);
+            merge_enable.set_sensitive(true);
             *sel.borrow_mut() = Some(p);
             enable.set_sensitive(true);
         }
@@ -855,7 +923,35 @@ pub fn sidebar(
             st.set_text(&e);
             sel.borrow_mut().take();
             enable.set_sensitive(false);
+            merge_enable.set_sensitive(false);
         }
+    });
+    let (s, selected_preview, ids, choice, st, refresh_merge) = (store.clone(), selected.clone(), target_ids.clone(), merge_target.clone(), status.clone(), refresh.clone());
+    review_merge.connect_clicked(move |button| {
+        let chosen = choice.selected() as usize;
+        let Some(id) = chosen.checked_sub(1).and_then(|i| ids.borrow().get(i).cloned()) else {st.set_text("Select an existing endpoint explicitly; names are never used to merge"); return;};
+        let Some(imported) = selected_preview.borrow().clone() else {st.set_text("Preview a Remmina file first"); return;};
+        let current = {let state=s.borrow(); if state.active.contains_key(&id) {st.set_text("Close this endpoint's active connection tabs before merging metadata"); return;} state.items.iter().find(|p|p.id==id).cloned()};
+        let Some(current) = current else {st.set_text("Selected endpoint no longer exists; preview again"); return;};
+        let merged=match merge_metadata(&current,&imported) {Ok(p)=>p,Err(e)=>{st.set_text(&e);return;}};
+        let dialog=gtk::Dialog::builder().title("Review metadata merge").modal(true).build();
+        dialog.set_transient_for(button.root().and_then(|r|r.downcast::<gtk::Window>().ok()).as_ref());
+        dialog.set_widget_name("machines-merge-dialog");
+        let details=format!("Target ID: {}\nName: {} → {}\nGroup: {} → {}\nProtocol: {} → {}\nServer: {} → {}\nUsername: {} → {}\nTags: {} → {}\n\nExisting machine/endpoint identity, credential reference, trust, key paths, preferences, favorites and recency are preserved. No credentials are imported. Group changes may alter inherited defaults. Verify the changed endpoint and effective settings before connecting. Undo restores the previous library.", current.id,current.name,merged.name,current.group,merged.group,current.protocol,merged.protocol,current.server,merged.server,current.username,merged.username,current.tags.join(", "),merged.tags.join(", "));
+        let label=gtk::Label::new(Some(&details));label.set_wrap(true);label.set_selectable(true);dialog.content_area().append(&label);
+        dialog.add_button("Cancel",gtk::ResponseType::Cancel);dialog.add_button("Apply reviewed metadata",gtk::ResponseType::Accept);
+        let (s,st,r)=(s.clone(),st.clone(),refresh_merge.clone());
+        dialog.connect_response(move |d,response| {
+            if response==gtk::ResponseType::Accept {
+                let mut state=s.borrow_mut();
+                let index=state.items.iter().position(|p|p.id==current.id);
+                if state.active.contains_key(&current.id) || index.is_none_or(|i|serde_json::to_value(&state.items[i]).ok()!=serde_json::to_value(&current).ok()) {st.set_text("Endpoint changed or became active after review; preview and review again"); d.close();return;}
+                let index=index.unwrap();state.items[index]=merged.clone();
+                match state.save(){Ok(())=>st.set_text("Reviewed metadata merged; original identity and credential reference preserved"),Err(e)=>{state.items[index]=current.clone();st.set_text(&e);}}
+                drop(state);r();
+            }
+            d.close();
+        });dialog.present();
     });
     let st = status.clone();
     let r = refresh.clone();
@@ -1619,5 +1715,56 @@ mod workspace_tests {
         p.server = "localhost:22".into();
         p.preferences.zoom = f64::NAN;
         assert!(p.validate().is_err());
+    }
+}
+
+/// Native library controls exercised only by the private fixture dispatcher.
+pub fn fixture_library(root: &gtk::Box, file: Option<&Path>, q: &serde_json::Value) -> serde_json::Value {
+    fn find(w: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
+        if w.widget_name()==name {return Some(w.clone());}
+        let mut child=w.first_child();
+        while let Some(c)=child {child=c.next_sibling();if let Some(w)=find(&c,name){return Some(w);}}
+        None
+    }
+    if let Some(file)=file {
+        let mut child=root.first_child();
+        while let Some(w)=child {child=w.next_sibling();if let Some(e)=w.downcast_ref::<gtk::Entry>() {e.set_text(&file.to_string_lossy());}if let Some(b)=w.downcast_ref::<gtk::Button>() {if b.label().as_deref()==Some("Preview selected Remmina file"){b.emit_clicked();}}}
+    }
+    if let Some(id)=q["target"].as_str() {
+        if let Some(w)=find(root.upcast_ref(),"machines-merge-target") {
+            let dropdown=w.downcast::<gtk::DropDown>().unwrap();
+            let model=dropdown.model().unwrap();
+            let selected=(1..model.n_items()).find(|i|model.item(*i).and_then(|o|o.downcast::<gtk::StringObject>().ok()).is_some_and(|o|o.string().ends_with(id)));
+            dropdown.set_selected(selected.unwrap_or(0));
+        }
+    }
+    let action=q["operation"].as_str().unwrap_or("inspect");
+    let name=match action {"next"=>"machines-page-next","previous"=>"machines-page-previous","review"=>"machines-merge-review","undo"=>"machines-undo",_=>""};
+    if let Some(w)=find(root.upcast_ref(),name) {if let Some(b)=w.downcast_ref::<gtk::Button>() {if b.is_sensitive(){b.emit_clicked();}}}
+    let mut review_text=None;
+    for window in gtk::Window::list_toplevels() {
+        if window.widget_name()=="machines-merge-dialog" {
+            if let Ok(dialog)=window.downcast::<gtk::Dialog>() {
+                review_text=dialog.content_area().first_child().and_then(|w|w.downcast::<gtk::Label>().ok()).map(|l|l.text().to_string());
+                if action=="apply"||action=="cancel" {dialog.response(if action=="apply" {gtk::ResponseType::Accept}else{gtk::ResponseType::Cancel});}
+            }
+        }
+    }
+    let text=|name|find(root.upcast_ref(),name).and_then(|w|w.downcast::<gtk::Label>().ok()).map(|l|l.text().to_string());
+    let sensitive=|name|find(root.upcast_ref(),name).is_some_and(|w|w.is_sensitive());
+    json!({"page":text("machines-page-label"),"previous":sensitive("machines-page-previous"),"next":sensitive("machines-page-next"),"status":text("machines-status"),"review_text":review_text,"visible":fixture(root,None,None,false,false)})
+}
+#[cfg(test)]
+mod merge_tests {
+    use super::*;
+    #[test]
+    fn import_merge_preserves_identity_secrets_and_local_policy() {
+        let imported:Profile=serde_json::from_value(json!({"name":"Imported","group":"New/Group","protocol":"SSH","server":"host.example:22","username":"other","secret_reference":"IMPORTED-IGNORED","favorite":false,"last_used":0,"tags":["remote"]})).unwrap();
+        let mut current=imported.clone();current.identify();current.name="Old".into();current.machine_id="machine_original".into();current.secret_reference="existing-secret-ref".into();current.favorite=true;current.last_used=123;current.inherit=true;current.preferences.trust="existing-trust".into();current.preferences.identity_file="existing-key".into();
+        let merged=merge_metadata(&current,&imported).unwrap();
+        assert_eq!(merged.id,current.id);assert_eq!(merged.machine_id,current.machine_id);assert_eq!(merged.secret_reference,current.secret_reference);
+        assert_eq!(serde_json::to_value(&merged.preferences).unwrap(),serde_json::to_value(&current.preferences).unwrap());
+        assert!(merged.favorite&&merged.inherit);assert_eq!(merged.last_used,123);assert_eq!(merged.name,"Imported");
+        let mut bad=imported;bad.server="-bad".into();assert!(merge_metadata(&current,&bad).is_err());assert_eq!(current.name,"Old");
     }
 }

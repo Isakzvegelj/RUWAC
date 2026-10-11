@@ -346,6 +346,7 @@ v.fixture_display(q["mode"].as_str().unwrap_or("fit"),q["zoom"].as_f64().unwrap_
     "files-directory"=>{if let Some((root,_))=file_views.borrow().get(q["index"].as_u64().unwrap_or(0)as usize){reply(json!({"directory":files::directory(root,q["path"].as_str())}));}else{reply(json!({"error":"Files view missing"}));}},
     "files-inspect"=>{if let Some(page)=tabs.selected_page(){if page.title().ends_with("Files"){if let Some(root)=page.child().first_child().and_then(|c|c.downcast::<gtk::Box>().ok()){reply(files::fixture(&root,q["path"].as_str(),q["refresh"]==true));}}}},
     "profile-editor"=>reply(profiles::fixture_editor(&sidebar,&q)),
+    "profiles-control"=>{let path=q["file"].as_str().filter(|s|!s.contains('/')&&!s.contains("..")).map(|s|dir.join(s));reply(profiles::fixture_library(&sidebar,path.as_deref(),&q));},
     "profiles"=>{let path=q["file"].as_str().filter(|s|!s.contains('/')&&!s.contains("..")).map(|s|dir.join(s));reply(profiles::fixture(&sidebar,path.as_deref(),q["search"].as_str(),q["favorite"]==true,q["open"]==true));},
     "command"=>{v.run_command(q["text"].as_str().unwrap_or(""));reply(json!({"queued":true}));},
     "divider-drag"=>{reply(v.fixture_root_drag());},

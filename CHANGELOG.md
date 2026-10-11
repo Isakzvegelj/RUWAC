@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## v0.1.14 — 2026-10-11 — Prerelease
+
+- Add accessible 50-profile paging with complete search, preserving endpoint-specific connect/edit/favorite handlers across 1,000 profiles.
+- Add native Remmina metadata merge review into an explicitly selected endpoint, preserving identity, credential references and local policy.
+- Reject active or changed merge targets; support cancellation, preview invalidation and existing Undo without touching original Remmina files.
+- Validate real GTK paging, review/merge persistence, guards and restart alongside full authenticated local RDP and headless regressions.
+
 ## v0.1.13 — 2026-10-11 — Prerelease
 
 - Complete bounded headless canonical copy/search with Unicode grapheme marks, rectangular selection, wrapped-line joining, paging and word movement.
