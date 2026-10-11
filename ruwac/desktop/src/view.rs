@@ -755,8 +755,16 @@ impl View {
                 *self.target.borrow_mut() = frame["active_pane"].as_str().unwrap_or("").into();
             }
             if self.warning.borrow().is_none() {
+                let active = panes.iter().find(|p| p["id"] == frame["active_pane"]);
+                let state = match active {
+                    Some(p) if p["restored"] == true => {
+                        "Restored history · process ended · New terminal starts a session"
+                    }
+                    Some(p) if p["ended"] == true => "Process ended · history remains available",
+                    _ => "Ctrl+A prefix · Shift+drag selects · PTYs persist",
+                };
                 self.status.set_text(&format!(
-                    "{} — Ctrl+A prefix · Shift+drag selects · PTYs persist",
+                    "{} — {state}",
                     frame["name"].as_str().unwrap_or("Terminal")
                 ));
             }
@@ -841,8 +849,16 @@ impl View {
         } else {
             self.area.grab_focus();
         }
-        let foreground=self.root.root().and_then(|r|r.downcast::<gtk::Window>().ok()).is_some_and(|w|w.is_active());
-        if foreground{self.broker.borrow_mut().focus(Some(&self.session));}else if self.broker.borrow().active()==Some(self.session.as_str()){self.broker.borrow_mut().focus(None);}
+        let foreground = self
+            .root
+            .root()
+            .and_then(|r| r.downcast::<gtk::Window>().ok())
+            .is_some_and(|w| w.is_active());
+        if foreground {
+            self.broker.borrow_mut().focus(Some(&self.session));
+        } else if self.broker.borrow().active() == Some(self.session.as_str()) {
+            self.broker.borrow_mut().focus(None);
+        }
     }
     pub fn focus_at(&self, x: f64, y: f64) {
         if let Some((p, _, _)) = self.point(x, y) {

@@ -1,10 +1,10 @@
 {
-  "baseline_commit": "c1e9478419aca54d130ee1fb77606fb7f06f73aa",
+  "baseline_commit": "39080ba6fce39f180fe24a9df04b72a61ffbc094",
   "current_report": "spec/RUWAC_INTEGRATION_SPIKE.md",
   "public_evidence": [
     "architecture/acceptance-results.json",
     "architecture/benchmark-results.json",
     "architecture/dependency-licenses.json"
   ],
-  "private_capsule": "identities-r11: real native graphical IDs/exact focus, same-UID GUI IPC permission/stale/oversized/stalled-peer and full-backlog boundaries, 30 CLI-to-GTK latency trials, v1/v2 migration, desktop crash restoration, headless/named/diagnostics, native terminal/GDK and four authenticated RDP groups including background clipboard isolation, Alt-number regression, existing-controller publication and matching installations"
+  "private_capsule": "history-r12: real daemon SIGKILL/canonical Unicode and cell/typed-ID recovery, ordinary XDG state after runtime-tree removal, write failure/retry and hostile-file preservation, actual GTK ended-history copy/new-terminal render, eight workspace and nine GUI/API groups, native GDK and four authenticated local RDP regressions, 30 atomic checkpoint samples, existing-controller publication and matching private installations"
 }

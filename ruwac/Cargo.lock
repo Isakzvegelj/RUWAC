@@ -575,6 +575,89 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
 
 [[package]]
+name = "ruwac-cli"
+version = "0.1.11"
+dependencies = [
+ "libc",
+ "ruwac-clipboard",
+ "ruwac-daemon",
+ "ruwac-protocol",
+ "ruwac-tui",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "ruwac-clipboard"
+version = "0.1.11"
+dependencies = [
+ "libc",
+ "png",
+ "sha2",
+ "uuid",
+]
+
+[[package]]
+name = "ruwac-core"
+version = "0.1.11"
+dependencies = [
+ "libc",
+ "ruwac-protocol",
+ "ruwac-pty",
+ "ruwac-term",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "ruwac-daemon"
+version = "0.1.11"
+dependencies = [
+ "libc",
+ "ruwac-core",
+ "ruwac-protocol",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "ruwac-protocol"
+version = "0.1.11"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "ruwac-pty"
+version = "0.1.11"
+dependencies = [
+ "libc",
+ "portable-pty",
+]
+
+[[package]]
+name = "ruwac-term"
+version = "0.1.11"
+dependencies = [
+ "alacritty_terminal",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "ruwac-tui"
+version = "0.1.11"
+dependencies = [
+ "libc",
+ "ruwac-protocol",
+ "serde_json",
+]
+
+[[package]]
 name = "scopeguard"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1008,84 +1091,3 @@ name = "zmij"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b"
-
-[[package]]
-name = "ruwac-cli"
-version = "0.1.10"
-dependencies = [
- "libc",
- "serde_json",
- "tokio",
- "ruwac-clipboard",
- "ruwac-daemon",
- "ruwac-protocol",
- "ruwac-tui",
-]
-
-[[package]]
-name = "ruwac-clipboard"
-version = "0.1.10"
-dependencies = [
- "libc",
- "png",
- "sha2",
- "uuid",
-]
-
-[[package]]
-name = "ruwac-core"
-version = "0.1.10"
-dependencies = [
- "serde_json",
- "tokio",
- "ruwac-protocol",
- "ruwac-pty",
- "ruwac-term",
-]
-
-[[package]]
-name = "ruwac-daemon"
-version = "0.1.10"
-dependencies = [
- "libc",
- "serde_json",
- "tokio",
- "ruwac-core",
- "ruwac-protocol",
-]
-
-[[package]]
-name = "ruwac-protocol"
-version = "0.1.10"
-dependencies = [
- "serde",
- "serde_json",
- "tokio",
- "uuid",
-]
-
-[[package]]
-name = "ruwac-pty"
-version = "0.1.10"
-dependencies = [
- "libc",
- "portable-pty",
-]
-
-[[package]]
-name = "ruwac-term"
-version = "0.1.10"
-dependencies = [
- "alacritty_terminal",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "ruwac-tui"
-version = "0.1.10"
-dependencies = [
- "libc",
- "serde_json",
- "ruwac-protocol",
-]

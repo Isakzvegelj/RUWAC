@@ -1,5 +1,7 @@
 mod layout;
+mod recovery;
 use layout::{Layout, Rect};
+pub use recovery::Store;
 use ruwac_protocol::{Error, Request, Result, checked_text, id, target, text};
 use ruwac_pty::Pty;
 use ruwac_term::Terminal;
@@ -9,11 +11,27 @@ use tokio::sync::{mpsc, oneshot, watch};
 struct Pane {
     id: String,
     window: String,
-    pty: Pty,
+    pty: Option<Pty>,
+    exit_code: Option<u32>,
     term: Terminal,
     ended: bool,
     foreground: Option<i32>,
 }
+impl Pane {
+    fn live_pty(&self) -> Result<&Pty> {
+        if self.ended {
+            return Err(Error::new(
+                "PANE_EXITED",
+                "child exited; history is read-only",
+            ));
+        }
+        self.pty
+            .as_ref()
+            .ok_or_else(|| Error::new("PANE_EXITED", "restored history has no live process"))
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 struct Window {
     id: String,
     session: String,
@@ -23,6 +41,8 @@ struct Window {
     layout: Layout,
     zoom: bool,
 }
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 struct Session {
     id: String,
     name: String,
@@ -30,6 +50,7 @@ struct Session {
     active: String,
     rows: u16,
     cols: u16,
+    #[serde(skip)]
     buffer: String,
 }
 struct Client {
@@ -41,6 +62,7 @@ pub enum Message {
     Call(Request, String, oneshot::Sender<Result<Value>>),
     Output(String, Vec<u8>),
     Disconnect(String),
+    Saved(u64, std::result::Result<(), String>),
 }
 #[derive(Clone)]
 pub struct Handle {
@@ -67,34 +89,69 @@ struct State {
     cache: HashMap<String, (String, Result<Value>)>,
     order: VecDeque<String>,
     revision: u64,
+    store: Option<std::sync::Arc<Store>>,
+    checkpoint_revision: u64,
+    checkpoint_pending: bool,
+    checkpoint_error: Option<String>,
 }
 pub fn start() -> Handle {
+    start_with_store(None).expect("in-memory state initialization")
+}
+pub fn start_with_store(store: Option<Store>) -> std::io::Result<Handle> {
     let (tx, mut rx) = mpsc::channel(128);
     let (rev, watch) = watch::channel(0);
     let handle = Handle {
         tx: tx.clone(),
         revision: watch,
     };
+    let mut s = State {
+        panes: HashMap::new(),
+        windows: HashMap::new(),
+        sessions: HashMap::new(),
+        clients: HashMap::new(),
+        tx,
+        cache: HashMap::new(),
+        order: VecDeque::new(),
+        revision: 0,
+        store: store.map(std::sync::Arc::new),
+        checkpoint_revision: 0,
+        checkpoint_pending: false,
+        checkpoint_error: None,
+    };
+    s.restore()?;
+    let _ = rev.send(s.revision);
     tokio::spawn(async move {
-        let mut s = State {
-            panes: HashMap::new(),
-            windows: HashMap::new(),
-            sessions: HashMap::new(),
-            clients: HashMap::new(),
-            tx,
-            cache: HashMap::new(),
-            order: VecDeque::new(),
-            revision: 0,
-        };
-        while let Some(m) = rx.recv().await {
+        let mut timer = tokio::time::interval(std::time::Duration::from_secs(2));
+        timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            let m = tokio::select! {
+                m=rx.recv()=>match m {Some(m)=>m,None=>break},
+                _=timer.tick()=>{s.schedule_checkpoint(); continue;},
+            };
             match m {
                 Message::Call(r, c, reply) => {
-                    let answer = s.call(&r, &c);
+                    let answer = if matches!(r.method.as_str(), "daemon.checkpoint" | "daemon.stop")
+                        && r.version == 0
+                        && (r.params.is_object() || r.params.is_null())
+                        && r.idempotency_key.is_none()
+                    {
+                        match s.checkpoint().await {
+                            Ok(()) => Ok(if r.method == "daemon.stop" {
+                                json!({"stopped":true})
+                            } else {
+                                json!({"checkpointed":true,"revision":s.checkpoint_revision})
+                            }),
+                            Err(e) => Err(Error::new("CHECKPOINT", e)),
+                        }
+                    } else {
+                        s.call(&r, &c)
+                    };
                     let stop = r.method == "daemon.stop" && answer.is_ok();
                     let _ = reply.send(answer);
                     if !matches!(
                         r.method.as_str(),
                         "health"
+                            | "daemon.checkpoint"
                             | "version"
                             | "capabilities"
                             | "schema"
@@ -117,21 +174,36 @@ pub fn start() -> Handle {
                 }
                 Message::Output(p, b) => {
                     if let Some(p) = s.panes.get_mut(&p) {
-                        let foreground = p.pty.foreground_group();
+                        let foreground = p.pty.as_ref().and_then(Pty::foreground_group);
                         if p.foreground != foreground {
                             p.term.reset_input_modes();
                             p.foreground = foreground;
                         }
                         if b.is_empty() {
                             p.ended = true;
+                            p.exit_code = p.pty.as_ref().and_then(Pty::exit_code);
                             p.term.reset_input_modes();
                         } else {
                             for reply in p.term.feed(&b) {
-                                let _ = p.pty.send(reply.into_bytes());
+                                if let Some(pty) = &p.pty {
+                                    let _ = pty.send(reply.into_bytes());
+                                }
                             }
                         }
                         s.revision += 1;
                         let _ = rev.send(s.revision);
+                    }
+                }
+                Message::Saved(revision, result) => {
+                    s.checkpoint_pending = false;
+                    match result {
+                        Ok(()) => {
+                            s.checkpoint_revision = s.checkpoint_revision.max(revision);
+                            s.checkpoint_error = None;
+                        }
+                        Err(e) => {
+                            s.checkpoint_error = Some(e);
+                        }
                     }
                 }
                 Message::Disconnect(c) => {
@@ -144,7 +216,7 @@ pub fn start() -> Handle {
             }
         }
     });
-    handle
+    Ok(handle)
 }
 fn num(v: &Value, k: &str, default: u64, min: u64, max: u64) -> Result<u16> {
     let n = match v.get(k) {
@@ -203,6 +275,7 @@ impl State {
                     | "client.render"
                     | "client.input"
                     | "daemon.stop"
+                    | "daemon.checkpoint"
             ) {
                 return Err(Error::new(
                     "INVALID_PARAMS",
@@ -255,7 +328,8 @@ impl State {
                 id: pid.clone(),
                 window: w.into(),
                 foreground: pty.foreground_group(),
-                pty,
+                pty: Some(pty),
+                exit_code: None,
                 term: Terminal::new(rows, cols),
                 ended: false,
             },
@@ -293,7 +367,7 @@ impl State {
         let session = self.sessions.get_mut(s).unwrap();
         session.windows.push(w.clone());
         session.active = w.clone();
-        Ok(json!({"window":w,"pane":p,"pid":self.panes[&p].pty.pid}))
+        Ok(json!({"window":w,"pane":p,"pid":self.panes[&p].pty.as_ref().map(|p|p.pid)}))
     }
     fn layout(&mut self, s: &str) {
         let sizes: Vec<_> = self
@@ -341,7 +415,9 @@ impl State {
             for (id, r) in rects {
                 if let Some(p) = self.panes.get_mut(&id) {
                     if p.term.rows != r.rows || p.term.cols != r.cols {
-                        let _ = p.pty.resize(r.rows, r.cols);
+                        if let Some(pty) = &p.pty {
+                            let _ = pty.resize(r.rows, r.cols);
+                        }
                         p.term.resize(r.rows, r.cols);
                     }
                 }
@@ -351,17 +427,22 @@ impl State {
     fn dispatch(&mut self, m: &str, v: &Value, client: &str) -> Result<Value> {
         match m {
             "health" => Ok(
-                json!({"ok":true,"panes":self.panes.len(),"clients":self.clients.len(),"revision":self.revision}),
+                json!({"ok":true,"panes":self.panes.len(),"clients":self.clients.len(),"revision":self.revision,"persistence":{"enabled":self.store.is_some(),"checkpoint_revision":self.checkpoint_revision,"pending":self.checkpoint_pending,"error":self.checkpoint_error,"interval_ms":2000}}),
             ),
             "version" => Ok(
                 json!({"name":"ruwac","implementation":"spike","package":env!("CARGO_PKG_VERSION"),"protocol":0}),
             ),
             "capabilities" => Ok(
-                json!({"desktop_clipboard":false,"primary":false,"graphics":false,"image_attachment":false,"ssh_transport":"authenticated OpenSSH through CLI --host","shared_focus":true,"split":"persistent horizontal/vertical tree, sixteen panes","capture_limit":2000,"history_page_limit":500,"scrollback_default":50000,"max_text_bytes":ruwac_protocol::MAX_TEXT}),
+                json!({"recovery":self.store.is_some(),"history_checkpoints":"private canonical tail, 50000 lines or 512 KiB per pane; processes restore ended","desktop_clipboard":false,"primary":false,"graphics":false,"image_attachment":false,"ssh_transport":"authenticated OpenSSH through CLI --host","shared_focus":true,"split":"persistent horizontal/vertical tree, sixteen panes","capture_limit":2000,"history_page_limit":500,"scrollback_default":50000,"max_text_bytes":ruwac_protocol::MAX_TEXT}),
             ),
             "schema" => Ok(schema()),
-            "describe" => Ok(json!({"protocol":0,"native_describe":true,"schema":schema(),"capabilities":self.dispatch("capabilities",v,client)?,"version":self.dispatch("version",v,client)?,"transport":{"local":"same-UID authenticated Unix socket","remote":"OpenSSH --host, explicit targets, verified host key","gui":"independent optional service; not owned by the headless daemon"}})),
-            "daemon.stop" => Ok(json!({"stopped":true})),
+            "describe" => Ok(
+                json!({"protocol":0,"native_describe":true,"schema":schema(),"capabilities":self.dispatch("capabilities",v,client)?,"version":self.dispatch("version",v,client)?,"transport":{"local":"same-UID authenticated Unix socket","remote":"OpenSSH --host, explicit targets, verified host key","gui":"independent optional service; not owned by the headless daemon"}}),
+            ),
+            "daemon.stop" | "daemon.checkpoint" => Err(Error::new(
+                "INVALID_PARAMS",
+                "checkpoint/stop do not accept idempotency keys",
+            )),
             "session.create" => {
                 if self.sessions.len() >= 64 {
                     return Err(Error::new("LIMIT", "maximum 64 sessions"));
@@ -394,7 +475,7 @@ impl State {
                 }
             }
             "session.list" => {
-                let mut a:Vec<_>=self.sessions.values().map(|s|json!({"id":s.id,"name":s.name,"active_window":s.active,"windows":s.windows,"rows":s.rows,"cols":s.cols})).collect();
+                let mut a:Vec<_>=self.sessions.values().map(|s|json!({"id":s.id,"name":s.name,"active_window":s.active,"windows":s.windows,"rows":s.rows,"cols":s.cols,"restored":s.windows.iter().filter_map(|w|self.windows.get(w)).flat_map(|w|w.panes.iter()).all(|p|self.panes.get(p).is_some_and(|p|p.pty.is_none()))})).collect();
                 a.sort_by_key(|v| v["id"].as_str().unwrap().to_owned());
                 Ok(json!(a))
             }
@@ -516,7 +597,7 @@ impl State {
                 w.panes.push(p.clone());
                 w.active = p.clone();
                 self.layout(&s);
-                Ok(json!({"pane":p,"pid":self.panes[&p].pty.pid}))
+                Ok(json!({"pane":p,"pid":self.panes[&p].pty.as_ref().map(|p|p.pid)}))
             }
             "pane.list" => {
                 let s = target(v, "session", "session")?;
@@ -524,7 +605,7 @@ impl State {
                     .sessions
                     .get(&s)
                     .ok_or_else(|| Error::new("STALE_ID", "session does not exist"))?;
-                Ok(json!(s.windows.iter().filter_map(|w|self.windows.get(w)).flat_map(|w|w.panes.iter()).filter_map(|p|self.panes.get(p)).map(|p|json!({"id":p.id,"window":p.window,"pid":p.pty.pid,"ended":p.ended,"rows":p.term.rows,"cols":p.term.cols})).collect::<Vec<_>>()))
+                Ok(json!(s.windows.iter().filter_map(|w|self.windows.get(w)).flat_map(|w|w.panes.iter()).filter_map(|p|self.panes.get(p)).map(|p|json!({"id":p.id,"window":p.window,"pid":p.pty.as_ref().map(|p|p.pid),"ended":p.ended,"restored":p.pty.is_none(),"exit_code":p.exit_code.or_else(||p.pty.as_ref().and_then(Pty::exit_code)),"rows":p.term.rows,"cols":p.term.cols})).collect::<Vec<_>>()))
             }
             "pane.close" => {
                 let p = self.pane(v)?;
@@ -624,7 +705,7 @@ impl State {
                 if p.ended {
                     return Err(Error::new("PANE_EXITED", "child exited"));
                 }
-                p.pty
+                p.live_pty()?
                     .send(t.as_bytes().to_vec())
                     .map_err(|e| Error::new("BACKPRESSURE", e))?;
                 Ok(json!({"queued_bytes":t.len()}))
@@ -650,7 +731,9 @@ impl State {
                 if p.ended {
                     return Err(Error::new("PANE_EXITED", "child exited"));
                 }
-                p.pty.send(b).map_err(|e| Error::new("BACKPRESSURE", e))?;
+                p.live_pty()?
+                    .send(b)
+                    .map_err(|e| Error::new("BACKPRESSURE", e))?;
                 Ok(json!({"queued":true}))
             }
             "buffer.set" => {
@@ -683,7 +766,9 @@ impl State {
                     framed.extend(b"\x1b[201~");
                     b = framed;
                 }
-                p.pty.send(b).map_err(|e| Error::new("BACKPRESSURE", e))?;
+                p.live_pty()?
+                    .send(b)
+                    .map_err(|e| Error::new("BACKPRESSURE", e))?;
                 Ok(json!({"queued":true}))
             }
             "client.resize" => {
@@ -701,7 +786,7 @@ impl State {
             }
             "client.render" => {
                 for p in self.panes.values_mut() {
-                    let group = p.pty.foreground_group();
+                    let group = p.pty.as_ref().and_then(Pty::foreground_group);
                     if group != p.foreground {
                         p.term.reset_input_modes();
                         p.foreground = group;
@@ -739,7 +824,7 @@ impl State {
                         &mut rects,
                     );
                 }
-                let panes=rects.iter().filter_map(|(id,r)|self.panes.get(id).map(|p|json!({"id":p.id,"grid":p.term.snapshot(),"ended":p.ended,"rect":{"x":r.x,"y":r.y,"rows":r.rows,"cols":r.cols}}))).collect::<Vec<_>>();
+                let panes=rects.iter().filter_map(|(id,r)|self.panes.get(id).map(|p|json!({"id":p.id,"grid":p.term.snapshot(),"ended":p.ended,"restored":p.pty.is_none(),"exit_code":p.exit_code.or_else(||p.pty.as_ref().and_then(Pty::exit_code)),"rect":{"x":r.x,"y":r.y,"rows":r.rows,"cols":r.cols}}))).collect::<Vec<_>>();
                 Ok(
                     json!({"revision":self.revision,"session":s.id,"window":w.id,"name":w.name,"active_pane":w.active,"layout":w.layout.json(),"zoom":w.zoom,"panes":panes}),
                 )
@@ -809,7 +894,9 @@ impl State {
                 if p.ended {
                     return Err(Error::new("PANE_EXITED", "child exited"));
                 }
-                p.pty.send(b).map_err(|e| Error::new("BACKPRESSURE", e))?;
+                p.live_pty()?
+                    .send(b)
+                    .map_err(|e| Error::new("BACKPRESSURE", e))?;
                 Ok(json!({"queued":true}))
             }
             _ => Err(Error::new(
@@ -820,5 +907,5 @@ impl State {
     }
 }
 pub fn schema() -> Value {
-    json!({"protocol":0,"framing":"u32 big-endian byte length + UTF-8 JSON","max_frame_bytes":ruwac_protocol::MAX_FRAME,"methods":["health","version","capabilities","schema","describe","session.create","session.list","session.attach","session.detach","window.create","window.list","window.rename","window.select","window.cycle","pane.create","pane.layout","pane.history","pane.close","pane.list","pane.select","pane.sendText","pane.sendKey","pane.capture","pane.wait","buffer.set","buffer.get","buffer.paste","client.resize","client.render","client.input","events.subscribe","daemon.stop"],"targets":{"session":"session_ + 32 hex","window":"window_ + 32 hex","pane":"pane_ + 32 hex"},"request":{"version":0,"id":"JSON request correlation value","method":"method name","params":"object","idempotency_key":"optional 1..128 byte daemon-lifetime key"}})
+    json!({"protocol":0,"framing":"u32 big-endian byte length + UTF-8 JSON","max_frame_bytes":ruwac_protocol::MAX_FRAME,"methods":["health","version","capabilities","schema","describe","session.create","session.list","session.attach","session.detach","window.create","window.list","window.rename","window.select","window.cycle","pane.create","pane.layout","pane.history","pane.close","pane.list","pane.select","pane.sendText","pane.sendKey","pane.capture","pane.wait","buffer.set","buffer.get","buffer.paste","client.resize","client.render","client.input","events.subscribe","daemon.checkpoint","daemon.stop"],"targets":{"session":"session_ + 32 hex","window":"window_ + 32 hex","pane":"pane_ + 32 hex"},"request":{"version":0,"id":"JSON request correlation value","method":"method name","params":"object","idempotency_key":"optional 1..128 byte daemon-lifetime key"}})
 }

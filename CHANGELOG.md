@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## v0.1.11 — 2026-10-11 — Prerelease
+
+- Add private atomic daemon checkpoints and restore the same terminal IDs, split metadata, bounded canonical Unicode/tab/cell history and known exit codes as ended resources.
+- Persist ordinary daemon state outside runtime directories; surface checkpoint progress/errors and reject corrupt, unsafe, oversized or concurrently owned archives without discarding them.
+- Label restored history in the desktop/TUI/session chooser, preserve internal-buffer separation and allow new live terminals alongside recovered history.
+- Validate real daemon SIGKILL/default-state recovery, native GTK history copy, persistence boundaries, checkpoint write timings and headless/GDK/authenticated-RDP regressions; keep full-product and stable qualification gates explicit.
+
 ## v0.1.10 — 2026-10-11 — Prerelease
 
 - Add persistent tab/view IDs, exact mixed-view focus, native Focus actions and schema-three workspace migration with preserved original metadata.

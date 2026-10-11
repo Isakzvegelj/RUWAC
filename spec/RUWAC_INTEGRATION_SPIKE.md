@@ -1,5 +1,32 @@
 # RUWAC implementation and qualification evidence
 
+## Current private daemon checkpoint and ended-history recovery — 2026-10-11
+
+The retained headless Rust engine now writes private schema-one checkpoints containing the existing session/window/pane IDs, names, shared split tree, focus, zoom, canonical Unicode/tab/wrapped history, visible cell styles and known child exit codes. Restored panes are read-only historical resources: ended=true, restored=true and pid=null. No shell or child command is rerun. New terminals can be created alongside recovered history; closed resources disappear from the next checkpoint. The CLI/TUI, native session chooser and desktop status distinguish restored history from live processes.
+
+The ordinary daemon stores terminal-history.json in the private RUWAC directory beneath XDG_STATE_HOME (or the standard home state directory), outside the volatile runtime tree. Custom sockets use a history.json sibling unless RUWAC_STATE_FILE explicitly supplies an existing private durable parent. Checkpoint files and locks are owned, regular, singly linked and mode 0600; parents are owned, nonsymlink and 0700. A separate checkpoint lock prevents two socket targets from owning one archive. Startup rejects and preserves corrupt, unknown-schema, oversized or unsafe state. Loaded graphs validate IDs, membership, layouts, active targets and canonical cell/history shapes before serving restored resources.
+
+Changed state checkpoints on a two-second timer. Disk serialization is buffered in a bounded background worker; monotonic revision ordering prevents an older periodic write from replacing a newer explicit save. Atomic rename and file/directory fsync protect completed checkpoints. The daemon.checkpoint RPC waits for a completed write; normal daemon.stop checkpoints before shutdown. Read-only idle queries do not repeatedly rewrite state. health.persistence reports the last completed revision, pending work and write failure; a failed write preserves the previous completed archive and can be retried after repair of the targeted fixture/configuration.
+
+Each pane retains up to 50,000 canonical history rows or 512 KiB of text; dropped_lines is explicit when truncation occurs. The overall archive has a 128 MiB streaming/read cap. Cell snapshots retain Unicode, wide-cell flags and colors; ended panes disable mouse, bracketed-paste and application-input modes. Internal clipboard registers, raw input, RPC/idempotency logs, argv, client identities and credentials are excluded. This is a private terminal-state file, not an ordinary output/request log; already displayed text may contain sensitive content. Removing an ended pane and checkpointing removes its retained history.
+
+Seven real headless checkpoint groups pass: SIGKILL/restart with three stable panes and 5,201 history rows, identical canonical cells/wrapped Unicode, known exit code 23, clipboard-register exclusion and input refusal; idle read-only queries; automatic save/normal stop/explicit durable path with changed runtime socket; durable close; preserved prior archive and surfaced write failure/retry; ordinary XDG state recovery after deleting two runtime trees; and ten ownership/corruption/file-boundary negatives. Two native GTK/Wayland groups pass: the same tab/view IDs reopen after daemon SIGKILL, ended history is visibly labelled and copyable through the existing internal buffer, and a new live terminal works alongside it. Copy keys in this fixture invoke GTK callbacks synthetically; this is not physical-keyboard acceptance.
+
+Existing regressions pass eight workspace groups, nine actual local GUI/API groups, native terminal/GDK checks (PRIMARY remains blocked by the owned compositor) and four genuinely authenticated isolated IronRDP groups, including background clipboard ownership and mixed-view transport retention. The existing build workflow runs the headless Rust units, 100 startup races, state acceptance, the new recovery harness and all 20 native Rust units. A warm bounded fixture measured 30 actual framed checkpoint RPCs/atomic writes/fsync with 5,200 generated Unicode rows: median 17.65 ms, p95 28.83 ms and maximum 28.94 ms. Raw samples and exact commands/hashes remain in the private evidence capsule; this is not matched tmux or idle-host performance qualification.
+
+Final canonical-model review also found that literal tab cells must be accepted; ESC and other control cells remain rejected. The pending release was stopped before publication and its existing allocation retained while the tab regression was added. Retained failed attempts include a missing Rust io qualification in the durable-default-path helper, the first GUI fixture using a schema field name instead of the actual inspector field, and a screenshot requested before the replacement GTK surface had rendered. The final fixture focuses the canvas and waits for a real rendered PNG. The owner desktop was activated for viewing without replacing or terminating it.
+
+```sh
+./build.sh --release --test --desktop
+python3 ruwac/tests/integration/recovery.py --binary "$CARGO_TARGET_DIR/release/ruwac" --evidence "$RUWAC_EVIDENCE_DIR"
+python3 ruwac/tests/integration/recovery_desktop.py --binary "$CARGO_TARGET_DIR/release/ruwac" --gui "$CARGO_TARGET_DIR/release/ruwac-desktop" --evidence "$RUWAC_EVIDENCE_DIR"
+./release.sh beta
+./release.sh --verify
+./build.sh --release --desktop --install-user
+```
+Graphical tests require an owned compositor; the exact node commands, candidate/released hashes, immutable failures, checkpoint benchmark samples and installation/publication receipts are retained privately in history-r12. Version allocation/publication remains with the existing controller. No shared release infrastructure was modified.
+
+
 ## Current persistent graphical identities and permission-scoped workspace API — 2026-10-11
 
 Each native tab and individual terminal/RDP/Files view now has an opaque ID independent of its label, index, underlying terminal session and RDP worker. IDs survive reparenting, join/separate, view movement and desktop crash/restart. A newly created tab gets a new tab ID; moving a view retains its view ID. Closing a view/tab invalidates that graphical target without terminating persistent terminal processes.

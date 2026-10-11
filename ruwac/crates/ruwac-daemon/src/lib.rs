@@ -79,7 +79,9 @@ pub async fn serve(socket: &Path) -> std::io::Result<()> {
         ino: m.ino(),
         _lock: lock,
     };
-    let handle = ruwac_core::start();
+    let state_path = checkpoint_path(socket)?;
+    let store = ruwac_core::Store::open(&state_path)?;
+    let handle = ruwac_core::start_with_store(Some(store))?;
     let stop = Arc::new(Notify::new());
     let limit = Arc::new(Semaphore::new(64));
     let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
@@ -214,4 +216,36 @@ async fn connection(
             return Ok(());
         }
     }
+}
+
+/// The ordinary daemon persists outside the volatile runtime directory. Custom
+/// sockets keep state alongside their private fixture/workspace unless explicitly
+/// given a durable state file. No owner configuration or credentials are read.
+fn checkpoint_path(socket: &Path) -> std::io::Result<std::path::PathBuf> {
+    if let Some(path) = std::env::var_os("RUWAC_STATE_FILE") {
+        return Ok(path.into());
+    }
+    let runtime = std::env::var("XDG_RUNTIME_DIR")
+        .map(|r| format!("{r}/ruwac"))
+        .unwrap_or_else(|_| format!("/tmp/ruwac-{}", unsafe { libc::geteuid() }));
+    if socket != Path::new(&runtime).join("control.sock") {
+        return Ok(socket.with_extension("history.json"));
+    }
+    let base = match std::env::var_os("XDG_STATE_HOME") {
+        Some(p) if !p.is_empty() => std::path::PathBuf::from(p),
+        _ => std::path::PathBuf::from(std::env::var_os("HOME").ok_or_else(|| {
+            std::io::Error::other("HOME or explicit RUWAC_STATE_FILE required for default daemon")
+        })?)
+        .join(".local/state"),
+    };
+    if !base.is_absolute() {
+        return Err(std::io::Error::other("state home must be absolute"));
+    }
+    let directory = base.join("RUWAC");
+    fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(&directory)?;
+    // Store::open validates the resulting private, nonsymlink directory.
+    Ok(directory.join("terminal-history.json"))
 }

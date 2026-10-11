@@ -1,5 +1,10 @@
 # RUWAC desktop / protocol test matrix
 
+## Current private daemon checkpoint and ended-history recovery — 2026-10-11
+
+Internal clipboard registers are not serialized into daemon checkpoints. Native recovery can copy ended history into the independent internal buffer. Four genuinely authenticated isolated IronRDP clipboard/mixed-workspace groups remain passing; external-host and physical PRIMARY acceptance remain separate.
+
+
 ## Current persistent graphical identities and permission-scoped workspace API — 2026-10-11
 
 Native window activation now gates remote clipboard ownership, including IPC focus changes in the background. Four authenticated isolated RDP groups pass, including three live sessions against an independent foreground GDK clipboard sentinel, mixed transport retention and Files isolation. External interoperability, PRIMARY and physical desktop remain separate gates.

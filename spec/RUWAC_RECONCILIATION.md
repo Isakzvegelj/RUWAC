@@ -1,5 +1,16 @@
 # RUWAC implementation reconciliation
 
+## Current private daemon checkpoint and ended-history recovery — 2026-10-11
+
+The retained headless Rust engine now writes private schema-one checkpoints containing the existing session/window/pane IDs, names, shared split tree, focus, zoom, canonical Unicode/tab/wrapped history, visible cell styles and known child exit codes. Restored panes are read-only historical resources: ended=true, restored=true and pid=null. No shell or child command is rerun. New terminals can be created alongside recovered history; closed resources disappear from the next checkpoint. The CLI/TUI, native session chooser and desktop status distinguish restored history from live processes.
+
+The ordinary daemon stores terminal-history.json in the private RUWAC directory beneath XDG_STATE_HOME (or the standard home state directory), outside the volatile runtime tree. Custom sockets use a history.json sibling unless RUWAC_STATE_FILE explicitly supplies an existing private durable parent. Checkpoint files and locks are owned, regular, singly linked and mode 0600; parents are owned, nonsymlink and 0700. A separate checkpoint lock prevents two socket targets from owning one archive. Startup rejects and preserves corrupt, unknown-schema, oversized or unsafe state. Loaded graphs validate IDs, membership, layouts, active targets and canonical cell/history shapes before serving restored resources.
+
+Changed state checkpoints on a two-second timer. Disk serialization is buffered in a bounded background worker; monotonic revision ordering prevents an older periodic write from replacing a newer explicit save. Atomic rename and file/directory fsync protect completed checkpoints. The daemon.checkpoint RPC waits for a completed write; normal daemon.stop checkpoints before shutdown. Read-only idle queries do not repeatedly rewrite state. health.persistence reports the last completed revision, pending work and write failure; a failed write preserves the previous completed archive and can be retried after repair of the targeted fixture/configuration.
+
+Each pane retains up to 50,000 canonical history rows or 512 KiB of text; dropped_lines is explicit when truncation occurs. The overall archive has a 128 MiB streaming/read cap. Cell snapshots retain Unicode, wide-cell flags and colors; ended panes disable mouse, bracketed-paste and application-input modes. Internal clipboard registers, raw input, RPC/idempotency logs, argv, client identities and credentials are excluded. This is a private terminal-state file, not an ordinary output/request log; already displayed text may contain sensitive content. Removing an ended pane and checkpointing removes its retained history.
+
+
 ## Current persistent graphical identities and permission-scoped workspace API — 2026-10-11
 
 Each native tab and individual terminal/RDP/Files view now has an opaque ID independent of its label, index, underlying terminal session and RDP worker. IDs survive reparenting, join/separate, view movement and desktop crash/restart. A newly created tab gets a new tab ID; moving a view retains its view ID. Closing a view/tab invalidates that graphical target without terminating persistent terminal processes.

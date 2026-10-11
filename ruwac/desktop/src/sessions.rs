@@ -118,10 +118,15 @@ pub fn controls(
                                     (row["id"].as_str(), row["name"].as_str())
                                 {
                                     let button = gtk::Button::with_label(&format!(
-                                        "{} · {} · {} windows",
+                                        "{} · {} · {} windows{}",
                                         name,
                                         &id[..id.len().min(16)],
-                                        row["windows"].as_array().map_or(0, Vec::len)
+                                        row["windows"].as_array().map_or(0, Vec::len),
+                                        if row["restored"] == true {
+                                            " · restored history"
+                                        } else {
+                                            ""
+                                        }
                                     ));
                                     button.set_tooltip_text(Some(id));
                                     d.content_area().append(&button);

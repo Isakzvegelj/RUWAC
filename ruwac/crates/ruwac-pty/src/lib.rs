@@ -94,6 +94,15 @@ impl Pty {
             })
             .map_err(|e| e.to_string())
     }
+    pub fn exit_code(&self) -> Option<u32> {
+        self.child
+            .lock()
+            .unwrap()
+            .try_wait()
+            .ok()
+            .flatten()
+            .map(|s| s.exit_code())
+    }
     pub fn exited(&self) -> bool {
         self.child
             .lock()

@@ -1,6 +1,6 @@
 //! Persistent binary split tree. Geometry is shared by every client.
 use serde_json::{Value, json};
-#[derive(Clone)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub enum Layout {
     Leaf(String),
     Split {

@@ -302,7 +302,14 @@ fn draw(v: &Value, size: (u16, u16), status: &str) -> io::Result<()> {
         safe(&format!(
             "RUWAC {}  ^A c/n/p/d/a S Tab [ ] ?  {}",
             v["name"].as_str().unwrap_or(""),
-            status
+            if v["panes"].as_array().is_some_and(|a| a
+                .iter()
+                .any(|p| p["id"] == v["active_pane"] && p["ended"] == true))
+            {
+                "process ended · history is read-only"
+            } else {
+                status
+            }
         ))
         .chars()
         .take(size.1 as usize)

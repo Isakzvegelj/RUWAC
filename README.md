@@ -2,7 +2,7 @@
 
 A Rust remote workspace with persistent terminals: one daemon owns PTYs; replaceable TUI and JSON clients control sessions, windows and stable panes.
 
-Implemented: persistent daemon-owned children, shared focus, nested horizontal/vertical splits, zoom, paged scrollback, private Unix IPC and a separate compiled GTK desktop. The desktop supports keyboard marking/search, real GDK clipboard transport, private PNG staging and an embedded IronRDP client. Physical desktop/PRIMARY and authenticated remote-host acceptance remain unqualified; image attachment and recovery after daemon loss remain open.
+Implemented: persistent daemon-owned children, shared focus, nested horizontal/vertical splits, zoom, paged scrollback, private Unix IPC and a separate compiled GTK desktop. The desktop supports keyboard marking/search, real GDK clipboard transport, private PNG staging and an embedded IronRDP client. Physical desktop/PRIMARY and authenticated remote-host acceptance remain unqualified; image attachment remains open; private ended-history recovery after daemon loss is implemented with the limits below.
 
 Build with Rust/Cargo in your chosen build workspace. Keep build output and generated evidence outside the source tree:
 
@@ -123,3 +123,11 @@ ruwac workspace focus --id "$RUWAC_VIEW_ID" --json
 Use actual IDs returned by list; titles and numeric positions are not automation identities. Enable **Allow automation to change workspace focus** in the desktop menu before activate/focus. The permission resets to off for a new launch; `ruwac gui --allow-workspace-control` enables it for that launch. Listing needs a running GUI and never launches one. Clipboard contents and RDP input are outside this API. `input_focus_view` reports actual GTK input focus separately from remembered focus, which may briefly precede widget mapping. Background focus changes do not grant remote clipboard ownership.
 
 The native **Views… → Focus** action selects one mixed-workspace view. IDs and each tab’s selected view persist in schema-three metadata. Older workspace files get a private migration backup; terminal programs continue running across desktop restarts.
+
+## Recover history after daemon loss
+
+The ordinary daemon checkpoints private metadata and a bounded canonical history tail under the standard user state directory. Restart restores the same session/window/pane IDs as ended history, without starting their old commands. Open Sessions to view it, use the existing copy controls, and choose New terminal to start a live session.
+
+`ruwac rpc daemon.checkpoint --params '{}'` waits for a completed checkpoint. `ruwac rpc health --params '{}'` reports checkpoint progress/failures. Changed state saves every two seconds; a crash may lose changes since the last completed save. The retained tail is up to 50,000 lines or 512 KiB per pane, with explicit truncation counts. Internal clipboard buffers, input/request logs and credentials are not serialized; displayed output remains private terminal state.
+
+Default state is `RUWAC/terminal-history.json` under `XDG_STATE_HOME` or the standard home state directory. Custom sockets keep a sibling history file; set `RUWAC_STATE_FILE` to a file beneath an existing owned 0700 durable directory when persistence across runtime-directory removal is needed. Files must be owned regular 0600 files; corrupt/unsafe archives are preserved and rejected. Closing ended panes and checkpointing removes their history. Hidden primary-screen history while an alternate-screen application runs is not yet stored separately. Existing older daemons are preserved during installation and require a later owner-controlled restart to gain checkpoints.

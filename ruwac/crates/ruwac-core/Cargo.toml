@@ -10,4 +10,6 @@ ruwac-protocol = { path = "../ruwac-protocol" }
 ruwac-term = { path = "../ruwac-term" }
 ruwac-pty = { path = "../ruwac-pty" }
 serde_json.workspace = true
+serde.workspace = true
+libc.workspace = true
 tokio.workspace = true
