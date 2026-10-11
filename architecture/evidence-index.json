@@ -6,5 +6,5 @@
     "architecture/benchmark-results.json",
     "architecture/dependency-licenses.json"
   ],
-  "private_capsule": "library-r15: actual GTK 1000-profile paging, explicit-identity reviewed Remmina metadata merge/cancel/Undo/stale/active/restart; full authenticated local RDP text/PNG/ownership/resize and headless/native regressions; controller source release and installed artifact verification"
+  "private_capsule": "automation-r16: permission-scoped native RDP lifecycle, actual local CredSSP/framebuffer/private Secret Service, background focus/clipboard isolation, real SSH GUI forwarding; native library/headless/GTK regressions; controller publication and installed artifact checks"
 }

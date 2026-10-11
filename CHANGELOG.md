@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## v0.1.15 — 2026-10-11 — Prerelease
+
+- Add permission-scoped native RDP list/query/open/reconnect/disconnect with stable typed targets, independent focus consent and runtime revocation.
+- Resolve saved-profile credentials privately and preserve inactive clipboard/focus ownership during background lifecycle changes.
+- Route authenticated GUI commands over the existing verified SSH transport without GUI/daemon autostart or fallback.
+- Validate actual local CredSSP/framebuffer/private Secret Service and real SSH GUI forwarding alongside existing native/headless regressions.
+
 ## v0.1.14 — 2026-10-11 — Prerelease
 
 - Add accessible 50-profile paging with complete search, preserving endpoint-specific connect/edit/favorite handlers across 1,000 profiles.

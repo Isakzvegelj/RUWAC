@@ -11212,17 +11212,17 @@
     "stable": "not qualified; full product audit remains open"
   },
   "headless_screen_copy": {
-    "package": "0.1.14",
+    "package": "0.1.15",
     "sha256": {
-      "ruwac": "a84f454e9031df4b9c15502cf6e1150c92010ab26db92e346488cec5d45d31b2",
-      "ruwac-desktop": "34521a5731cea687bd5c62489733564dcca7dbcfaefbc13e19de18c74640fd2a"
+      "ruwac": "58f05b7692d335c6c0eb5bb557ecde2b61657e26135709cc6c9a3c6c2f0ddd61",
+      "ruwac-desktop": "6bdcdff7053ccf1f584617f2c80060c90af08731c3ee54c8a79ace138df7d767"
     },
     "real_ptys": {
       "results": [
         {
           "id": "TUI-COPY-UNICODE-SEARCH",
           "status": "PASS",
-          "seconds": 0.04005475199664943,
+          "seconds": 0.043059318006271496,
           "details": {
             "canonical_rows": 9000,
             "unicode_combining_wide_emoji": true,
@@ -11233,7 +11233,7 @@
         {
           "id": "TUI-COPY-RECTANGLE-WRAP",
           "status": "PASS",
-          "seconds": 0.08732738299295306,
+          "seconds": 0.08412509100162424,
           "details": {
             "rectangle": "abcd/newline/1234",
             "soft_wrap_joined": true
@@ -11242,7 +11242,7 @@
         {
           "id": "TUI-COPY-CANCEL-LIMIT-ISOLATION",
           "status": "PASS",
-          "seconds": 0.18605292998836376,
+          "seconds": 0.19409129799169023,
           "details": {
             "limit_non_destructive": true,
             "cancel_non_destructive": true,
@@ -11252,7 +11252,7 @@
         {
           "id": "TUI-CHOOSER-PROMPT-ZOOM-HELP",
           "status": "PASS",
-          "seconds": 0.19981397700030357,
+          "seconds": 0.20578928700706456,
           "details": {
             "typed_window_ids": true,
             "rename_exact_not_shell": true,
@@ -11263,7 +11263,7 @@
         {
           "id": "TUI-PREFIX-CONFIGURATION",
           "status": "PASS",
-          "seconds": 0.1541693100007251,
+          "seconds": 0.15524700800597202,
           "details": {
             "ControlB_prefix_and_remap": true,
             "literal_exact": true,
@@ -11274,65 +11274,65 @@
         {
           "id": "TUI-NESTED-2",
           "status": "PASS",
-          "seconds": 0.4453555689979112,
+          "seconds": 0.44289168999239337,
           "details": {
             "real_RUWAC_layers": 2,
             "literal_meta_prefix": true,
             "deep_window_selection": true,
             "single_bracketed_paste_pair": true,
-            "same_receiver_pid_after_detach_reattach": 518074,
+            "same_receiver_pid_after_detach_reattach": 553782,
             "termios_restored": true
           }
         },
         {
           "id": "TUI-NESTED-3",
           "status": "PASS",
-          "seconds": 0.4941095680114813,
+          "seconds": 0.4999931229976937,
           "details": {
             "real_RUWAC_layers": 3,
             "literal_meta_prefix": true,
             "deep_window_selection": true,
             "single_bracketed_paste_pair": true,
-            "same_receiver_pid_after_detach_reattach": 518104,
+            "same_receiver_pid_after_detach_reattach": 553811,
             "termios_restored": true
           }
         },
         {
           "id": "TUI-NESTED-4",
           "status": "PASS",
-          "seconds": 0.5861760199913988,
+          "seconds": 0.5489230859966483,
           "details": {
             "real_RUWAC_layers": 4,
             "literal_meta_prefix": true,
             "deep_window_selection": true,
             "single_bracketed_paste_pair": true,
-            "same_receiver_pid_after_detach_reattach": 518140,
+            "same_receiver_pid_after_detach_reattach": 553847,
             "termios_restored": true
           }
         },
         {
           "id": "TUI-NESTED-5",
           "status": "PASS",
-          "seconds": 0.6054892219981411,
+          "seconds": 0.5850909410073655,
           "details": {
             "real_RUWAC_layers": 5,
             "literal_meta_prefix": true,
             "deep_window_selection": true,
             "single_bracketed_paste_pair": true,
-            "same_receiver_pid_after_detach_reattach": 518185,
+            "same_receiver_pid_after_detach_reattach": 553892,
             "termios_restored": true
           }
         }
       ],
-      "binary_sha256": "a84f454e9031df4b9c15502cf6e1150c92010ab26db92e346488cec5d45d31b2"
+      "binary_sha256": "58f05b7692d335c6c0eb5bb557ecde2b61657e26135709cc6c9a3c6c2f0ddd61"
     },
     "immutable_history": {
       "results": [
         {
           "id": "HISTORY-FROZEN-STREAM-RESIZE-OWNERSHIP",
           "status": "PASS",
-          "rows": 5004,
-          "sha256": "ebf36b2ee1027f3936e7da0c74149b820a9ca395f7c1ff0b376686b48e3c9a72",
+          "rows": 5003,
+          "sha256": "d66bd8322e9698acd0858685fa795c0931f9cf244582413633e8ca9039da6fa7",
           "changed_live_epoch": true,
           "snapshot_after_real_resize_identical": true,
           "connection_and_pane_bound": true,
@@ -11351,12 +11351,12 @@
         {
           "id": "HISTORY-PIN-REAL-EXPIRY",
           "status": "PASS",
-          "idle_expiry_seconds": 31.767959101009183,
+          "idle_expiry_seconds": 31.75960180700349,
           "configured_idle_seconds": 30,
           "actual_actor_timer": true
         }
       ],
-      "binary_sha256": "a84f454e9031df4b9c15502cf6e1150c92010ab26db92e346488cec5d45d31b2"
+      "binary_sha256": "58f05b7692d335c6c0eb5bb557ecde2b61657e26135709cc6c9a3c6c2f0ddd61"
     },
     "native_terminal": {
       "results": [
@@ -11366,26 +11366,26 @@
           "details": {
             "acknowledgements": 2,
             "active": true,
-            "clipboard_owner": "session_00157f7a21e4470f9dde703763575a11",
+            "clipboard_owner": "session_fdcfc58710a942bfbb5ce2726a76a18a",
             "dark": true,
             "display": "GdkWaylandDisplay",
             "drawn": [
               3,
               5
             ],
-            "focused_view": "view_84707a99da9f4d4ea167212d50602c9e",
+            "focused_view": "view_c9101ce42c36496e9a71dcb78ab320bf",
             "layout": {
               "first": {
-                "pane": "pane_9e7213aac7b94a63a6fd0744f9e71422"
+                "pane": "pane_ce90d6a705cf450c81a92449584e65d4"
               },
-              "id": "split_pane_795ac9e22d804b868c8b964ef4d14c39",
+              "id": "split_pane_e2795a0837b849b7a6511be575fa235f",
               "orientation": "horizontal",
               "ratio": 500,
               "second": {
-                "pane": "pane_795ac9e22d804b868c8b964ef4d14c39"
+                "pane": "pane_e2795a0837b849b7a6511be575fa235f"
               }
             },
-            "max_tick_gap_ms": 32,
+            "max_tick_gap_ms": 38,
             "panes": [
               2,
               1
@@ -11393,7 +11393,7 @@
             "selected_tab": 0,
             "status": "Rust native one \u2014 Ctrl+A prefix \u00b7 Shift+drag selects \u00b7 PTYs persist",
             "tabs": 2,
-            "target": "pane_9e7213aac7b94a63a6fd0744f9e71422",
+            "target": "pane_ce90d6a705cf450c81a92449584e65d4",
             "ticks": 48,
             "zoom": false
           }
@@ -11449,7 +11449,7 @@
             "zoom_restore": true,
             "native_keyboard_mark_selection": "RUWAC",
             "internal_paste_exact": true,
-            "new_shell_pid": 520678,
+            "new_shell_pid": 554969,
             "unknown_command_visible": true,
             "events": "compiled GTK callbacks, synthetic keys"
           }
@@ -11498,26 +11498,26 @@
             "responsive": {
               "acknowledgements": 1161,
               "active": true,
-              "clipboard_owner": "session_00157f7a21e4470f9dde703763575a11",
+              "clipboard_owner": "session_fdcfc58710a942bfbb5ce2726a76a18a",
               "dark": true,
               "display": "GdkWaylandDisplay",
               "drawn": [
-                161,
-                61
+                183,
+                70
               ],
-              "focused_view": "view_84707a99da9f4d4ea167212d50602c9e",
+              "focused_view": "view_c9101ce42c36496e9a71dcb78ab320bf",
               "layout": {
                 "first": {
-                  "pane": "pane_9e7213aac7b94a63a6fd0744f9e71422"
+                  "pane": "pane_ce90d6a705cf450c81a92449584e65d4"
                 },
-                "id": "split_pane_795ac9e22d804b868c8b964ef4d14c39",
+                "id": "split_pane_e2795a0837b849b7a6511be575fa235f",
                 "orientation": "horizontal",
                 "ratio": 600,
                 "second": {
-                  "pane": "pane_795ac9e22d804b868c8b964ef4d14c39"
+                  "pane": "pane_e2795a0837b849b7a6511be575fa235f"
                 }
               },
-              "max_tick_gap_ms": 132,
+              "max_tick_gap_ms": 49,
               "panes": [
                 2,
                 1
@@ -11525,8 +11525,8 @@
               "selected_tab": 0,
               "status": "Selection copied to CLIPBOARD",
               "tabs": 2,
-              "target": "pane_9e7213aac7b94a63a6fd0744f9e71422",
-              "ticks": 692,
+              "target": "pane_ce90d6a705cf450c81a92449584e65d4",
+              "ticks": 695,
               "zoom": false
             }
           }
@@ -11541,26 +11541,26 @@
             "responsive": {
               "acknowledgements": 1162,
               "active": true,
-              "clipboard_owner": "session_00157f7a21e4470f9dde703763575a11",
+              "clipboard_owner": "session_fdcfc58710a942bfbb5ce2726a76a18a",
               "dark": true,
               "display": "GdkWaylandDisplay",
               "drawn": [
-                161,
-                61
+                183,
+                70
               ],
-              "focused_view": "view_84707a99da9f4d4ea167212d50602c9e",
+              "focused_view": "view_c9101ce42c36496e9a71dcb78ab320bf",
               "layout": {
                 "first": {
-                  "pane": "pane_9e7213aac7b94a63a6fd0744f9e71422"
+                  "pane": "pane_ce90d6a705cf450c81a92449584e65d4"
                 },
-                "id": "split_pane_795ac9e22d804b868c8b964ef4d14c39",
+                "id": "split_pane_e2795a0837b849b7a6511be575fa235f",
                 "orientation": "horizontal",
                 "ratio": 600,
                 "second": {
-                  "pane": "pane_795ac9e22d804b868c8b964ef4d14c39"
+                  "pane": "pane_e2795a0837b849b7a6511be575fa235f"
                 }
               },
-              "max_tick_gap_ms": 132,
+              "max_tick_gap_ms": 49,
               "panes": [
                 2,
                 1
@@ -11568,8 +11568,8 @@
               "selected_tab": 0,
               "status": "Selection copied to CLIPBOARD",
               "tabs": 2,
-              "target": "pane_9e7213aac7b94a63a6fd0744f9e71422",
-              "ticks": 787,
+              "target": "pane_ce90d6a705cf450c81a92449584e65d4",
+              "ticks": 755,
               "zoom": false
             }
           }
@@ -11587,7 +11587,7 @@
           "details": {
             "bytes": 16521,
             "height": 64,
-            "sha256": "0f70278dec4dcffb8b1853abd45df58d335f8cb15af11b9ae1f3a7728768125f",
+            "sha256": "f8772fab352728c68aa2262239f7315806a5db6a3daf1f173e11a67e2f1efecb",
             "width": 64
           }
         },
@@ -11597,7 +11597,7 @@
           "details": {
             "bytes": 14751608,
             "height": 1440,
-            "sha256": "c3a8b92d555d3b1bc30a5800a345f58826a19d6e88eeab01e39227f4651fc101",
+            "sha256": "fc6c0da652399777bdabf307072b6c41ddc129f41c56c66f3461abb074debefe",
             "width": 2560
           }
         },
@@ -11636,26 +11636,26 @@
             "before": {
               "acknowledgements": 1162,
               "active": true,
-              "clipboard_owner": "session_00157f7a21e4470f9dde703763575a11",
+              "clipboard_owner": "session_fdcfc58710a942bfbb5ce2726a76a18a",
               "dark": true,
               "display": "GdkWaylandDisplay",
               "drawn": [
-                161,
-                61
+                183,
+                70
               ],
-              "focused_view": "view_84707a99da9f4d4ea167212d50602c9e",
+              "focused_view": "view_c9101ce42c36496e9a71dcb78ab320bf",
               "layout": {
                 "first": {
-                  "pane": "pane_9e7213aac7b94a63a6fd0744f9e71422"
+                  "pane": "pane_ce90d6a705cf450c81a92449584e65d4"
                 },
-                "id": "split_pane_795ac9e22d804b868c8b964ef4d14c39",
+                "id": "split_pane_e2795a0837b849b7a6511be575fa235f",
                 "orientation": "horizontal",
                 "ratio": 600,
                 "second": {
-                  "pane": "pane_795ac9e22d804b868c8b964ef4d14c39"
+                  "pane": "pane_e2795a0837b849b7a6511be575fa235f"
                 }
               },
-              "max_tick_gap_ms": 132,
+              "max_tick_gap_ms": 49,
               "panes": [
                 2,
                 1
@@ -11663,33 +11663,33 @@
               "selected_tab": 0,
               "status": "Selection copied to CLIPBOARD",
               "tabs": 2,
-              "target": "pane_9e7213aac7b94a63a6fd0744f9e71422",
-              "ticks": 1152,
+              "target": "pane_ce90d6a705cf450c81a92449584e65d4",
+              "ticks": 1050,
               "zoom": false
             },
             "during": {
               "acknowledgements": 1162,
               "active": true,
-              "clipboard_owner": "session_00157f7a21e4470f9dde703763575a11",
+              "clipboard_owner": "session_fdcfc58710a942bfbb5ce2726a76a18a",
               "dark": true,
               "display": "GdkWaylandDisplay",
               "drawn": [
-                161,
-                61
+                183,
+                70
               ],
-              "focused_view": "view_84707a99da9f4d4ea167212d50602c9e",
+              "focused_view": "view_c9101ce42c36496e9a71dcb78ab320bf",
               "layout": {
                 "first": {
-                  "pane": "pane_9e7213aac7b94a63a6fd0744f9e71422"
+                  "pane": "pane_ce90d6a705cf450c81a92449584e65d4"
                 },
-                "id": "split_pane_795ac9e22d804b868c8b964ef4d14c39",
+                "id": "split_pane_e2795a0837b849b7a6511be575fa235f",
                 "orientation": "horizontal",
                 "ratio": 600,
                 "second": {
-                  "pane": "pane_795ac9e22d804b868c8b964ef4d14c39"
+                  "pane": "pane_e2795a0837b849b7a6511be575fa235f"
                 }
               },
-              "max_tick_gap_ms": 132,
+              "max_tick_gap_ms": 49,
               "panes": [
                 2,
                 1
@@ -11697,33 +11697,33 @@
               "selected_tab": 0,
               "status": "Queue full; input not sent",
               "tabs": 2,
-              "target": "pane_9e7213aac7b94a63a6fd0744f9e71422",
-              "ticks": 1154,
+              "target": "pane_ce90d6a705cf450c81a92449584e65d4",
+              "ticks": 1052,
               "zoom": false
             },
             "after": {
-              "acknowledgements": 1273,
+              "acknowledgements": 1289,
               "active": true,
-              "clipboard_owner": "session_00157f7a21e4470f9dde703763575a11",
+              "clipboard_owner": "session_fdcfc58710a942bfbb5ce2726a76a18a",
               "dark": true,
               "display": "GdkWaylandDisplay",
               "drawn": [
-                161,
-                61
+                183,
+                70
               ],
-              "focused_view": "view_84707a99da9f4d4ea167212d50602c9e",
+              "focused_view": "view_c9101ce42c36496e9a71dcb78ab320bf",
               "layout": {
                 "first": {
-                  "pane": "pane_9e7213aac7b94a63a6fd0744f9e71422"
+                  "pane": "pane_ce90d6a705cf450c81a92449584e65d4"
                 },
-                "id": "split_pane_795ac9e22d804b868c8b964ef4d14c39",
+                "id": "split_pane_e2795a0837b849b7a6511be575fa235f",
                 "orientation": "horizontal",
                 "ratio": 600,
                 "second": {
-                  "pane": "pane_795ac9e22d804b868c8b964ef4d14c39"
+                  "pane": "pane_e2795a0837b849b7a6511be575fa235f"
                 }
               },
-              "max_tick_gap_ms": 132,
+              "max_tick_gap_ms": 49,
               "panes": [
                 2,
                 1
@@ -11731,8 +11731,8 @@
               "selected_tab": 0,
               "status": "Input/command delivery failed: {\"code\":\"TIMEOUT\",\"message\":\"text not observed before deadline\"}",
               "tabs": 2,
-              "target": "pane_9e7213aac7b94a63a6fd0744f9e71422",
-              "ticks": 1231,
+              "target": "pane_ce90d6a705cf450c81a92449584e65d4",
+              "ticks": 1131,
               "zoom": false
             }
           }
@@ -11744,9 +11744,9 @@
             "gui_termination": "SIGKILL",
             "reclaimed_abandoned_png_namespace": true,
             "same_daemon_owned_pids": [
-              520302,
-              520310,
-              520306
+              554870,
+              554878,
+              554874
             ]
           }
         },
@@ -11765,17 +11765,17 @@
           "status": "PASS",
           "details": {
             "same_pids": [
-              520302,
-              520310,
-              520306
+              554870,
+              554878,
+              554874
             ],
             "tui_reattach": "PASS",
             "resize": "PASS"
           }
         }
       ],
-      "binary_sha256": "a84f454e9031df4b9c15502cf6e1150c92010ab26db92e346488cec5d45d31b2",
-      "gui_sha256": "34521a5731cea687bd5c62489733564dcca7dbcfaefbc13e19de18c74640fd2a",
+      "binary_sha256": "58f05b7692d335c6c0eb5bb557ecde2b61657e26135709cc6c9a3c6c2f0ddd61",
+      "gui_sha256": "6bdcdff7053ccf1f584617f2c80060c90af08731c3ee54c8a79ace138df7d767",
       "physical_desktop": "BLOCKED",
       "real_rdp": "BLOCKED"
     },
@@ -11797,8 +11797,8 @@
         }
       ],
       "hashes": {
-        "ruwac": "a84f454e9031df4b9c15502cf6e1150c92010ab26db92e346488cec5d45d31b2",
-        "ruwac-desktop": "34521a5731cea687bd5c62489733564dcca7dbcfaefbc13e19de18c74640fd2a"
+        "ruwac": "58f05b7692d335c6c0eb5bb557ecde2b61657e26135709cc6c9a3c6c2f0ddd61",
+        "ruwac-desktop": "6bdcdff7053ccf1f584617f2c80060c90af08731c3ee54c8a79ace138df7d767"
       }
     },
     "older_daemon": {
@@ -11814,7 +11814,7 @@
         }
       ],
       "old_daemon_sha256": "b982542f25021ae6a06ec8e954f6aa97747affc05abb3fe205d8f71b3ab7caac",
-      "gui_sha256": "34521a5731cea687bd5c62489733564dcca7dbcfaefbc13e19de18c74640fd2a"
+      "gui_sha256": "6bdcdff7053ccf1f584617f2c80060c90af08731c3ee54c8a79ace138df7d767"
     },
     "authenticated_local_rdp_repeat": {
       "cases": [
@@ -11862,14 +11862,14 @@
                 ],
                 "status": "Connected \u00b7 text and image clipboard sharing",
                 "tab": 1,
-                "transport_id": "rdp-transport_e3e2749aa13d4b9f820243253e82d631",
+                "transport_id": "rdp-transport_e1b8271a4e344ac99cc9c7df73402565",
                 "viewport": [
                   663,
                   580
                 ],
                 "window_width": 1040,
                 "zoom": 1.0,
-                "connect_to_decoded_frame_ms": 219.052197993733
+                "connect_to_decoded_frame_ms": 213.0025160004152
               },
               {
                 "active": true,
@@ -11902,14 +11902,14 @@
                 ],
                 "status": "Connected \u00b7 text and image clipboard sharing",
                 "tab": 2,
-                "transport_id": "rdp-transport_50184ccd4ed04254b055367153dad97d",
+                "transport_id": "rdp-transport_743ac6ddb00446c794653096a6435ebc",
                 "viewport": [
                   718,
                   580
                 ],
                 "window_width": 1040,
                 "zoom": 1.0,
-                "connect_to_decoded_frame_ms": 182.55251900700387
+                "connect_to_decoded_frame_ms": 182.0551379933022
               },
               {
                 "active": true,
@@ -11942,18 +11942,36 @@
                 ],
                 "status": "Connected \u00b7 text and image clipboard sharing",
                 "tab": 3,
-                "transport_id": "rdp-transport_9487480cba4e4c4d9ec0e497c6081bf3",
+                "transport_id": "rdp-transport_8437dff534cd423ca7456245e001fee9",
                 "viewport": [
                   718,
                   580
                 ],
                 "window_width": 1040,
                 "zoom": 1.0,
-                "connect_to_decoded_frame_ms": 186.37883599149063
+                "connect_to_decoded_frame_ms": 185.50172599498183
               }
             ],
             "authentication": "actual CredSSP/NLA",
             "frames": "decoded live loopback server frames, generated desktop"
+          }
+        },
+        {
+          "id": "RDP-GUI-LIFECYCLE-API",
+          "status": "PASS",
+          "details": {
+            "actual_CredSSP_framebuffer": true,
+            "typed_view_ids": true,
+            "permission_default_and_revocation": true,
+            "read_metadata_no_credentials": true,
+            "background_reconnect_preserves_neighbors_focus_clipboard": true,
+            "saved_profile_open_without_focus": true,
+            "activation_requires_separate_focus_permission": true,
+            "closed_target_rejected": true,
+            "unexpected_or_credential_parameters_rejected": true,
+            "audit_no_private_payload": true,
+            "idempotency_keys_explicitly_refused": true,
+            "owner_keyring_accessed": false
           }
         },
         {
@@ -11988,50 +12006,50 @@
             "after": {
               "decoded_updates": 22,
               "update_intervals_ms": [
-                8214.519244,
-                277.895009,
-                342.18738199999996,
-                210.54941,
-                194.205527,
-                229.987948,
-                350.33592000000004,
-                233.642961,
-                170.33373600000002,
-                258.160732,
-                341.585916,
-                213.116208,
-                255.470572,
-                258.64016699999996,
-                333.85174,
-                261.431438,
-                233.389082,
-                228.580752,
-                329.2601,
-                219.096311,
-                1101.78115
+                10609.201785,
+                289.442444,
+                343.010834,
+                206.322571,
+                203.915637,
+                328.957667,
+                287.024428,
+                207.625832,
+                200.472194,
+                220.634205,
+                357.054774,
+                252.03418700000003,
+                227.471145,
+                223.146358,
+                338.58930599999997,
+                262.73744700000003,
+                192.179485,
+                241.241007,
+                297.828057,
+                257.487745,
+                1030.289076
               ]
             },
             "processes_before": {
               "gtk": {
-                "cpu_seconds": 1.92,
-                "rss_mib": 78.984375
+                "cpu_seconds": 2.51,
+                "rss_mib": 82.31640625
               },
               "server": {
-                "cpu_seconds": 0.21,
-                "rss_mib": 12.46875
+                "cpu_seconds": 0.25,
+                "rss_mib": 12.9609375
               }
             },
             "processes_after": {
               "gtk": {
-                "cpu_seconds": 5.34,
-                "rss_mib": 106.171875
+                "cpu_seconds": 5.86,
+                "rss_mib": 110.1171875
               },
               "server": {
-                "cpu_seconds": 1.43,
-                "rss_mib": 34.03125
+                "cpu_seconds": 1.42,
+                "rss_mib": 31.78125
               }
             },
-            "wall_seconds": 8.111439915999654,
+            "wall_seconds": 8.079636652997578,
             "transitions": [
               {
                 "size": [
@@ -12044,21 +12062,21 @@
                   90,
                   255
                 ],
-                "complete_frame_ms": 128.33959300769493,
+                "complete_frame_ms": 130.64495199068915,
                 "metrics": {
                   "decoded_updates": 2,
                   "update_intervals_ms": [
-                    8214.519244
+                    10609.201785
                   ]
                 },
                 "processes": {
                   "gtk": {
-                    "cpu_seconds": 1.95,
-                    "rss_mib": 81.890625
+                    "cpu_seconds": 2.53,
+                    "rss_mib": 85.6171875
                   },
                   "server": {
-                    "cpu_seconds": 0.21,
-                    "rss_mib": 13.64453125
+                    "cpu_seconds": 0.25,
+                    "rss_mib": 13.92578125
                   }
                 }
               },
@@ -12073,22 +12091,22 @@
                   90,
                   255
                 ],
-                "complete_frame_ms": 260.19513299979735,
+                "complete_frame_ms": 239.16119999194052,
                 "metrics": {
                   "decoded_updates": 3,
                   "update_intervals_ms": [
-                    8214.519244,
-                    277.895009
+                    10609.201785,
+                    289.442444
                   ]
                 },
                 "processes": {
                   "gtk": {
-                    "cpu_seconds": 2.14,
-                    "rss_mib": 135.546875
+                    "cpu_seconds": 2.71,
+                    "rss_mib": 139.49609375
                   },
                   "server": {
-                    "cpu_seconds": 0.28,
-                    "rss_mib": 38.22265625
+                    "cpu_seconds": 0.32,
+                    "rss_mib": 38.50390625
                   }
                 }
               },
@@ -12103,23 +12121,23 @@
                   90,
                   255
                 ],
-                "complete_frame_ms": 301.34466200252064,
+                "complete_frame_ms": 318.1291719956789,
                 "metrics": {
                   "decoded_updates": 4,
                   "update_intervals_ms": [
-                    8214.519244,
-                    277.895009,
-                    342.18738199999996
+                    10609.201785,
+                    289.442444,
+                    343.010834
                   ]
                 },
                 "processes": {
                   "gtk": {
-                    "cpu_seconds": 2.41,
-                    "rss_mib": 134.50390625
+                    "cpu_seconds": 2.97,
+                    "rss_mib": 173.45703125
                   },
                   "server": {
-                    "cpu_seconds": 0.4,
-                    "rss_mib": 48.62890625
+                    "cpu_seconds": 0.43,
+                    "rss_mib": 48.91015625
                   }
                 }
               },
@@ -12134,24 +12152,24 @@
                   90,
                   255
                 ],
-                "complete_frame_ms": 134.4314059970202,
+                "complete_frame_ms": 133.41183800366707,
                 "metrics": {
                   "decoded_updates": 5,
                   "update_intervals_ms": [
-                    8214.519244,
-                    277.895009,
-                    342.18738199999996,
-                    210.54941
+                    10609.201785,
+                    289.442444,
+                    343.010834,
+                    206.322571
                   ]
                 },
                 "processes": {
                   "gtk": {
-                    "cpu_seconds": 2.5,
-                    "rss_mib": 123.328125
+                    "cpu_seconds": 3.07,
+                    "rss_mib": 152.85546875
                   },
                   "server": {
-                    "cpu_seconds": 0.46,
-                    "rss_mib": 31.03125
+                    "cpu_seconds": 0.49,
+                    "rss_mib": 31.30859375
                   }
                 }
               },
@@ -12166,25 +12184,25 @@
                   90,
                   255
                 ],
-                "complete_frame_ms": 143.3731209981488,
+                "complete_frame_ms": 145.28953499393538,
                 "metrics": {
                   "decoded_updates": 6,
                   "update_intervals_ms": [
-                    8214.519244,
-                    277.895009,
-                    342.18738199999996,
-                    210.54941,
-                    194.205527
+                    10609.201785,
+                    289.442444,
+                    343.010834,
+                    206.322571,
+                    203.915637
                   ]
                 },
                 "processes": {
                   "gtk": {
-                    "cpu_seconds": 2.57,
-                    "rss_mib": 123.328125
+                    "cpu_seconds": 3.15,
+                    "rss_mib": 106.01171875
                   },
                   "server": {
-                    "cpu_seconds": 0.47,
-                    "rss_mib": 31.03125
+                    "cpu_seconds": 0.51,
+                    "rss_mib": 31.30859375
                   }
                 }
               },
@@ -12199,26 +12217,26 @@
                   90,
                   255
                 ],
-                "complete_frame_ms": 219.02053699886892,
+                "complete_frame_ms": 301.24570199404843,
                 "metrics": {
                   "decoded_updates": 7,
                   "update_intervals_ms": [
-                    8214.519244,
-                    277.895009,
-                    342.18738199999996,
-                    210.54941,
-                    194.205527,
-                    229.987948
+                    10609.201785,
+                    289.442444,
+                    343.010834,
+                    206.322571,
+                    203.915637,
+                    328.957667
                   ]
                 },
                 "processes": {
                   "gtk": {
-                    "cpu_seconds": 2.73,
-                    "rss_mib": 143.0859375
+                    "cpu_seconds": 3.32,
+                    "rss_mib": 147.03125
                   },
                   "server": {
-                    "cpu_seconds": 0.52,
-                    "rss_mib": 42.09375
+                    "cpu_seconds": 0.56,
+                    "rss_mib": 43.54296875
                   }
                 }
               },
@@ -12233,27 +12251,27 @@
                   90,
                   255
                 ],
-                "complete_frame_ms": 293.9510199939832,
+                "complete_frame_ms": 227.51594000146724,
                 "metrics": {
                   "decoded_updates": 8,
                   "update_intervals_ms": [
-                    8214.519244,
-                    277.895009,
-                    342.18738199999996,
-                    210.54941,
-                    194.205527,
-                    229.987948,
-                    350.33592000000004
+                    10609.201785,
+                    289.442444,
+                    343.010834,
+                    206.322571,
+                    203.915637,
+                    328.957667,
+                    287.024428
                   ]
                 },
                 "processes": {
                   "gtk": {
-                    "cpu_seconds": 2.94,
-                    "rss_mib": 156.16015625
+                    "cpu_seconds": 3.54,
+                    "rss_mib": 201.3046875
                   },
                   "server": {
-                    "cpu_seconds": 0.61,
-                    "rss_mib": 56.15625
+                    "cpu_seconds": 0.65,
+                    "rss_mib": 57.609375
                   }
                 }
               },
@@ -12268,28 +12286,28 @@
                   90,
                   255
                 ],
-                "complete_frame_ms": 161.66148798947688,
+                "complete_frame_ms": 147.32861600350589,
                 "metrics": {
                   "decoded_updates": 9,
                   "update_intervals_ms": [
-                    8214.519244,
-                    277.895009,
-                    342.18738199999996,
-                    210.54941,
-                    194.205527,
-                    229.987948,
-                    350.33592000000004,
-                    233.642961
+                    10609.201785,
+                    289.442444,
+                    343.010834,
+                    206.322571,
+                    203.915637,
+                    328.957667,
+                    287.024428,
+                    207.625832
                   ]
                 },
                 "processes": {
                   "gtk": {
-                    "cpu_seconds": 3.04,
-                    "rss_mib": 105.734375
+                    "cpu_seconds": 3.64,
+                    "rss_mib": 109.6796875
                   },
                   "server": {
-                    "cpu_seconds": 0.68,
-                    "rss_mib": 30.8125
+                    "cpu_seconds": 0.71,
+                    "rss_mib": 31.30859375
                   }
                 }
               },
@@ -12304,29 +12322,29 @@
                   90,
                   255
                 ],
-                "complete_frame_ms": 98.47344100126065,
+                "complete_frame_ms": 145.15916899836157,
                 "metrics": {
                   "decoded_updates": 10,
                   "update_intervals_ms": [
-                    8214.519244,
-                    277.895009,
-                    342.18738199999996,
-                    210.54941,
-                    194.205527,
-                    229.987948,
-                    350.33592000000004,
-                    233.642961,
-                    170.33373600000002
+                    10609.201785,
+                    289.442444,
+                    343.010834,
+                    206.322571,
+                    203.915637,
+                    328.957667,
+                    287.024428,
+                    207.625832,
+                    200.472194
                   ]
                 },
                 "processes": {
                   "gtk": {
-                    "cpu_seconds": 3.1,
-                    "rss_mib": 105.734375
+                    "cpu_seconds": 3.71,
+                    "rss_mib": 109.6796875
                   },
                   "server": {
-                    "cpu_seconds": 0.68,
-                    "rss_mib": 31.03125
+                    "cpu_seconds": 0.71,
+                    "rss_mib": 31.30859375
                   }
                 }
               },
@@ -12341,30 +12359,30 @@
                   90,
                   255
                 ],
-                "complete_frame_ms": 238.61016100272536,
+                "complete_frame_ms": 208.45300301152747,
                 "metrics": {
                   "decoded_updates": 11,
                   "update_intervals_ms": [
-                    8214.519244,
-                    277.895009,
-                    342.18738199999996,
-                    210.54941,
-                    194.205527,
-                    229.987948,
-                    350.33592000000004,
-                    233.642961,
-                    170.33373600000002,
-                    258.160732
+                    10609.201785,
+                    289.442444,
+                    343.010834,
+                    206.322571,
+                    203.915637,
+                    328.957667,
+                    287.024428,
+                    207.625832,
+                    200.472194,
+                    220.634205
                   ]
                 },
                 "processes": {
                   "gtk": {
-                    "cpu_seconds": 3.26,
-                    "rss_mib": 146.0859375
+                    "cpu_seconds": 3.87,
+                    "rss_mib": 150.03125
                   },
                   "server": {
-                    "cpu_seconds": 0.74,
-                    "rss_mib": 42.09375
+                    "cpu_seconds": 0.76,
+                    "rss_mib": 42.37109375
                   }
                 }
               },
@@ -12379,31 +12397,31 @@
                   90,
                   255
                 ],
-                "complete_frame_ms": 282.4998159921961,
+                "complete_frame_ms": 284.6002000005683,
                 "metrics": {
                   "decoded_updates": 12,
                   "update_intervals_ms": [
-                    8214.519244,
-                    277.895009,
-                    342.18738199999996,
-                    210.54941,
-                    194.205527,
-                    229.987948,
-                    350.33592000000004,
-                    233.642961,
-                    170.33373600000002,
-                    258.160732,
-                    341.585916
+                    10609.201785,
+                    289.442444,
+                    343.010834,
+                    206.322571,
+                    203.915637,
+                    328.957667,
+                    287.024428,
+                    207.625832,
+                    200.472194,
+                    220.634205,
+                    357.054774
                   ]
                 },
                 "processes": {
                   "gtk": {
-                    "cpu_seconds": 3.48,
-                    "rss_mib": 200.359375
+                    "cpu_seconds": 4.1,
+                    "rss_mib": 204.3046875
                   },
                   "server": {
-                    "cpu_seconds": 0.83,
-                    "rss_mib": 56.15625
+                    "cpu_seconds": 0.86,
+                    "rss_mib": 62.97265625
                   }
                 }
               },
@@ -12418,32 +12436,32 @@
                   90,
                   255
                 ],
-                "complete_frame_ms": 149.29620899783913,
+                "complete_frame_ms": 172.83153100288473,
                 "metrics": {
                   "decoded_updates": 13,
                   "update_intervals_ms": [
-                    8214.519244,
-                    277.895009,
-                    342.18738199999996,
-                    210.54941,
-                    194.205527,
-                    229.987948,
-                    350.33592000000004,
-                    233.642961,
-                    170.33373600000002,
-                    258.160732,
-                    341.585916,
-                    213.116208
+                    10609.201785,
+                    289.442444,
+                    343.010834,
+                    206.322571,
+                    203.915637,
+                    328.957667,
+                    287.024428,
+                    207.625832,
+                    200.472194,
+                    220.634205,
+                    357.054774,
+                    252.03418700000003
                   ]
                 },
                 "processes": {
                   "gtk": {
-                    "cpu_seconds": 3.59,
-                    "rss_mib": 105.73828125
+                    "cpu_seconds": 4.19,
+                    "rss_mib": 109.68359375
                   },
                   "server": {
-                    "cpu_seconds": 0.89,
-                    "rss_mib": 31.03125
+                    "cpu_seconds": 0.93,
+                    "rss_mib": 31.08984375
                   }
                 }
               },
@@ -12458,33 +12476,33 @@
                   90,
                   255
                 ],
-                "complete_frame_ms": 177.16589799965732,
+                "complete_frame_ms": 181.29355099517852,
                 "metrics": {
                   "decoded_updates": 14,
                   "update_intervals_ms": [
-                    8214.519244,
-                    277.895009,
-                    342.18738199999996,
-                    210.54941,
-                    194.205527,
-                    229.987948,
-                    350.33592000000004,
-                    233.642961,
-                    170.33373600000002,
-                    258.160732,
-                    341.585916,
-                    213.116208,
-                    255.470572
+                    10609.201785,
+                    289.442444,
+                    343.010834,
+                    206.322571,
+                    203.915637,
+                    328.957667,
+                    287.024428,
+                    207.625832,
+                    200.472194,
+                    220.634205,
+                    357.054774,
+                    252.03418700000003,
+                    227.471145
                   ]
                 },
                 "processes": {
                   "gtk": {
-                    "cpu_seconds": 3.67,
-                    "rss_mib": 105.73828125
+                    "cpu_seconds": 4.28,
+                    "rss_mib": 109.68359375
                   },
                   "server": {
-                    "cpu_seconds": 0.89,
-                    "rss_mib": 31.03125
+                    "cpu_seconds": 0.93,
+                    "rss_mib": 31.30859375
                   }
                 }
               },
@@ -12499,34 +12517,34 @@
                   90,
                   255
                 ],
-                "complete_frame_ms": 243.60649699519854,
+                "complete_frame_ms": 208.03062598861288,
                 "metrics": {
                   "decoded_updates": 15,
                   "update_intervals_ms": [
-                    8214.519244,
-                    277.895009,
-                    342.18738199999996,
-                    210.54941,
-                    194.205527,
-                    229.987948,
-                    350.33592000000004,
-                    233.642961,
-                    170.33373600000002,
-                    258.160732,
-                    341.585916,
-                    213.116208,
-                    255.470572,
-                    258.64016699999996
+                    10609.201785,
+                    289.442444,
+                    343.010834,
+                    206.322571,
+                    203.915637,
+                    328.957667,
+                    287.024428,
+                    207.625832,
+                    200.472194,
+                    220.634205,
+                    357.054774,
+                    252.03418700000003,
+                    227.471145,
+                    223.146358
                   ]
                 },
                 "processes": {
                   "gtk": {
-                    "cpu_seconds": 3.83,
-                    "rss_mib": 146.08984375
+                    "cpu_seconds": 4.44,
+                    "rss_mib": 150.03515625
                   },
                   "server": {
-                    "cpu_seconds": 0.95,
-                    "rss_mib": 43.265625
+                    "cpu_seconds": 0.98,
+                    "rss_mib": 43.54296875
                   }
                 }
               },
@@ -12541,35 +12559,35 @@
                   90,
                   255
                 ],
-                "complete_frame_ms": 280.078563009738,
+                "complete_frame_ms": 284.7731960064266,
                 "metrics": {
                   "decoded_updates": 16,
                   "update_intervals_ms": [
-                    8214.519244,
-                    277.895009,
-                    342.18738199999996,
-                    210.54941,
-                    194.205527,
-                    229.987948,
-                    350.33592000000004,
-                    233.642961,
-                    170.33373600000002,
-                    258.160732,
-                    341.585916,
-                    213.116208,
-                    255.470572,
-                    258.64016699999996,
-                    333.85174
+                    10609.201785,
+                    289.442444,
+                    343.010834,
+                    206.322571,
+                    203.915637,
+                    328.957667,
+                    287.024428,
+                    207.625832,
+                    200.472194,
+                    220.634205,
+                    357.054774,
+                    252.03418700000003,
+                    227.471145,
+                    223.146358,
+                    338.58930599999997
                   ]
                 },
                 "processes": {
                   "gtk": {
-                    "cpu_seconds": 4.05,
-                    "rss_mib": 200.36328125
+                    "cpu_seconds": 4.65,
+                    "rss_mib": 204.30859375
                   },
                   "server": {
-                    "cpu_seconds": 1.04,
-                    "rss_mib": 57.328125
+                    "cpu_seconds": 1.08,
+                    "rss_mib": 57.609375
                   }
                 }
               },
@@ -12584,36 +12602,36 @@
                   90,
                   255
                 ],
-                "complete_frame_ms": 186.0036269936245,
+                "complete_frame_ms": 184.6495070058154,
                 "metrics": {
                   "decoded_updates": 17,
                   "update_intervals_ms": [
-                    8214.519244,
-                    277.895009,
-                    342.18738199999996,
-                    210.54941,
-                    194.205527,
-                    229.987948,
-                    350.33592000000004,
-                    233.642961,
-                    170.33373600000002,
-                    258.160732,
-                    341.585916,
-                    213.116208,
-                    255.470572,
-                    258.64016699999996,
-                    333.85174,
-                    261.431438
+                    10609.201785,
+                    289.442444,
+                    343.010834,
+                    206.322571,
+                    203.915637,
+                    328.957667,
+                    287.024428,
+                    207.625832,
+                    200.472194,
+                    220.634205,
+                    357.054774,
+                    252.03418700000003,
+                    227.471145,
+                    223.146358,
+                    338.58930599999997,
+                    262.73744700000003
                   ]
                 },
                 "processes": {
                   "gtk": {
-                    "cpu_seconds": 4.16,
-                    "rss_mib": 105.73828125
+                    "cpu_seconds": 4.76,
+                    "rss_mib": 109.68359375
                   },
                   "server": {
-                    "cpu_seconds": 1.1,
-                    "rss_mib": 31.03125
+                    "cpu_seconds": 1.14,
+                    "rss_mib": 31.30859375
                   }
                 }
               },
@@ -12628,37 +12646,37 @@
                   90,
                   255
                 ],
-                "complete_frame_ms": 185.12199299584609,
+                "complete_frame_ms": 129.70603900612332,
                 "metrics": {
                   "decoded_updates": 18,
                   "update_intervals_ms": [
-                    8214.519244,
-                    277.895009,
-                    342.18738199999996,
-                    210.54941,
-                    194.205527,
-                    229.987948,
-                    350.33592000000004,
-                    233.642961,
-                    170.33373600000002,
-                    258.160732,
-                    341.585916,
-                    213.116208,
-                    255.470572,
-                    258.64016699999996,
-                    333.85174,
-                    261.431438,
-                    233.389082
+                    10609.201785,
+                    289.442444,
+                    343.010834,
+                    206.322571,
+                    203.915637,
+                    328.957667,
+                    287.024428,
+                    207.625832,
+                    200.472194,
+                    220.634205,
+                    357.054774,
+                    252.03418700000003,
+                    227.471145,
+                    223.146358,
+                    338.58930599999997,
+                    262.73744700000003,
+                    192.179485
                   ]
                 },
                 "processes": {
                   "gtk": {
-                    "cpu_seconds": 4.24,
-                    "rss_mib": 105.73828125
+                    "cpu_seconds": 4.82,
+                    "rss_mib": 109.68359375
                   },
                   "server": {
-                    "cpu_seconds": 1.11,
-                    "rss_mib": 31.03125
+                    "cpu_seconds": 1.14,
+                    "rss_mib": 31.30859375
                   }
                 }
               },
@@ -12673,38 +12691,38 @@
                   90,
                   255
                 ],
-                "complete_frame_ms": 200.27873500657734,
+                "complete_frame_ms": 231.0984440118773,
                 "metrics": {
                   "decoded_updates": 19,
                   "update_intervals_ms": [
-                    8214.519244,
-                    277.895009,
-                    342.18738199999996,
-                    210.54941,
-                    194.205527,
-                    229.987948,
-                    350.33592000000004,
-                    233.642961,
-                    170.33373600000002,
-                    258.160732,
-                    341.585916,
-                    213.116208,
-                    255.470572,
-                    258.64016699999996,
-                    333.85174,
-                    261.431438,
-                    233.389082,
-                    228.580752
+                    10609.201785,
+                    289.442444,
+                    343.010834,
+                    206.322571,
+                    203.915637,
+                    328.957667,
+                    287.024428,
+                    207.625832,
+                    200.472194,
+                    220.634205,
+                    357.054774,
+                    252.03418700000003,
+                    227.471145,
+                    223.146358,
+                    338.58930599999997,
+                    262.73744700000003,
+                    192.179485,
+                    241.241007
                   ]
                 },
                 "processes": {
                   "gtk": {
-                    "cpu_seconds": 4.39,
-                    "rss_mib": 146.08984375
+                    "cpu_seconds": 4.98,
+                    "rss_mib": 150.03515625
                   },
                   "server": {
-                    "cpu_seconds": 1.17,
-                    "rss_mib": 42.09375
+                    "cpu_seconds": 1.19,
+                    "rss_mib": 43.54296875
                   }
                 }
               },
@@ -12719,39 +12737,39 @@
                   90,
                   255
                 ],
-                "complete_frame_ms": 263.8914450071752,
+                "complete_frame_ms": 238.54275199119002,
                 "metrics": {
                   "decoded_updates": 20,
                   "update_intervals_ms": [
-                    8214.519244,
-                    277.895009,
-                    342.18738199999996,
-                    210.54941,
-                    194.205527,
-                    229.987948,
-                    350.33592000000004,
-                    233.642961,
-                    170.33373600000002,
-                    258.160732,
-                    341.585916,
-                    213.116208,
-                    255.470572,
-                    258.64016699999996,
-                    333.85174,
-                    261.431438,
-                    233.389082,
-                    228.580752,
-                    329.2601
+                    10609.201785,
+                    289.442444,
+                    343.010834,
+                    206.322571,
+                    203.915637,
+                    328.957667,
+                    287.024428,
+                    207.625832,
+                    200.472194,
+                    220.634205,
+                    357.054774,
+                    252.03418700000003,
+                    227.471145,
+                    223.146358,
+                    338.58930599999997,
+                    262.73744700000003,
+                    192.179485,
+                    241.241007,
+                    297.828057
                   ]
                 },
                 "processes": {
                   "gtk": {
-                    "cpu_seconds": 4.6,
-                    "rss_mib": 200.36328125
+                    "cpu_seconds": 5.16,
+                    "rss_mib": 204.30859375
                   },
                   "server": {
-                    "cpu_seconds": 1.26,
-                    "rss_mib": 56.15625
+                    "cpu_seconds": 1.25,
+                    "rss_mib": 48.69140625
                   }
                 }
               },
@@ -12766,40 +12784,40 @@
                   90,
                   255
                 ],
-                "complete_frame_ms": 150.96951699524652,
+                "complete_frame_ms": 184.3335199955618,
                 "metrics": {
                   "decoded_updates": 21,
                   "update_intervals_ms": [
-                    8214.519244,
-                    277.895009,
-                    342.18738199999996,
-                    210.54941,
-                    194.205527,
-                    229.987948,
-                    350.33592000000004,
-                    233.642961,
-                    170.33373600000002,
-                    258.160732,
-                    341.585916,
-                    213.116208,
-                    255.470572,
-                    258.64016699999996,
-                    333.85174,
-                    261.431438,
-                    233.389082,
-                    228.580752,
-                    329.2601,
-                    219.096311
+                    10609.201785,
+                    289.442444,
+                    343.010834,
+                    206.322571,
+                    203.915637,
+                    328.957667,
+                    287.024428,
+                    207.625832,
+                    200.472194,
+                    220.634205,
+                    357.054774,
+                    252.03418700000003,
+                    227.471145,
+                    223.146358,
+                    338.58930599999997,
+                    262.73744700000003,
+                    192.179485,
+                    241.241007,
+                    297.828057,
+                    257.487745
                   ]
                 },
                 "processes": {
                   "gtk": {
-                    "cpu_seconds": 4.7,
-                    "rss_mib": 105.73828125
+                    "cpu_seconds": 5.27,
+                    "rss_mib": 109.68359375
                   },
                   "server": {
-                    "cpu_seconds": 1.32,
-                    "rss_mib": 31.03125
+                    "cpu_seconds": 1.31,
+                    "rss_mib": 69.5078125
                   }
                 }
               }
@@ -12846,15 +12864,15 @@
           "details": {
             "restart_identical_ids_preferences_groups": true,
             "generated_profiles": 1000,
-            "load_and_fixture_ready_ms": 270.9270199993625,
-            "search_widget_roundtrip_ms": 22.759430008591153,
+            "load_and_fixture_ready_ms": 278.59954901214223,
+            "search_widget_roundtrip_ms": 23.879090993432328,
             "search_rows": 1
           }
         }
       ],
       "rss_mib": {
-        "gtk": 65.03515625,
-        "rdp_server": 34.0390625
+        "gtk": 64.8203125,
+        "rdp_server": 31.78515625
       },
       "environment": "Owned Weston/Xvfb, real native GTK/GDK peer, actual loopback IronRDP server; generated credentials and frames",
       "limitations": [
@@ -12866,10 +12884,10 @@
     "stable": "not qualified"
   },
   "machine_library": {
-    "package": "0.1.14",
+    "package": "0.1.15",
     "sha256": {
-      "ruwac": "a84f454e9031df4b9c15502cf6e1150c92010ab26db92e346488cec5d45d31b2",
-      "ruwac-desktop": "34521a5731cea687bd5c62489733564dcca7dbcfaefbc13e19de18c74640fd2a"
+      "ruwac": "58f05b7692d335c6c0eb5bb557ecde2b61657e26135709cc6c9a3c6c2f0ddd61",
+      "ruwac-desktop": "6bdcdff7053ccf1f584617f2c80060c90af08731c3ee54c8a79ace138df7d767"
     },
     "native": {
       "results": [
@@ -12880,7 +12898,7 @@
           "visible_row_cap": 50,
           "all_endpoints_reachable": true,
           "search_resets_page": true,
-          "elapsed_ms": 1071.1242880061036
+          "elapsed_ms": 1049.7293439984787
         },
         {
           "id": "LIBRARY-MERGE-EXPLICIT-REVIEW-CANCEL",
@@ -12921,8 +12939,8 @@
         }
       ],
       "hashes": {
-        "ruwac": "a84f454e9031df4b9c15502cf6e1150c92010ab26db92e346488cec5d45d31b2",
-        "ruwac-desktop": "34521a5731cea687bd5c62489733564dcca7dbcfaefbc13e19de18c74640fd2a"
+        "ruwac": "58f05b7692d335c6c0eb5bb557ecde2b61657e26135709cc6c9a3c6c2f0ddd61",
+        "ruwac-desktop": "6bdcdff7053ccf1f584617f2c80060c90af08731c3ee54c8a79ace138df7d767"
       },
       "scope": "Actual native GTK widget/dialog callbacks on an owned compositor; synthetic actions; no owner credentials or physical input"
     },
@@ -12972,14 +12990,14 @@
                 ],
                 "status": "Connected \u00b7 text and image clipboard sharing",
                 "tab": 1,
-                "transport_id": "rdp-transport_e3e2749aa13d4b9f820243253e82d631",
+                "transport_id": "rdp-transport_e1b8271a4e344ac99cc9c7df73402565",
                 "viewport": [
                   663,
                   580
                 ],
                 "window_width": 1040,
                 "zoom": 1.0,
-                "connect_to_decoded_frame_ms": 219.052197993733
+                "connect_to_decoded_frame_ms": 213.0025160004152
               },
               {
                 "active": true,
@@ -13012,14 +13030,14 @@
                 ],
                 "status": "Connected \u00b7 text and image clipboard sharing",
                 "tab": 2,
-                "transport_id": "rdp-transport_50184ccd4ed04254b055367153dad97d",
+                "transport_id": "rdp-transport_743ac6ddb00446c794653096a6435ebc",
                 "viewport": [
                   718,
                   580
                 ],
                 "window_width": 1040,
                 "zoom": 1.0,
-                "connect_to_decoded_frame_ms": 182.55251900700387
+                "connect_to_decoded_frame_ms": 182.0551379933022
               },
               {
                 "active": true,
@@ -13052,18 +13070,36 @@
                 ],
                 "status": "Connected \u00b7 text and image clipboard sharing",
                 "tab": 3,
-                "transport_id": "rdp-transport_9487480cba4e4c4d9ec0e497c6081bf3",
+                "transport_id": "rdp-transport_8437dff534cd423ca7456245e001fee9",
                 "viewport": [
                   718,
                   580
                 ],
                 "window_width": 1040,
                 "zoom": 1.0,
-                "connect_to_decoded_frame_ms": 186.37883599149063
+                "connect_to_decoded_frame_ms": 185.50172599498183
               }
             ],
             "authentication": "actual CredSSP/NLA",
             "frames": "decoded live loopback server frames, generated desktop"
+          }
+        },
+        {
+          "id": "RDP-GUI-LIFECYCLE-API",
+          "status": "PASS",
+          "details": {
+            "actual_CredSSP_framebuffer": true,
+            "typed_view_ids": true,
+            "permission_default_and_revocation": true,
+            "read_metadata_no_credentials": true,
+            "background_reconnect_preserves_neighbors_focus_clipboard": true,
+            "saved_profile_open_without_focus": true,
+            "activation_requires_separate_focus_permission": true,
+            "closed_target_rejected": true,
+            "unexpected_or_credential_parameters_rejected": true,
+            "audit_no_private_payload": true,
+            "idempotency_keys_explicitly_refused": true,
+            "owner_keyring_accessed": false
           }
         },
         {
@@ -13098,50 +13134,50 @@
             "after": {
               "decoded_updates": 22,
               "update_intervals_ms": [
-                8214.519244,
-                277.895009,
-                342.18738199999996,
-                210.54941,
-                194.205527,
-                229.987948,
-                350.33592000000004,
-                233.642961,
-                170.33373600000002,
-                258.160732,
-                341.585916,
-                213.116208,
-                255.470572,
-                258.64016699999996,
-                333.85174,
-                261.431438,
-                233.389082,
-                228.580752,
-                329.2601,
-                219.096311,
-                1101.78115
+                10609.201785,
+                289.442444,
+                343.010834,
+                206.322571,
+                203.915637,
+                328.957667,
+                287.024428,
+                207.625832,
+                200.472194,
+                220.634205,
+                357.054774,
+                252.03418700000003,
+                227.471145,
+                223.146358,
+                338.58930599999997,
+                262.73744700000003,
+                192.179485,
+                241.241007,
+                297.828057,
+                257.487745,
+                1030.289076
               ]
             },
             "processes_before": {
               "gtk": {
-                "cpu_seconds": 1.92,
-                "rss_mib": 78.984375
+                "cpu_seconds": 2.51,
+                "rss_mib": 82.31640625
               },
               "server": {
-                "cpu_seconds": 0.21,
-                "rss_mib": 12.46875
+                "cpu_seconds": 0.25,
+                "rss_mib": 12.9609375
               }
             },
             "processes_after": {
               "gtk": {
-                "cpu_seconds": 5.34,
-                "rss_mib": 106.171875
+                "cpu_seconds": 5.86,
+                "rss_mib": 110.1171875
               },
               "server": {
-                "cpu_seconds": 1.43,
-                "rss_mib": 34.03125
+                "cpu_seconds": 1.42,
+                "rss_mib": 31.78125
               }
             },
-            "wall_seconds": 8.111439915999654,
+            "wall_seconds": 8.079636652997578,
             "transitions": [
               {
                 "size": [
@@ -13154,21 +13190,21 @@
                   90,
                   255
                 ],
-                "complete_frame_ms": 128.33959300769493,
+                "complete_frame_ms": 130.64495199068915,
                 "metrics": {
                   "decoded_updates": 2,
                   "update_intervals_ms": [
-                    8214.519244
+                    10609.201785
                   ]
                 },
                 "processes": {
                   "gtk": {
-                    "cpu_seconds": 1.95,
-                    "rss_mib": 81.890625
+                    "cpu_seconds": 2.53,
+                    "rss_mib": 85.6171875
                   },
                   "server": {
-                    "cpu_seconds": 0.21,
-                    "rss_mib": 13.64453125
+                    "cpu_seconds": 0.25,
+                    "rss_mib": 13.92578125
                   }
                 }
               },
@@ -13183,22 +13219,22 @@
                   90,
                   255
                 ],
-                "complete_frame_ms": 260.19513299979735,
+                "complete_frame_ms": 239.16119999194052,
                 "metrics": {
                   "decoded_updates": 3,
                   "update_intervals_ms": [
-                    8214.519244,
-                    277.895009
+                    10609.201785,
+                    289.442444
                   ]
                 },
                 "processes": {
                   "gtk": {
-                    "cpu_seconds": 2.14,
-                    "rss_mib": 135.546875
+                    "cpu_seconds": 2.71,
+                    "rss_mib": 139.49609375
                   },
                   "server": {
-                    "cpu_seconds": 0.28,
-                    "rss_mib": 38.22265625
+                    "cpu_seconds": 0.32,
+                    "rss_mib": 38.50390625
                   }
                 }
               },
@@ -13213,23 +13249,23 @@
                   90,
                   255
                 ],
-                "complete_frame_ms": 301.34466200252064,
+                "complete_frame_ms": 318.1291719956789,
                 "metrics": {
                   "decoded_updates": 4,
                   "update_intervals_ms": [
-                    8214.519244,
-                    277.895009,
-                    342.18738199999996
+                    10609.201785,
+                    289.442444,
+                    343.010834
                   ]
                 },
                 "processes": {
                   "gtk": {
-                    "cpu_seconds": 2.41,
-                    "rss_mib": 134.50390625
+                    "cpu_seconds": 2.97,
+                    "rss_mib": 173.45703125
                   },
                   "server": {
-                    "cpu_seconds": 0.4,
-                    "rss_mib": 48.62890625
+                    "cpu_seconds": 0.43,
+                    "rss_mib": 48.91015625
                   }
                 }
               },
@@ -13244,24 +13280,24 @@
                   90,
                   255
                 ],
-                "complete_frame_ms": 134.4314059970202,
+                "complete_frame_ms": 133.41183800366707,
                 "metrics": {
                   "decoded_updates": 5,
                   "update_intervals_ms": [
-                    8214.519244,
-                    277.895009,
-                    342.18738199999996,
-                    210.54941
+                    10609.201785,
+                    289.442444,
+                    343.010834,
+                    206.322571
                   ]
                 },
                 "processes": {
                   "gtk": {
-                    "cpu_seconds": 2.5,
-                    "rss_mib": 123.328125
+                    "cpu_seconds": 3.07,
+                    "rss_mib": 152.85546875
                   },
                   "server": {
-                    "cpu_seconds": 0.46,
-                    "rss_mib": 31.03125
+                    "cpu_seconds": 0.49,
+                    "rss_mib": 31.30859375
                   }
                 }
               },
@@ -13276,25 +13312,25 @@
                   90,
                   255
                 ],
-                "complete_frame_ms": 143.3731209981488,
+                "complete_frame_ms": 145.28953499393538,
                 "metrics": {
                   "decoded_updates": 6,
                   "update_intervals_ms": [
-                    8214.519244,
-                    277.895009,
-                    342.18738199999996,
-                    210.54941,
-                    194.205527
+                    10609.201785,
+                    289.442444,
+                    343.010834,
+                    206.322571,
+                    203.915637
                   ]
                 },
                 "processes": {
                   "gtk": {
-                    "cpu_seconds": 2.57,
-                    "rss_mib": 123.328125
+                    "cpu_seconds": 3.15,
+                    "rss_mib": 106.01171875
                   },
                   "server": {
-                    "cpu_seconds": 0.47,
-                    "rss_mib": 31.03125
+                    "cpu_seconds": 0.51,
+                    "rss_mib": 31.30859375
                   }
                 }
               },
@@ -13309,26 +13345,26 @@
                   90,
                   255
                 ],
-                "complete_frame_ms": 219.02053699886892,
+                "complete_frame_ms": 301.24570199404843,
                 "metrics": {
                   "decoded_updates": 7,
                   "update_intervals_ms": [
-                    8214.519244,
-                    277.895009,
-                    342.18738199999996,
-                    210.54941,
-                    194.205527,
-                    229.987948
+                    10609.201785,
+                    289.442444,
+                    343.010834,
+                    206.322571,
+                    203.915637,
+                    328.957667
                   ]
                 },
                 "processes": {
                   "gtk": {
-                    "cpu_seconds": 2.73,
-                    "rss_mib": 143.0859375
+                    "cpu_seconds": 3.32,
+                    "rss_mib": 147.03125
                   },
                   "server": {
-                    "cpu_seconds": 0.52,
-                    "rss_mib": 42.09375
+                    "cpu_seconds": 0.56,
+                    "rss_mib": 43.54296875
                   }
                 }
               },
@@ -13343,27 +13379,27 @@
                   90,
                   255
                 ],
-                "complete_frame_ms": 293.9510199939832,
+                "complete_frame_ms": 227.51594000146724,
                 "metrics": {
                   "decoded_updates": 8,
                   "update_intervals_ms": [
-                    8214.519244,
-                    277.895009,
-                    342.18738199999996,
-                    210.54941,
-                    194.205527,
-                    229.987948,
-                    350.33592000000004
+                    10609.201785,
+                    289.442444,
+                    343.010834,
+                    206.322571,
+                    203.915637,
+                    328.957667,
+                    287.024428
                   ]
                 },
                 "processes": {
                   "gtk": {
-                    "cpu_seconds": 2.94,
-                    "rss_mib": 156.16015625
+                    "cpu_seconds": 3.54,
+                    "rss_mib": 201.3046875
                   },
                   "server": {
-                    "cpu_seconds": 0.61,
-                    "rss_mib": 56.15625
+                    "cpu_seconds": 0.65,
+                    "rss_mib": 57.609375
                   }
                 }
               },
@@ -13378,28 +13414,28 @@
                   90,
                   255
                 ],
-                "complete_frame_ms": 161.66148798947688,
+                "complete_frame_ms": 147.32861600350589,
                 "metrics": {
                   "decoded_updates": 9,
                   "update_intervals_ms": [
-                    8214.519244,
-                    277.895009,
-                    342.18738199999996,
-                    210.54941,
-                    194.205527,
-                    229.987948,
-                    350.33592000000004,
-                    233.642961
+                    10609.201785,
+                    289.442444,
+                    343.010834,
+                    206.322571,
+                    203.915637,
+                    328.957667,
+                    287.024428,
+                    207.625832
                   ]
                 },
                 "processes": {
                   "gtk": {
-                    "cpu_seconds": 3.04,
-                    "rss_mib": 105.734375
+                    "cpu_seconds": 3.64,
+                    "rss_mib": 109.6796875
                   },
                   "server": {
-                    "cpu_seconds": 0.68,
-                    "rss_mib": 30.8125
+                    "cpu_seconds": 0.71,
+                    "rss_mib": 31.30859375
                   }
                 }
               },
@@ -13414,29 +13450,29 @@
                   90,
                   255
                 ],
-                "complete_frame_ms": 98.47344100126065,
+                "complete_frame_ms": 145.15916899836157,
                 "metrics": {
                   "decoded_updates": 10,
                   "update_intervals_ms": [
-                    8214.519244,
-                    277.895009,
-                    342.18738199999996,
-                    210.54941,
-                    194.205527,
-                    229.987948,
-                    350.33592000000004,
-                    233.642961,
-                    170.33373600000002
+                    10609.201785,
+                    289.442444,
+                    343.010834,
+                    206.322571,
+                    203.915637,
+                    328.957667,
+                    287.024428,
+                    207.625832,
+                    200.472194
                   ]
                 },
                 "processes": {
                   "gtk": {
-                    "cpu_seconds": 3.1,
-                    "rss_mib": 105.734375
+                    "cpu_seconds": 3.71,
+                    "rss_mib": 109.6796875
                   },
                   "server": {
-                    "cpu_seconds": 0.68,
-                    "rss_mib": 31.03125
+                    "cpu_seconds": 0.71,
+                    "rss_mib": 31.30859375
                   }
                 }
               },
@@ -13451,30 +13487,30 @@
                   90,
                   255
                 ],
-                "complete_frame_ms": 238.61016100272536,
+                "complete_frame_ms": 208.45300301152747,
                 "metrics": {
                   "decoded_updates": 11,
                   "update_intervals_ms": [
-                    8214.519244,
-                    277.895009,
-                    342.18738199999996,
-                    210.54941,
-                    194.205527,
-                    229.987948,
-                    350.33592000000004,
-                    233.642961,
-                    170.33373600000002,
-                    258.160732
+                    10609.201785,
+                    289.442444,
+                    343.010834,
+                    206.322571,
+                    203.915637,
+                    328.957667,
+                    287.024428,
+                    207.625832,
+                    200.472194,
+                    220.634205
                   ]
                 },
                 "processes": {
                   "gtk": {
-                    "cpu_seconds": 3.26,
-                    "rss_mib": 146.0859375
+                    "cpu_seconds": 3.87,
+                    "rss_mib": 150.03125
                   },
                   "server": {
-                    "cpu_seconds": 0.74,
-                    "rss_mib": 42.09375
+                    "cpu_seconds": 0.76,
+                    "rss_mib": 42.37109375
                   }
                 }
               },
@@ -13489,31 +13525,31 @@
                   90,
                   255
                 ],
-                "complete_frame_ms": 282.4998159921961,
+                "complete_frame_ms": 284.6002000005683,
                 "metrics": {
                   "decoded_updates": 12,
                   "update_intervals_ms": [
-                    8214.519244,
-                    277.895009,
-                    342.18738199999996,
-                    210.54941,
-                    194.205527,
-                    229.987948,
-                    350.33592000000004,
-                    233.642961,
-                    170.33373600000002,
-                    258.160732,
-                    341.585916
+                    10609.201785,
+                    289.442444,
+                    343.010834,
+                    206.322571,
+                    203.915637,
+                    328.957667,
+                    287.024428,
+                    207.625832,
+                    200.472194,
+                    220.634205,
+                    357.054774
                   ]
                 },
                 "processes": {
                   "gtk": {
-                    "cpu_seconds": 3.48,
-                    "rss_mib": 200.359375
+                    "cpu_seconds": 4.1,
+                    "rss_mib": 204.3046875
                   },
                   "server": {
-                    "cpu_seconds": 0.83,
-                    "rss_mib": 56.15625
+                    "cpu_seconds": 0.86,
+                    "rss_mib": 62.97265625
                   }
                 }
               },
@@ -13528,32 +13564,32 @@
                   90,
                   255
                 ],
-                "complete_frame_ms": 149.29620899783913,
+                "complete_frame_ms": 172.83153100288473,
                 "metrics": {
                   "decoded_updates": 13,
                   "update_intervals_ms": [
-                    8214.519244,
-                    277.895009,
-                    342.18738199999996,
-                    210.54941,
-                    194.205527,
-                    229.987948,
-                    350.33592000000004,
-                    233.642961,
-                    170.33373600000002,
-                    258.160732,
-                    341.585916,
-                    213.116208
+                    10609.201785,
+                    289.442444,
+                    343.010834,
+                    206.322571,
+                    203.915637,
+                    328.957667,
+                    287.024428,
+                    207.625832,
+                    200.472194,
+                    220.634205,
+                    357.054774,
+                    252.03418700000003
                   ]
                 },
                 "processes": {
                   "gtk": {
-                    "cpu_seconds": 3.59,
-                    "rss_mib": 105.73828125
+                    "cpu_seconds": 4.19,
+                    "rss_mib": 109.68359375
                   },
                   "server": {
-                    "cpu_seconds": 0.89,
-                    "rss_mib": 31.03125
+                    "cpu_seconds": 0.93,
+                    "rss_mib": 31.08984375
                   }
                 }
               },
@@ -13568,33 +13604,33 @@
                   90,
                   255
                 ],
-                "complete_frame_ms": 177.16589799965732,
+                "complete_frame_ms": 181.29355099517852,
                 "metrics": {
                   "decoded_updates": 14,
                   "update_intervals_ms": [
-                    8214.519244,
-                    277.895009,
-                    342.18738199999996,
-                    210.54941,
-                    194.205527,
-                    229.987948,
-                    350.33592000000004,
-                    233.642961,
-                    170.33373600000002,
-                    258.160732,
-                    341.585916,
-                    213.116208,
-                    255.470572
+                    10609.201785,
+                    289.442444,
+                    343.010834,
+                    206.322571,
+                    203.915637,
+                    328.957667,
+                    287.024428,
+                    207.625832,
+                    200.472194,
+                    220.634205,
+                    357.054774,
+                    252.03418700000003,
+                    227.471145
                   ]
                 },
                 "processes": {
                   "gtk": {
-                    "cpu_seconds": 3.67,
-                    "rss_mib": 105.73828125
+                    "cpu_seconds": 4.28,
+                    "rss_mib": 109.68359375
                   },
                   "server": {
-                    "cpu_seconds": 0.89,
-                    "rss_mib": 31.03125
+                    "cpu_seconds": 0.93,
+                    "rss_mib": 31.30859375
                   }
                 }
               },
@@ -13609,34 +13645,34 @@
                   90,
                   255
                 ],
-                "complete_frame_ms": 243.60649699519854,
+                "complete_frame_ms": 208.03062598861288,
                 "metrics": {
                   "decoded_updates": 15,
                   "update_intervals_ms": [
-                    8214.519244,
-                    277.895009,
-                    342.18738199999996,
-                    210.54941,
-                    194.205527,
-                    229.987948,
-                    350.33592000000004,
-                    233.642961,
-                    170.33373600000002,
-                    258.160732,
-                    341.585916,
-                    213.116208,
-                    255.470572,
-                    258.64016699999996
+                    10609.201785,
+                    289.442444,
+                    343.010834,
+                    206.322571,
+                    203.915637,
+                    328.957667,
+                    287.024428,
+                    207.625832,
+                    200.472194,
+                    220.634205,
+                    357.054774,
+                    252.03418700000003,
+                    227.471145,
+                    223.146358
                   ]
                 },
                 "processes": {
                   "gtk": {
-                    "cpu_seconds": 3.83,
-                    "rss_mib": 146.08984375
+                    "cpu_seconds": 4.44,
+                    "rss_mib": 150.03515625
                   },
                   "server": {
-                    "cpu_seconds": 0.95,
-                    "rss_mib": 43.265625
+                    "cpu_seconds": 0.98,
+                    "rss_mib": 43.54296875
                   }
                 }
               },
@@ -13651,35 +13687,35 @@
                   90,
                   255
                 ],
-                "complete_frame_ms": 280.078563009738,
+                "complete_frame_ms": 284.7731960064266,
                 "metrics": {
                   "decoded_updates": 16,
                   "update_intervals_ms": [
-                    8214.519244,
-                    277.895009,
-                    342.18738199999996,
-                    210.54941,
-                    194.205527,
-                    229.987948,
-                    350.33592000000004,
-                    233.642961,
-                    170.33373600000002,
-                    258.160732,
-                    341.585916,
-                    213.116208,
-                    255.470572,
-                    258.64016699999996,
-                    333.85174
+                    10609.201785,
+                    289.442444,
+                    343.010834,
+                    206.322571,
+                    203.915637,
+                    328.957667,
+                    287.024428,
+                    207.625832,
+                    200.472194,
+                    220.634205,
+                    357.054774,
+                    252.03418700000003,
+                    227.471145,
+                    223.146358,
+                    338.58930599999997
                   ]
                 },
                 "processes": {
                   "gtk": {
-                    "cpu_seconds": 4.05,
-                    "rss_mib": 200.36328125
+                    "cpu_seconds": 4.65,
+                    "rss_mib": 204.30859375
                   },
                   "server": {
-                    "cpu_seconds": 1.04,
-                    "rss_mib": 57.328125
+                    "cpu_seconds": 1.08,
+                    "rss_mib": 57.609375
                   }
                 }
               },
@@ -13694,36 +13730,36 @@
                   90,
                   255
                 ],
-                "complete_frame_ms": 186.0036269936245,
+                "complete_frame_ms": 184.6495070058154,
                 "metrics": {
                   "decoded_updates": 17,
                   "update_intervals_ms": [
-                    8214.519244,
-                    277.895009,
-                    342.18738199999996,
-                    210.54941,
-                    194.205527,
-                    229.987948,
-                    350.33592000000004,
-                    233.642961,
-                    170.33373600000002,
-                    258.160732,
-                    341.585916,
-                    213.116208,
-                    255.470572,
-                    258.64016699999996,
-                    333.85174,
-                    261.431438
+                    10609.201785,
+                    289.442444,
+                    343.010834,
+                    206.322571,
+                    203.915637,
+                    328.957667,
+                    287.024428,
+                    207.625832,
+                    200.472194,
+                    220.634205,
+                    357.054774,
+                    252.03418700000003,
+                    227.471145,
+                    223.146358,
+                    338.58930599999997,
+                    262.73744700000003
                   ]
                 },
                 "processes": {
                   "gtk": {
-                    "cpu_seconds": 4.16,
-                    "rss_mib": 105.73828125
+                    "cpu_seconds": 4.76,
+                    "rss_mib": 109.68359375
                   },
                   "server": {
-                    "cpu_seconds": 1.1,
-                    "rss_mib": 31.03125
+                    "cpu_seconds": 1.14,
+                    "rss_mib": 31.30859375
                   }
                 }
               },
@@ -13738,37 +13774,37 @@
                   90,
                   255
                 ],
-                "complete_frame_ms": 185.12199299584609,
+                "complete_frame_ms": 129.70603900612332,
                 "metrics": {
                   "decoded_updates": 18,
                   "update_intervals_ms": [
-                    8214.519244,
-                    277.895009,
-                    342.18738199999996,
-                    210.54941,
-                    194.205527,
-                    229.987948,
-                    350.33592000000004,
-                    233.642961,
-                    170.33373600000002,
-                    258.160732,
-                    341.585916,
-                    213.116208,
-                    255.470572,
-                    258.64016699999996,
-                    333.85174,
-                    261.431438,
-                    233.389082
+                    10609.201785,
+                    289.442444,
+                    343.010834,
+                    206.322571,
+                    203.915637,
+                    328.957667,
+                    287.024428,
+                    207.625832,
+                    200.472194,
+                    220.634205,
+                    357.054774,
+                    252.03418700000003,
+                    227.471145,
+                    223.146358,
+                    338.58930599999997,
+                    262.73744700000003,
+                    192.179485
                   ]
                 },
                 "processes": {
                   "gtk": {
-                    "cpu_seconds": 4.24,
-                    "rss_mib": 105.73828125
+                    "cpu_seconds": 4.82,
+                    "rss_mib": 109.68359375
                   },
                   "server": {
-                    "cpu_seconds": 1.11,
-                    "rss_mib": 31.03125
+                    "cpu_seconds": 1.14,
+                    "rss_mib": 31.30859375
                   }
                 }
               },
@@ -13783,38 +13819,38 @@
                   90,
                   255
                 ],
-                "complete_frame_ms": 200.27873500657734,
+                "complete_frame_ms": 231.0984440118773,
                 "metrics": {
                   "decoded_updates": 19,
                   "update_intervals_ms": [
-                    8214.519244,
-                    277.895009,
-                    342.18738199999996,
-                    210.54941,
-                    194.205527,
-                    229.987948,
-                    350.33592000000004,
-                    233.642961,
-                    170.33373600000002,
-                    258.160732,
-                    341.585916,
-                    213.116208,
-                    255.470572,
-                    258.64016699999996,
-                    333.85174,
-                    261.431438,
-                    233.389082,
-                    228.580752
+                    10609.201785,
+                    289.442444,
+                    343.010834,
+                    206.322571,
+                    203.915637,
+                    328.957667,
+                    287.024428,
+                    207.625832,
+                    200.472194,
+                    220.634205,
+                    357.054774,
+                    252.03418700000003,
+                    227.471145,
+                    223.146358,
+                    338.58930599999997,
+                    262.73744700000003,
+                    192.179485,
+                    241.241007
                   ]
                 },
                 "processes": {
                   "gtk": {
-                    "cpu_seconds": 4.39,
-                    "rss_mib": 146.08984375
+                    "cpu_seconds": 4.98,
+                    "rss_mib": 150.03515625
                   },
                   "server": {
-                    "cpu_seconds": 1.17,
-                    "rss_mib": 42.09375
+                    "cpu_seconds": 1.19,
+                    "rss_mib": 43.54296875
                   }
                 }
               },
@@ -13829,39 +13865,39 @@
                   90,
                   255
                 ],
-                "complete_frame_ms": 263.8914450071752,
+                "complete_frame_ms": 238.54275199119002,
                 "metrics": {
                   "decoded_updates": 20,
                   "update_intervals_ms": [
-                    8214.519244,
-                    277.895009,
-                    342.18738199999996,
-                    210.54941,
-                    194.205527,
-                    229.987948,
-                    350.33592000000004,
-                    233.642961,
-                    170.33373600000002,
-                    258.160732,
-                    341.585916,
-                    213.116208,
-                    255.470572,
-                    258.64016699999996,
-                    333.85174,
-                    261.431438,
-                    233.389082,
-                    228.580752,
-                    329.2601
+                    10609.201785,
+                    289.442444,
+                    343.010834,
+                    206.322571,
+                    203.915637,
+                    328.957667,
+                    287.024428,
+                    207.625832,
+                    200.472194,
+                    220.634205,
+                    357.054774,
+                    252.03418700000003,
+                    227.471145,
+                    223.146358,
+                    338.58930599999997,
+                    262.73744700000003,
+                    192.179485,
+                    241.241007,
+                    297.828057
                   ]
                 },
                 "processes": {
                   "gtk": {
-                    "cpu_seconds": 4.6,
-                    "rss_mib": 200.36328125
+                    "cpu_seconds": 5.16,
+                    "rss_mib": 204.30859375
                   },
                   "server": {
-                    "cpu_seconds": 1.26,
-                    "rss_mib": 56.15625
+                    "cpu_seconds": 1.25,
+                    "rss_mib": 48.69140625
                   }
                 }
               },
@@ -13876,40 +13912,40 @@
                   90,
                   255
                 ],
-                "complete_frame_ms": 150.96951699524652,
+                "complete_frame_ms": 184.3335199955618,
                 "metrics": {
                   "decoded_updates": 21,
                   "update_intervals_ms": [
-                    8214.519244,
-                    277.895009,
-                    342.18738199999996,
-                    210.54941,
-                    194.205527,
-                    229.987948,
-                    350.33592000000004,
-                    233.642961,
-                    170.33373600000002,
-                    258.160732,
-                    341.585916,
-                    213.116208,
-                    255.470572,
-                    258.64016699999996,
-                    333.85174,
-                    261.431438,
-                    233.389082,
-                    228.580752,
-                    329.2601,
-                    219.096311
+                    10609.201785,
+                    289.442444,
+                    343.010834,
+                    206.322571,
+                    203.915637,
+                    328.957667,
+                    287.024428,
+                    207.625832,
+                    200.472194,
+                    220.634205,
+                    357.054774,
+                    252.03418700000003,
+                    227.471145,
+                    223.146358,
+                    338.58930599999997,
+                    262.73744700000003,
+                    192.179485,
+                    241.241007,
+                    297.828057,
+                    257.487745
                   ]
                 },
                 "processes": {
                   "gtk": {
-                    "cpu_seconds": 4.7,
-                    "rss_mib": 105.73828125
+                    "cpu_seconds": 5.27,
+                    "rss_mib": 109.68359375
                   },
                   "server": {
-                    "cpu_seconds": 1.32,
-                    "rss_mib": 31.03125
+                    "cpu_seconds": 1.31,
+                    "rss_mib": 69.5078125
                   }
                 }
               }
@@ -13956,15 +13992,15 @@
           "details": {
             "restart_identical_ids_preferences_groups": true,
             "generated_profiles": 1000,
-            "load_and_fixture_ready_ms": 270.9270199993625,
-            "search_widget_roundtrip_ms": 22.759430008591153,
+            "load_and_fixture_ready_ms": 278.59954901214223,
+            "search_widget_roundtrip_ms": 23.879090993432328,
             "search_rows": 1
           }
         }
       ],
       "rss_mib": {
-        "gtk": 65.03515625,
-        "rdp_server": 34.0390625
+        "gtk": 64.8203125,
+        "rdp_server": 31.78515625
       },
       "environment": "Owned Weston/Xvfb, real native GTK/GDK peer, actual loopback IronRDP server; generated credentials and frames",
       "limitations": [
@@ -15397,5 +15433,1111 @@
         "No external Windows/GNOME Display Control or RemoteFX qualification"
       ]
     }
+  },
+  "rdp_lifecycle_automation": {
+    "package": "0.1.15",
+    "sha256": {
+      "ruwac": "58f05b7692d335c6c0eb5bb557ecde2b61657e26135709cc6c9a3c6c2f0ddd61",
+      "ruwac-desktop": "6bdcdff7053ccf1f584617f2c80060c90af08731c3ee54c8a79ace138df7d767"
+    },
+    "authenticated_local_rdp": {
+      "cases": [
+        {
+          "id": "RDP-NATIVE-AUTH-3",
+          "status": "PASS",
+          "details": {
+            "server": {
+              "generated_desktop": [
+                320,
+                180
+              ],
+              "security": "TLS verified + CredSSP/NLA",
+              "server": "ironrdp-server 0.13.0"
+            },
+            "connections": [
+              {
+                "active": true,
+                "epoch": 12,
+                "last_pixel": [
+                  63,
+                  179,
+                  90,
+                  255
+                ],
+                "metrics": {
+                  "decoded_updates": 1,
+                  "update_intervals_ms": []
+                },
+                "offers": 0,
+                "pan": [
+                  0.0,
+                  0.0
+                ],
+                "pending": false,
+                "policy": "Bidirectional",
+                "received_generation": 0,
+                "requested_size": [
+                  0,
+                  0
+                ],
+                "size": [
+                  320,
+                  180
+                ],
+                "status": "Connected \u00b7 text and image clipboard sharing",
+                "tab": 1,
+                "transport_id": "rdp-transport_e1b8271a4e344ac99cc9c7df73402565",
+                "viewport": [
+                  663,
+                  580
+                ],
+                "window_width": 1040,
+                "zoom": 1.0,
+                "connect_to_decoded_frame_ms": 213.0025160004152
+              },
+              {
+                "active": true,
+                "epoch": 17,
+                "last_pixel": [
+                  63,
+                  179,
+                  90,
+                  255
+                ],
+                "metrics": {
+                  "decoded_updates": 1,
+                  "update_intervals_ms": []
+                },
+                "offers": 0,
+                "pan": [
+                  0.0,
+                  0.0
+                ],
+                "pending": false,
+                "policy": "Bidirectional",
+                "received_generation": 0,
+                "requested_size": [
+                  0,
+                  0
+                ],
+                "size": [
+                  320,
+                  180
+                ],
+                "status": "Connected \u00b7 text and image clipboard sharing",
+                "tab": 2,
+                "transport_id": "rdp-transport_743ac6ddb00446c794653096a6435ebc",
+                "viewport": [
+                  718,
+                  580
+                ],
+                "window_width": 1040,
+                "zoom": 1.0,
+                "connect_to_decoded_frame_ms": 182.0551379933022
+              },
+              {
+                "active": true,
+                "epoch": 22,
+                "last_pixel": [
+                  63,
+                  179,
+                  90,
+                  255
+                ],
+                "metrics": {
+                  "decoded_updates": 1,
+                  "update_intervals_ms": []
+                },
+                "offers": 0,
+                "pan": [
+                  0.0,
+                  0.0
+                ],
+                "pending": false,
+                "policy": "Bidirectional",
+                "received_generation": 0,
+                "requested_size": [
+                  0,
+                  0
+                ],
+                "size": [
+                  320,
+                  180
+                ],
+                "status": "Connected \u00b7 text and image clipboard sharing",
+                "tab": 3,
+                "transport_id": "rdp-transport_8437dff534cd423ca7456245e001fee9",
+                "viewport": [
+                  718,
+                  580
+                ],
+                "window_width": 1040,
+                "zoom": 1.0,
+                "connect_to_decoded_frame_ms": 185.50172599498183
+              }
+            ],
+            "authentication": "actual CredSSP/NLA",
+            "frames": "decoded live loopback server frames, generated desktop"
+          }
+        },
+        {
+          "id": "RDP-GUI-LIFECYCLE-API",
+          "status": "PASS",
+          "details": {
+            "actual_CredSSP_framebuffer": true,
+            "typed_view_ids": true,
+            "permission_default_and_revocation": true,
+            "read_metadata_no_credentials": true,
+            "background_reconnect_preserves_neighbors_focus_clipboard": true,
+            "saved_profile_open_without_focus": true,
+            "activation_requires_separate_focus_permission": true,
+            "closed_target_rejected": true,
+            "unexpected_or_credential_parameters_rejected": true,
+            "audit_no_private_payload": true,
+            "idempotency_keys_explicitly_refused": true,
+            "owner_keyring_accessed": false
+          }
+        },
+        {
+          "id": "FILES-CLIPBOARD-OWNERSHIP",
+          "status": "PASS",
+          "details": {
+            "native_files_tab": true,
+            "inactive_rdp_offers": 30,
+            "peer_clipboard_unchanged": true
+          }
+        },
+        {
+          "id": "MACHINES-NATIVE-EDITOR",
+          "status": "PASS",
+          "details": {
+            "native_dialogs": true,
+            "cancel_duplicate_confirmed_delete": true,
+            "stable_identity_after_rename_move": true,
+            "multi_endpoint_machine": true,
+            "same_leaf_distinct_machines": true,
+            "persisted_schema": 1
+          }
+        },
+        {
+          "id": "RDP-NATIVE-RESIZE-20",
+          "status": "PASS",
+          "details": {
+            "before": {
+              "decoded_updates": 1,
+              "update_intervals_ms": []
+            },
+            "after": {
+              "decoded_updates": 22,
+              "update_intervals_ms": [
+                10609.201785,
+                289.442444,
+                343.010834,
+                206.322571,
+                203.915637,
+                328.957667,
+                287.024428,
+                207.625832,
+                200.472194,
+                220.634205,
+                357.054774,
+                252.03418700000003,
+                227.471145,
+                223.146358,
+                338.58930599999997,
+                262.73744700000003,
+                192.179485,
+                241.241007,
+                297.828057,
+                257.487745,
+                1030.289076
+              ]
+            },
+            "processes_before": {
+              "gtk": {
+                "cpu_seconds": 2.51,
+                "rss_mib": 82.31640625
+              },
+              "server": {
+                "cpu_seconds": 0.25,
+                "rss_mib": 12.9609375
+              }
+            },
+            "processes_after": {
+              "gtk": {
+                "cpu_seconds": 5.86,
+                "rss_mib": 110.1171875
+              },
+              "server": {
+                "cpu_seconds": 1.42,
+                "rss_mib": 31.78125
+              }
+            },
+            "wall_seconds": 8.079636652997578,
+            "transitions": [
+              {
+                "size": [
+                  640,
+                  480
+                ],
+                "decoded_corner": [
+                  127,
+                  223,
+                  90,
+                  255
+                ],
+                "complete_frame_ms": 130.64495199068915,
+                "metrics": {
+                  "decoded_updates": 2,
+                  "update_intervals_ms": [
+                    10609.201785
+                  ]
+                },
+                "processes": {
+                  "gtk": {
+                    "cpu_seconds": 2.53,
+                    "rss_mib": 85.6171875
+                  },
+                  "server": {
+                    "cpu_seconds": 0.25,
+                    "rss_mib": 13.92578125
+                  }
+                }
+              },
+              {
+                "size": [
+                  2560,
+                  1440
+                ],
+                "decoded_corner": [
+                  255,
+                  159,
+                  90,
+                  255
+                ],
+                "complete_frame_ms": 239.16119999194052,
+                "metrics": {
+                  "decoded_updates": 3,
+                  "update_intervals_ms": [
+                    10609.201785,
+                    289.442444
+                  ]
+                },
+                "processes": {
+                  "gtk": {
+                    "cpu_seconds": 2.71,
+                    "rss_mib": 139.49609375
+                  },
+                  "server": {
+                    "cpu_seconds": 0.32,
+                    "rss_mib": 38.50390625
+                  }
+                }
+              },
+              {
+                "size": [
+                  3000,
+                  1800
+                ],
+                "decoded_corner": [
+                  183,
+                  7,
+                  90,
+                  255
+                ],
+                "complete_frame_ms": 318.1291719956789,
+                "metrics": {
+                  "decoded_updates": 4,
+                  "update_intervals_ms": [
+                    10609.201785,
+                    289.442444,
+                    343.010834
+                  ]
+                },
+                "processes": {
+                  "gtk": {
+                    "cpu_seconds": 2.97,
+                    "rss_mib": 173.45703125
+                  },
+                  "server": {
+                    "cpu_seconds": 0.43,
+                    "rss_mib": 48.91015625
+                  }
+                }
+              },
+              {
+                "size": [
+                  1024,
+                  768
+                ],
+                "decoded_corner": [
+                  255,
+                  255,
+                  90,
+                  255
+                ],
+                "complete_frame_ms": 133.41183800366707,
+                "metrics": {
+                  "decoded_updates": 5,
+                  "update_intervals_ms": [
+                    10609.201785,
+                    289.442444,
+                    343.010834,
+                    206.322571
+                  ]
+                },
+                "processes": {
+                  "gtk": {
+                    "cpu_seconds": 3.07,
+                    "rss_mib": 152.85546875
+                  },
+                  "server": {
+                    "cpu_seconds": 0.49,
+                    "rss_mib": 31.30859375
+                  }
+                }
+              },
+              {
+                "size": [
+                  640,
+                  480
+                ],
+                "decoded_corner": [
+                  127,
+                  223,
+                  90,
+                  255
+                ],
+                "complete_frame_ms": 145.28953499393538,
+                "metrics": {
+                  "decoded_updates": 6,
+                  "update_intervals_ms": [
+                    10609.201785,
+                    289.442444,
+                    343.010834,
+                    206.322571,
+                    203.915637
+                  ]
+                },
+                "processes": {
+                  "gtk": {
+                    "cpu_seconds": 3.15,
+                    "rss_mib": 106.01171875
+                  },
+                  "server": {
+                    "cpu_seconds": 0.51,
+                    "rss_mib": 31.30859375
+                  }
+                }
+              },
+              {
+                "size": [
+                  2560,
+                  1440
+                ],
+                "decoded_corner": [
+                  255,
+                  159,
+                  90,
+                  255
+                ],
+                "complete_frame_ms": 301.24570199404843,
+                "metrics": {
+                  "decoded_updates": 7,
+                  "update_intervals_ms": [
+                    10609.201785,
+                    289.442444,
+                    343.010834,
+                    206.322571,
+                    203.915637,
+                    328.957667
+                  ]
+                },
+                "processes": {
+                  "gtk": {
+                    "cpu_seconds": 3.32,
+                    "rss_mib": 147.03125
+                  },
+                  "server": {
+                    "cpu_seconds": 0.56,
+                    "rss_mib": 43.54296875
+                  }
+                }
+              },
+              {
+                "size": [
+                  3000,
+                  1800
+                ],
+                "decoded_corner": [
+                  183,
+                  7,
+                  90,
+                  255
+                ],
+                "complete_frame_ms": 227.51594000146724,
+                "metrics": {
+                  "decoded_updates": 8,
+                  "update_intervals_ms": [
+                    10609.201785,
+                    289.442444,
+                    343.010834,
+                    206.322571,
+                    203.915637,
+                    328.957667,
+                    287.024428
+                  ]
+                },
+                "processes": {
+                  "gtk": {
+                    "cpu_seconds": 3.54,
+                    "rss_mib": 201.3046875
+                  },
+                  "server": {
+                    "cpu_seconds": 0.65,
+                    "rss_mib": 57.609375
+                  }
+                }
+              },
+              {
+                "size": [
+                  1024,
+                  768
+                ],
+                "decoded_corner": [
+                  255,
+                  255,
+                  90,
+                  255
+                ],
+                "complete_frame_ms": 147.32861600350589,
+                "metrics": {
+                  "decoded_updates": 9,
+                  "update_intervals_ms": [
+                    10609.201785,
+                    289.442444,
+                    343.010834,
+                    206.322571,
+                    203.915637,
+                    328.957667,
+                    287.024428,
+                    207.625832
+                  ]
+                },
+                "processes": {
+                  "gtk": {
+                    "cpu_seconds": 3.64,
+                    "rss_mib": 109.6796875
+                  },
+                  "server": {
+                    "cpu_seconds": 0.71,
+                    "rss_mib": 31.30859375
+                  }
+                }
+              },
+              {
+                "size": [
+                  640,
+                  480
+                ],
+                "decoded_corner": [
+                  127,
+                  223,
+                  90,
+                  255
+                ],
+                "complete_frame_ms": 145.15916899836157,
+                "metrics": {
+                  "decoded_updates": 10,
+                  "update_intervals_ms": [
+                    10609.201785,
+                    289.442444,
+                    343.010834,
+                    206.322571,
+                    203.915637,
+                    328.957667,
+                    287.024428,
+                    207.625832,
+                    200.472194
+                  ]
+                },
+                "processes": {
+                  "gtk": {
+                    "cpu_seconds": 3.71,
+                    "rss_mib": 109.6796875
+                  },
+                  "server": {
+                    "cpu_seconds": 0.71,
+                    "rss_mib": 31.30859375
+                  }
+                }
+              },
+              {
+                "size": [
+                  2560,
+                  1440
+                ],
+                "decoded_corner": [
+                  255,
+                  159,
+                  90,
+                  255
+                ],
+                "complete_frame_ms": 208.45300301152747,
+                "metrics": {
+                  "decoded_updates": 11,
+                  "update_intervals_ms": [
+                    10609.201785,
+                    289.442444,
+                    343.010834,
+                    206.322571,
+                    203.915637,
+                    328.957667,
+                    287.024428,
+                    207.625832,
+                    200.472194,
+                    220.634205
+                  ]
+                },
+                "processes": {
+                  "gtk": {
+                    "cpu_seconds": 3.87,
+                    "rss_mib": 150.03125
+                  },
+                  "server": {
+                    "cpu_seconds": 0.76,
+                    "rss_mib": 42.37109375
+                  }
+                }
+              },
+              {
+                "size": [
+                  3000,
+                  1800
+                ],
+                "decoded_corner": [
+                  183,
+                  7,
+                  90,
+                  255
+                ],
+                "complete_frame_ms": 284.6002000005683,
+                "metrics": {
+                  "decoded_updates": 12,
+                  "update_intervals_ms": [
+                    10609.201785,
+                    289.442444,
+                    343.010834,
+                    206.322571,
+                    203.915637,
+                    328.957667,
+                    287.024428,
+                    207.625832,
+                    200.472194,
+                    220.634205,
+                    357.054774
+                  ]
+                },
+                "processes": {
+                  "gtk": {
+                    "cpu_seconds": 4.1,
+                    "rss_mib": 204.3046875
+                  },
+                  "server": {
+                    "cpu_seconds": 0.86,
+                    "rss_mib": 62.97265625
+                  }
+                }
+              },
+              {
+                "size": [
+                  1024,
+                  768
+                ],
+                "decoded_corner": [
+                  255,
+                  255,
+                  90,
+                  255
+                ],
+                "complete_frame_ms": 172.83153100288473,
+                "metrics": {
+                  "decoded_updates": 13,
+                  "update_intervals_ms": [
+                    10609.201785,
+                    289.442444,
+                    343.010834,
+                    206.322571,
+                    203.915637,
+                    328.957667,
+                    287.024428,
+                    207.625832,
+                    200.472194,
+                    220.634205,
+                    357.054774,
+                    252.03418700000003
+                  ]
+                },
+                "processes": {
+                  "gtk": {
+                    "cpu_seconds": 4.19,
+                    "rss_mib": 109.68359375
+                  },
+                  "server": {
+                    "cpu_seconds": 0.93,
+                    "rss_mib": 31.08984375
+                  }
+                }
+              },
+              {
+                "size": [
+                  640,
+                  480
+                ],
+                "decoded_corner": [
+                  127,
+                  223,
+                  90,
+                  255
+                ],
+                "complete_frame_ms": 181.29355099517852,
+                "metrics": {
+                  "decoded_updates": 14,
+                  "update_intervals_ms": [
+                    10609.201785,
+                    289.442444,
+                    343.010834,
+                    206.322571,
+                    203.915637,
+                    328.957667,
+                    287.024428,
+                    207.625832,
+                    200.472194,
+                    220.634205,
+                    357.054774,
+                    252.03418700000003,
+                    227.471145
+                  ]
+                },
+                "processes": {
+                  "gtk": {
+                    "cpu_seconds": 4.28,
+                    "rss_mib": 109.68359375
+                  },
+                  "server": {
+                    "cpu_seconds": 0.93,
+                    "rss_mib": 31.30859375
+                  }
+                }
+              },
+              {
+                "size": [
+                  2560,
+                  1440
+                ],
+                "decoded_corner": [
+                  255,
+                  159,
+                  90,
+                  255
+                ],
+                "complete_frame_ms": 208.03062598861288,
+                "metrics": {
+                  "decoded_updates": 15,
+                  "update_intervals_ms": [
+                    10609.201785,
+                    289.442444,
+                    343.010834,
+                    206.322571,
+                    203.915637,
+                    328.957667,
+                    287.024428,
+                    207.625832,
+                    200.472194,
+                    220.634205,
+                    357.054774,
+                    252.03418700000003,
+                    227.471145,
+                    223.146358
+                  ]
+                },
+                "processes": {
+                  "gtk": {
+                    "cpu_seconds": 4.44,
+                    "rss_mib": 150.03515625
+                  },
+                  "server": {
+                    "cpu_seconds": 0.98,
+                    "rss_mib": 43.54296875
+                  }
+                }
+              },
+              {
+                "size": [
+                  3000,
+                  1800
+                ],
+                "decoded_corner": [
+                  183,
+                  7,
+                  90,
+                  255
+                ],
+                "complete_frame_ms": 284.7731960064266,
+                "metrics": {
+                  "decoded_updates": 16,
+                  "update_intervals_ms": [
+                    10609.201785,
+                    289.442444,
+                    343.010834,
+                    206.322571,
+                    203.915637,
+                    328.957667,
+                    287.024428,
+                    207.625832,
+                    200.472194,
+                    220.634205,
+                    357.054774,
+                    252.03418700000003,
+                    227.471145,
+                    223.146358,
+                    338.58930599999997
+                  ]
+                },
+                "processes": {
+                  "gtk": {
+                    "cpu_seconds": 4.65,
+                    "rss_mib": 204.30859375
+                  },
+                  "server": {
+                    "cpu_seconds": 1.08,
+                    "rss_mib": 57.609375
+                  }
+                }
+              },
+              {
+                "size": [
+                  1024,
+                  768
+                ],
+                "decoded_corner": [
+                  255,
+                  255,
+                  90,
+                  255
+                ],
+                "complete_frame_ms": 184.6495070058154,
+                "metrics": {
+                  "decoded_updates": 17,
+                  "update_intervals_ms": [
+                    10609.201785,
+                    289.442444,
+                    343.010834,
+                    206.322571,
+                    203.915637,
+                    328.957667,
+                    287.024428,
+                    207.625832,
+                    200.472194,
+                    220.634205,
+                    357.054774,
+                    252.03418700000003,
+                    227.471145,
+                    223.146358,
+                    338.58930599999997,
+                    262.73744700000003
+                  ]
+                },
+                "processes": {
+                  "gtk": {
+                    "cpu_seconds": 4.76,
+                    "rss_mib": 109.68359375
+                  },
+                  "server": {
+                    "cpu_seconds": 1.14,
+                    "rss_mib": 31.30859375
+                  }
+                }
+              },
+              {
+                "size": [
+                  640,
+                  480
+                ],
+                "decoded_corner": [
+                  127,
+                  223,
+                  90,
+                  255
+                ],
+                "complete_frame_ms": 129.70603900612332,
+                "metrics": {
+                  "decoded_updates": 18,
+                  "update_intervals_ms": [
+                    10609.201785,
+                    289.442444,
+                    343.010834,
+                    206.322571,
+                    203.915637,
+                    328.957667,
+                    287.024428,
+                    207.625832,
+                    200.472194,
+                    220.634205,
+                    357.054774,
+                    252.03418700000003,
+                    227.471145,
+                    223.146358,
+                    338.58930599999997,
+                    262.73744700000003,
+                    192.179485
+                  ]
+                },
+                "processes": {
+                  "gtk": {
+                    "cpu_seconds": 4.82,
+                    "rss_mib": 109.68359375
+                  },
+                  "server": {
+                    "cpu_seconds": 1.14,
+                    "rss_mib": 31.30859375
+                  }
+                }
+              },
+              {
+                "size": [
+                  2560,
+                  1440
+                ],
+                "decoded_corner": [
+                  255,
+                  159,
+                  90,
+                  255
+                ],
+                "complete_frame_ms": 231.0984440118773,
+                "metrics": {
+                  "decoded_updates": 19,
+                  "update_intervals_ms": [
+                    10609.201785,
+                    289.442444,
+                    343.010834,
+                    206.322571,
+                    203.915637,
+                    328.957667,
+                    287.024428,
+                    207.625832,
+                    200.472194,
+                    220.634205,
+                    357.054774,
+                    252.03418700000003,
+                    227.471145,
+                    223.146358,
+                    338.58930599999997,
+                    262.73744700000003,
+                    192.179485,
+                    241.241007
+                  ]
+                },
+                "processes": {
+                  "gtk": {
+                    "cpu_seconds": 4.98,
+                    "rss_mib": 150.03515625
+                  },
+                  "server": {
+                    "cpu_seconds": 1.19,
+                    "rss_mib": 43.54296875
+                  }
+                }
+              },
+              {
+                "size": [
+                  3000,
+                  1800
+                ],
+                "decoded_corner": [
+                  183,
+                  7,
+                  90,
+                  255
+                ],
+                "complete_frame_ms": 238.54275199119002,
+                "metrics": {
+                  "decoded_updates": 20,
+                  "update_intervals_ms": [
+                    10609.201785,
+                    289.442444,
+                    343.010834,
+                    206.322571,
+                    203.915637,
+                    328.957667,
+                    287.024428,
+                    207.625832,
+                    200.472194,
+                    220.634205,
+                    357.054774,
+                    252.03418700000003,
+                    227.471145,
+                    223.146358,
+                    338.58930599999997,
+                    262.73744700000003,
+                    192.179485,
+                    241.241007,
+                    297.828057
+                  ]
+                },
+                "processes": {
+                  "gtk": {
+                    "cpu_seconds": 5.16,
+                    "rss_mib": 204.30859375
+                  },
+                  "server": {
+                    "cpu_seconds": 1.25,
+                    "rss_mib": 48.69140625
+                  }
+                }
+              },
+              {
+                "size": [
+                  1024,
+                  768
+                ],
+                "decoded_corner": [
+                  255,
+                  255,
+                  90,
+                  255
+                ],
+                "complete_frame_ms": 184.3335199955618,
+                "metrics": {
+                  "decoded_updates": 21,
+                  "update_intervals_ms": [
+                    10609.201785,
+                    289.442444,
+                    343.010834,
+                    206.322571,
+                    203.915637,
+                    328.957667,
+                    287.024428,
+                    207.625832,
+                    200.472194,
+                    220.634205,
+                    357.054774,
+                    252.03418700000003,
+                    227.471145,
+                    223.146358,
+                    338.58930599999997,
+                    262.73744700000003,
+                    192.179485,
+                    241.241007,
+                    297.828057,
+                    257.487745
+                  ]
+                },
+                "processes": {
+                  "gtk": {
+                    "cpu_seconds": 5.27,
+                    "rss_mib": 109.68359375
+                  },
+                  "server": {
+                    "cpu_seconds": 1.31,
+                    "rss_mib": 69.5078125
+                  }
+                }
+              }
+            ],
+            "negotiation": "actual Display Control DVC plus server DeactivateAll/reactivation",
+            "resize_storm": {
+              "gtk_allocation_changes": 20,
+              "settled_size": [
+                784,
+                580
+              ],
+              "stable_after_800ms": true
+            },
+            "post_resize_clipboard": true,
+            "other_tabs_unchanged": true,
+            "codec": "raw bitmap fixture; RemoteFX/GNOME issue remains a separate gate"
+          }
+        },
+        {
+          "id": "RDP-PROFILE-KEYRING-PREFERENCES",
+          "status": "PASS",
+          "details": {
+            "normal_sidebar_connection": "actual CredSSP with disposable Secret Service lookup and verified fixture CA",
+            "decoded_frame": [
+              784,
+              580
+            ],
+            "runtime_preferences_saved": true,
+            "profile_protected_then_released": true,
+            "owner_secrets_accessed": false,
+            "native_toolbar": {
+              "visible_theme_icons": 7,
+              "zoom_fit": true,
+              "disconnect_reconnect_authentication": true,
+              "neighbor_transports_preserved": true,
+              "actual_GTK_render": "rdp-toolbar.png",
+              "physical_input": false
+            }
+          }
+        },
+        {
+          "id": "MACHINES-RESTART-1000",
+          "status": "PASS",
+          "details": {
+            "restart_identical_ids_preferences_groups": true,
+            "generated_profiles": 1000,
+            "load_and_fixture_ready_ms": 278.59954901214223,
+            "search_widget_roundtrip_ms": 23.879090993432328,
+            "search_rows": 1
+          }
+        }
+      ],
+      "rss_mib": {
+        "gtk": 64.8203125,
+        "rdp_server": 31.78515625
+      },
+      "environment": "Owned Weston/Xvfb, real native GTK/GDK peer, actual loopback IronRDP server; generated credentials and frames",
+      "limitations": [
+        "No external Windows/GNOME login",
+        "No physical keyboard/touchpad acceptance",
+        "No external Windows/GNOME Display Control or RemoteFX qualification"
+      ]
+    },
+    "actual_ssh_gui_forward": {
+      "results": [
+        {
+          "id": "REMOTE-GUI-NO-AUTOSTART",
+          "status": "PASS",
+          "actual_authorized_SSH": true,
+          "missing_GUI_typed_error": true,
+          "no_remote_daemon_started": true
+        },
+        {
+          "id": "REMOTE-GUI-AUTHENTICATED-FORWARD",
+          "status": "PASS",
+          "actual_SSH_and_Unix_socket_forward": true,
+          "same_UID_checks_retained": true,
+          "metadata_and_exact_view_focus": true,
+          "runtime_permission_revocation": true,
+          "RDP_control_separate_permission": true,
+          "local_owned_GTK_rendering": true,
+          "remote_desktop_rendering_claim": false
+        },
+        {
+          "id": "REMOTE-GUI-DISCONNECT-NO-FALLBACK",
+          "status": "PASS",
+          "closed_forward_typed_error": true,
+          "no_implicit_launch_or_target_change": true
+        }
+      ],
+      "hashes": {
+        "ruwac": "58f05b7692d335c6c0eb5bb557ecde2b61657e26135709cc6c9a3c6c2f0ddd61",
+        "ruwac-desktop": "6bdcdff7053ccf1f584617f2c80060c90af08731c3ee54c8a79ace138df7d767"
+      },
+      "scope": "Real authorized SSH via owned Unix socket forwarding to the local isolated GTK compositor; no physical remote desktop or external RDP login claim"
+    },
+    "scope": "Actual SSH to EVF with owned forward to local GTK; no remote graphical seat or external login claim"
   }
 }

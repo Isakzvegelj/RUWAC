@@ -782,36 +782,7 @@ impl RdpView {
         let weak = Rc::downgrade(&v);
         connect.connect_clicked(move |_| {
             if let Some(v) = weak.upgrade() {
-                let address = host.text();
-                let (h, p) = match crate::profiles::endpoint(&address, 3389) {
-                    Ok(endpoint) => endpoint,
-                    Err(e) => {
-                        v.status.set_text(&e);
-                        return;
-                    }
-                };
-                if h.is_empty() || p == 0 || user.text().is_empty() || secret.text().is_empty() {
-                    v.status
-                        .set_text("Host, user and secret reference are required");
-                    return;
-                }
-                v.close();
-                let c = Connection::start(Profile {
-                    host: h,
-                    port: p,
-                    user: user.text().into(),
-                    reference: secret.text().into(),
-                    reconnect: v.reconnect.get(),
-                    ca: if ca.text().is_empty() {
-                        None
-                    } else {
-                        Some(ca.text().into())
-                    },
-                });
-                *v.bridge.borrow_mut() = c.state.lock().unwrap().bridge.clone();
-                *v.connection.borrow_mut() = Some(c);
-                v.focus();
-                v.status.set_text("Connecting with certificate validation…");
+                if let Err(error)=v.begin_connect(true){v.status.set_text(&error);}
             }
         });
         let weak = Rc::downgrade(&v);
@@ -1369,6 +1340,24 @@ impl RdpView {
         self.fullscreen.set(p.preferences.fullscreen);
         self.fixture_policy(p.preferences.clipboard);
         self.canvas();
+    }
+    fn begin_connect(&self, activate:bool)->Result<(),String> {
+        let address=self.entries[0].text();
+        let (host,port)=crate::profiles::endpoint(&address,3389)?;
+        let user=self.entries[1].text();let reference=self.entries[2].text();let ca=self.entries[3].text();
+        if user.is_empty()||reference.is_empty(){self.status.set_text("Host, user and secret reference are required");return Err("Configured user and credential reference required".into());}
+        self.close();
+        let connection=Connection::start(Profile {host,port,user:user.into(),reference:reference.into(),reconnect:self.reconnect.get(),ca:if ca.is_empty(){None}else{Some(ca.into())}});
+        *self.bridge.borrow_mut()=connection.state.lock().unwrap().bridge.clone();
+        *self.connection.borrow_mut()=Some(connection);
+        if activate {self.focus();}
+        self.status.set_text("Connecting with certificate validation…");Ok(())
+    }
+    pub fn automation_reconnect(&self)->Result<(),String> {self.begin_connect(false)}
+    pub fn metadata(&self)->serde_json::Value {
+        let status=self.status.text();let connection=self.connection.borrow();
+        let phase=if connection.is_none(){"disconnected"}else if status.starts_with("Connected"){"connected"}else if status.starts_with("Connecting"){"connecting"}else if status.starts_with("Reconnecting"){"reconnecting"}else if status.starts_with("Display")||status.starts_with("Server reactivating"){"display_change"}else{"error"};
+        serde_json::json!({"id":self.root.widget_name().as_str(),"phase":phase,"size":self.size.get(),"transport_id":connection.as_ref().map(|c|c.id.as_str()),"decoded_updates":connection.as_ref().map(|c|c.state.lock().unwrap().frames).unwrap_or(0),"clipboard_owner":self.broker.borrow().active()==Some(self.id.as_str()),"profile":self.profile_metadata.borrow().as_ref().map(|p|p.id.clone())})
     }
     pub fn connect_profile(&self) {
         fn find(w: &gtk::Widget) -> Option<gtk::Button> {

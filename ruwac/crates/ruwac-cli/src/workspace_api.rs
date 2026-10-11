@@ -2,27 +2,28 @@
 use ruwac_protocol::{Error, read_frame, request, response, write_frame};
 use serde_json::{Value, json};
 use std::{io, path::Path, sync::mpsc, time::Duration};
-pub fn run(socket: &Path, args: &[String]) -> io::Result<Value> {
-    let bad = || {
-        io::Error::other("workspace describe|list|activate --id tab_ID|focus --id view_ID [--json]")
+pub fn parse(namespace: &str, args: &[String]) -> io::Result<ruwac_protocol::Request> {
+    let bad=||io::Error::other("Explicit workspace/RDP operation and target required; use --help");
+    let verb=args.first().ok_or_else(bad)?;
+    let mut rest=&args[1..];
+    if rest.last().is_some_and(|x|x=="--json"){rest=&rest[..rest.len()-1];}
+    let params=match (namespace,verb.as_str()) {
+        ("workspace","describe"|"list")|("rdp","list") if rest.is_empty()=>json!({}),
+        ("workspace","activate"|"focus")|("rdp","query"|"reconnect"|"disconnect") if rest.len()==2&&rest[0]=="--id"=>{
+            let kind=if namespace=="workspace"&&verb=="activate" {"tab"}else{"view"};
+            if !ruwac_protocol::valid_id(&rest[1],kind){return Err(bad());}
+            json!({"id":rest[1]})
+        },
+        ("rdp","open") if (rest.len()==2||rest.len()==3&&rest[2]=="--activate")&&rest[0]=="--profile"=>{
+            if !ruwac_protocol::valid_id(&rest[1],"endpoint"){return Err(bad());}
+            json!({"profile":rest[1],"activate":rest.len()==3})
+        },
+        _=>return Err(bad()),
     };
-    let verb = args.first().ok_or_else(bad)?;
-    let mut rest = &args[1..];
-    if rest.last().is_some_and(|x| x == "--json") {
-        rest = &rest[..rest.len() - 1];
-    }
-    let (method, params) = match verb.as_str() {
-        "describe" | "list" if rest.is_empty() => (format!("workspace.{verb}"), json!({})),
-        "activate" | "focus" if rest.len() == 2 && rest[0] == "--id" => {
-            let kind = if verb == "activate" { "tab" } else { "view" };
-            if !ruwac_protocol::valid_id(&rest[1], kind) {
-                return Err(bad());
-            }
-            (format!("workspace.{verb}"), json!({"id":rest[1]}))
-        }
-        _ => return Err(bad()),
-    };
-    let r = request(&method, params);
+    Ok(request(&format!("{namespace}.{verb}"),params))
+}
+pub fn exchange(socket:&Path,r:&ruwac_protocol::Request)->io::Result<Value> {
+    let r=r.clone();
     let id = r.id.clone();
     let path = socket.with_extension("gui.sock");
     let (tx, rx) = mpsc::sync_channel(1);
@@ -64,4 +65,16 @@ pub fn run(socket: &Path, args: &[String]) -> io::Result<Value> {
             )),
         ),
     })
+}
+
+#[cfg(test)] mod tests {
+ use super::*;
+ #[test] fn gui_commands_require_typed_explicit_targets_and_exact_options() {
+  let view=ruwac_protocol::id("view");let profile=ruwac_protocol::id("endpoint");
+  assert_eq!(parse("rdp",&["query".into(),"--id".into(),view.clone()]).unwrap().params["id"],view);
+  assert_eq!(parse("rdp",&["open".into(),"--profile".into(),profile,"--activate".into(),"--json".into()]).unwrap().params["activate"],true);
+  assert!(parse("rdp",&["disconnect".into()]).is_err());
+  assert!(parse("rdp",&["open".into(),"--profile".into(),view]).is_err());
+  assert!(parse("workspace",&["list".into(),"extra".into()]).is_err());
+ }
 }

@@ -14,13 +14,13 @@ The full product is not yet complete. A runnable source prerelease and isolated 
 | T-08 history/internal buffer | Canonical history, paged capture, independent internal/system clipboard tests | PASS bounded fixture |
 | T-09 SSH/nested terminals | Real authorized SSH remote-PTY detach/reattach and Unicode | PARTIAL: actual 2–5 RUWAC layers pass; mixed GNU Screen/tmux combinations remain |
 | T-10 performance | Retained matched 1/5/20/40-pane measurements | PARTIAL: current idle-qualified 30-trial acceptance |
-| A-01 negotiation/discovery | Existing v0 schema/capabilities/typed errors | PARTIAL: describe/host and local GUI list/focus implemented; workspace open/restore and RDP automation remain open |
+| A-01 negotiation/discovery | Existing v0 schema/capabilities/typed errors | PARTIAL: describe/local GUI targeting and typed RDP lifecycle over actual SSH implemented; host inventory and workspace open/restore remain |
 | A-02 literal input | Unicode, quotes, shell metacharacters and separate Enter | PASS |
 | A-03 concurrent routes | Idempotency, focus changes, stale IDs | PASS |
 | A-04 non-TTY/SSH | Real --host JSON/file control and three SSH PTY cycles | PASS authorized SSH fixture; endpoint provisioning remains explicit |
 | A-05 capture/wait/events | Bounded capture, event subscription, revision and wait tests | PASS |
 | A-06 socket/backpressure | Owned daemon socket, malformed frames, concurrency limits | PARTIAL: same-UID peer verification implemented; further fuzz/soak |
-| A-07 GUI control | Explicit unavailable response and independent headless graph | PARTIAL: permission-scoped local GUI targeting implemented; RDP commands, GUI events and remote GUI control remain open |
+| A-07 GUI control | Explicit unavailable response and independent headless graph | PARTIAL: independent permission-scoped focus/RDP lifecycle over actual SSH validated; GUI events and remote input remain |
 | R-01 Windows | Authenticated loopback is implemented | BLOCKED: authorized Windows endpoint identified; credential/trust qualification pending |
 | R-02 Fedora GNOME | Authenticated loopback is implemented | BLOCKED: authorized GNOME endpoint identified; credential/certificate identity pending |
 | R-03 independent tabs | Three authenticated loopback tabs; 200 switches/450 inactive offers | PARTIAL: external-host qualification |

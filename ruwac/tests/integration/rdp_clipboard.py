@@ -24,7 +24,7 @@ def focus(who):
  raise AssertionError('Isolated compositor focus failed')
 def case(name,fn):
  if a.mixed_only and name not in {'RDP-NATIVE-AUTH-3','MIXED-NATIVE-RDP-TERMINAL','FILES-CLIPBOARD-OWNERSHIP','GUI-IPC-BACKGROUND-RDP-OWNERSHIP'}:return
- if a.r5_only and name not in {"RDP-NATIVE-AUTH-3","MACHINES-NATIVE-EDITOR","RDP-NATIVE-RESIZE-20","MACHINES-RESTART-1000","FILES-CLIPBOARD-OWNERSHIP","RDP-PROFILE-KEYRING-PREFERENCES"}:return
+ if a.r5_only and name not in {"RDP-NATIVE-AUTH-3","MACHINES-NATIVE-EDITOR","RDP-NATIVE-RESIZE-20","MACHINES-RESTART-1000","FILES-CLIPBOARD-OWNERSHIP","RDP-PROFILE-KEYRING-PREFERENCES","RDP-GUI-LIFECYCLE-API"}:return
  try:results.append({'id':name,'status':'PASS','details':fn()});print(name,'PASS',flush=True)
  except Exception as e:results.append({'id':name,'status':'FAIL','error':str(e),'traceback':traceback.format_exc()});print(name,'FAIL',str(e),flush=True)
 def digest(data):return hashlib.sha256(data).hexdigest()
@@ -53,6 +53,56 @@ try:
    started=time.perf_counter();command('gui','rdp-open',port=port);r=spike.eventually(lambda:r if (r:=command('gui','rdp-inspect',rdp=tab)).get('size')==[320,180] else False,20);assert r['status'].startswith('Connected'),r;r['connect_to_decoded_frame_ms']=(time.perf_counter()-started)*1000;connections.append(r)
   return {'server':ready,'connections':connections,'authentication':'actual CredSSP/NLA','frames':'decoded live loopback server frames, generated desktop'}
  case('RDP-NATIVE-AUTH-3',lifecycle)
+ def lifecycle_api():
+  def api(verb,*args,ok=True):
+   r=subprocess.run([a.binary,'--socket',str(sock),'rdp',verb,*args,'--json'],env=env,capture_output=True,text=True,timeout=8)
+   assert (r.returncode==0)==ok,(verb,r.stdout,r.stderr);v=json.loads(r.stdout);assert v['version']==0 and v['id'];return v.get('result',v.get('error'))
+  listing=api('list');assert len(listing['views'])==3
+  ids=[v['id']for v in listing['views']];assert all(v['phase']=='connected'and v['decoded_updates']>0 for v in listing['views'])
+  assert 'secret_reference'not in json.dumps(listing)and str(root)not in json.dumps(listing)
+  assert api('disconnect','--id',ids[0],ok=False)['code']=='PERMISSION_DENIED'
+  command('gui','rdp-permission',enabled=True);command('gui','rdp-switch',rdp=1);focus('gui')
+  before=command('gui','inspect');neighbors=[api('query','--id',vid)['transport_id']for vid in ids[1:]];old=api('query','--id',ids[0])['transport_id']
+  assert api('reconnect','--id',ids[0],ok=False)['code']=='INVALID_PROFILE'
+  assert api('query','--id',ids[0])['transport_id']==old
+  assert [api('query','--id',vid)['transport_id']for vid in ids[1:]]==neighbors
+  assert command('gui','inspect')['selected_tab']==before['selected_tab']and command('gui','inspect')['clipboard_owner']==before['clipboard_owner']
+  api_dir=root/'api-server';api_dir.mkdir(mode=0o700)
+  for name in ['cert.pem','key.pem']:(api_dir/name).write_bytes((root/name).read_bytes());(api_dir/name).chmod(0o600)
+  api_server=start([a.server,str(api_dir)],'api-server');spike.eventually(lambda:(api_dir/'server-ready.json').exists(),10);api_ready=json.loads((api_dir/'server-ready.json').read_text())
+  reference='generated-api-'+root.name
+  r=command('gui','profile-editor',operation='new',fields={'0':'R16 API profile','1':'Generated automation','3':'127.0.0.1:'+str(api_ready['ports'][0]),'4':'fixture','9':reference,'10':str(root/'cert.pem'),'13':0});assert not r['error'],r
+  item=next(p for p in r['items']if p['name']=='R16 API profile')
+  subprocess.run(['secret-tool','store','--label=RUWAC disposable API test','application','RUWAC','profile',reference],input=b'generated-local-only',env=env,check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=10)
+  for method,params,error,key in [
+   ('rdp.open',{'profile':item['id'],'password':'PRIVATE-API-AUDIT-SENTINEL'},'INVALID_TARGET',None),
+   ('rdp.open',{'profile':item['id'],'activate':'yes'},'INVALID_TARGET',None),
+   ('rdp.list',{'password':'PRIVATE-API-AUDIT-SENTINEL'},'INVALID_REQUEST',None),
+   ('rdp.open',{'profile':item['id']},'INVALID_REQUEST','reject-gui-key')]:
+   with spike.Client(sock.with_suffix('.gui.sock'))as client:client.call(method,params,error=error,key=key)
+  assert 'PRIVATE-API-AUDIT-SENTINEL'not in(root/'gui.log').read_text()
+  command('gui','workspace-permission',enabled=False)
+  assert api('open','--profile',item['id'],'--activate',ok=False)['code']=='PERMISSION_DENIED';assert len(api('list')['views'])==3
+  command('gui','rdp-switch',rdp=1);focus('peer');sentinel=b'R16 untouched desktop clipboard';(root/'api-sentinel.txt').write_bytes(sentinel);command('peer','set-text',file='api-sentinel.txt');focus('gui');before=command('gui','inspect')
+  opened=api('open','--profile',item['id']);vid=opened['id'];assert len(api('list')['views'])==4
+  spike.eventually(lambda:api('query','--id',vid)['phase']=='connected'and api('query','--id',vid)['decoded_updates']>0,20)
+  assert command('gui','inspect')['selected_tab']==before['selected_tab']and command('gui','inspect')['clipboard_owner']==before['clipboard_owner']
+  assert not api('query','--id',vid)['clipboard_owner']
+  all_neighbors=[api('query','--id',x)['transport_id']for x in ids];first_transport=api('query','--id',vid)['transport_id']
+  api('disconnect','--id',vid);api('reconnect','--id',vid);spike.eventually(lambda:api('query','--id',vid)['phase']=='connected',20)
+  assert api('query','--id',vid)['transport_id']!=first_transport and [api('query','--id',x)['transport_id']for x in ids]==all_neighbors
+  assert command('gui','inspect')['selected_tab']==before['selected_tab']and command('gui','inspect')['clipboard_owner']==before['clipboard_owner']
+  focus('peer');assert command('peer','read-text')['sha256']==digest(sentinel)
+  command('gui','rdp-permission',enabled=False);assert api('disconnect','--id',vid,ok=False)['code']=='PERMISSION_DENIED';assert api('query','--id',vid)['phase']=='connected'
+  command('gui','rdp-permission',enabled=True);api('disconnect','--id',vid)
+  state=json.loads(subprocess.check_output([a.binary,'--socket',str(sock),'workspace','list','--json'],env=env))['result'];tab=next(v['tab']for v in state['views']if v['id']==vid);index=next(i for i,p in enumerate(state['tabs'])if p['id']==tab)
+  command('gui','close-tab',tab=index);assert api('query','--id',vid,ok=False)['code']=='STALE_TARGET'
+  command('gui','profiles',search='R16 API profile');deleted=command('gui','profile-editor',operation='edit',response='delete',confirm=True);assert not any(p['id']==item['id']for p in deleted['items'])
+  subprocess.run(['secret-tool','clear','application','RUWAC','profile',reference],env=env,check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=10)
+  api_server.terminate();api_server.wait(timeout=5)
+  command('gui','profiles',search='');command('gui','rdp-permission',enabled=False);command('gui','rdp-switch',rdp=0)
+  return {'actual_CredSSP_framebuffer':True,'typed_view_ids':True,'permission_default_and_revocation':True,'read_metadata_no_credentials':True,'background_reconnect_preserves_neighbors_focus_clipboard':True,'saved_profile_open_without_focus':True,'activation_requires_separate_focus_permission':True,'closed_target_rejected':True,'unexpected_or_credential_parameters_rejected':True,'audit_no_private_payload':True,'idempotency_keys_explicitly_refused':True,'owner_keyring_accessed':False}
+ case('RDP-GUI-LIFECYCLE-API',lifecycle_api)
  def background_ipc():
   focus('gui');command('gui','rdp-switch',rdp=0);command('gui','workspace-permission',enabled=True)
   sentinel=b'Foreground GDK peer owns clipboard';remote=b'Authorized loopback RDP background offer';(root/'background-local.txt').write_bytes(sentinel);(root/'background-remote.txt').write_bytes(remote)

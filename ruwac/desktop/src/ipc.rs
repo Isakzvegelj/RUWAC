@@ -193,7 +193,7 @@ impl Server {
                                     } else if r.idempotency_key.is_some() {
                                         Err(Error::new(
                                             "INVALID_REQUEST",
-                                            "GUI focus operations do not accept idempotency keys",
+                                            "GUI operations do not accept idempotency keys",
                                         ))
                                     } else if stopped.load(Ordering::SeqCst) {
                                         Err(Error::new("GUI_UNAVAILABLE", "GUI is closing"))

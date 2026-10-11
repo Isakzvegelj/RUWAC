@@ -599,7 +599,7 @@ fn acquire(
 }
 pub fn sidebar(
     open: impl Fn(Profile, PreferenceSink, ConnectionLease) + 'static,
-) -> (gtk::Box, gtk::SearchEntry, ProfileRestorer) {
+) -> (gtk::Box, gtk::SearchEntry, ProfileRestorer, ProfileRestorer) {
     let root = gtk::Box::new(gtk::Orientation::Vertical, 6);
     root.set_width_request(260);
     root.add_css_class("background");
@@ -955,10 +955,11 @@ pub fn sidebar(
     });
     let st = status.clone();
     let r = refresh.clone();
+    let import_store=store.clone();
     import.connect_clicked(move |_| {
         if let Some(mut p) = selected.borrow_mut().take() {
             p.identify();
-            let mut s = store.borrow_mut();
+            let mut s = import_store.borrow_mut();
             if s.items.len() >= 1000 {
                 st.set_text("Profile limit reached");
                 return;
@@ -981,8 +982,10 @@ pub fn sidebar(
             r();
         }
     });
+    let (s,st)=(store.clone(),status.clone());
+    let remote:ProfileRestorer=Rc::new(move|id| {if !s.borrow().items.iter().any(|p|p.id==id&&p.protocol=="RDP"&&!p.username.is_empty()&&!p.secret_reference.is_empty()){return None;}acquire(&s,&st,id)});
     refresh();
-    (root, search, restore)
+    (root, search, restore, remote)
 }
 #[cfg(test)]
 mod tests {

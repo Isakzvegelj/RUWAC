@@ -192,7 +192,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             Some("doctor")=>{doctor::options(&a[1..])?;if a[1..].iter().any(|s|s=="--repair"){return Err("remote terminal repair requires running doctor directly in its foreground TTY".into());}let v=remote.doctor(&a[1..])?;println!("{v}");if v["result"]["ok"]!=true{return Err("remote diagnostics failed".into());}return Ok(());},
             Some("start")=>{if a.len()!=1{return Err("start takes no command options".into());}println!("{}",remote.start()?);return Ok(());},
             Some("attach")=>{if a.len()!=3||a[1]!="--session"{return Err("attach --session session_ID".into());}remote.attach(&a[2])?;return Ok(());},
-            Some("gui"|"serve"|"image-stage"|"rdp"|"workspace")=>return Err("--host supports headless control/start/attach; desktop actions require the local GUI".into()),
+            Some("workspace"|"rdp")=>{let req=workspace_api::parse(&a[0],&a[1..])?;let v=remote.gui(&req)?;println!("{v}");if v.get("error").is_some(){return Err("remote GUI operation failed".into());}return Ok(());},
+            Some("gui"|"serve"|"image-stage"|"gui-request")=>return Err("--host supports authenticated control; launch the GUI directly on its endpoint".into()),
             _=>(),
         }
     }
@@ -248,17 +249,18 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 json!({"version":0,"result":{"ready":true,"start_requested":started}})
             );
         }
-        Some("workspace") => {
-            let v=workspace_api::run(&socket,&a[1..])?;
-            println!("{v}");
-            if v.get("error").is_some(){return Err("workspace operation failed".into());}
+        Some("workspace"|"rdp") => {
+            let req=workspace_api::parse(&a[0],&a[1..])?;
+            let v=workspace_api::exchange(&socket,&req)?;println!("{v}");
+            if v.get("error").is_some(){return Err("GUI operation failed".into());}
         }
-        Some("rdp") => {
-            println!(
-                "{}",
-                json!({"error":{"code":"GUI_UNAVAILABLE","message":"RDP/workspace adapter is not implemented; no headless rendering fallback"}})
-            );
-            return Err("GUI service unavailable".into());
+        Some("gui-request") => {
+            if a.len()!=1{return Err("gui-request takes one JSON stdin request and no options".into());}
+            let mut bytes=Vec::new();io::stdin().take(ruwac_protocol::MAX_FRAME as u64+1).read_to_end(&mut bytes)?;
+            if bytes.len()>ruwac_protocol::MAX_FRAME{return Err("GUI request exceeds frame cap".into());}
+            let req:Request=serde_json::from_slice(&bytes)?;
+            let v=workspace_api::exchange(&socket,&req)?;println!("{v}");
+            if v.get("error").is_some(){return Err("GUI operation failed".into());}
         }
         Some("serve") => {
             if a.len() != 1 {
@@ -333,7 +335,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         Some("--help" | "help") | None => {
             println!(
-                "RUWAC\n  ruwac workspace describe|list [--json]\n  ruwac workspace activate --id tab_ID --json\n  ruwac workspace focus --id view_ID --json\n  ruwac doctor [--desktop] [--terminal [--repair]] [--json]\n  ruwac --version\n  ruwac start  # starts/reuses a private persistent daemon\n  ruwac gui [--session session_ID]\n  ruwac session create --name NAME --detach --json\n  ruwac session list --json\n  ruwac pane list --session session_ID --json\n  ruwac pane send-text --id pane_ID --text TEXT --json\n  ruwac pane send-text --id pane_ID --file UTF8_FILE --json\n  ruwac pane send-key --id pane_ID --key Enter --json\n  ruwac pane capture --id pane_ID --lines 250 --json\n  ruwac pane wait --id pane_ID --contains TEXT --timeout-ms 5000 --json\n  ruwac --socket PATH serve\n  ruwac --socket PATH rpc METHOD --params JSON [--idempotency KEY]\n  ruwac --socket PATH request < request.json\n  ruwac --socket PATH attach --session session_ID\n  ruwac image-stage PNG PRIVATE_DIRECTORY\n  ruwac --socket PATH health|version|capabilities|schema|describe\nRemote: ruwac --host SSH_HOST [--remote-binary PATH] [--socket REMOTE_PATH] COMMAND.\n  ruwac --host SSH_HOST describe\n  ruwac --host SSH_HOST pane send-text --id pane_ID --file LOCAL_UTF8_FILE\n  ruwac --host SSH_HOST attach --session session_ID\nUses existing SSH keys/config and verified host keys; no credential or agent forwarding. Without explicit --socket, the remote CLI selects its own private default.\nNo desktop clipboard, image attachment, recovery after daemon loss or full Screen compatibility claim."
+                "RUWAC\n  ruwac workspace describe|list [--json]\n  ruwac rdp list --json\n  ruwac rdp query|reconnect|disconnect --id view_ID --json\n  ruwac rdp open --profile endpoint_ID [--activate] --json\n  ruwac workspace activate --id tab_ID --json\n  ruwac workspace focus --id view_ID --json\n  ruwac doctor [--desktop] [--terminal [--repair]] [--json]\n  ruwac --version\n  ruwac start  # starts/reuses a private persistent daemon\n  ruwac gui [--session session_ID]\n  ruwac session create --name NAME --detach --json\n  ruwac session list --json\n  ruwac pane list --session session_ID --json\n  ruwac pane send-text --id pane_ID --text TEXT --json\n  ruwac pane send-text --id pane_ID --file UTF8_FILE --json\n  ruwac pane send-key --id pane_ID --key Enter --json\n  ruwac pane capture --id pane_ID --lines 250 --json\n  ruwac pane wait --id pane_ID --contains TEXT --timeout-ms 5000 --json\n  ruwac --socket PATH serve\n  ruwac --socket PATH rpc METHOD --params JSON [--idempotency KEY]\n  ruwac --socket PATH request < request.json\n  ruwac --socket PATH attach --session session_ID\n  ruwac image-stage PNG PRIVATE_DIRECTORY\n  ruwac --socket PATH health|version|capabilities|schema|describe\nRemote: ruwac --host SSH_HOST [--remote-binary PATH] [--socket REMOTE_PATH] COMMAND.\n  ruwac --host SSH_HOST describe\n  ruwac --host SSH_HOST pane send-text --id pane_ID --file LOCAL_UTF8_FILE\n  ruwac --host SSH_HOST attach --session session_ID\nWorkspace/RDP commands address an already-running remote GUI with its explicit permissions. Uses existing SSH keys/config and verified host keys; no credential or agent forwarding. Without explicit --socket, the remote CLI selects its own private default.\nNo desktop clipboard, image attachment, recovery after daemon loss or full Screen compatibility claim."
             );
         }
         _ => return Err("unknown command; use --help".into()),
