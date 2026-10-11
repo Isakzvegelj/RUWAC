@@ -1023,5 +1023,50 @@
     "panes": 40,
     "note": "daemon and TUI only; excludes child interpreters"
   },
-  "all_api_within_2x": true
+  "all_api_within_2x": true,
+  "workspaces_display_files": {
+    "baseline": "v0.1.3",
+    "environment": "Owned loopback and Weston/Xvfb on a busy VM; raw bitmap codec, not external or physical desktop qualification",
+    "resize_requests": 20,
+    "resize_ms": {
+      "min": 84.33188399067149,
+      "max": 298.17247999017127,
+      "mean": 194.27115834623692
+    },
+    "profile_1000": {
+      "restart_identical_ids_preferences_groups": true,
+      "generated_profiles": 1000,
+      "load_and_fixture_ready_ms": 533.738322003046,
+      "search_widget_roundtrip_ms": 217.11779100587592,
+      "search_rows": 1
+    },
+    "processes_before": {
+      "gtk": {
+        "cpu_seconds": 61.17,
+        "rss_mib": 155.015625
+      },
+      "server": {
+        "cpu_seconds": 5.66,
+        "rss_mib": 33.03125
+      }
+    },
+    "processes_after": {
+      "gtk": {
+        "cpu_seconds": 64.35,
+        "rss_mib": 177.67578125
+      },
+      "server": {
+        "cpu_seconds": 6.78,
+        "rss_mib": 40.34765625
+      }
+    },
+    "resize_storm": {
+      "gtk_allocation_changes": 20,
+      "settled_size": [
+        860,
+        326
+      ],
+      "stable_after_800ms": true
+    }
+  }
 }

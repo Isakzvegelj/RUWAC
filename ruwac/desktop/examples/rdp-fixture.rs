@@ -16,26 +16,71 @@ use std::{
     sync::Arc,
     time::Duration,
 };
-struct Display;
-struct Updates;
+struct Display {
+    size: Arc<std::sync::Mutex<DesktopSize>>,
+    tx: tokio::sync::mpsc::Sender<DesktopSize>,
+    rx: Option<tokio::sync::mpsc::Receiver<DesktopSize>>,
+}
+struct Updates {
+    size: Arc<std::sync::Mutex<DesktopSize>>,
+    rx: tokio::sync::mpsc::Receiver<DesktopSize>,
+    clock: tokio::time::Interval,
+}
+impl Display {
+    fn new() -> Self {
+        let (tx, rx) = tokio::sync::mpsc::channel(1);
+        Self {
+            size: Arc::new(std::sync::Mutex::new(DesktopSize {
+                width: 320,
+                height: 180,
+            })),
+            tx,
+            rx: Some(rx),
+        }
+    }
+}
 #[async_trait::async_trait]
 impl RdpServerDisplay for Display {
     async fn size(&mut self) -> DesktopSize {
-        DesktopSize {
-            width: 320,
-            height: 180,
-        }
+        *self.size.lock().unwrap()
     }
     async fn updates(&mut self) -> anyhow::Result<Box<dyn RdpServerDisplayUpdates>> {
-        Ok(Box::new(Updates))
+        let rx = self.rx.take().unwrap_or_else(|| {
+            let (tx, rx) = tokio::sync::mpsc::channel(1);
+            self.tx = tx;
+            rx
+        });
+        let mut clock = tokio::time::interval(Duration::from_millis(200));
+        clock.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        Ok(Box::new(Updates {
+            size: self.size.clone(),
+            rx,
+            clock,
+        }))
+    }
+    fn request_layout(
+        &mut self,
+        layout: ironrdp::displaycontrol::pdu::DisplayControlMonitorLayout,
+    ) {
+        if let Some(m) = layout.monitors().first() {
+            let (w, h) = m.dimensions();
+            if w <= 4096 && h <= 4096 {
+                let _ = self.tx.try_send(DesktopSize {
+                    width: w as u16,
+                    height: h as u16,
+                });
+            }
+        }
     }
 }
 #[async_trait::async_trait]
 impl RdpServerDisplayUpdates for Updates {
     async fn next_update(&mut self) -> anyhow::Result<Option<DisplayUpdate>> {
-        tokio::time::sleep(Duration::from_millis(100)).await;
-        let mut data = vec![0; 320 * 180 * 4];
-        for (y, row) in data.chunks_mut(1280).enumerate() {
+        tokio::select! {Some(size)=self.rx.recv()=>{*self.size.lock().unwrap()=size;return Ok(Some(DisplayUpdate::Resize(size)));},_=self.clock.tick()=>()}
+        let size = *self.size.lock().unwrap();
+        let (w, h) = (size.width as usize, size.height as usize);
+        let mut data = vec![0; w * h * 4];
+        for (y, row) in data.chunks_mut(w * 4).enumerate() {
             for (x, p) in row.chunks_mut(4).enumerate() {
                 p.copy_from_slice(&[x as u8, y as u8, 90, 255]);
             }
@@ -43,11 +88,11 @@ impl RdpServerDisplayUpdates for Updates {
         Ok(Some(DisplayUpdate::Bitmap(BitmapUpdate {
             x: 0,
             y: 0,
-            width: NonZeroU16::new(320).unwrap(),
-            height: NonZeroU16::new(180).unwrap(),
+            width: NonZeroU16::new(size.width).unwrap(),
+            height: NonZeroU16::new(size.height).unwrap(),
             format: PixelFormat::BgrX32,
             data: bytes::Bytes::from(data),
-            stride: NonZeroUsize::new(1280).unwrap(),
+            stride: NonZeroUsize::new(w * 4).unwrap(),
         })))
     }
 }
@@ -94,7 +139,8 @@ async fn run(dir: PathBuf) -> anyhow::Result<()> {
             .with_addr(([127, 0, 0, 1], port))
             .with_hybrid(acceptor, identity.pub_key)
             .with_no_input()
-            .with_display_handler(Display)
+            .with_display_handler(Display::new())
+            .with_bitmap_codecs(ironrdp::pdu::rdp::capability_sets::BitmapCodecs(Vec::new()))
             .with_cliprdr_factory(Some(Box::new(Factory(bridge.clone()))))
             .build();
         server.set_credentials(Some(Credentials {

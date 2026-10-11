@@ -3,7 +3,7 @@
 import argparse,hashlib,importlib.util,json,os,subprocess,sys,tempfile,time,traceback
 from pathlib import Path
 from PIL import Image
-p=argparse.ArgumentParser();p.add_argument('--binary',required=True);p.add_argument('--gui',required=True);p.add_argument('--server',required=True);p.add_argument('--evidence',required=True);a=p.parse_args()
+p=argparse.ArgumentParser();p.add_argument('--binary',required=True);p.add_argument('--gui',required=True);p.add_argument('--server',required=True);p.add_argument('--evidence',required=True);p.add_argument('--r5-only',action='store_true');a=p.parse_args()
 spec=importlib.util.spec_from_file_location('spike',Path(__file__).with_name('spike.py'));spike=importlib.util.module_from_spec(spec);spec.loader.exec_module(spike)
 root=Path(tempfile.mkdtemp(prefix='rdp-native-',dir=a.evidence));root.chmod(0o700);env={**os.environ,'HOME':str(root/'home'),'XDG_CONFIG_HOME':str(root/'config'),'XDG_CACHE_HOME':str(root/'cache'),'XDG_DATA_HOME':str(root/'data'),'GSETTINGS_BACKEND':'memory','GTK_USE_PORTAL':'0','GTK_A11Y':'none'}
 for key in ['HOME','XDG_CONFIG_HOME','XDG_CACHE_HOME','XDG_DATA_HOME']:Path(env[key]).mkdir(mode=0o700)
@@ -23,6 +23,7 @@ def focus(who):
   subprocess.run(['xdotool','key','--clearmodifiers','Super_L+Tab'],env={**os.environ,'DISPLAY':os.environ['RUWAC_XTEST_DISPLAY']},check=True);time.sleep(.12)
  raise AssertionError('Isolated compositor focus failed')
 def case(name,fn):
+ if a.r5_only and name not in {"RDP-NATIVE-AUTH-3","MACHINES-NATIVE-EDITOR","RDP-NATIVE-RESIZE-20","MACHINES-RESTART-1000","FILES-CLIPBOARD-OWNERSHIP"}:return
  try:results.append({'id':name,'status':'PASS','details':fn()});print(name,'PASS',flush=True)
  except Exception as e:results.append({'id':name,'status':'FAIL','error':str(e),'traceback':traceback.format_exc()});print(name,'FAIL',str(e),flush=True)
 def digest(data):return hashlib.sha256(data).hexdigest()
@@ -98,6 +99,21 @@ try:
    if (i+1)%50==0:print('OWNERSHIP',i+1,flush=True)
   return {'focus_switches':200,'inactive_offers_checked':450,'peer_clipboard_hash':digest(sentinel),'physical_input':False}
  case('RDP-NATIVE-OWNERSHIP-200',ownership)
+ def files_ownership():
+  import socket,threading
+  listener=socket.socket();listener.bind(('127.0.0.1',0));listener.listen(1);port=listener.getsockname()[1]
+  def refuse():
+   connection,_=listener.accept();connection.close();listener.close()
+  threading.Thread(target=refuse,daemon=True).start()
+  profile={'id':'generated-files-endpoint','machine_id':'generated-files-machine','name':'Files fixture','group':'Generated','protocol':'SSH','server':f'127.0.0.1:{port}','username':'fixture','secret_reference':'generated-unused','favorite':False,'last_used':0,'tags':[]}
+  sentinel=b'Files tab clipboard sentinel';(root/'files-sentinel.txt').write_bytes(sentinel);(root/'files-inactive.txt').write_text('Inactive RDP must remain cached')
+  focus('peer');command('peer','set-text',file='files-sentinel.txt');focus('gui');command('gui','files-open',profile=profile)
+  for _ in range(10):
+   for tab in range(3):command(f'server-{tab}',format='text',file='files-inactive.txt')
+   time.sleep(.03);focus('peer');assert command('peer','read-text')['sha256']==digest(sentinel);focus('gui')
+  command('gui','rdp-switch',rdp=0)
+  return {'native_files_tab':True,'inactive_rdp_offers':30,'peer_clipboard_unchanged':True}
+ case('FILES-CLIPBOARD-OWNERSHIP',files_ownership)
  def profiles():
   focus('gui')
   for i in range(70):
@@ -107,6 +123,72 @@ try:
   stored=(root/'config/RUWAC/machines.json');data=stored.read_text();assert 'DO-NOT-IMPORT' not in data and '/private/key' not in data;assert stored.stat().st_mode&0o777==0o600
   return {'imported':70,'same_leaf_different_full_groups':True,'search_rows':1,'favorite_rows':1,'credentials_excluded':True,'source_files_unchanged':True,'store_mode':'0600'}
  case('MACHINES-NATIVE-70',profiles)
+ def profile_journey():
+  command('gui','profiles',search='R5')
+  command('gui','profile-editor',operation='group',path='R5/BASING/CIFRA')
+  for group in ['R5/BASING/CIFRA','R5/AHACIC']:
+   r=command('gui','profile-editor',operation='new',fields={'0':'R5 same server','1':group,'3':'127.0.0.1:3389','4':'fixture','13':0,'14':1,'15':3})
+   assert r['applied'] and r['error'] is None,r
+  items=[p for p in r['items'] if p['name']=='R5 same server'];assert len(items)==2 and items[0]['machine_id']!=items[1]['machine_id']
+  original=min(items,key=lambda p:p["group"]);r=command('gui','profile-editor',operation='edit',fields={'0':'R5 renamed','1':'R5/moved','3':'127.0.0.1:22','13':1})
+  changed=next(p for p in r['items'] if p['id']==original['id']);assert changed['machine_id']==original['machine_id'] and changed['protocol']=='SSH' and changed['preferences']['display']=='native' and changed['preferences']['clipboard']==3
+  command('gui','profiles',search='R5 renamed');r=command('gui','profile-editor',operation='edit',response='endpoint',fields={'13':0,'3':'127.0.0.1:3389'});siblings=[p for p in r['items'] if p['machine_id']==original['machine_id']];assert len(siblings)==2 and len({p['id'] for p in siblings})==2
+  before=len(r['items']);r=command('gui','profile-editor',operation='new',response='cancel',fields={'0':'Cancelled','3':'localhost:22'});assert len(r['items'])==before
+  r=command('gui','profile-editor',operation='edit',response='duplicate');assert len(r['items'])==before+2
+  r=command('gui','profile-editor',operation='edit',response='delete-machine',confirm=True);assert len(r['items'])==before
+  stored=root/'config/RUWAC/machines.json';on_disk=json.loads(stored.read_text());assert on_disk['schema']==1 and len(on_disk['items'])==before
+  assert (stored.parent/'machines.previous.json').stat().st_mode&0o777==0o600
+  return {'native_dialogs':True,'cancel_duplicate_confirmed_delete':True,'stable_identity_after_rename_move':True,'multi_endpoint_machine':True,'same_leaf_distinct_machines':True,'persisted_schema':1}
+ case('MACHINES-NATIVE-EDITOR',profile_journey)
+ def resize():
+  focus('gui');command('gui','rdp-switch',rdp=0)
+  def process_metrics():
+   out={}
+   for name,proc in [('gtk',gui),('server',server)]:
+    stat=Path(f'/proc/{proc.pid}/stat').read_text().split();rss=int(next(s.split()[1]for s in Path(f'/proc/{proc.pid}/status').read_text().splitlines()if s.startswith('VmRSS:')))/1024;out[name]={'cpu_seconds':(int(stat[13])+int(stat[14]))/os.sysconf('SC_CLK_TCK'),'rss_mib':rss}
+   return out
+  time.sleep(.7);before=command('gui','rdp-inspect',rdp=0);start_metrics=process_metrics();wall_start=time.perf_counter()
+  transitions=[]
+  for i in range(20):
+   w,h=[(640,480),(2560,1440),(3000,1800),(1024,768)][i%4]
+   start=time.perf_counter();command('gui','rdp-display',rdp=0,mode='fit',zoom=1.0,width=w,height=h)
+   def complete():
+    r=command('gui','rdp-inspect',rdp=0)
+    return r if r['size']==[w,h] and r['last_pixel'][:3]==[(w-1)%256,(h-1)%256,90] else False
+   r=spike.eventually(complete,20)
+   assert r['status'].startswith('Connected'),r
+   transitions.append({'size':[w,h],'decoded_corner':r['last_pixel'],'complete_frame_ms':(time.perf_counter()-start)*1000,'metrics':r['metrics'],'processes':process_metrics()})
+   command('gui','rdp-switch',rdp=(i%2)+1);assert command('gui','rdp-inspect',rdp=(i%2)+1)['size']==[320,180];command('gui','rdp-switch',rdp=0)
+  # Actual GTK allocation changes drive the production debounced dynamic path.
+  for i in range(20):command('gui','rdp-display',rdp=0,mode='dynamic',zoom=1.0,window_width=1100+i*4,window_height=760+i*2)
+  def settled():
+   r=command('gui','rdp-inspect',rdp=0)
+   return r if r['size']==r['requested_size'] and min(r['size'])>=200 and r['status'].startswith('Connected') else False
+  storm=spike.eventually(settled,15);count=storm['metrics']['decoded_updates'];time.sleep(.8);stable=settled();assert stable and stable['size']==storm['size'],stable
+  for mode in ['native','stretch','fit']:
+   r=command('gui','rdp-display',rdp=0,mode=mode,zoom=1.25);assert r['zoom']==1.25
+  command('gui','rdp-display',rdp=0,mode='fit',zoom=1.0)
+  text='Clipboard after 20 actual reactivations ž 🦀';(root/'resize-text.txt').write_text(text);got=read_remote(0,'text','resize-text.txt');assert got['sha256']==digest(text.encode()),got
+  time.sleep(.7);after=command('gui','rdp-inspect',rdp=0)
+  return {'before':before['metrics'],'after':after['metrics'],'processes_before':start_metrics,'processes_after':process_metrics(),'wall_seconds':time.perf_counter()-wall_start,'transitions':transitions,'negotiation':'actual Display Control DVC plus server DeactivateAll/reactivation','resize_storm':{'gtk_allocation_changes':20,'settled_size':storm['size'],'stable_after_800ms':True},'post_resize_clipboard':True,'other_tabs_unchanged':True,'codec':'raw bitmap fixture; RemoteFX/GNOME issue remains a separate gate'}
+ case('RDP-NATIVE-RESIZE-20',resize)
+
+ def restart_and_thousand():
+  global gui
+  saved=json.loads((root/'config/RUWAC/machines.json').read_text())
+  gui.terminate();gui.wait(timeout=5)
+  gui=start([a.gui,'--socket',str(sock),'--session',session['session'],'--fixture-dir',str(root)],'gui-restart');command('gui','inspect')
+  r=command('gui','profile-editor',operation='inspect');assert r['items']==saved['items'] and r['groups']==saved['groups']
+  gui.terminate();gui.wait(timeout=5)
+  config=root/'stress-config/RUWAC';config.mkdir(parents=True,mode=0o700);items=[]
+  for i in range(1000):
+   item=dict(saved['items'][0]);item.update(id=f'fixture-endpoint-{i}',machine_id=f'fixture-machine-{i}',name=f'Load{i}',group=f'Generated/Network{i%20}',secret_reference=f'fixture-secret-{i}');items.append(item)
+  path=config/'machines.json';path.write_text(json.dumps({'schema':1,'items':items,'groups':[]}));path.chmod(0o600)
+  env['XDG_CONFIG_HOME']=str(config.parent);started=time.perf_counter();gui=start([a.gui,'--socket',str(sock),'--session',session['session'],'--fixture-dir',str(root)],'gui-stress');command('gui','inspect');load_ms=(time.perf_counter()-started)*1000
+  started=time.perf_counter();r=command('gui','profiles',search='Load999');assert r['rows']==1,r
+  return {'restart_identical_ids_preferences_groups':True,'generated_profiles':1000,'load_and_fixture_ready_ms':load_ms,'search_widget_roundtrip_ms':(time.perf_counter()-started)*1000,'search_rows':1}
+ case('MACHINES-RESTART-1000',restart_and_thousand)
+
 finally:
  def rss(proc):
   try:return int(next(l.split()[1] for l in Path(f'/proc/{proc.pid}/status').read_text().splitlines() if l.startswith('VmRSS:')))/1024
@@ -121,6 +203,6 @@ finally:
  def rss(proc):
   try:return int(next(l.split()[1] for l in Path(f'/proc/{proc.pid}/status').read_text().splitlines() if l.startswith('VmRSS:')))/1024
   except (FileNotFoundError,StopIteration):return None
- report={'cases':results,'rss_mib':memory,'environment':'Owned Weston/Xvfb, real native GTK/GDK peer, actual loopback IronRDP server; generated credentials and frames','limitations':['No external Windows/GNOME login','No physical keyboard/touchpad acceptance','No dynamic remote resize qualification']}
+ report={'cases':results,'rss_mib':memory,'environment':'Owned Weston/Xvfb, real native GTK/GDK peer, actual loopback IronRDP server; generated credentials and frames','limitations':['No external Windows/GNOME login','No physical keyboard/touchpad acceptance','No external Windows/GNOME Display Control or RemoteFX qualification']}
  (root/'receipt.json').write_text(json.dumps(report,indent=2));Path(a.evidence,'rdp-native-acceptance.json').write_text(json.dumps(report,indent=2));print('Evidence',root,flush=True)
 raise SystemExit(0 if results and all(r['status']=='PASS' for r in results) else 1)

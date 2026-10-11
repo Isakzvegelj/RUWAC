@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## v0.1.4 — 2026-10-11 — Prerelease
+
+- Add native machine/profile editing and Secret Service credential actions, negotiated embedded RDP display control/reactivation with zoom and panning, and verified in-window SSH/SFTP files.
+- Validate stable metadata migration/restart, a 1,000-profile GTK library, 20 server-driven resizes, isolated keyring and loopback file integrity/failure handling; preserve terminal and CLIPRDR regressions.
+
 ## v0.1.3 — 2026-10-11 — Prerelease
 
 - Complete authenticated embedded IronRDP lifecycle, bidirectional CLIPRDR Unicode/PNG transfer and active-tab ownership gates; add the native machine sidebar and read-only Remmina metadata preview.

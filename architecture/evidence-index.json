@@ -1,10 +1,10 @@
 {
-  "baseline_commit": "1633b8265240f32d1f7629c851c729f2bcb4889c",
+  "baseline_commit": "4d5572179de259ec8f9c87ec2fa50f51b91c39ed",
   "current_report": "spec/RUWAC_INTEGRATION_SPIKE.md",
   "public_evidence": [
     "architecture/acceptance-results.json",
     "architecture/benchmark-results.json",
     "architecture/dependency-licenses.json"
   ],
-  "private_receipts": "Build authority retains exact commands, executable hashes, failed and successful raw receipts, owned fixtures and publication verification; private node paths are excluded"
+  "private_capsule": "workspaces-display-files-r5: exact node commands/hashes, retained failed and passing trials, generated fixture credentials, owner-session health and publication verification"
 }

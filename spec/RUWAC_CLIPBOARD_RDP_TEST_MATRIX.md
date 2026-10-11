@@ -1,29 +1,21 @@
-# RUWAC clipboard and RDP test matrix
+# RUWAC desktop / protocol test matrix
 
-2026-10-11 increment from v0.1.2. Protocol-fixture, native desktop and external-host results are distinguished below. Prior reports and failed receipts are retained privately.
-
-| Gate | State | Actual evidence |
+| Gate | Result | Evidence |
 |---|---|---|
-| Headless regressions | PASS | 18 Rust units; 11 integration groups including 100 startup races |
-| Layout/history/mouse API | PASS | Three real-daemon groups; nested layout/ratio/zoom, stale history rejection, exact SGR/X10/motion/disabled routing |
-| Native terminal desktop | PASS fixture | 21 cards, including real Vim/less/htop, Unicode save, keyboard marking/search/internal paste, persistent splits and crash staging cleanup |
-| PRIMARY | BLOCKED | Owned Weston lacks the protocol; physical GNOME PRIMARY remains unqualified |
-| Embedded authenticated RDP | PASS loopback | Three simultaneous native tabs, actual TLS/CredSSP/NLA and decoded 320×180 server frames |
-| Negative authentication/TLS | PASS integration | Unknown CA rejected; generated wrong password rejected before a frame; explicitly trusted local CA accepted |
-| CLIPRDR text | PASS native loopback | 10 payloads per tab in both directions: 60 transfers; Slovenian/Polish/emoji/multiline, 10 KiB and 1 MiB |
-| CLIPRDR images | PASS native loopback | Three cases per tab in both directions: 18 transfers; transparent 64-square/1440p PNG and DIBV5, decoded pixel hashes |
-| Conversion/caps | PASS unit | PNG/DIBV5 alpha roundtrips; DIB RGB conversion, odd-width row stride, invalid UTF-16 and early fragment allocation caps |
-| Active-tab ownership | PASS native loopback | 200 switches across three RDP tabs and terminal; 450 inactive offers never replaced the independent GDK peer sentinel |
-| Clipboard policies | PASS native loopback | All five policies, directional rejection and explicit manual receive |
-| Reconnect | PASS native loopback | Server-driven disconnect, bounded automatic retry in the same tab, decoded frame and clipboard transfer afterward |
-| Machine sidebar/import | PASS native fixture | 70 full-group profiles with repeated leaf names; actual GTK preview/import/search/favorite, private persistence, source unchanged and secrets excluded |
-| Preview special files | PASS unit | FIFO rejected without blocking; symlinks refused; regular file and storage caps |
-| Raw child recovery | PASS bounded fixture | Owned Bash child SIGKILL, mouse reset/no leakage, ECHO/ICANON and exact Unicode input restored |
-| Headless dependency boundary | PASS | Core Cargo graph and ELF links exclude GTK/RDP/libsecret |
-| External Windows/GNOME RDP | BLOCKED | No designated endpoint or authorized account; loopback is not external-host qualification |
-| Physical keyboard/touchpad/AltGr/IME | UNQUALIFIED | Synthetic callbacks and XTEST in an isolated compositor do not certify physical input |
-| Dynamic remote resize / file clipboard | OPEN | Visible reconnect fallback retained; file/HTML formats not advertised |
-| RPM/runtime promotion | BLOCKED | Source prerelease only; no qualified package handler or binary distribution decision |
+| Independent headless engine | PASS | 18 Rust units; 11 groups/100 startup races; three layout/history/mouse groups; clean graphical dependency boundary |
+| Native desktop units | PASS | 16 tests, including framed Display Control capabilities, fractional geometry, 1,000-profile migration and corruption guards |
+| GTK editor and persistence | PASS fixture | Same-named distinct machines, rename/move IDs, multi-endpoint machine, cancel/duplicate/confirmed deletion, restart equality and 1,000 native sidebar entries |
+| Secret Service | PASS isolated integration | Disposable private D-Bus/keyring, actual set/replace/lookup/forget; no owner keyring access |
+| Embedded display control | PASS loopback | 20 real negotiated requests plus a GTK resize storm, server DeactivateAll/reactivation, decoded pixels through 2560×1440 and 3000×1800; other tabs unchanged; clipboard afterward |
+| Existing RDP/GDK clipboard | PASS loopback | Three authenticated tabs; 60 Unicode transfers; 18 PNG/DIBV5 cases; five policies; reconnect; 200 switches/450 inactive offers, Files-tab clipboard isolation; 70 imports |
+| Files transport and native panel | PASS loopback | Text/PNG/1 MiB binary both directions, SHA-256, unusual names, listing, overwrite, permission/key/symlink guards, cancellation, slow peer and mid-transfer loss |
+| Native terminal | PASS owned compositor | 21 cards, actual Vim/less/htop and GDK; PRIMARY separately BLOCKED |
+| Abrupt child | PASS bounded | Owned Bash raw-child SIGKILL, mouse reset, ECHO/ICANON, Unicode probe |
+| External Windows/GNOME / physical seat | BLOCKED | No designated endpoints or approved physical input seat |
+| RPM/binary distribution | BLOCKED | Source prerelease only; distribution license and package qualification pending |
 
+External Windows/Fedora-GNOME RDP and physical GNOME PRIMARY/AltGr/IME/touchpad acceptance remain BLOCKED: no designated host/account/trust reference or approved physical test seat was available. Loopback authentication, GDK and server-driven reactivation are real integration results, not external-host acceptance. The raw bitmap fixture does not qualify the GNOME/RemoteFX degradation described in [IronRDP #447](https://github.com/Devolutions/IronRDP/issues/447).
 
-Owner physical acceptance card: use generated sentinels and designated disposable accounts only. Open three RDP tabs and a terminal, switch while inactive sessions copy, verify only the active eligible view can replace CLIPBOARD, and exercise manual/off/directional policies. Paste generated text/PNG in both directions, check alpha and test disconnect/reconnect. Exercise the explicit send-key buttons where GNOME captures shortcuts. Check Screen Ctrl+A navigation/selection/internal paste, touchpad and PRIMARY separately without collecting private clipboard contents.
+Known product limits: gateway/network fields are metadata, not a routing engine; Remmina conflicts support skip or new identity, without merge-by-ID; group default editing covers display/clipboard while other endpoint overrides remain explicit. Profiles used by an opened tab are conservatively deletion-protected until application restart. SSH terminals use OpenSSH's interactive verification/authentication; Files uses the configured key/agent or Secret Service password, and refuses unknown/changed keys. Encrypted private-key passphrase UI, rsync, recursive transfers and resume are not implemented. Portable SFTP v3 replacement preserves the old file through a backup/restore sequence but is not atomic. A lost connection can leave a named remote partial or backup; connected cancellation cleans its partial. Concurrent changes to a remote namespace are not an atomic SFTP snapshot. Native file chooser upload/download gestures and locked-keyring dialogs still need interactive desktop acceptance; transport integrity uses the production worker through an isolated driver, while panel listing/refresh uses the actual GTK window. File/HTML CLIPRDR, consumer acknowledgement for agent attachments, general termios recovery beyond Bash and daemon/host-crash persistence remain open. RPM/binary publication and product distribution licensing remain unqualified.
+
+Optional owner-operated acceptance: on an explicitly approved disposable seat, use artificial Unicode sentinels and PNGs, three authorized RDP accounts and a terminal. Verify inactive tabs never replace CLIPBOARD, exercise the five policies, copy/search/Screen navigation, PRIMARY, AltGr/IME, touchpad, send-key fallbacks and fractional scaling. External-host testing needs a designated OS/host, account reference, trusted certificate/CA and permitted-use scope; no discovery or credential harvesting.

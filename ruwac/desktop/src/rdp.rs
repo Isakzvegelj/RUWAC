@@ -36,8 +36,90 @@ use std::{
     time::Duration,
 };
 use x509_cert::der::Decode;
+/// ironrdp-displaycontrol 0.8 expects bare capabilities in its client processor,
+/// while the server and MS-RDPEDISP encode an eight-byte DISPLAYCONTROL_HEADER.
+/// Validate that header, then delegate capabilities and layout encoding upstream.
+struct DisplayControlAdapter(ironrdp::displaycontrol::client::DisplayControlClient);
+ironrdp_core::impl_as_any!(DisplayControlAdapter);
+impl ironrdp::dvc::DvcClientProcessor for DisplayControlAdapter {}
+impl ironrdp::dvc::DvcProcessor for DisplayControlAdapter {
+    fn channel_name(&self) -> &str {
+        ironrdp::displaycontrol::CHANNEL_NAME
+    }
+    fn start(&mut self, id: u32) -> ironrdp::pdu::PduResult<Vec<ironrdp::dvc::DvcMessage>> {
+        use ironrdp::dvc::DvcProcessor;
+        self.0.start(id)
+    }
+    fn process(
+        &mut self,
+        id: u32,
+        payload: &[u8],
+    ) -> ironrdp::pdu::PduResult<Vec<ironrdp::dvc::DvcMessage>> {
+        use ironrdp::dvc::DvcProcessor;
+        if payload.len() != 20 || u32::from_le_bytes(payload[4..8].try_into().unwrap()) != 20 {
+            return Err(ironrdp::pdu::pdu_other_err!(
+                "DisplayControl",
+                "Invalid capabilities length"
+            ));
+        }
+        let pdu = ironrdp_core::decode::<ironrdp::displaycontrol::pdu::DisplayControlPdu>(payload)
+            .map_err(|e| ironrdp::pdu::decode_err!(e))?;
+        if !matches!(
+            pdu,
+            ironrdp::displaycontrol::pdu::DisplayControlPdu::Caps(_)
+        ) {
+            return Err(ironrdp::pdu::pdu_other_err!(
+                "DisplayControl",
+                "Expected capabilities"
+            ));
+        }
+        self.0.process(id, &payload[8..])
+    }
+}
+/// Bound SVC and DVC reassembly before the upstream processor can accumulate bytes.
+#[derive(Default)]
+struct DisplayFragmentGuard {
+    svc: crate::cliprdr::FragmentGuard,
+    data: Vec<u8>,
+}
+impl DisplayFragmentGuard {
+    fn check(&mut self, payload: &[u8]) -> Result<(), String> {
+        use ironrdp::dvc::pdu::{DrdynvcDataPdu, DrdynvcServerPdu};
+        use ironrdp::pdu::rdp::vc::{ChannelControlFlags, ChannelPduHeader};
+        let mut cursor = ironrdp_core::ReadCursor::new(payload);
+        let header: ChannelPduHeader =
+            ironrdp_core::decode_cursor(&mut cursor).map_err(|_| "Invalid display fragment")?;
+        if header.length > 65536 {
+            return Err("Display SVC reassembly exceeds cap".into());
+        }
+        self.svc
+            .check(payload)
+            .map_err(|_| "Invalid display SVC sequence")?;
+        if header.flags.contains(ChannelControlFlags::FLAG_FIRST) {
+            self.data.clear();
+        }
+        self.data.extend_from_slice(cursor.remaining());
+        if header.flags.contains(ChannelControlFlags::FLAG_LAST) {
+            let message = ironrdp_core::decode::<DrdynvcServerPdu>(&self.data)
+                .map_err(|_| "Invalid display DVC message")?;
+            let oversize = match message {
+                DrdynvcServerPdu::Data(DrdynvcDataPdu::DataFirst(p)) => {
+                    p.length() > 20 || p.data().len() > 20
+                }
+                DrdynvcServerPdu::Data(DrdynvcDataPdu::Data(p)) => p.data().len() > 20,
+                _ => false,
+            };
+            self.data.clear();
+            if oversize {
+                return Err("Display capability DVC reassembly exceeds cap".into());
+            }
+        }
+        Ok(())
+    }
+}
 enum Command {
     Input(Vec<FastPathInputEvent>),
+    Resize(u16, u16, u32),
     Copy(Vec<ClipboardFormat>),
     Request(ClipboardFormatId),
     Reply(Option<Vec<u8>>),
@@ -49,6 +131,7 @@ struct Profile {
     user: String,
     reference: String,
     ca: Option<String>,
+    reconnect: bool,
 }
 struct Frame {
     width: u16,
@@ -58,6 +141,10 @@ struct Frame {
 #[derive(Default)]
 struct State {
     frame: Option<Frame>,
+    frames: u64,
+    display_cap: Option<u64>,
+    reactivating: bool,
+    cadence: std::collections::VecDeque<std::time::Instant>,
     bridge: Bridge,
     status: Option<String>,
 }
@@ -80,29 +167,7 @@ impl Connection {
                 let password = if let Some(secret) = fixture_secret {
                     secret
                 } else {
-                    let output = std::process::Command::new("timeout")
-                        .args([
-                            "5",
-                            "secret-tool",
-                            "lookup",
-                            "application",
-                            "RUWAC",
-                            "profile",
-                            &p.reference,
-                        ])
-                        .output()
-                        .map_err(|_| "Secret Service helper unavailable".to_string())?;
-                    if !output.status.success()
-                        || output.stdout.is_empty()
-                        || output.stdout.len() > 4096
-                    {
-                        return Err("Secret reference missing, locked, or oversized".into());
-                    }
-                    let password = String::from_utf8(output.stdout)
-                        .map_err(|_| "Secret is not UTF-8".to_string())?
-                        .trim_end_matches('\n')
-                        .to_string();
-                    password
+                    crate::credentials::lookup(&p.reference)?
                 };
                 let rt = tokio::runtime::Builder::new_current_thread()
                     .enable_all()
@@ -144,6 +209,8 @@ async fn run(
             {
                 let mut st = state.lock().unwrap();
                 st.frame = None;
+                st.display_cap = None;
+                st.reactivating = true;
                 st.bridge.reset();
                 st.status = Some(format!(
                     "Reconnecting · attempt {attempt}/3 · bounded backoff"
@@ -173,13 +240,38 @@ async fn run(
                     | "RDP connect timed out"
                     | "RDP response write timeout"
                     | "RDP response write failed"
+                    | "RDP reactivation read failed"
+                    | "RDP reactivation write failed"
+                    | "RDP reactivation timed out"
             )
         });
-        if !retry || attempt == 3 {
+        if !p.reconnect || !retry || attempt == 3 {
             return result;
         }
     }
     unreachable!()
+}
+fn encode_resize(
+    active: &mut ironrdp::session::ActiveStage,
+    w: u16,
+    h: u16,
+    scale: u32,
+) -> Option<ironrdp::session::SessionResult<Vec<u8>>> {
+    let dvc = active.get_dvc::<DisplayControlAdapter>()?;
+    let id = dvc.channel_id()?;
+    let client = &dvc
+        .channel_processor_downcast_ref::<DisplayControlAdapter>()?
+        .0;
+    let messages =
+        match client.encode_single_primary_monitor(id, w.into(), h.into(), Some(scale), None) {
+            Ok(m) => m,
+            Err(_) => return None,
+        };
+    Some(
+        active.process_svc_processor_messages(ironrdp::svc::SvcProcessorMessages::<
+            ironrdp::dvc::DrdynvcClient,
+        >::new(messages)),
+    )
 }
 async fn run_session(
     p: Profile,
@@ -234,8 +326,17 @@ async fn run_session(
             work_dir: String::new(),
         };
         let bridge = state.lock().unwrap().bridge.clone();
+        let cap_state = state.clone();
         let mut connector = connector::ClientConnector::new(config, addr)
-            .with_static_channel(CliprdrClient::new(Box::new(Backend::new(bridge))));
+            .with_static_channel(CliprdrClient::new(Box::new(Backend::new(bridge))))
+            .with_static_channel(ironrdp::dvc::DrdynvcClient::new().with_dynamic_channel(
+                DisplayControlAdapter(ironrdp::displaycontrol::client::DisplayControlClient::new(
+                    move |caps| {
+                        cap_state.lock().unwrap().display_cap = Some(caps.max_monitor_area());
+                        Ok(Vec::new())
+                    },
+                )),
+            ));
         let mut framed = ironrdp_tokio::TokioFramed::new(tcp);
         let upgrade = ironrdp_tokio::connect_begin(&mut framed, &mut connector)
             .await
@@ -246,7 +347,7 @@ async fn run_session(
         }
         let mut tls = native_tls::TlsConnector::builder();
         if let Some(path) = p.ca.as_ref() {
-            let pem = std::fs::read(path).map_err(|_| "CA certificate unavailable".to_string())?;
+            let pem = crate::credentials::bounded_file(std::path::Path::new(path), 1024 * 1024)?;
             if pem.len() > 1024 * 1024 {
                 return Err("CA certificate oversized".into());
             }
@@ -304,6 +405,7 @@ async fn run_session(
         Ok::<_, String>((result, framed))
     };
     let (result, framed) = tokio::select! {r=tokio::time::timeout(Duration::from_secs(20),session)=>r.map_err(|_|"RDP connect timed out".to_string())??,_=async{while !halt.load(Ordering::Relaxed){tokio::time::sleep(Duration::from_millis(50)).await;}}=>return Ok(())};
+    let activation_factory = result.activation_factory.clone();
     let mut image = DecodedImage::new(
         ironrdp::graphics::image_processing::PixelFormat::BgrX32,
         result.desktop_size.width,
@@ -312,6 +414,10 @@ async fn run_session(
     let clip_channel = result
         .static_channels
         .get_channel_id_by_type::<CliprdrClient>();
+    let dvc_channel = result
+        .static_channels
+        .get_channel_id_by_type::<ironrdp::dvc::DrdynvcClient>();
+    let mut display_fragments = DisplayFragmentGuard::default();
     let mut fragments = crate::cliprdr::FragmentGuard::default();
     let mut active = ActiveStageBuilder {
         static_channels: result.static_channels,
@@ -363,8 +469,12 @@ async fn run_session(
             return Ok(());
         }
         let outputs = tokio::select! {
-         pdu=reader.read_pdu()=>{let(action,bytes)=pdu.map_err(|_|"RDP stream disconnected".to_string())?;if action==ironrdp::pdu::Action::X224{if let Ok(ctx)=ironrdp::pdu::mcs::decode_send_data_indication(&bytes){if Some(ctx.channel_id)==clip_channel{fragments.check(ctx.user_data)?;}}}active.process(&mut image,action,&bytes).map_err(|_|"RDP decode failed".to_string())?},
+         pdu=reader.read_pdu()=>{let(action,bytes)=pdu.map_err(|_|"RDP stream disconnected".to_string())?;if action==ironrdp::pdu::Action::X224{if let Ok(ctx)=ironrdp::pdu::mcs::decode_send_data_indication(&bytes){if Some(ctx.channel_id)==clip_channel{fragments.check(ctx.user_data)?;}if Some(ctx.channel_id)==dvc_channel{display_fragments.check(ctx.user_data)?;}}}active.process(&mut image,action,&bytes).map_err(|_|"RDP decode failed".to_string())?},
          command=input.recv()=>{let Some(command)=command else{return Ok(());};match command {
+            Command::Resize(w,h,scale)=>{
+                let ready=active.get_dvc::<DisplayControlAdapter>().and_then(|d|d.channel_processor_downcast_ref::<DisplayControlAdapter>()).is_some_and(|d|d.0.ready());
+                if image.width()==w&&image.height()==h{state.lock().unwrap().status=Some(format!("Connected · remote {w}×{h}"));vec![]}else if ready && state.lock().unwrap().display_cap.is_some_and(|max|w as u64*h as u64<=max) {match encode_resize(&mut active,w,h,scale){Some(Ok(bytes))=>{state.lock().unwrap().status=Some(format!("Display Control request {w}×{h}; awaiting framebuffer"));vec![ActiveStageOutput::ResponseFrame(bytes)]},_=>{state.lock().unwrap().status=Some("Display Control rejected; local fit remains available".into());vec![]}}}else{state.lock().unwrap().status=Some("Display Control unsupported or not ready · local fit fallback".into());vec![]}
+            },
             Command::Input(events)=>active.process_fastpath_input(&mut image,&events).map_err(|_|"RDP input encoding failed".to_string())?,
             command=>{let clip=active.get_svc_processor_mut::<CliprdrClient>().ok_or("CLIPRDR not negotiated")?;
             let messages=match command{Command::Copy(f)=>clip.initiate_copy(&f),Command::Request(f)=>clip.initiate_paste(f),Command::Reply(data)=>clip.submit_format_data(match data{Some(b)=>FormatDataResponse::new_data(b),None=>FormatDataResponse::new_error()}),_=>unreachable!()}.map_err(|_|"CLIPRDR command failed".to_string())?;
@@ -380,8 +490,17 @@ async fn run_session(
                         .map_err(|_| "RDP response write timeout".to_string())?
                         .map_err(|_| "RDP response write failed".to_string())?
                 }
-                ActiveStageOutput::GraphicsUpdate(_) => {
-                    state.lock().unwrap().frame = Some(Frame {
+                ActiveStageOutput::GraphicsUpdate(rect) => {
+                    let mut st = state.lock().unwrap();
+                    st.reactivating = false;
+                    if rect.right + 1 == image.width() && rect.bottom + 1 == image.height() {
+                        st.frames += 1;
+                        st.cadence.push_back(std::time::Instant::now());
+                        if st.cadence.len() > 128 {
+                            st.cadence.pop_front();
+                        }
+                    }
+                    st.frame = Some(Frame {
                         width: image.width(),
                         height: image.height(),
                         pixels: image.data().to_vec(),
@@ -389,10 +508,43 @@ async fn run_session(
                 }
                 ActiveStageOutput::Terminate(_) => return Ok(()),
                 ActiveStageOutput::DeactivateAll => {
-                    return Err(
-                        "Server reactivation requires reconnect; dynamic resize not yet supported"
-                            .into(),
-                    );
+                    {
+                        let mut st = state.lock().unwrap();
+                        st.frame = None;
+                        st.reactivating = true;
+                        st.bridge.reset();
+                        st.status = Some("Server reactivating display…".into());
+                    }
+                    while input.try_recv().is_ok() {}
+                    let mut sequence = activation_factory.create();
+                    let mut buf = ironrdp_core::WriteBuf::new();
+                    let reactivation = async {
+                        use connector::State;
+                        while !sequence.connection_activation_state().is_terminal() {
+                            let written = ironrdp_tokio::single_sequence_step_read(
+                                &mut reader,
+                                &mut sequence,
+                                &mut buf,
+                            )
+                            .await
+                            .map_err(|_| "RDP reactivation read failed")?;
+                            if written.size().unwrap_or(0) > 0 {
+                                writer
+                                    .write_all(buf.filled())
+                                    .await
+                                    .map_err(|_| "RDP reactivation write failed")?;
+                            }
+                        }
+                        Ok::<_, String>(())
+                    };
+                    tokio::select! {r=tokio::time::timeout(Duration::from_secs(10),reactivation)=>r.map_err(|_|"RDP reactivation timed out")??,_=async{while !halt.load(Ordering::Relaxed){tokio::time::sleep(Duration::from_millis(50)).await;}}=>return Ok(())};
+                    if let connector::connection_activation::ConnectionActivationState::Finalized{desktop_size,share_id,enable_server_pointer,pointer_software_rendering}=sequence.connection_activation_state(){
+                        if desktop_size.width==0||desktop_size.height==0||desktop_size.width>4096||desktop_size.height>4096{return Err("Reactivated framebuffer exceeds limits".into());}
+                        active.set_share_id(share_id);active.set_enable_server_pointer(enable_server_pointer);
+                        active.set_fastpath_processor(ironrdp::session::fast_path::ProcessorBuilder{io_channel_id:activation_factory.io_channel_id(),user_channel_id:activation_factory.user_channel_id(),share_id,enable_server_pointer,pointer_software_rendering,bulk_decompressor:None}.build());
+                        image=DecodedImage::new(ironrdp::graphics::image_processing::PixelFormat::BgrX32,desktop_size.width,desktop_size.height);
+                        state.lock().unwrap().status=Some(format!("Connected · reactivated {}×{}",desktop_size.width,desktop_size.height));
+                    } else {return Err("RDP reactivation did not finalize".into());}
                 }
                 _ => (),
             }
@@ -404,6 +556,7 @@ pub enum Scale {
     Fit,
     Native,
     Stretch,
+    Dynamic,
 }
 pub fn transform(
     widget: (f64, f64),
@@ -418,7 +571,7 @@ pub fn transform(
         return None;
     }
     let (sx, sy) = match mode {
-        Scale::Fit => {
+        Scale::Fit | Scale::Dynamic => {
             let s = (w / rw).min(h / rh);
             (s, s)
         }
@@ -432,6 +585,33 @@ pub fn transform(
     }
     Some((px as u16, py as u16))
 }
+fn viewport_geometry(
+    canvas: (f64, f64),
+    viewport: (f64, f64),
+    remote: (u16, u16),
+    mode: Scale,
+    zoom: f64,
+    scale: f64,
+) -> (f64, f64, f64, f64) {
+    let (rw, rh) = (remote.0.max(1) as f64, remote.1.max(1) as f64);
+    let (vw, vh) = viewport;
+    let z = if mode == Scale::Native {
+        zoom / scale.max(0.25)
+    } else {
+        zoom
+    };
+    let (sx, sy) = match mode {
+        Scale::Native => (z, z),
+        Scale::Stretch => (vw / rw * z, vh / rh * z),
+        _ => ((vw / rw).min(vh / rh) * z, (vw / rw).min(vh / rh) * z),
+    };
+    (
+        sx,
+        sy,
+        ((canvas.0 - rw * sx) / 2.0).max(0.0),
+        ((canvas.1 - rh * sy) / 2.0).max(0.0),
+    )
+}
 pub struct RdpView {
     pub root: gtk::Box,
     area: gtk::DrawingArea,
@@ -439,7 +619,19 @@ pub struct RdpView {
     connection: RefCell<Option<Connection>>,
     surface: RefCell<Option<gtk::cairo::ImageSurface>>,
     size: Cell<(u16, u16)>,
+    last_pixel: Cell<[u8; 4]>,
+    reconnect: Cell<bool>,
+    fullscreen: Cell<bool>,
+    display_info: gtk::Label,
+    pan: Cell<bool>,
+    preferences: RefCell<Option<crate::profiles::PreferenceSink>>,
+    preferences_due: Cell<Option<std::time::Instant>>,
     mode: Cell<Scale>,
+    scroll: gtk::ScrolledWindow,
+    zoom: Cell<f64>,
+    desired: Cell<(u16, u16)>,
+    resize_at: Cell<Option<std::time::Instant>>,
+    requested: Cell<(u16, u16)>,
     held: RefCell<HashSet<(u8, bool)>>,
     buttons: RefCell<HashSet<u32>>,
     pointer_position: Cell<(u16, u16)>,
@@ -495,7 +687,15 @@ impl RdpView {
             .vexpand(true)
             .focusable(true)
             .build();
-        root.append(&area);
+        let scroll = gtk::ScrolledWindow::builder()
+            .hexpand(true)
+            .vexpand(true)
+            .child(&area)
+            .build();
+        root.append(&scroll);
+        let display_info = gtk::Label::new(None);
+        display_info.set_wrap(true);
+        root.append(&display_info);
         let v = Rc::new(Self {
             root: root.clone(),
             area,
@@ -503,7 +703,19 @@ impl RdpView {
             connection: RefCell::new(None),
             surface: RefCell::new(None),
             size: Cell::new((0, 0)),
+            last_pixel: Cell::new([0; 4]),
+            reconnect: Cell::new(true),
+            fullscreen: Cell::new(false),
+            display_info,
+            pan: Cell::new(false),
+            preferences: RefCell::new(None),
+            preferences_due: Cell::new(None),
             mode: Cell::new(Scale::Fit),
+            scroll,
+            zoom: Cell::new(1.0),
+            desired: Cell::new((0, 0)),
+            resize_at: Cell::new(None),
+            requested: Cell::new((0, 0)),
             held: RefCell::new(HashSet::new()),
             buttons: RefCell::new(HashSet::new()),
             pointer_position: Cell::new((0, 0)),
@@ -544,6 +756,7 @@ impl RdpView {
                     port: p,
                     user: user.text().into(),
                     reference: secret.text().into(),
+                    reconnect: v.reconnect.get(),
                     ca: if ca.text().is_empty() {
                         None
                     } else {
@@ -573,6 +786,7 @@ impl RdpView {
             ("Fit", Scale::Fit),
             ("Native pixels", Scale::Native),
             ("Stretch", Scale::Stretch),
+            ("Dynamic resolution", Scale::Dynamic),
         ] {
             let b = gtk::Button::with_label(name);
             tools.insert(&b, -1);
@@ -580,10 +794,36 @@ impl RdpView {
             b.connect_clicked(move |_| {
                 if let Some(v) = w.upgrade() {
                     v.mode.set(mode);
+                    v.request_preferences_save();
+                    if mode == Scale::Native {
+                        v.zoom.set(1.0);
+                    }
+                    v.canvas();
                     v.area.queue_draw();
                 }
             });
         }
+        for (label, multiplier) in [("Zoom −", 0.8), ("Zoom +", 1.25)] {
+            let b = gtk::Button::with_label(label);
+            tools.insert(&b, -1);
+            let weak = Rc::downgrade(&v);
+            b.connect_clicked(move |_| {
+                if let Some(v) = weak.upgrade() {
+                    v.zoom.set((v.zoom.get() * multiplier).clamp(0.25, 4.0));
+                    v.request_preferences_save();
+                    v.canvas();
+                    v.area.queue_draw();
+                }
+            });
+        }
+        let pan = gtk::ToggleButton::with_label("Pan viewport");
+        tools.insert(&pan, -1);
+        let weak = Rc::downgrade(&v);
+        pan.connect_toggled(move |b| {
+            if let Some(v) = weak.upgrade() {
+                v.pan.set(b.is_active());
+            }
+        });
         let full = gtk::Button::with_label("Fullscreen");
         tools.insert(&full, -1);
         let w = Rc::downgrade(&v);
@@ -595,6 +835,7 @@ impl RdpView {
                     } else {
                         win.fullscreen();
                     }
+                    v.request_preferences_save();
                 }
             }
         });
@@ -657,6 +898,7 @@ impl RdpView {
                     3 => ClipPolicy::Manual,
                     _ => ClipPolicy::Disabled,
                 });
+                v.request_preferences_save();
                 v.broker.borrow_mut().local_copy();
                 v.advertised.set(0);
                 v.advertise(false);
@@ -704,19 +946,8 @@ impl RdpView {
                 cr.set_source_rgb(0.03, 0.03, 0.04);
                 let _ = cr.paint();
                 if let Some(surface) = v.surface.borrow().as_ref() {
-                    let (rw, rh) = v.size.get();
-                    let (sx, sy) = match v.mode.get() {
-                        Scale::Fit => {
-                            let s = (width as f64 / rw as f64).min(height as f64 / rh as f64);
-                            (s, s)
-                        }
-                        Scale::Native => (1.0, 1.0),
-                        Scale::Stretch => (width as f64 / rw as f64, height as f64 / rh as f64),
-                    };
-                    cr.translate(
-                        (width as f64 - rw as f64 * sx) / 2.0,
-                        (height as f64 - rh as f64 * sy) / 2.0,
-                    );
+                    let (sx, sy, ox, oy) = v.geometry(width as f64, height as f64);
+                    cr.translate(ox, oy);
                     cr.scale(sx, sy);
                     let _ = cr.set_source_surface(surface, 0.0, 0.0);
                     let _ = cr.paint();
@@ -774,12 +1005,150 @@ impl RdpView {
             }
         });
         v.area.add_controller(motion);
+        let scroll = gtk::EventControllerScroll::new(gtk::EventControllerScrollFlags::BOTH_AXES);
+        let weak = Rc::downgrade(&v);
+        scroll.connect_scroll(move |controller, dx, dy| {
+            if let Some(v) = weak.upgrade() {
+                if controller
+                    .current_event_state()
+                    .contains(gdk::ModifierType::CONTROL_MASK)
+                {
+                    v.zoom
+                        .set((v.zoom.get() * (-dy * 0.1).exp()).clamp(0.25, 4.0));
+                    v.request_preferences_save();
+                    v.canvas();
+                    v.area.queue_draw();
+                    return glib::Propagation::Stop;
+                }
+                if v.pan.get() {
+                    return glib::Propagation::Proceed;
+                }
+                let (x, y) = v.pointer_position.get();
+                let (horizontal, delta) = if dy.abs() >= dx.abs() {
+                    (false, -dy)
+                } else {
+                    (true, dx)
+                };
+                let units = (delta * 120.0).round().clamp(-256.0, 255.0) as i16;
+                if units != 0 {
+                    v.send(vec![FastPathInputEvent::MouseEvent(MousePdu {
+                        flags: if horizontal {
+                            PointerFlags::HORIZONTAL_WHEEL
+                        } else {
+                            PointerFlags::VERTICAL_WHEEL
+                        },
+                        number_of_wheel_rotation_units: units,
+                        x_position: x,
+                        y_position: y,
+                    })]);
+                }
+            }
+            glib::Propagation::Stop
+        });
+        v.area.add_controller(scroll);
         let w = Rc::downgrade(&v);
         glib::timeout_add_local(Duration::from_millis(16), move || {
             let Some(v) = w.upgrade() else {
                 return glib::ControlFlow::Break;
             };
             v.update();
+            v.canvas();
+            if v.preferences_due
+                .get()
+                .is_some_and(|at| at.elapsed() > Duration::from_millis(500))
+            {
+                v.preferences_due.set(None);
+                if let Some(save) = v.preferences.borrow().as_ref() {
+                    let full = v
+                        .root
+                        .root()
+                        .and_then(|w| w.downcast::<gtk::Window>().ok())
+                        .is_some_and(|w| w.is_fullscreen());
+                    save(
+                        match v.mode.get() {
+                            Scale::Fit => "fit",
+                            Scale::Native => "native",
+                            Scale::Stretch => "stretch",
+                            Scale::Dynamic => "dynamic",
+                        },
+                        v.zoom.get(),
+                        full,
+                        match v.policy.get() {
+                            ClipPolicy::Bidirectional => 0,
+                            ClipPolicy::LocalToRemote => 1,
+                            ClipPolicy::RemoteToLocal => 2,
+                            ClipPolicy::Manual => 3,
+                            ClipPolicy::Disabled => 4,
+                        },
+                    );
+                }
+            }
+            let reactivating = v
+                .connection
+                .borrow()
+                .as_ref()
+                .is_some_and(|c| c.state.lock().unwrap().reactivating);
+            let cap = v
+                .connection
+                .borrow()
+                .as_ref()
+                .and_then(|c| c.state.lock().unwrap().display_cap);
+            let (rw, rh) = v.size.get();
+            v.display_info.set_text(&format!(
+                "Remote {rw}×{rh} · viewport {}×{} · {:.0}% · {} · {}",
+                v.scroll.width(),
+                v.scroll.height(),
+                v.zoom.get() * 100.0,
+                if cap.is_some() {
+                    "Display Control negotiated"
+                } else {
+                    "fixed resolution / local scaling"
+                },
+                if v.broker.borrow().active() == Some(v.id.as_str()) {
+                    "active tab"
+                } else {
+                    "inactive tab; clipboard offers cached"
+                }
+            ));
+            if v.mode.get() == Scale::Dynamic && cap.is_some() && v.root.is_mapped() {
+                let scale = v
+                    .area
+                    .native()
+                    .and_then(|n| n.surface())
+                    .map(|s| s.scale())
+                    .unwrap_or(1.0);
+                let desired = (
+                    (((v.scroll.width() as f64 * scale).clamp(200.0, 4096.0) as u16) / 2) * 2,
+                    (v.scroll.height() as f64 * scale).clamp(200.0, 4096.0) as u16,
+                );
+                if desired != v.desired.get() {
+                    v.desired.set(desired);
+                    v.resize_at.set(Some(std::time::Instant::now()));
+                }
+                if v.size.get() == desired {
+                    v.requested.set(desired);
+                }
+                if !reactivating
+                    && v.requested.get() != desired
+                    && v.resize_at
+                        .get()
+                        .is_some_and(|at| at.elapsed() > Duration::from_millis(250))
+                {
+                    v.command(Command::Resize(
+                        desired.0,
+                        desired.1,
+                        (v.area
+                            .native()
+                            .and_then(|n| n.surface())
+                            .map(|s| s.scale())
+                            .unwrap_or(1.0)
+                            * 100.0)
+                            .round()
+                            .clamp(100.0, 500.0) as u32,
+                    ));
+                    v.requested.set(desired);
+                }
+            }
             glib::ControlFlow::Continue
         });
         v
@@ -792,6 +1161,7 @@ impl RdpView {
                 port,
                 user: "fixture".into(),
                 reference: String::new(),
+                reconnect: true,
                 ca: Some(ca.to_string_lossy().into_owned()),
             },
             Some("generated-local-only".into()),
@@ -801,7 +1171,17 @@ impl RdpView {
         self.focus();
     }
     pub fn fixture_inspect(&self) -> serde_json::Value {
-        serde_json::json!({"status":self.status.text().as_str(),"size":self.size.get(),"viewport":[self.area.width(),self.area.height()],"window_width":self.root.root().and_then(|r|r.downcast::<gtk::Window>().ok()).map(|w|w.width()),"active":self.broker.borrow().active()==Some(self.id.as_str()),"epoch":self.broker.borrow().epoch(),"pending":self.pending.borrow().is_some(),"received_generation":self.received_generation.get(),"policy":format!("{:?}",self.policy.get())})
+        let metrics = self.connection.borrow().as_ref().map(|c| {
+            let s = c.state.lock().unwrap();
+            let times: Vec<_> = s
+                .cadence
+                .iter()
+                .zip(s.cadence.iter().skip(1))
+                .map(|(a, b)| b.duration_since(*a).as_secs_f64() * 1000.0)
+                .collect();
+            serde_json::json!({"decoded_updates":s.frames,"update_intervals_ms":times})
+        });
+        serde_json::json!({"requested_size":self.requested.get(),"metrics":metrics,"last_pixel":self.last_pixel.get(),"status":self.status.text().as_str(),"size":self.size.get(),"zoom":self.zoom.get(),"pan":[self.scroll.hadjustment().value(),self.scroll.vadjustment().value()],"viewport":[self.area.width(),self.area.height()],"window_width":self.root.root().and_then(|r|r.downcast::<gtk::Window>().ok()).map(|w|w.width()),"active":self.broker.borrow().active()==Some(self.id.as_str()),"epoch":self.broker.borrow().epoch(),"pending":self.pending.borrow().is_some(),"received_generation":self.received_generation.get(),"policy":format!("{:?}",self.policy.get())})
     }
     pub fn fixture_policy(&self, index: u32) {
         fn find(w: &gtk::Widget) -> Option<gtk::DropDown> {
@@ -826,6 +1206,112 @@ impl RdpView {
             self.receive(true);
         } else {
             self.advertise(true);
+        }
+    }
+    fn geometry(&self, w: f64, h: f64) -> (f64, f64, f64, f64) {
+        viewport_geometry(
+            (w, h),
+            (
+                self.scroll.width().max(1) as f64,
+                self.scroll.height().max(1) as f64,
+            ),
+            self.size.get(),
+            self.mode.get(),
+            self.zoom.get(),
+            self.area
+                .native()
+                .and_then(|n| n.surface())
+                .map(|s| s.scale())
+                .unwrap_or(1.0),
+        )
+    }
+    fn canvas(&self) {
+        let (rw, rh) = self.size.get();
+        let (sx, sy, _, _) = self.geometry(0.0, 0.0);
+        self.area.set_content_width((rw as f64 * sx).ceil() as i32);
+        self.area.set_content_height((rh as f64 * sy).ceil() as i32);
+    }
+    pub fn set_preferences_sink(&self, sink: crate::profiles::PreferenceSink) {
+        *self.preferences.borrow_mut() = Some(sink);
+    }
+    fn request_preferences_save(&self) {
+        if self.preferences.borrow().is_some() {
+            self.preferences_due.set(Some(std::time::Instant::now()));
+        }
+    }
+    pub fn configure(&self, p: &crate::profiles::Profile) {
+        self.set_profile(
+            &p.server,
+            &p.username,
+            &p.secret_reference,
+            &p.preferences.trust,
+        );
+        self.mode.set(match p.preferences.display.as_str() {
+            "native" => Scale::Native,
+            "stretch" => Scale::Stretch,
+            "dynamic" => Scale::Dynamic,
+            _ => Scale::Fit,
+        });
+        self.zoom.set(p.preferences.zoom);
+        self.reconnect.set(p.preferences.reconnect);
+        self.fullscreen.set(p.preferences.fullscreen);
+        self.fixture_policy(p.preferences.clipboard);
+        self.canvas();
+    }
+    pub fn connect_profile(&self) {
+        fn find(w: &gtk::Widget) -> Option<gtk::Button> {
+            if let Some(b) = w.downcast_ref::<gtk::Button>() {
+                if b.label().as_deref() == Some("Connect / reconnect") {
+                    return Some(b.clone());
+                }
+            }
+            let mut c = w.first_child();
+            while let Some(w) = c {
+                c = w.next_sibling();
+                if let Some(b) = find(&w) {
+                    return Some(b);
+                }
+            }
+            None
+        }
+        if let Some(b) = find(self.root.upcast_ref()) {
+            b.emit_clicked();
+        }
+        if self.fullscreen.get() {
+            if let Some(w) = self
+                .root
+                .root()
+                .and_then(|w| w.downcast::<gtk::Window>().ok())
+            {
+                w.fullscreen();
+            }
+        }
+    }
+    pub fn fixture_window(&self, w: i32, h: i32) {
+        if let Some(window) = self
+            .root
+            .root()
+            .and_then(|w| w.downcast::<gtk::Window>().ok())
+        {
+            window.set_default_size(w, h);
+        }
+    }
+    pub fn fixture_display(&self, mode: &str, zoom: f64, width: u16, height: u16) {
+        self.mode.set(match mode {
+            "native" => Scale::Native,
+            "stretch" => Scale::Stretch,
+            "dynamic" => Scale::Dynamic,
+            _ => Scale::Fit,
+        });
+        self.zoom.set(zoom.clamp(0.25, 4.0));
+        self.request_preferences_save();
+        self.canvas();
+        if width > 0 && height > 0 {
+            self.command(Command::Resize(
+                (width.clamp(200, 4096) / 2) * 2,
+                height.clamp(200, 4096),
+                100,
+            ));
         }
     }
     pub fn set_profile(&self, host: &str, user: &str, reference: &str, ca: &str) {
@@ -911,10 +1397,10 @@ impl RdpView {
                 self.pending.borrow_mut().take();
                 self.remote.set(None);
                 self.advertised.set(0);
+                self.requested.set((0, 0));
                 self.replying.set(false);
                 self.decoding.set(false);
-                self.held.borrow_mut().clear();
-                self.buttons.borrow_mut().clear();
+                self.release_keys();
                 self.surface.borrow_mut().take();
                 self.size.set((0, 0));
                 if active {
@@ -1151,15 +1637,13 @@ impl RdpView {
     }
 
     fn pointer(&self, x: f64, y: f64, button: u32, release: bool) {
-        let Some((x, y)) = transform(
-            (self.area.width() as f64, self.area.height() as f64),
-            self.size.get(),
-            self.mode.get(),
-            x,
-            y,
-        ) else {
+        let (sx, sy, ox, oy) = self.geometry(self.area.width() as f64, self.area.height() as f64);
+        let (px, py) = ((x - ox) / sx, (y - oy) / sy);
+        let (rw, rh) = self.size.get();
+        if px < 0.0 || py < 0.0 || px >= rw as f64 || py >= rh as f64 {
             return;
-        };
+        }
+        let (x, y) = (px as u16, py as u16);
         self.pointer_position.set((x, y));
         if button != 0 {
             if release {
@@ -1314,7 +1798,16 @@ impl RdpView {
             s.frame.take()
         };
         if let Some(f) = frame {
+            if self.size.get() != (f.width, f.height) {
+                self.release_keys();
+                self.surface.borrow_mut().take();
+            }
             self.size.set((f.width, f.height));
+            if let Some(p) = f.pixels.get(f.pixels.len().saturating_sub(4)..) {
+                if p.len() == 4 {
+                    self.last_pixel.set(p.try_into().unwrap());
+                }
+            }
             match gtk::cairo::ImageSurface::create_for_data(
                 f.pixels,
                 gtk::cairo::Format::Rgb24,
@@ -1402,6 +1895,7 @@ mod tests {
                     port,
                     user: "synthetic-fixture".into(),
                     reference: String::new(),
+                    reconnect: true,
                     ca: if trusted {
                         Some(cert.to_string_lossy().into_owned())
                     } else {
@@ -1426,6 +1920,123 @@ mod tests {
         fs::remove_file(cert).unwrap();
         fs::remove_file(key).unwrap();
         fs::remove_dir(base).unwrap();
+    }
+    #[test]
+    fn display_reassembly_capped_before_allocation() {
+        use ironrdp::dvc::pdu::{DataFirstPdu, DataPdu, DrdynvcDataPdu, DrdynvcServerPdu};
+        fn svc(bytes: &[u8]) -> Vec<u8> {
+            [
+                (bytes.len() as u32).to_le_bytes().as_slice(),
+                3u32.to_le_bytes().as_slice(),
+                bytes,
+            ]
+            .concat()
+        }
+        let mut guard = DisplayFragmentGuard::default();
+        let caps =
+            ironrdp::displaycontrol::pdu::DisplayControlCapabilities::new(1, 3840, 2400).unwrap();
+        let encoded =
+            ironrdp_core::encode_vec(&ironrdp::displaycontrol::pdu::DisplayControlPdu::Caps(caps))
+                .unwrap();
+        let data = ironrdp_core::encode_vec(&DrdynvcServerPdu::Data(DrdynvcDataPdu::Data(
+            DataPdu::new(1, encoded),
+        )))
+        .unwrap();
+        assert!(guard.check(&svc(&data)).is_ok());
+        let bad = ironrdp_core::encode_vec(&DrdynvcServerPdu::Data(DrdynvcDataPdu::DataFirst(
+            DataFirstPdu::new(1, u32::MAX, vec![1]),
+        )))
+        .unwrap();
+        assert!(guard.check(&svc(&bad)).is_err());
+        assert!(
+            DisplayFragmentGuard::default()
+                .check(
+                    &[
+                        65537u32.to_le_bytes().as_slice(),
+                        3u32.to_le_bytes().as_slice()
+                    ]
+                    .concat()
+                )
+                .is_err()
+        );
+    }
+    #[test]
+    fn display_control_framed_caps_delegate_and_bound() {
+        use ironrdp::dvc::DvcProcessor;
+        let maximum = Arc::new(Mutex::new(0u64));
+        let capture = maximum.clone();
+        let mut client = DisplayControlAdapter(
+            ironrdp::displaycontrol::client::DisplayControlClient::new(move |caps| {
+                *capture.lock().unwrap() = caps.max_monitor_area();
+                Ok(vec![])
+            }),
+        );
+        let caps =
+            ironrdp::displaycontrol::pdu::DisplayControlCapabilities::new(1, 3840, 2400).unwrap();
+        let wire =
+            ironrdp_core::encode_vec(&ironrdp::displaycontrol::pdu::DisplayControlPdu::Caps(caps))
+                .unwrap();
+        assert_eq!(wire.len(), 20);
+        client.process(1, &wire).unwrap();
+        assert!(client.0.ready());
+        assert_eq!(*maximum.lock().unwrap(), 3840 * 2400);
+        assert!(client.process(1, &wire[..12]).is_err());
+        let mut bad = wire;
+        bad[4] = 255;
+        assert!(client.process(1, &bad).is_err());
+    }
+    #[test]
+    fn viewport_zoom_fractional_scale_pan_and_display_layout() {
+        let native = viewport_geometry(
+            (2048.0, 1152.0),
+            (800.0, 600.0),
+            (2560, 1440),
+            Scale::Native,
+            1.0,
+            1.25,
+        );
+        assert_eq!((native.0, native.1), (0.8, 0.8));
+        // GTK delivers canvas coordinates including adjustment offsets, not viewport coordinates.
+        let pointer = (400.0 + 800.0) / native.0;
+        assert_eq!(pointer, 1500.0);
+        let fit = viewport_geometry(
+            (800.0, 600.0),
+            (800.0, 600.0),
+            (2560, 1440),
+            Scale::Fit,
+            1.0,
+            1.25,
+        );
+        assert_eq!(fit.0, 0.3125);
+        assert_eq!(fit.3, 75.0);
+        let stretch = viewport_geometry(
+            (800.0, 600.0),
+            (800.0, 600.0),
+            (2560, 1440),
+            Scale::Stretch,
+            1.25,
+            1.0,
+        );
+        assert_ne!(stretch.0, stretch.1);
+        use ironrdp::displaycontrol::pdu::DisplayControlMonitorLayout;
+        assert!(
+            DisplayControlMonitorLayout::new_single_primary_monitor(2560, 1440, Some(125), None)
+                .is_ok()
+        );
+        assert!(
+            DisplayControlMonitorLayout::new_single_primary_monitor(3000, 1800, Some(150), None)
+                .is_ok()
+        );
+        assert_eq!(
+            DisplayControlMonitorLayout::new_single_primary_monitor(201, 200, None, None)
+                .unwrap()
+                .monitors()[0]
+                .dimensions(),
+            (200, 200)
+        );
+        assert!(
+            DisplayControlMonitorLayout::new_single_primary_monitor(0, 200, None, None).is_err()
+        );
     }
     #[test]
     fn transforms() {

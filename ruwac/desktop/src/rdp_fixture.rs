@@ -133,6 +133,7 @@ fn authenticated_loopback_framebuffer_and_cliprdr() {
                     port,
                     user: "fixture".into(),
                     reference: String::new(),
+                    reconnect: true,
                     ca: Some(cert.to_string_lossy().into_owned()),
                 },
                 if tab == 3 {
