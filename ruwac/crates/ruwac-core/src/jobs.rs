@@ -57,7 +57,20 @@ impl State {
         let number=|key,default,max|->Result<usize>{object.get(key).map(|v|v.as_u64().filter(|v|*v<=max).map(|v|v as usize).ok_or_else(||Error::new("INVALID_PARAMS","invalid job list bound"))).unwrap_or(Ok(default))};
         let offset=number("offset",0,128)?;let limit=number("limit",50,100)?;if limit==0{return Err(Error::new("INVALID_PARAMS","limit must be 1..100"));}
         let mut jobs:Vec<_>=self.panes.values().filter(|p|session.as_ref().is_none_or(|id|self.windows[&p.window].session==*id)).map(|p|metadata(p,self)).filter(|p|query.is_empty()||["id","command","host","cwd","session_name","window_name"].iter().any(|k|p[*k].as_str().is_some_and(|s|s.to_lowercase().contains(&query)))||p["foreground"]["command"].as_str().is_some_and(|s|s.to_lowercase().contains(&query))).collect();
-        jobs.sort_by_key(|p|p["id"].as_str().unwrap().to_owned());let total=jobs.len();let rows:Vec<_>=jobs.into_iter().skip(offset).take(limit).collect();let end=offset.saturating_add(rows.len());
-        Ok(json!({"jobs":rows,"total":total,"offset":offset,"next_offset":if end<total{Some(end)}else{None},"max_jobs":128,"agent_state_inference":false}))
+        jobs.sort_by_key(|p|p["id"].as_str().unwrap().to_owned());let total=jobs.len();
+        // Cursor offsets refer to this membership, not a mutable display title.
+        use std::hash::{Hash,Hasher};
+        let mut membership=std::collections::hash_map::DefaultHasher::new();
+        for row in &jobs {row["id"].as_str().unwrap().hash(&mut membership);}
+        let membership=format!("{:016x}",membership.finish());
+        const PAGE_BYTES:usize=64*1024;
+        let mut bytes=512;let mut rows=Vec::new();
+        for row in jobs.into_iter().skip(offset).take(limit) {
+            let size=serde_json::to_vec(&row).map_err(|_|Error::new("LIMIT","job metadata encoding failed"))?.len()+1;
+            if bytes+size>PAGE_BYTES {if rows.is_empty(){return Err(Error::new("LIMIT","one job exceeds the metadata page budget"));}break;}
+            bytes+=size;rows.push(row);
+        }
+        let end=offset.saturating_add(rows.len());
+        Ok(json!({"jobs":rows,"total":total,"offset":offset,"next_offset":if end<total{Some(end)}else{None},"max_jobs":128,"page_byte_limit":PAGE_BYTES,"membership":membership,"agent_state_inference":false}))
     }
 }

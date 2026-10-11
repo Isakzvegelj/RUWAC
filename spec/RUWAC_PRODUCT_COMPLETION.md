@@ -6,7 +6,7 @@ The full product is not yet complete. A runnable source prerelease and isolated 
 |---|---|---|
 | T-01 Screen commands | Nine real-PTY copy/chooser/prompt/configuration and 2–5 RUWAC nesting groups | PARTIAL: implemented bounded headless interaction; mixed GNU Screen/tmux 2–5 layers pass in scoped configurations; Screen arbitrary-control paste and physical input qualification remain |
 | T-02 startup input | 100 adversarial probes in headless suite | PASS fixture |
-| T-03 multiple PTYs and load | Independent PTYs, layout suite, prior 40-pane API fixture | PASS bounded fixture |
+| T-03 multiple PTYs and load | Independent PTYs, layout suite, actual 128-pane process/wire/native paging fixture | PASS bounded capacity; maximum-load terminal/checkpoint performance remains separate |
 | T-04 detach and reattach | Native crash/reattach and workspace same-PID tests | PASS daemon lifetime; no process resurrection claim |
 | T-05 stable IDs | Targeted routes, stale-ID negatives, concurrent clients | PASS |
 | T-06 VT/Unicode/applications | Native Vim/less/htop, Unicode, alternate-screen and input tests | PARTIAL: complete fzf/combining/extended-input matrix |
@@ -19,7 +19,7 @@ The full product is not yet complete. A runnable source prerelease and isolated 
 | A-03 concurrent routes | Idempotency, focus changes, stale IDs | PASS |
 | A-04 non-TTY/SSH | Real --host JSON/file control and three SSH PTY cycles | PASS authorized SSH fixture; endpoint provisioning remains explicit |
 | A-05 capture/wait/events | Bounded capture, event subscription, revision and wait tests | PASS |
-| A-06 socket/backpressure | Owned daemon socket, malformed frames, concurrency limits | PARTIAL: same-UID peer verification implemented; further fuzz/soak |
+| A-06 socket/backpressure | Owned daemon socket, malformed frames, concurrency limits | PARTIAL: same-UID peer verification and byte-bounded process metadata/all-page native guards validated; broader response bounds and fuzz/soak remain |
 | A-07 GUI control | Explicit unavailable response and independent headless graph | PARTIAL: independent permission-scoped focus/RDP lifecycle over actual SSH validated; GUI events and remote input remain |
 | R-01 Windows | Authenticated loopback is implemented | BLOCKED: authorized Windows endpoint identified; credential/trust qualification pending |
 | R-02 Fedora GNOME | Authenticated loopback is implemented | BLOCKED: authorized GNOME endpoint identified; credential/certificate identity pending |

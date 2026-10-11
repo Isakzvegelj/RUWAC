@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## v0.1.20 — 2026-10-11 — Prerelease
+
+- Bound serialized process metadata pages to 64 KiB, preventing valid long Unicode metadata from exceeding IPC framing limits.
+- Read all metadata pages in the native monitor with membership, cursor, count and duplicate-ID guards.
+- Validate the full 128-pane capacity and native navigation/search across more than two transport pages.
+
 ## v0.1.19 — 2026-10-11 — Prerelease
 
 - Add persistent SFTP pause/resume and explicit partial discard with source, prefix, destination and authenticated host identity verification.
