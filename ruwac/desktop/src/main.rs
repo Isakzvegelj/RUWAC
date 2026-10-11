@@ -2,6 +2,7 @@ mod clipboard;
 mod cliprdr;
 mod credentials;
 mod files;
+mod files_resume;
 mod ipc;
 mod jobs;
 mod profiles;
@@ -367,6 +368,7 @@ v.fixture_display(q["mode"].as_str().unwrap_or("fit"),q["zoom"].as_f64().unwrap_
     "files-open"=>{match serde_json::from_value::<profiles::Profile>(q["profile"].clone()){Ok(profile) if profiles::endpoint(&profile.server,22).is_ok_and(|(host,_)|host=="127.0.0.1")=>{let panel=files::panel(profile.clone());file_views.borrow_mut().push((panel.clone(),profile));let page=tiles::append(&tabs,&panel);page.set_title("Fixture · Files");tabs.set_selected_page(&page);reply(files::fixture(&panel,q["path"].as_str(),true));},_=>reply(json!({"error":"Loopback fixture profile required"}))}},
     "files-directory"=>{if let Some((root,_))=file_views.borrow().get(q["index"].as_u64().unwrap_or(0)as usize){reply(json!({"directory":files::directory(root,q["path"].as_str())}));}else{reply(json!({"error":"Files view missing"}));}},
     "files-inspect"=>{if let Some(page)=tabs.selected_page(){if page.title().ends_with("Files"){if let Some(root)=page.child().first_child().and_then(|c|c.downcast::<gtk::Box>().ok()){reply(files::fixture(&root,q["path"].as_str(),q["refresh"]==true));}}}},
+    "files-transfer"=>{if let Some(page)=tabs.selected_page(){if page.title().ends_with("Files"){if let Some(root)=page.child().first_child().and_then(|c|c.downcast::<gtk::Box>().ok()){reply(files::fixture_transfer(&root,&q));}}}},
     "jobs"=>{if q["operation"]=="open"{job_button.emit_clicked();}reply(jobs::fixture(&q));},
     "profile-editor"=>reply(profiles::fixture_editor(&sidebar,&q)),
     "profiles-control"=>{let path=q["file"].as_str().filter(|s|!s.contains('/')&&!s.contains("..")).map(|s|dir.join(s));reply(profiles::fixture_library(&sidebar,path.as_deref(),&q));},

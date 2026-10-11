@@ -43,6 +43,8 @@ pub struct Preferences {
     pub reconnect: bool,
     pub trust: String,
     pub identity_file: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub identity_secret_reference: String,
     pub known_hosts: String,
 }
 impl Default for Preferences {
@@ -58,6 +60,7 @@ impl Default for Preferences {
             reconnect: true,
             trust: String::new(),
             identity_file: String::new(),
+            identity_secret_reference: String::new(),
             known_hosts: String::new(),
         }
     }
@@ -190,6 +193,7 @@ impl Profile {
                 &self.preferences.gateway,
                 &self.preferences.trust,
                 &self.preferences.identity_file,
+                &self.preferences.identity_secret_reference,
                 &self.preferences.known_hosts,
                 &self.id,
                 &self.machine_id,
@@ -1309,6 +1313,24 @@ fn editor(button: &gtk::Button, store: Rc<RefCell<Store>>, id: Option<String>, s
             });
         });
     }
+    let identity_reference=gtk::Entry::builder().text(&original.preferences.identity_secret_reference).placeholder_text("Reference for this key's passphrase; leave empty for an unencrypted key").hexpand(true).build();
+    grid.attach(&gtk::Label::new(Some("SSH key passphrase reference")),0,23,1,1);grid.attach(&identity_reference,1,23,1,1);
+    let key_secret=gtk::PasswordEntry::builder().show_peek_icon(true).placeholder_text("Key passphrase — stored only in Secret Service").build();
+    key_secret.set_widget_name("ssh-key-passphrase");grid.attach(&key_secret,1,24,1,1);
+    let key_actions=gtk::Box::new(gtk::Orientation::Horizontal,4);grid.attach(&key_actions,1,25,1,1);
+    for (label,forget) in [("Set / replace key passphrase",false),("Forget key passphrase",true)] {
+        let button=gtk::Button::with_label(label);key_actions.append(&button);
+        let(entry,reference,info)=(key_secret.clone(),identity_reference.clone(),info.clone());
+        button.connect_clicked(move|button|{
+            let value=entry.text().to_string();entry.set_text("");let reference=reference.text().to_string();let(tx,rx)=std::sync::mpsc::sync_channel(1);button.set_sensitive(false);
+            std::thread::spawn(move||{let _=tx.send(if forget{crate::credentials::forget(&reference)}else{crate::credentials::set(&reference,value)});});
+            let(button,info)=(button.clone(),info.clone());gtk::glib::timeout_add_local(std::time::Duration::from_millis(25),move||match rx.try_recv(){
+                Ok(result)=>{button.set_sensitive(true);info.set_text(result.err().as_deref().unwrap_or("SSH key passphrase operation completed in Secret Service"));gtk::glib::ControlFlow::Break},
+                Err(std::sync::mpsc::TryRecvError::Empty)=>gtk::glib::ControlFlow::Continue,
+                Err(_)=>{button.set_sensitive(true);info.set_text("Secret Service worker unavailable");gtk::glib::ControlFlow::Break}
+            });
+        });
+    }
     dialog.connect_response(move|d,response|{
         if response==gtk::ResponseType::Other(2) || response==gtk::ResponseType::Other(4) {
             let machine=response==gtk::ResponseType::Other(4);if store.borrow().items.iter().any(|p|(p.id==original.id||(machine&&p.machine_id==original.machine_id))&&store.borrow().active.contains_key(&p.id)){info.set_text("This profile is used by an opened tab. Close all of its connection tabs before deleting it.");return;}
@@ -1316,7 +1338,7 @@ fn editor(button: &gtk::Button, store: Rc<RefCell<Store>>, id: Option<String>, s
             let(s,id,machine_id,st,parent)=(store.clone(),original.id.clone(),original.machine_id.clone(),status.clone(),d.clone());confirm.connect_response(move|c,r|{if r==gtk::ResponseType::Accept {let mut s=s.borrow_mut();let old=s.items.clone();s.items.retain(|p|p.id!=id&&(!machine||p.machine_id!=machine_id));if let Err(e)=s.save(){s.items=old;st.set_text(&e);}else{drop(s);st.set_text("Metadata deleted; previous library retained for Undo");refresh_widgets(parent.transient_for().as_ref());parent.close();}}c.close();});confirm.present();return;
         }
         if response!=gtk::ResponseType::Accept && response!=gtk::ResponseType::Other(1) && response!=gtk::ResponseType::Other(3){d.close();return;}
-        let mut p=original.clone();p.name=fields[0].text().into();p.group=fields[1].text().into();p.machine_id=fields[2].text().into();p.server=fields[3].text().into();p.username=fields[4].text().into();p.preferences.label=fields[5].text().into();p.preferences.network=fields[6].text().into();p.preferences.gateway=fields[7].text().into();p.tags=fields[8].text().split(',').map(str::trim).filter(|s|!s.is_empty()).map(str::to_owned).collect();p.secret_reference=fields[9].text().into();p.preferences.trust=fields[10].text().into();p.preferences.identity_file=fields[11].text().into();p.preferences.known_hosts=fields[12].text().into();p.protocol=if protocol.selected()==1{"SSH"}else{"RDP"}.into();p.preferences.display=["fit","native","stretch","dynamic"][display.selected() as usize].into();p.preferences.clipboard=clipboard.selected();p.preferences.zoom=zoom.value();p.preferences.fullscreen=full.is_active();p.preferences.reconnect=retry.is_active();p.inherit=inherit.is_active();
+        let mut p=original.clone();p.name=fields[0].text().into();p.group=fields[1].text().into();p.machine_id=fields[2].text().into();p.server=fields[3].text().into();p.username=fields[4].text().into();p.preferences.label=fields[5].text().into();p.preferences.network=fields[6].text().into();p.preferences.gateway=fields[7].text().into();p.tags=fields[8].text().split(',').map(str::trim).filter(|s|!s.is_empty()).map(str::to_owned).collect();p.secret_reference=fields[9].text().into();p.preferences.trust=fields[10].text().into();p.preferences.identity_file=fields[11].text().into();p.preferences.identity_secret_reference=identity_reference.text().into();p.preferences.known_hosts=fields[12].text().into();p.protocol=if protocol.selected()==1{"SSH"}else{"RDP"}.into();p.preferences.display=["fit","native","stretch","dynamic"][display.selected() as usize].into();p.preferences.clipboard=clipboard.selected();p.preferences.zoom=zoom.value();p.preferences.fullscreen=full.is_active();p.preferences.reconnect=retry.is_active();p.inherit=inherit.is_active();
         if response==gtk::ResponseType::Other(1){p.id=ruwac_protocol::id("endpoint");p.machine_id=ruwac_protocol::id("machine");p.secret_reference=p.id.clone();p.name.push_str(" (copy)");}
         if response==gtk::ResponseType::Other(3){p.name=original.name.clone();p.group=original.group.clone();p.id=ruwac_protocol::id("endpoint");p.secret_reference=p.id.clone();}
         if let Err(e)=p.validate(){info.set_text(&e);return;}
@@ -1603,6 +1625,7 @@ pub fn fixture_editor(root: &gtk::Box, q: &serde_json::Value) -> serde_json::Val
                 continue;
             }
             fn update(w: &gtk::Widget, q: &serde_json::Value) {
+                if w.widget_name()=="ssh-key-passphrase" {if let Some(entry)=w.downcast_ref::<gtk::PasswordEntry>(){if let Some(secret)=q["key_passphrase"].as_str(){entry.set_text(secret);}}}
                 if let Some(grid) = w.downcast_ref::<gtk::Grid>() {
                     let mut c = grid.first_child();
                     while let Some(child) = c {
@@ -1627,6 +1650,7 @@ pub fn fixture_editor(root: &gtk::Box, q: &serde_json::Value) -> serde_json::Val
                 }
             }
             update(d.upcast_ref(), q);
+            if let Some(action)=q["credential_action"].as_str(){if let Some(button)=find(d.upcast_ref(),action){button.emit_clicked();}}
             if title.starts_with("Network") {
                 let mut child = d.content_area().first_child();
                 let mut dropdown = 0;
@@ -1655,7 +1679,7 @@ pub fn fixture_editor(root: &gtk::Box, q: &serde_json::Value) -> serde_json::Val
                 "delete-machine" => gtk::ResponseType::Other(4),
                 _ => gtk::ResponseType::Accept,
             };
-            d.response(response);
+            if q["response"]!="keep" {d.response(response);}
             applied = true;
         }
     }

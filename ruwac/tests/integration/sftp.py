@@ -4,10 +4,12 @@ import argparse,hashlib,json,os,pwd,socket,subprocess,tempfile,time,traceback,th
 from pathlib import Path
 from PIL import Image
 p=argparse.ArgumentParser();p.add_argument('--driver',required=True);p.add_argument('--evidence',required=True);p.add_argument('--gui');p.add_argument('--binary');a=p.parse_args();root=Path(tempfile.mkdtemp(prefix='sftp-',dir=a.evidence));root.chmod(0o700);remote=root/'remote';remote.mkdir(mode=0o700);results=[];server=None
-for name in ['host','client']:subprocess.run(['ssh-keygen','-q','-t','ed25519','-N','','-f',str(root/name)],check=True)
-(root/'authorized_keys').write_text((root/'client.pub').read_text());(root/'authorized_keys').chmod(0o600)
+auth_root=Path(tempfile.mkdtemp(prefix='ruwac-sftp-auth-',dir=Path('/run/user')/str(os.getuid())));auth_root.chmod(0o700);authorized=auth_root/'authorized_keys'
+for name in ['host','client']:
+ subprocess.run(['ssh-keygen','-q','-t','ed25519','-N','','-f',str(root/name)],check=True);(root/name).chmod(0o600)
+authorized.write_text((root/'client.pub').read_text());authorized.chmod(0o600)
 with socket.socket() as s:s.bind(('127.0.0.1',0));port=s.getsockname()[1]
-config=root/'sshd.conf';config.write_text(f'ListenAddress 127.0.0.1\nPort {port}\nHostKey {root}/host\nPidFile {root}/sshd.pid\nAuthorizedKeysFile {root}/authorized_keys\nStrictModes yes\nPasswordAuthentication no\nKbdInteractiveAuthentication no\nUsePAM no\nPermitRootLogin no\nAllowUsers {pwd.getpwuid(os.getuid()).pw_name}\nSubsystem sftp internal-sftp\nLogLevel ERROR\n')
+config=root/'sshd.conf';config.write_text(f'ListenAddress 127.0.0.1\nPort {port}\nHostKey {root}/host\nPidFile {root}/sshd.pid\nAuthorizedKeysFile {authorized}\nStrictModes yes\nPasswordAuthentication no\nKbdInteractiveAuthentication no\nUsePAM no\nPermitRootLogin no\nAllowUsers {pwd.getpwuid(os.getuid()).pw_name}\nSubsystem sftp internal-sftp\nLogLevel ERROR\n')
 key=(root/'host.pub').read_text().split();known=root/'known_hosts';known.write_text(f'[127.0.0.1]:{port} {key[0]} {key[1]}\n');known.chmod(0o600)
 profile={'id':'generated-endpoint','machine_id':'generated-machine','name':'fixture','group':'R5','protocol':'SSH','server':f'127.0.0.1:{port}','username':pwd.getpwuid(os.getuid()).pw_name,'secret_reference':'generated-unused','favorite':False,'last_used':0,'tags':[],'preferences':{'identity_file':str(root/'client'),'known_hosts':str(known)}}
 profile_path=root/'profile.json';profile_path.write_text(json.dumps(profile));profile_path.chmod(0o600)
@@ -116,5 +118,7 @@ try:
  case('SFTP-DISCONNECT',disconnect)
 finally:
  if server and server.poll() is None:server.terminate();server.wait(timeout=5)
+ if authorized.exists():authorized.unlink()
+ auth_root.rmdir()
  report={'cases':results,'fixture':'isolated current-user loopback sshd, generated ed25519 identity and host keys','source':'production libssh2 adapter','limitations':['No rsync','No external SSH host','Remote namespace mutation by another actor is not an atomic SFTP snapshot']};(root/'receipt.json').write_text(json.dumps(report,indent=2));Path(a.evidence,'sftp-acceptance.json').write_text(json.dumps(report,indent=2));print('Evidence',root)
 raise SystemExit(0 if len(results)==(6 if a.gui and a.binary else 5) and all(r['status']=='PASS'for r in results)else 1)

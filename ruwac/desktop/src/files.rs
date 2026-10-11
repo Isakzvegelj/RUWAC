@@ -16,10 +16,10 @@ use std::{
     time::Duration,
 };
 const MAX_FILE: u64 = 32 * 1024 * 1024 * 1024;
-fn error(_: impl std::fmt::Display) -> String {
+pub(super) fn error(_: impl std::fmt::Display) -> String {
     "SFTP operation failed (connection, permissions or server error)".into()
 }
-fn connect(p: &Profile) -> Result<Session, String> {
+pub(super) fn connect(p: &Profile) -> Result<Session, String> {
     let (host, port) = endpoint(&p.server, 22)?;
     let addr = (host.as_str(), port)
         .to_socket_addrs()
@@ -65,9 +65,19 @@ fn connect(p: &Profile) -> Result<Session, String> {
             1024 * 1024,
         )?)
         .map_err(|_| "SSH key is not supported text")?;
-        let result = session.userauth_pubkey_memory(&p.username, None, &key, None);
+        let passphrase = if p.preferences.identity_secret_reference.is_empty() {
+            Ok(None)
+        } else {
+            crate::credentials::lookup(&p.preferences.identity_secret_reference).map(Some)
+        };
+        let mut passphrase = match passphrase {
+            Ok(value) => value,
+            Err(e) => { unsafe { key.as_bytes_mut().fill(0) }; return Err(e); }
+        };
+        let result = session.userauth_pubkey_memory(&p.username, None, &key, passphrase.as_deref());
+        if let Some(value) = &mut passphrase { unsafe { value.as_bytes_mut().fill(0) }; }
         unsafe { key.as_bytes_mut().fill(0) };
-        result.map_err(error)?;
+        result.map_err(|_| "SSH key authentication rejected; an encrypted key needs its Secret Service passphrase reference, or use the SSH agent")?;
     } else {
         let agent = session.userauth_agent(&p.username);
         if agent.is_err() {
@@ -82,7 +92,7 @@ fn connect(p: &Profile) -> Result<Session, String> {
     }
     Ok(session)
 }
-fn remote_path(sftp: &ssh2::Sftp, path: &Path, allow_missing: bool) -> Result<PathBuf, String> {
+pub(super) fn remote_path(sftp: &ssh2::Sftp, path: &Path, allow_missing: bool) -> Result<PathBuf, String> {
     if path.as_os_str().len() > 4096
         || path.components().any(|c| matches!(c, Component::ParentDir))
         || path.to_string_lossy().contains('\0')
@@ -353,6 +363,34 @@ pub fn transfer(
         result
     }
 }
+fn pending_control(profile:Profile,busy:Rc<RefCell<Option<Arc<AtomicBool>>>>,status:gtk::Label,progress:gtk::ProgressBar)->gtk::Button {
+    let button=gtk::Button::with_label("Pending transfers…");button.set_widget_name("files-pending");
+    button.connect_clicked(move|button|{
+        if busy.borrow().is_some(){status.set_text("A file operation is already running; pause it before opening pending transfers");return;}
+        let dialog=gtk::Dialog::builder().title("Pending SFTP transfers").default_width(650).default_height(450).build();dialog.set_widget_name("files-pending-dialog");dialog.set_transient_for(button.root().and_then(|w|w.downcast::<gtk::Window>().ok()).as_ref());dialog.add_button("Close",gtk::ResponseType::Close);dialog.connect_response(|d,_|d.close());
+        let hint=gtk::Label::new(Some("Resume checks the original source and partial prefix before continuing. Discard removes only the owned partial; interrupted overwrite backups are recovered first."));hint.set_wrap(true);dialog.content_area().append(&hint);
+        let rows=gtk::Box::new(gtk::Orientation::Vertical,6);dialog.content_area().append(&gtk::ScrolledWindow::builder().vexpand(true).child(&rows).build());
+        let info=gtk::Label::new(Some("Loading local transfer journal…"));info.set_widget_name("files-pending-status");info.set_wrap(true);dialog.content_area().append(&info);dialog.present();
+        let(tx,rx)=std::sync::mpsc::sync_channel(1);let p=profile.clone();std::thread::spawn(move||{let _=tx.send(crate::files_resume::list(&p));});
+        let(p,busy,status,progress,d)=(profile.clone(),busy.clone(),status.clone(),progress.clone(),dialog.downgrade());
+        gtk::glib::timeout_add_local(Duration::from_millis(25),move||{
+            let Some(_dialog)=d.upgrade().filter(|d|d.is_visible())else{return gtk::glib::ControlFlow::Break;};
+            match rx.try_recv(){
+                Ok(Ok(jobs))=>{info.set_text(if jobs.is_empty(){"No pending transfers for this endpoint"}else{"Choose the exact transfer to resume or discard"});
+                    for job in jobs {let row=gtk::Box::new(gtk::Orientation::Vertical,4);row.set_widget_name("files-pending-row");let title=gtk::Label::new(Some(&format!("{} · {} → {}",if job.upload{"Upload"}else{"Download"},if job.upload{&job.local}else{&job.remote}.display(),if job.upload{&job.remote}else{&job.local}.display())));title.set_wrap(true);title.set_selectable(true);row.append(&title);
+                        let controls=gtk::Box::new(gtk::Orientation::Horizontal,4);let eligible=job.eligible(&p);for(label,discard)in[("Resume",false),("Discard partial",true)]{let button=gtk::Button::with_label(label);button.set_widget_name(if discard{"files-discard-job"}else{"files-resume-job"});button.set_tooltip_text(Some(&job.id));button.set_sensitive(eligible);controls.append(&button);
+                            let(p,id,busy,status,progress,d)=(p.clone(),job.id.clone(),busy.clone(),status.clone(),progress.clone(),d.clone());
+                            button.connect_clicked(move|_|{if busy.borrow().is_some(){return;}let cancel=Arc::new(AtomicBool::new(false));let count=Arc::new(AtomicU64::new(0));*busy.borrow_mut()=Some(cancel.clone());let(tx,rx)=std::sync::mpsc::sync_channel(1);let(p,id,bytes)=(p.clone(),id.clone(),count.clone());std::thread::spawn(move||{let r=if discard{crate::files_resume::discard(&p,&id,&cancel).map(|_|"Owned partial discarded; destination preserved".into())}else{crate::files_resume::resume(&p,&id,&cancel,&bytes).map(|r|format!("Transfer verified · SHA-256 {} · resumed at {} of {} bytes",r.sha256,r.resumed_from,r.bytes))};let _=tx.send(r);});
+                                if let Some(dialog)=d.upgrade(){dialog.close();}status.set_text(if discard{"Discarding owned partial / recovering original backup…"}else{"Checking source and retained prefix, resuming transfer…"});let(status,progress,busy)=(status.clone(),progress.clone(),busy.clone());
+                                gtk::glib::timeout_add_local(Duration::from_millis(50),move||{progress.pulse();progress.set_text(Some(&format!("{} bytes transferred",count.load(Ordering::Relaxed))));match rx.try_recv(){Ok(r)=>{busy.borrow_mut().take();progress.set_fraction(if r.is_ok(){1.0}else{0.0});status.set_text(&r.unwrap_or_else(|e|e));gtk::glib::ControlFlow::Break},Err(std::sync::mpsc::TryRecvError::Empty)=>gtk::glib::ControlFlow::Continue,Err(_)=>{busy.borrow_mut().take();status.set_text("Transfer worker stopped; retained journal can be reopened");gtk::glib::ControlFlow::Break}}});
+                            });
+                        }row.append(&controls);if !eligible{let warning=gtk::Label::new(Some("Profile settings changed. Restore the original endpoint settings before Resume/Discard."));warning.set_wrap(true);row.append(&warning);}rows.append(&row);
+                    }gtk::glib::ControlFlow::Break},
+                Ok(Err(e))=>{info.set_text(&e);gtk::glib::ControlFlow::Break},Err(std::sync::mpsc::TryRecvError::Empty)=>gtk::glib::ControlFlow::Continue,Err(_)=>{info.set_text("Transfer journal worker stopped");gtk::glib::ControlFlow::Break}
+            }
+        });
+    });button
+}
 pub fn panel(profile: Profile) -> gtk::Box {
     let root = gtk::Box::new(gtk::Orientation::Vertical, 6);
     root.set_tooltip_text(Some(&format!("{} · Files", profile.name)));
@@ -391,6 +429,7 @@ pub fn panel(profile: Profile) -> gtk::Box {
     progress.set_show_text(true);
     root.append(&progress);
     let busy = Rc::new(RefCell::new(None::<Arc<AtomicBool>>));
+    let pending=pending_control(profile.clone(),busy.clone(),status.clone(),progress.clone());root.append(&pending);
     let refresh = gtk::Button::with_label("Refresh");
     controls.append(&refresh);
     let up = gtk::Button::with_label("Up");
@@ -545,11 +584,10 @@ pub fn panel(profile: Profile) -> gtk::Box {
                 let (tx, rx) = std::sync::mpsc::sync_channel(1);
                 let count = bytes.clone();
                 std::thread::spawn(move || {
-                    let _ = tx.send(transfer(
-                        &p, &local, &remote, upload, overwrite, &cancel, &count,
-                    ));
+                    let result=crate::files_resume::start(&p,&local,&remote,upload,overwrite,&cancel,&count).map(|r|r.sha256);
+                    let _ = tx.send(result);
                 });
-                st.set_text("Transferring and verifying…");
+                st.set_text("Preparing source, transferring and verifying…");
                 gtk::glib::timeout_add_local(Duration::from_millis(50), move || {
                     prog.pulse();
                     prog.set_text(Some(&format!(
@@ -584,7 +622,7 @@ pub fn panel(profile: Profile) -> gtk::Box {
             }
         });
     }
-    let cancel = gtk::Button::with_label("Cancel / skip");
+    let cancel = gtk::Button::with_label("Pause transfer");
     controls.append(&cancel);
     let b = busy.clone();
     cancel.connect_clicked(move |_| {
@@ -642,6 +680,17 @@ pub fn fixture(root: &gtk::Box, path: Option<&str>, refresh: bool) -> serde_json
         }
     }
     serde_json::json!({"labels":labels,"buttons":buttons.iter().map(|b|b.label().unwrap_or_default().to_string()).collect::<Vec<_>>()})
+}
+
+pub fn fixture_transfer(root:&gtk::Box,q:&serde_json::Value)->serde_json::Value {
+    fn visit(w:&gtk::Widget,q:&serde_json::Value,rows:&mut Vec<serde_json::Value>){
+        if w.widget_name()=="files-pending-row"{if let Some(title)=w.first_child().and_then(|w|w.downcast::<gtk::Label>().ok()){rows.push(serde_json::json!({"title":title.text().to_string()}));}}
+        if let Some(button)=w.downcast_ref::<gtk::Button>(){let action=q["operation"].as_str().unwrap_or("");let name=button.widget_name();let click=(action=="open"&&name=="files-pending")||((action=="resume"&&name=="files-resume-job"||action=="discard"&&name=="files-discard-job")&&button.tooltip_text().as_deref()==q["id"].as_str())||(action=="cancel"&&button.label().as_deref()==Some("Pause transfer"));if click&&button.is_sensitive(){button.emit_clicked();}}
+        let mut c=w.first_child();while let Some(child)=c{c=child.next_sibling();visit(&child,q,rows);}
+    }
+    let mut rows=Vec::new();visit(root.upcast_ref(),q,&mut rows);let mut open=false;let mut status=None;
+    for w in gtk::Window::list_toplevels(){if w.widget_name()=="files-pending-dialog"&&w.is_visible(){open=true;visit(&w,q,&mut rows);fn text(w:&gtk::Widget)->Option<String>{if w.widget_name()=="files-pending-status"{return w.downcast_ref::<gtk::Label>().map(|w|w.text().to_string());}let mut c=w.first_child();while let Some(w)=c{c=w.next_sibling();if let Some(text)=text(&w){return Some(text);}}None}status=text(&w);if q["operation"]=="close"{if let Ok(w)=w.downcast::<gtk::Window>(){w.close();}}}}
+    serde_json::json!({"open":open,"rows":rows,"status":status})
 }
 
 /// The current directory is nonsecret workspace metadata; restoring it does not connect.

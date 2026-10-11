@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## v0.1.19 — 2026-10-11 — Prerelease
+
+- Add persistent SFTP pause/resume and explicit partial discard with source, prefix, destination and authenticated host identity verification.
+- Recover interrupted overwrite commits and lost rename replies while preserving the original backup.
+- Add native pending-transfer management and encrypted SSH key passphrases through Secret Service.
+- Validate real OpenSSH transfer loss, concurrent jobs, tamper guards and native credential/resume actions on isolated fixtures.
+
 ## v0.1.18 — 2026-10-11 — Prerelease
 
 - Add bounded daemon-owned process metadata and CLI job list/query without arguments, environment values or inferred agent state.
