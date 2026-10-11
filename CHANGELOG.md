@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v0.1.23 — 2026-10-12 — Prerelease
+
+- Fix Fedora container checkout ownership for subsequent Git checks with an exact workspace trust entry; separate inventory, format, lint, unit tests and each dependency advisory scan in hosted results.
+
 ## v0.1.22 — 2026-10-12 — Prerelease
 
 - Repair hosted workflow context validation by initializing temporary build paths through the step environment.

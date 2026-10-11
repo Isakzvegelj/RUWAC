@@ -25,6 +25,8 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           persist-credentials: false
+      - name: Trust only the mounted checkout
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - name: Validate GitHub workflow syntax and contexts
         run: |
           curl -fsSL --retry 3 https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz -o "$RUNNER_TEMP/actionlint.tar.gz"
@@ -32,16 +34,20 @@ jobs:
           mkdir -p "$RUNNER_TEMP/workflow-tools"
           tar -xzf "$RUNNER_TEMP/actionlint.tar.gz" -C "$RUNNER_TEMP/workflow-tools" actionlint
           "$RUNNER_TEMP/workflow-tools/actionlint" -shellcheck= -pyflakes=
-      - name: Public inventory and format
+      - name: Public source inventory
+        run: python3 scripts/public-files.py --tracked
+      - name: Contribution label guards
+        run: python3 .github/scripts/test-label-pr.py
+      - name: Rust formatting
         run: |
-          python3 scripts/public-files.py --tracked
-          python3 .github/scripts/test-label-pr.py
           cargo fmt --all --check --manifest-path ruwac/Cargo.toml
           cargo fmt --all --check --manifest-path ruwac/desktop/Cargo.toml
-      - name: Clippy and unit tests
+      - name: Rust lint
         run: |
           cargo clippy --locked --workspace --all-targets --manifest-path ruwac/Cargo.toml
           cargo clippy --locked --all-targets --manifest-path ruwac/desktop/Cargo.toml
+      - name: Rust unit tests
+        run: |
           cargo test --locked --workspace --manifest-path ruwac/Cargo.toml
           cargo test --locked --manifest-path ruwac/desktop/Cargo.toml
       - name: Locked declarations and independent headless graph
@@ -69,9 +75,12 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           persist-credentials: false
+      - name: Trust only the mounted checkout
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - name: Install pinned advisory scanner
         run: cargo install cargo-audit --version 0.22.2 --locked --root "$RUNNER_TEMP/audit-tool"
-      - name: Check both lockfiles without advisory exceptions
-        run: |
-          "$RUNNER_TEMP/audit-tool/bin/cargo-audit" audit --file ruwac/Cargo.lock
-          "$RUNNER_TEMP/audit-tool/bin/cargo-audit" audit --file ruwac/desktop/Cargo.lock
+      - name: Headless dependency advisories
+        run: '"$RUNNER_TEMP/audit-tool/bin/cargo-audit" audit --file ruwac/Cargo.lock'
+      - name: Desktop dependency advisories
+        if: ${{ !cancelled() }}
+        run: '"$RUNNER_TEMP/audit-tool/bin/cargo-audit" audit --file ruwac/desktop/Cargo.lock'

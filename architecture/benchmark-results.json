@@ -3124,56 +3124,56 @@
     "all_api_within_2x": true
   },
   "headless_copy_acceptance_timings": {
-    "package": "0.1.22",
+    "package": "0.1.23",
     "measurement": "elapsed wall time of real PTY acceptance groups; not idle-qualified competitive benchmark",
     "cases": [
       {
         "id": "TUI-COPY-UNICODE-SEARCH",
-        "seconds": 0.0410279149946291
+        "seconds": 0.05864072300028056
       },
       {
         "id": "TUI-COPY-RECTANGLE-WRAP",
-        "seconds": 0.08835316999466158
+        "seconds": 0.1052919180074241
       },
       {
         "id": "TUI-COPY-CANCEL-LIMIT-ISOLATION",
-        "seconds": 0.1926704140205402
+        "seconds": 0.20955297799082473
       },
       {
         "id": "TUI-CHOOSER-PROMPT-ZOOM-HELP",
-        "seconds": 0.20768173699616455
+        "seconds": 0.22808282502228394
       },
       {
         "id": "TUI-PREFIX-CONFIGURATION",
-        "seconds": 0.16275601199595258
+        "seconds": 0.16254542098613456
       },
       {
         "id": "TUI-NESTED-2",
-        "seconds": 0.4562380889838096
+        "seconds": 0.48619182500988245
       },
       {
         "id": "TUI-NESTED-3",
-        "seconds": 0.5004125359992031
+        "seconds": 0.5208036859985441
       },
       {
         "id": "TUI-NESTED-4",
-        "seconds": 0.5503715949889738
+        "seconds": 0.5137628020020202
       },
       {
         "id": "TUI-NESTED-5",
-        "seconds": 0.6034799990011379
+        "seconds": 0.6211493750161026
       }
     ],
     "real_snapshot_expiry": {
       "id": "HISTORY-PIN-REAL-EXPIRY",
       "status": "PASS",
-      "idle_expiry_seconds": 31.60310570098227,
+      "idle_expiry_seconds": 31.75822182901902,
       "configured_idle_seconds": 30,
       "actual_actor_timer": true
     }
   },
   "native_library_acceptance": {
-    "package": "0.1.22",
+    "package": "0.1.23",
     "timing": {
       "id": "LIBRARY-NATIVE-PAGING-1000",
       "status": "PASS",
@@ -3181,7 +3181,7 @@
       "visible_row_cap": 50,
       "all_endpoints_reachable": true,
       "search_resets_page": true,
-      "elapsed_ms": 1100.07209397736
+      "elapsed_ms": 1107.3361379967537
     },
     "scope": "Actual GTK fixture callback elapsed time across all pages; not physical-input or matched competitive benchmark"
   }
