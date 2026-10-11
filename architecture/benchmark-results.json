@@ -3122,5 +3122,54 @@
       "note": "daemon and TUI only; excludes child interpreters"
     },
     "all_api_within_2x": true
+  },
+  "headless_copy_acceptance_timings": {
+    "package": "0.1.13",
+    "measurement": "elapsed wall time of real PTY acceptance groups; not idle-qualified competitive benchmark",
+    "cases": [
+      {
+        "id": "TUI-COPY-UNICODE-SEARCH",
+        "seconds": 0.036621241000830196
+      },
+      {
+        "id": "TUI-COPY-RECTANGLE-WRAP",
+        "seconds": 0.08539270500477869
+      },
+      {
+        "id": "TUI-COPY-CANCEL-LIMIT-ISOLATION",
+        "seconds": 0.2025603880028939
+      },
+      {
+        "id": "TUI-CHOOSER-PROMPT-ZOOM-HELP",
+        "seconds": 0.21287215800839476
+      },
+      {
+        "id": "TUI-PREFIX-CONFIGURATION",
+        "seconds": 0.1626895310037071
+      },
+      {
+        "id": "TUI-NESTED-2",
+        "seconds": 0.4625445959973149
+      },
+      {
+        "id": "TUI-NESTED-3",
+        "seconds": 0.5008812869928079
+      },
+      {
+        "id": "TUI-NESTED-4",
+        "seconds": 0.5471477399987634
+      },
+      {
+        "id": "TUI-NESTED-5",
+        "seconds": 0.5672404799988726
+      }
+    ],
+    "real_snapshot_expiry": {
+      "id": "HISTORY-PIN-REAL-EXPIRY",
+      "status": "PASS",
+      "idle_expiry_seconds": 31.7688942829991,
+      "configured_idle_seconds": 30,
+      "actual_actor_timer": true
+    }
   }
 }

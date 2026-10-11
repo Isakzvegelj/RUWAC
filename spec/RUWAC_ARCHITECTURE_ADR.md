@@ -1,12 +1,25 @@
 # RUWAC architecture decisions for workspaces/display/files
 
-## Current RDP presentation and Screen correction — 2026-10-11
+## Headless Screen and immutable copy increment — 2026-10-11
+
+Compiled package 0.1.13. The existing daemon, authenticated protocol, GTK frontend and RDP engine remain the foundation. Headless copy now uses canonical immutable history pins, Unicode grapheme/cell selection, rectangular and soft-wrap copying, search, word/page navigation and non-destructive cancellation. The terminal adds a window chooser, command prompt, help, zoom and configurable Control prefixes/key mappings. All modal mouse/paste input is contained; original terminal modes are restored. Configuration errors are rejected before raw mode.
+
+The normal build workflow includes nine real-PTY acceptance groups: Unicode internal copy/paste, rectangle and physical wrap, oversize/cancel preservation, chooser/prompt/help/zoom, prefix configuration and actual nested RUWAC layers two through five. This is RUWAC nesting evidence; it does not claim GNU Screen/tmux combinations or physical keyboard qualification. Three authenticated API groups prove frozen output across live output and actual resize, owner/pane binding, idempotency-cache bypass refusal, eight-pin global cap, one pin per connection, unchanged terminal revision, disconnect reclamation and actual 30-second expiry. A terminal unit verifies immutable Unicode rows across feed/resize and the 50,000-row tail bound. The first rectangle fixture mistakenly searched common text; the corrected unique search passes, and the failed receipt remains private.
+
+Limits: 50,000 physical rows or 8 MiB per pin, 128 KiB per row/page text, eight global pins, one per connection, 30-second idle expiry; removed tail rows are explicitly reported. Internal selection remains capped at 256 KiB and preserves the prior buffer on failure. Snapshots never enter recovery checkpoints. GTK history reads use pins when supported and preserve older-daemon fallback.
+
+The stamped native build repeats actual older-daemon compatibility, two native recovery groups, eight workspace groups, nine GUI API groups, 21 GTK/GDK terminal cards and six authenticated isolated RDP/editor/display groups. PRIMARY is unavailable on the owned compositor. Earlier full 14-group loopback RDP text/image/ownership evidence remains historical; this increment makes no external Windows/Fedora login claim. Local compilation uses `build.sh --release --test --desktop`; publication uses the existing `release.sh beta`, whose controller owns the version. GitHub currently publishes source, with no binary compilation or RPM asset qualification.
+
+CLI SHA-256: `4cf70c7fb61dab608101ca83fb55bb5685c6fbb08130a5d968bbf569861d8fd5`. GTK SHA-256: `6371ea14c3899717f00bc518e246c26b0ef2004373fd9f6ccd7f5656be7adbb9`. Full stable qualification remains open: external RDP, physical GNOME/PRIMARY/HiDPI/accessibility, mixed-multiplexer nesting, agent/file/automation scope and qualified Fedora packaging. Owner sessions and configuration are preserved.
+
+
+## Prior RDP presentation and Screen correction — 2026-10-11
 
 Visible toolbar buttons invoke the existing single connection/display callbacks. Profile rows preserve connection leases and credential references. Previous-window selection lives in the headless engine and checkpoint schema 2, with schema-1 read migration and validation; GTK/TUI remain thin clients.
 
 
 
-## Validation for current increment — 2026-10-11
+## Validation for prior RDP increment — 2026-10-11
 
 Compiled package 0.1.12: the normal build/release workflow runs standard Rust/headless regressions, including 11 groups and 100 startup races, seven recovery groups and two real-PTY previous/literal/checkpoint-migration groups. Authorized SSH repeated both previous-window groups against a private endpoint candidate; no live session was replaced. The final native build also passes an actual older-daemon compatibility case: unsupported previous-window capability is visible and subsequent input reaches the same child, without freezing navigation.
 

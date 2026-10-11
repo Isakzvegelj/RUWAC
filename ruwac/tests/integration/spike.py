@@ -34,9 +34,9 @@ def eventually(fn,timeout=5):
   time.sleep(.005)
  raise AssertionError('condition not reached')
 class Tui:
- def __init__(self,binary,sock,session,path,rows=24,cols=80):
+ def __init__(self,binary,sock,session,path,rows=24,cols=80,env=None):
   self.master,slave=pty.openpty();fcntl.ioctl(slave,0x5414,struct.pack('HHHH',rows,cols,0,0));self.old=__import__('termios').tcgetattr(slave);self.slave=slave
-  self.p=subprocess.Popen([str(binary),'--socket',str(sock),'attach','--session',session],stdin=slave,stdout=slave,stderr=slave,start_new_session=True)
+  self.p=subprocess.Popen([str(binary),'--socket',str(sock),'attach','--session',session],stdin=slave,stdout=slave,stderr=slave,start_new_session=True,env=env)
   self.data=bytearray();self.stop=False;self.path=path
   def drain():
    while not self.stop:

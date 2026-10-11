@@ -9,3 +9,5 @@ publish.workspace = true
 ruwac-protocol = { path = "../ruwac-protocol" }
 serde_json.workspace = true
 libc.workspace = true
+unicode-segmentation.workspace = true
+unicode-width.workspace = true

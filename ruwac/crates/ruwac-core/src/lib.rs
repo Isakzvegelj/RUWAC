@@ -90,11 +90,18 @@ impl Handle {
             .map_err(|_| Error::new("UNAVAILABLE", "daemon stopped"))?
     }
 }
+struct HistoryPin {
+    owner: String,
+    pane: String,
+    read_at: std::time::Instant,
+    data: ruwac_term::HistorySnapshot,
+}
 struct State {
     panes: HashMap<String, Pane>,
     windows: HashMap<String, Window>,
     sessions: HashMap<String, Session>,
     clients: HashMap<String, Client>,
+    histories: HashMap<String, HistoryPin>,
     tx: mpsc::Sender<Message>,
     cache: HashMap<String, (String, Result<Value>)>,
     order: VecDeque<String>,
@@ -119,6 +126,7 @@ pub fn start_with_store(store: Option<Store>) -> std::io::Result<Handle> {
         windows: HashMap::new(),
         sessions: HashMap::new(),
         clients: HashMap::new(),
+        histories: HashMap::new(),
         tx,
         cache: HashMap::new(),
         order: VecDeque::new(),
@@ -136,7 +144,7 @@ pub fn start_with_store(store: Option<Store>) -> std::io::Result<Handle> {
         loop {
             let m = tokio::select! {
                 m=rx.recv()=>match m {Some(m)=>m,None=>break},
-                _=timer.tick()=>{s.schedule_checkpoint(); continue;},
+                _=timer.tick()=>{s.expire_histories();s.schedule_checkpoint(); continue;},
             };
             match m {
                 Message::Call(r, c, reply) => {
@@ -170,6 +178,8 @@ pub fn start_with_store(store: Option<Store>) -> std::io::Result<Handle> {
                             | "window.list"
                             | "pane.list"
                             | "pane.history"
+                            | "pane.history.freeze"
+                            | "pane.history.release"
                             | "pane.capture"
                             | "pane.wait"
                             | "buffer.get"
@@ -217,6 +227,7 @@ pub fn start_with_store(store: Option<Store>) -> std::io::Result<Handle> {
                     }
                 }
                 Message::Disconnect(c) => {
+                    s.histories.retain(|_,pin|pin.owner!=c);
                     if let Some(c) = s.clients.remove(&c) {
                         s.layout(&c.session);
                         s.revision += 1;
@@ -284,9 +295,11 @@ impl State {
                     | "session.detach"
                     | "client.render"
                     | "client.input"
+                    | "pane.history.freeze"
+                    | "pane.history.release"
                     | "daemon.stop"
                     | "daemon.checkpoint"
-            ) {
+            ) || (r.method=="pane.history"&&r.params.get("snapshot").is_some()) {
                 return Err(Error::new(
                     "INVALID_PARAMS",
                     "idempotency unsupported for connection-local operations",
@@ -434,10 +447,13 @@ impl State {
             }
         }
     }
+    fn expire_histories(&mut self) {
+        self.histories.retain(|_,pin|pin.read_at.elapsed()<std::time::Duration::from_secs(30));
+    }
     fn dispatch(&mut self, m: &str, v: &Value, client: &str) -> Result<Value> {
         match m {
             "health" => Ok(
-                json!({"ok":true,"panes":self.panes.len(),"clients":self.clients.len(),"revision":self.revision,"persistence":{"enabled":self.store.is_some(),"checkpoint_revision":self.checkpoint_revision,"pending":self.checkpoint_pending,"error":self.checkpoint_error,"interval_ms":2000}}),
+                json!({"ok":true,"panes":self.panes.len(),"clients":self.clients.len(),"revision":self.revision,"history_snapshots":self.histories.len(),"history_snapshot_text_bytes":self.histories.values().map(|p|p.data.bytes).sum::<usize>(),"persistence":{"enabled":self.store.is_some(),"checkpoint_revision":self.checkpoint_revision,"pending":self.checkpoint_pending,"error":self.checkpoint_error,"interval_ms":2000}}),
             ),
             "version" => Ok(
                 json!({"name":"ruwac","implementation":"spike","package":env!("CARGO_PKG_VERSION"),"protocol":0}),
@@ -512,6 +528,7 @@ impl State {
                 Ok(json!({"client":client,"session":s}))
             }
             "session.detach" => {
+                self.histories.retain(|_,pin|pin.owner!=client);
                 if let Some(c) = self.clients.remove(client) {
                     self.layout(&c.session);
                 }
@@ -691,7 +708,34 @@ impl State {
                 self.layout(&session);
                 Ok(json!({"updated":true}))
             }
+            "pane.history.freeze" => {
+                self.expire_histories();
+                if self.histories.values().filter(|pin|pin.owner!=client).count()>=8 {return Err(Error::new("LIMIT","eight simultaneous copy snapshots; retry after another copy finishes"));}
+                let p=self.pane(v)?;let pane=p.id.clone();let data=p.term.freeze_history();
+                if data.rows.is_empty(){return Err(Error::new("LIMIT","newest history row exceeds the bounded copy snapshot row cap"));}
+                self.histories.retain(|_,pin|pin.owner!=client);
+                let snapshot=id("history");let mut metadata=data.metadata();metadata["snapshot"]=json!(snapshot);
+                self.histories.insert(snapshot,HistoryPin {owner:client.into(),pane,read_at:std::time::Instant::now(),data});
+                Ok(metadata)
+            }
+            "pane.history.release" => {
+                let snapshot=target(v,"snapshot","history")?;
+                if !self.histories.get(&snapshot).is_some_and(|pin|pin.owner==client) {
+                    return Err(Error::new("STALE_SNAPSHOT","copy snapshot is not owned by this connection"));
+                }
+                self.histories.remove(&snapshot);Ok(json!({"released":true}))
+            }
             "pane.history" => {
+                if v.get("snapshot").is_some() {
+                    self.expire_histories();let snapshot=target(v,"snapshot","history")?;
+                    let pane=target(v,"pane","pane")?;
+                    let pin=self.histories.get_mut(&snapshot).filter(|pin|pin.owner==client&&pin.pane==pane)
+                        .ok_or_else(||Error::new("STALE_SNAPSHOT","copy snapshot expired, released or belongs to another connection/pane"))?;
+                    pin.read_at=std::time::Instant::now();
+                    let offset=v.get("offset").map(|x|x.as_u64().ok_or_else(||Error::new("INVALID_PARAMS","offset must be an integer"))).transpose()?.unwrap_or(0).min(1000000)as usize;
+                    let lines=num(v,"lines",500,1,500)? as usize;
+                    return Ok(pin.data.page(offset,lines));
+                }
                 let p = self.pane(v)?;
                 if v.get("epoch")
                     .and_then(Value::as_u64)
@@ -931,5 +975,5 @@ impl State {
     }
 }
 pub fn schema() -> Value {
-    json!({"protocol":0,"framing":"u32 big-endian byte length + UTF-8 JSON","max_frame_bytes":ruwac_protocol::MAX_FRAME,"methods":["health","version","capabilities","schema","describe","session.create","session.list","session.attach","session.detach","window.create","window.list","window.rename","window.select","window.cycle","window.previous","pane.create","pane.layout","pane.history","pane.close","pane.list","pane.select","pane.sendText","pane.sendKey","pane.capture","pane.wait","buffer.set","buffer.get","buffer.paste","client.resize","client.render","client.input","events.subscribe","daemon.checkpoint","daemon.stop"],"targets":{"session":"session_ + 32 hex","window":"window_ + 32 hex","pane":"pane_ + 32 hex"},"request":{"version":0,"id":"JSON request correlation value","method":"method name","params":"object","idempotency_key":"optional 1..128 byte daemon-lifetime key"}})
+    json!({"protocol":0,"framing":"u32 big-endian byte length + UTF-8 JSON","max_frame_bytes":ruwac_protocol::MAX_FRAME,"methods":["health","version","capabilities","schema","describe","session.create","session.list","session.attach","session.detach","window.create","window.list","window.rename","window.select","window.cycle","window.previous","pane.create","pane.layout","pane.history","pane.history.freeze","pane.history.release","pane.close","pane.list","pane.select","pane.sendText","pane.sendKey","pane.capture","pane.wait","buffer.set","buffer.get","buffer.paste","client.resize","client.render","client.input","events.subscribe","daemon.checkpoint","daemon.stop"],"targets":{"session":"session_ + 32 hex","window":"window_ + 32 hex","pane":"pane_ + 32 hex"},"request":{"version":0,"id":"JSON request correlation value","method":"method name","params":"object","idempotency_key":"optional 1..128 byte daemon-lifetime key"}})
 }

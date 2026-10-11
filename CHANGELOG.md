@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## v0.1.13 — 2026-10-11 — Prerelease
+
+- Complete bounded headless canonical copy/search with Unicode grapheme marks, rectangular selection, wrapped-line joining, paging and word movement.
+- Add terminal chooser, prompt, help, zoom and configurable Control prefixes; contain modal paste/mouse input and preserve buffers on cancellation or limit errors.
+- Add immutable authenticated history snapshots with connection ownership, bounded memory, expiry and disconnect reclamation; reuse them for native GTK copy.
+- Validate real PTYs and two-to-five-layer RUWAC nesting, history isolation, native GTK and authenticated local RDP regressions through the standard workflow.
+
 ## v0.1.12 — 2026-10-11 — Prerelease
 
 - Add a Remmina-inspired native machine sidebar and visible RDP connection/display toolbar with accessible theme icons, retaining existing connection and clipboard handlers.

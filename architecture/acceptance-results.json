@@ -11210,5 +11210,1659 @@
       ]
     },
     "stable": "not qualified; full product audit remains open"
+  },
+  "headless_screen_copy": {
+    "package": "0.1.13",
+    "sha256": {
+      "ruwac": "4cf70c7fb61dab608101ca83fb55bb5685c6fbb08130a5d968bbf569861d8fd5",
+      "ruwac-desktop": "6371ea14c3899717f00bc518e246c26b0ef2004373fd9f6ccd7f5656be7adbb9"
+    },
+    "real_ptys": {
+      "results": [
+        {
+          "id": "TUI-COPY-UNICODE-SEARCH",
+          "status": "PASS",
+          "seconds": 0.036621241000830196,
+          "details": {
+            "canonical_rows": 9000,
+            "unicode_combining_wide_emoji": true,
+            "internal_paste_exact": true,
+            "modal_input_leak": false
+          }
+        },
+        {
+          "id": "TUI-COPY-RECTANGLE-WRAP",
+          "status": "PASS",
+          "seconds": 0.08539270500477869,
+          "details": {
+            "rectangle": "abcd/newline/1234",
+            "soft_wrap_joined": true
+          }
+        },
+        {
+          "id": "TUI-COPY-CANCEL-LIMIT-ISOLATION",
+          "status": "PASS",
+          "seconds": 0.2025603880028939,
+          "details": {
+            "limit_non_destructive": true,
+            "cancel_non_destructive": true,
+            "mouse_and_bracketed_paste_not_forwarded": true
+          }
+        },
+        {
+          "id": "TUI-CHOOSER-PROMPT-ZOOM-HELP",
+          "status": "PASS",
+          "seconds": 0.21287215800839476,
+          "details": {
+            "typed_window_ids": true,
+            "rename_exact_not_shell": true,
+            "zoom_restore": true,
+            "help_chooser_prompt_cancel": true
+          }
+        },
+        {
+          "id": "TUI-PREFIX-CONFIGURATION",
+          "status": "PASS",
+          "seconds": 0.1626895310037071,
+          "details": {
+            "ControlB_prefix_and_remap": true,
+            "literal_exact": true,
+            "paste_is_literal": true,
+            "invalid_configuration_before_raw_mode": true
+          }
+        },
+        {
+          "id": "TUI-NESTED-2",
+          "status": "PASS",
+          "seconds": 0.4625445959973149,
+          "details": {
+            "real_RUWAC_layers": 2,
+            "literal_meta_prefix": true,
+            "deep_window_selection": true,
+            "single_bracketed_paste_pair": true,
+            "same_receiver_pid_after_detach_reattach": 497174,
+            "termios_restored": true
+          }
+        },
+        {
+          "id": "TUI-NESTED-3",
+          "status": "PASS",
+          "seconds": 0.5008812869928079,
+          "details": {
+            "real_RUWAC_layers": 3,
+            "literal_meta_prefix": true,
+            "deep_window_selection": true,
+            "single_bracketed_paste_pair": true,
+            "same_receiver_pid_after_detach_reattach": 497204,
+            "termios_restored": true
+          }
+        },
+        {
+          "id": "TUI-NESTED-4",
+          "status": "PASS",
+          "seconds": 0.5471477399987634,
+          "details": {
+            "real_RUWAC_layers": 4,
+            "literal_meta_prefix": true,
+            "deep_window_selection": true,
+            "single_bracketed_paste_pair": true,
+            "same_receiver_pid_after_detach_reattach": 497243,
+            "termios_restored": true
+          }
+        },
+        {
+          "id": "TUI-NESTED-5",
+          "status": "PASS",
+          "seconds": 0.5672404799988726,
+          "details": {
+            "real_RUWAC_layers": 5,
+            "literal_meta_prefix": true,
+            "deep_window_selection": true,
+            "single_bracketed_paste_pair": true,
+            "same_receiver_pid_after_detach_reattach": 497288,
+            "termios_restored": true
+          }
+        }
+      ],
+      "binary_sha256": "4cf70c7fb61dab608101ca83fb55bb5685c6fbb08130a5d968bbf569861d8fd5"
+    },
+    "immutable_history": {
+      "results": [
+        {
+          "id": "HISTORY-FROZEN-STREAM-RESIZE-OWNERSHIP",
+          "status": "PASS",
+          "rows": 5003,
+          "sha256": "d66bd8322e9698acd0858685fa795c0931f9cf244582413633e8ca9039da6fa7",
+          "changed_live_epoch": true,
+          "snapshot_after_real_resize_identical": true,
+          "connection_and_pane_bound": true,
+          "idempotency_cache_bypass_refused": true,
+          "invalid_freeze_preserves_previous": true,
+          "pins_excluded_from_checkpoint": true
+        },
+        {
+          "id": "HISTORY-PIN-CAP-REVISION-DISCONNECT",
+          "status": "PASS",
+          "global_cap": 8,
+          "one_per_connection": true,
+          "terminal_revision_unchanged": true,
+          "disconnect_reclaims": true
+        },
+        {
+          "id": "HISTORY-PIN-REAL-EXPIRY",
+          "status": "PASS",
+          "idle_expiry_seconds": 31.7688942829991,
+          "configured_idle_seconds": 30,
+          "actual_actor_timer": true
+        }
+      ],
+      "binary_sha256": "4cf70c7fb61dab608101ca83fb55bb5685c6fbb08130a5d968bbf569861d8fd5"
+    },
+    "native_terminal": {
+      "results": [
+        {
+          "id": "GUI-R1",
+          "status": "PASS",
+          "details": {
+            "acknowledgements": 2,
+            "active": true,
+            "clipboard_owner": "session_fbcb22d5c8a64082b5a62960db9c8393",
+            "dark": true,
+            "display": "GdkWaylandDisplay",
+            "drawn": [
+              3,
+              4
+            ],
+            "focused_view": "view_9a5fc835465d4a05832d467e784d0a6a",
+            "layout": {
+              "first": {
+                "pane": "pane_aa940072c60d45a19f4b48665e143a28"
+              },
+              "id": "split_pane_174675bbcb7946dc9063027a949a514b",
+              "orientation": "horizontal",
+              "ratio": 500,
+              "second": {
+                "pane": "pane_174675bbcb7946dc9063027a949a514b"
+              }
+            },
+            "max_tick_gap_ms": 29,
+            "panes": [
+              2,
+              1
+            ],
+            "selected_tab": 0,
+            "status": "Rust native one \u2014 Ctrl+A prefix \u00b7 Shift+drag selects \u00b7 PTYs persist",
+            "tabs": 2,
+            "target": "pane_aa940072c60d45a19f4b48665e143a28",
+            "ticks": 51,
+            "zoom": false
+          }
+        },
+        {
+          "id": "CLIP-canonical-selection",
+          "status": "PASS",
+          "details": {
+            "canonical_grid_selection": true,
+            "copy": {
+              "bytes": 20,
+              "sha256": "3be403a16b7baa4a8fbbe8c71f30f1fc266dedc1a8295b7a98aef7ffcde7dc29"
+            },
+            "selection_events": "synthetic range; physical drag untested"
+          }
+        },
+        {
+          "id": "GUI-R2",
+          "status": "PASS",
+          "details": {
+            "switches": 200,
+            "targeted_exact": true,
+            "input": "synthetic handler and tab changes; not physical keyboard",
+            "sha256": [
+              "d637ea36ac3720a5fa8591214d6bfcbd5d019898a5da1a8423df28cfd71b9d84",
+              "b39bea694a52d463cb3742dec2ee63639d0e629578aa26367a4dcc1198e68a22",
+              "178fd141cb0d32ad241f9aa2794a53b387f7562b11098a6e30b26b726e1ef091"
+            ]
+          }
+        },
+        {
+          "id": "GUI-R5-Screen",
+          "status": "PASS",
+          "details": {
+            "native_callback_cards": [
+              "Ctrl+A Ctrl+A",
+              "Ctrl+A Tab",
+              "Ctrl+A c",
+              "Ctrl+A n",
+              "Ctrl+A p",
+              "Ctrl+A 0"
+            ],
+            "window_creation_and_cycles": "PASS",
+            "nested_control_byte": "exact",
+            "copy_search_and_physical_keys": "PARTIAL / UNTESTED"
+          }
+        },
+        {
+          "id": "GUI-daily-interaction",
+          "status": "PASS",
+          "details": {
+            "vertical_inside_horizontal": true,
+            "zoom_restore": true,
+            "native_keyboard_mark_selection": "RUWAC",
+            "internal_paste_exact": true,
+            "new_shell_pid": 500796,
+            "unknown_command_visible": true,
+            "events": "compiled GTK callbacks, synthetic keys"
+          }
+        },
+        {
+          "id": "GUI-native-applications",
+          "status": "PASS",
+          "details": {
+            "apps": {
+              "vim": "Exact Unicode file written through native handlers",
+              "less": "Native G scroll and q exit",
+              "htop": "Native q exited daemon-owned process"
+            },
+            "input": "compiled GTK callbacks; physical typing untested"
+          }
+        },
+        {
+          "id": "INPUT-R1",
+          "status": "PASS",
+          "details": {
+            "enabled_sgr": "PASS",
+            "disabled_leak": "none",
+            "physical_touchpad": "BLOCKED"
+          }
+        },
+        {
+          "id": "CLIP-R1-copy",
+          "status": "PASS",
+          "details": {
+            "bytes": 44,
+            "sha256": "90e30d374cf19d9c185bac418c0ddb7b22805b58e7003fa1c92b1d1b91be4439"
+          }
+        },
+        {
+          "id": "CLIP-R2-primary",
+          "status": "BLOCKED",
+          "reason": "Test compositor does not advertise a primary-selection protocol; failed diagnostic retained"
+        },
+        {
+          "id": "CLIP-R3-10240",
+          "status": "PASS",
+          "details": {
+            "bytes": 10240,
+            "sha256": "1be53c61bc448c56d749b9801d9481199d037aa7aef11eedfdebfa992a3c1254",
+            "exact_paste": true,
+            "responsive": {
+              "acknowledgements": 1160,
+              "active": true,
+              "clipboard_owner": "session_fbcb22d5c8a64082b5a62960db9c8393",
+              "dark": true,
+              "display": "GdkWaylandDisplay",
+              "drawn": [
+                171,
+                63
+              ],
+              "focused_view": "view_9a5fc835465d4a05832d467e784d0a6a",
+              "layout": {
+                "first": {
+                  "pane": "pane_aa940072c60d45a19f4b48665e143a28"
+                },
+                "id": "split_pane_174675bbcb7946dc9063027a949a514b",
+                "orientation": "horizontal",
+                "ratio": 582,
+                "second": {
+                  "pane": "pane_174675bbcb7946dc9063027a949a514b"
+                }
+              },
+              "max_tick_gap_ms": 55,
+              "panes": [
+                2,
+                1
+              ],
+              "selected_tab": 0,
+              "status": "Selection copied to CLIPBOARD",
+              "tabs": 2,
+              "target": "pane_aa940072c60d45a19f4b48665e143a28",
+              "ticks": 713,
+              "zoom": false
+            }
+          }
+        },
+        {
+          "id": "CLIP-R3-1048576",
+          "status": "PASS",
+          "details": {
+            "bytes": 1048576,
+            "sha256": "8f78329e92dc1ea5fc97a2221b1fca02b667780d1a86cd40ae322c3ed2c68cb4",
+            "exact_paste": true,
+            "responsive": {
+              "acknowledgements": 1161,
+              "active": true,
+              "clipboard_owner": "session_fbcb22d5c8a64082b5a62960db9c8393",
+              "dark": true,
+              "display": "GdkWaylandDisplay",
+              "drawn": [
+                171,
+                63
+              ],
+              "focused_view": "view_9a5fc835465d4a05832d467e784d0a6a",
+              "layout": {
+                "first": {
+                  "pane": "pane_aa940072c60d45a19f4b48665e143a28"
+                },
+                "id": "split_pane_174675bbcb7946dc9063027a949a514b",
+                "orientation": "horizontal",
+                "ratio": 582,
+                "second": {
+                  "pane": "pane_174675bbcb7946dc9063027a949a514b"
+                }
+              },
+              "max_tick_gap_ms": 55,
+              "panes": [
+                2,
+                1
+              ],
+              "selected_tab": 0,
+              "status": "Selection copied to CLIPBOARD",
+              "tabs": 2,
+              "target": "pane_aa940072c60d45a19f4b48665e143a28",
+              "ticks": 773,
+              "zoom": false
+            }
+          }
+        },
+        {
+          "id": "CLIP-R2-internal",
+          "status": "PASS",
+          "details": {
+            "internal_unchanged": true
+          }
+        },
+        {
+          "id": "IMAGE-R1-64",
+          "status": "PASS",
+          "details": {
+            "bytes": 16521,
+            "height": 64,
+            "sha256": "831b874b29e7616200956088e525e5fddb67dbaac9eac58a65acd2091e531e1f",
+            "width": 64
+          }
+        },
+        {
+          "id": "IMAGE-R1-2560",
+          "status": "PASS",
+          "details": {
+            "bytes": 14751608,
+            "height": 1440,
+            "sha256": "28add8d60635fd60384afb87ad4ea3eedbbddcceec87120421c3325962e6337c",
+            "width": 2560
+          }
+        },
+        {
+          "id": "IMAGE-cap",
+          "status": "PASS",
+          "details": {
+            "error": "Image transfer exceeds configured cap"
+          }
+        },
+        {
+          "id": "CLIP-stale-cancel",
+          "status": "PASS",
+          "details": {
+            "error": "Clipboard/image transfer cancelled after async read"
+          }
+        },
+        {
+          "id": "IMAGE-cancel-cleanup",
+          "status": "PASS",
+          "details": {
+            "error": "Clipboard/image transfer cancelled after async read"
+          }
+        },
+        {
+          "id": "CLIP-disabled-policy",
+          "status": "PASS",
+          "details": {
+            "disabled_transport_rejected": true
+          }
+        },
+        {
+          "id": "GUI-R4-delayed-IPC",
+          "status": "PASS",
+          "details": {
+            "before": {
+              "acknowledgements": 1161,
+              "active": true,
+              "clipboard_owner": "session_fbcb22d5c8a64082b5a62960db9c8393",
+              "dark": true,
+              "display": "GdkWaylandDisplay",
+              "drawn": [
+                171,
+                63
+              ],
+              "focused_view": "view_9a5fc835465d4a05832d467e784d0a6a",
+              "layout": {
+                "first": {
+                  "pane": "pane_aa940072c60d45a19f4b48665e143a28"
+                },
+                "id": "split_pane_174675bbcb7946dc9063027a949a514b",
+                "orientation": "horizontal",
+                "ratio": 582,
+                "second": {
+                  "pane": "pane_174675bbcb7946dc9063027a949a514b"
+                }
+              },
+              "max_tick_gap_ms": 55,
+              "panes": [
+                2,
+                1
+              ],
+              "selected_tab": 0,
+              "status": "Selection copied to CLIPBOARD",
+              "tabs": 2,
+              "target": "pane_aa940072c60d45a19f4b48665e143a28",
+              "ticks": 1058,
+              "zoom": false
+            },
+            "during": {
+              "acknowledgements": 1161,
+              "active": true,
+              "clipboard_owner": "session_fbcb22d5c8a64082b5a62960db9c8393",
+              "dark": true,
+              "display": "GdkWaylandDisplay",
+              "drawn": [
+                171,
+                63
+              ],
+              "focused_view": "view_9a5fc835465d4a05832d467e784d0a6a",
+              "layout": {
+                "first": {
+                  "pane": "pane_aa940072c60d45a19f4b48665e143a28"
+                },
+                "id": "split_pane_174675bbcb7946dc9063027a949a514b",
+                "orientation": "horizontal",
+                "ratio": 582,
+                "second": {
+                  "pane": "pane_174675bbcb7946dc9063027a949a514b"
+                }
+              },
+              "max_tick_gap_ms": 55,
+              "panes": [
+                2,
+                1
+              ],
+              "selected_tab": 0,
+              "status": "Queue full; input not sent",
+              "tabs": 2,
+              "target": "pane_aa940072c60d45a19f4b48665e143a28",
+              "ticks": 1060,
+              "zoom": false
+            },
+            "after": {
+              "acknowledgements": 1288,
+              "active": true,
+              "clipboard_owner": "session_fbcb22d5c8a64082b5a62960db9c8393",
+              "dark": true,
+              "display": "GdkWaylandDisplay",
+              "drawn": [
+                171,
+                63
+              ],
+              "focused_view": "view_9a5fc835465d4a05832d467e784d0a6a",
+              "layout": {
+                "first": {
+                  "pane": "pane_aa940072c60d45a19f4b48665e143a28"
+                },
+                "id": "split_pane_174675bbcb7946dc9063027a949a514b",
+                "orientation": "horizontal",
+                "ratio": 582,
+                "second": {
+                  "pane": "pane_174675bbcb7946dc9063027a949a514b"
+                }
+              },
+              "max_tick_gap_ms": 55,
+              "panes": [
+                2,
+                1
+              ],
+              "selected_tab": 0,
+              "status": "Input/command delivery failed: {\"code\":\"TIMEOUT\",\"message\":\"text not observed before deadline\"}",
+              "tabs": 2,
+              "target": "pane_aa940072c60d45a19f4b48665e143a28",
+              "ticks": 1140,
+              "zoom": false
+            }
+          }
+        },
+        {
+          "id": "IMAGE-real-crash-cleanup",
+          "status": "PASS",
+          "details": {
+            "gui_termination": "SIGKILL",
+            "reclaimed_abandoned_png_namespace": true,
+            "same_daemon_owned_pids": [
+              500688,
+              500696,
+              500692
+            ]
+          }
+        },
+        {
+          "id": "RDP-embedded-frame",
+          "status": "PASS",
+          "details": {
+            "same_window_tabs": 3,
+            "native_framebuffer": "synthetic 320x180 draw",
+            "backend_compiled": "IronRDP",
+            "real_authenticated_host": "BLOCKED: endpoint, trusted certificate and RUWAC Secret Service reference required"
+          }
+        },
+        {
+          "id": "GUI-R3",
+          "status": "PASS",
+          "details": {
+            "same_pids": [
+              500688,
+              500696,
+              500692
+            ],
+            "tui_reattach": "PASS",
+            "resize": "PASS"
+          }
+        }
+      ],
+      "binary_sha256": "4cf70c7fb61dab608101ca83fb55bb5685c6fbb08130a5d968bbf569861d8fd5",
+      "gui_sha256": "6371ea14c3899717f00bc518e246c26b0ef2004373fd9f6ccd7f5656be7adbb9",
+      "physical_desktop": "BLOCKED",
+      "real_rdp": "BLOCKED"
+    },
+    "native_recovery": {
+      "cases": [
+        {
+          "id": "GTK-DAEMON-CRASH-HISTORY",
+          "status": "PASS",
+          "display": "GdkWaylandDisplay",
+          "same_tab_and_view_ids": true,
+          "visible_ended_status": true,
+          "native_copy_internal_buffer": true,
+          "physical_keys": "not tested; synthetic fixture callbacks"
+        },
+        {
+          "id": "GTK-RECOVERY-NEW-TERMINAL",
+          "status": "PASS",
+          "new_live_session_alongside_read_only_history": true
+        }
+      ],
+      "hashes": {
+        "ruwac": "4cf70c7fb61dab608101ca83fb55bb5685c6fbb08130a5d968bbf569861d8fd5",
+        "ruwac-desktop": "6371ea14c3899717f00bc518e246c26b0ef2004373fd9f6ccd7f5656be7adbb9"
+      }
+    },
+    "older_daemon": {
+      "results": [
+        {
+          "id": "GTK-OLDER-DAEMON-PREVIOUS",
+          "status": "PASS",
+          "unsupported_capability_visible": true,
+          "input_not_frozen": true,
+          "same_child_pid": true,
+          "events": "real GTK client callbacks; synthetic keys",
+          "clipboard_disabled": true
+        }
+      ],
+      "old_daemon_sha256": "b982542f25021ae6a06ec8e954f6aa97747affc05abb3fe205d8f71b3ab7caac",
+      "gui_sha256": "6371ea14c3899717f00bc518e246c26b0ef2004373fd9f6ccd7f5656be7adbb9"
+    },
+    "authenticated_local_rdp_repeat": {
+      "cases": [
+        {
+          "id": "RDP-NATIVE-AUTH-3",
+          "status": "PASS",
+          "details": {
+            "server": {
+              "generated_desktop": [
+                320,
+                180
+              ],
+              "security": "TLS verified + CredSSP/NLA",
+              "server": "ironrdp-server 0.13.0"
+            },
+            "connections": [
+              {
+                "active": true,
+                "epoch": 12,
+                "last_pixel": [
+                  63,
+                  179,
+                  90,
+                  255
+                ],
+                "metrics": {
+                  "decoded_updates": 1,
+                  "update_intervals_ms": []
+                },
+                "offers": 0,
+                "pan": [
+                  0.0,
+                  0.0
+                ],
+                "pending": false,
+                "policy": "Bidirectional",
+                "received_generation": 0,
+                "requested_size": [
+                  0,
+                  0
+                ],
+                "size": [
+                  320,
+                  180
+                ],
+                "status": "Connected \u00b7 text and image clipboard sharing",
+                "tab": 1,
+                "transport_id": "rdp-transport_937be3884ce54f73a4a32c1d04bfbfb1",
+                "viewport": [
+                  764,
+                  550
+                ],
+                "window_width": 1040,
+                "zoom": 1.0,
+                "connect_to_decoded_frame_ms": 233.93171500356402
+              },
+              {
+                "active": true,
+                "epoch": 17,
+                "last_pixel": [
+                  63,
+                  179,
+                  90,
+                  255
+                ],
+                "metrics": {
+                  "decoded_updates": 1,
+                  "update_intervals_ms": []
+                },
+                "offers": 0,
+                "pan": [
+                  0.0,
+                  0.0
+                ],
+                "pending": false,
+                "policy": "Bidirectional",
+                "received_generation": 0,
+                "requested_size": [
+                  0,
+                  0
+                ],
+                "size": [
+                  320,
+                  180
+                ],
+                "status": "Connected \u00b7 text and image clipboard sharing",
+                "tab": 2,
+                "transport_id": "rdp-transport_1656965cd3134777a1cbfbc3e459499d",
+                "viewport": [
+                  764,
+                  550
+                ],
+                "window_width": 1040,
+                "zoom": 1.0,
+                "connect_to_decoded_frame_ms": 183.9424509962555
+              },
+              {
+                "active": true,
+                "epoch": 22,
+                "last_pixel": [
+                  63,
+                  179,
+                  90,
+                  255
+                ],
+                "metrics": {
+                  "decoded_updates": 1,
+                  "update_intervals_ms": []
+                },
+                "offers": 0,
+                "pan": [
+                  0.0,
+                  0.0
+                ],
+                "pending": false,
+                "policy": "Bidirectional",
+                "received_generation": 0,
+                "requested_size": [
+                  0,
+                  0
+                ],
+                "size": [
+                  320,
+                  180
+                ],
+                "status": "Connected \u00b7 text and image clipboard sharing",
+                "tab": 3,
+                "transport_id": "rdp-transport_b7f59e2c775847aaa1034925d23cbb38",
+                "viewport": [
+                  764,
+                  550
+                ],
+                "window_width": 1040,
+                "zoom": 1.0,
+                "connect_to_decoded_frame_ms": 198.8462950102985
+              }
+            ],
+            "authentication": "actual CredSSP/NLA",
+            "frames": "decoded live loopback server frames, generated desktop"
+          }
+        },
+        {
+          "id": "FILES-CLIPBOARD-OWNERSHIP",
+          "status": "PASS",
+          "details": {
+            "native_files_tab": true,
+            "inactive_rdp_offers": 30,
+            "peer_clipboard_unchanged": true
+          }
+        },
+        {
+          "id": "MACHINES-NATIVE-EDITOR",
+          "status": "PASS",
+          "details": {
+            "native_dialogs": true,
+            "cancel_duplicate_confirmed_delete": true,
+            "stable_identity_after_rename_move": true,
+            "multi_endpoint_machine": true,
+            "same_leaf_distinct_machines": true,
+            "persisted_schema": 1
+          }
+        },
+        {
+          "id": "RDP-NATIVE-RESIZE-20",
+          "status": "PASS",
+          "details": {
+            "before": {
+              "decoded_updates": 1,
+              "update_intervals_ms": []
+            },
+            "after": {
+              "decoded_updates": 22,
+              "update_intervals_ms": [
+                8418.390019,
+                281.434482,
+                356.788952,
+                221.222497,
+                202.027422,
+                209.945783,
+                286.462016,
+                232.225924,
+                233.347391,
+                267.068957,
+                369.17479,
+                272.5729,
+                230.47546899999998,
+                250.38719700000001,
+                336.04283699999996,
+                265.31702,
+                231.888547,
+                269.075044,
+                331.223237,
+                221.872725,
+                1144.667244
+              ]
+            },
+            "processes_before": {
+              "gtk": {
+                "cpu_seconds": 1.93,
+                "rss_mib": 79.97265625
+              },
+              "server": {
+                "cpu_seconds": 0.22,
+                "rss_mib": 12.11328125
+              }
+            },
+            "processes_after": {
+              "gtk": {
+                "cpu_seconds": 5.51,
+                "rss_mib": 106.70703125
+              },
+              "server": {
+                "cpu_seconds": 1.46,
+                "rss_mib": 33.67578125
+              }
+            },
+            "wall_seconds": 8.327749806994689,
+            "transitions": [
+              {
+                "size": [
+                  640,
+                  480
+                ],
+                "decoded_corner": [
+                  127,
+                  223,
+                  90,
+                  255
+                ],
+                "complete_frame_ms": 127.63537999126129,
+                "metrics": {
+                  "decoded_updates": 2,
+                  "update_intervals_ms": [
+                    8418.390019
+                  ]
+                },
+                "processes": {
+                  "gtk": {
+                    "cpu_seconds": 1.95,
+                    "rss_mib": 82.34375
+                  },
+                  "server": {
+                    "cpu_seconds": 0.23,
+                    "rss_mib": 13.2890625
+                  }
+                }
+              },
+              {
+                "size": [
+                  2560,
+                  1440
+                ],
+                "decoded_corner": [
+                  255,
+                  159,
+                  90,
+                  255
+                ],
+                "complete_frame_ms": 264.9689419922652,
+                "metrics": {
+                  "decoded_updates": 3,
+                  "update_intervals_ms": [
+                    8418.390019,
+                    281.434482
+                  ]
+                },
+                "processes": {
+                  "gtk": {
+                    "cpu_seconds": 2.15,
+                    "rss_mib": 136.0
+                  },
+                  "server": {
+                    "cpu_seconds": 0.3,
+                    "rss_mib": 37.87109375
+                  }
+                }
+              },
+              {
+                "size": [
+                  3000,
+                  1800
+                ],
+                "decoded_corner": [
+                  183,
+                  7,
+                  90,
+                  255
+                ],
+                "complete_frame_ms": 312.78966000536457,
+                "metrics": {
+                  "decoded_updates": 4,
+                  "update_intervals_ms": [
+                    8418.390019,
+                    281.434482,
+                    356.788952
+                  ]
+                },
+                "processes": {
+                  "gtk": {
+                    "cpu_seconds": 2.43,
+                    "rss_mib": 134.95703125
+                  },
+                  "server": {
+                    "cpu_seconds": 0.41,
+                    "rss_mib": 48.27734375
+                  }
+                }
+              },
+              {
+                "size": [
+                  1024,
+                  768
+                ],
+                "decoded_corner": [
+                  255,
+                  255,
+                  90,
+                  255
+                ],
+                "complete_frame_ms": 140.15953900525346,
+                "metrics": {
+                  "decoded_updates": 5,
+                  "update_intervals_ms": [
+                    8418.390019,
+                    281.434482,
+                    356.788952,
+                    221.222497
+                  ]
+                },
+                "processes": {
+                  "gtk": {
+                    "cpu_seconds": 2.53,
+                    "rss_mib": 123.78125
+                  },
+                  "server": {
+                    "cpu_seconds": 0.48,
+                    "rss_mib": 30.45703125
+                  }
+                }
+              },
+              {
+                "size": [
+                  640,
+                  480
+                ],
+                "decoded_corner": [
+                  127,
+                  223,
+                  90,
+                  255
+                ],
+                "complete_frame_ms": 147.92693499475718,
+                "metrics": {
+                  "decoded_updates": 6,
+                  "update_intervals_ms": [
+                    8418.390019,
+                    281.434482,
+                    356.788952,
+                    221.222497,
+                    202.027422
+                  ]
+                },
+                "processes": {
+                  "gtk": {
+                    "cpu_seconds": 2.6,
+                    "rss_mib": 123.78125
+                  },
+                  "server": {
+                    "cpu_seconds": 0.48,
+                    "rss_mib": 30.67578125
+                  }
+                }
+              },
+              {
+                "size": [
+                  2560,
+                  1440
+                ],
+                "decoded_corner": [
+                  255,
+                  159,
+                  90,
+                  255
+                ],
+                "complete_frame_ms": 163.87094200763386,
+                "metrics": {
+                  "decoded_updates": 7,
+                  "update_intervals_ms": [
+                    8418.390019,
+                    281.434482,
+                    356.788952,
+                    221.222497,
+                    202.027422,
+                    209.945783
+                  ]
+                },
+                "processes": {
+                  "gtk": {
+                    "cpu_seconds": 2.71,
+                    "rss_mib": 143.5390625
+                  },
+                  "server": {
+                    "cpu_seconds": 0.53,
+                    "rss_mib": 41.51953125
+                  }
+                }
+              },
+              {
+                "size": [
+                  3000,
+                  1800
+                ],
+                "decoded_corner": [
+                  183,
+                  7,
+                  90,
+                  255
+                ],
+                "complete_frame_ms": 248.76379100896884,
+                "metrics": {
+                  "decoded_updates": 8,
+                  "update_intervals_ms": [
+                    8418.390019,
+                    281.434482,
+                    356.788952,
+                    221.222497,
+                    202.027422,
+                    209.945783,
+                    286.462016
+                  ]
+                },
+                "processes": {
+                  "gtk": {
+                    "cpu_seconds": 2.96,
+                    "rss_mib": 197.8125
+                  },
+                  "server": {
+                    "cpu_seconds": 0.61,
+                    "rss_mib": 62.3359375
+                  }
+                }
+              },
+              {
+                "size": [
+                  1024,
+                  768
+                ],
+                "decoded_corner": [
+                  255,
+                  255,
+                  90,
+                  255
+                ],
+                "complete_frame_ms": 152.46049499546643,
+                "metrics": {
+                  "decoded_updates": 9,
+                  "update_intervals_ms": [
+                    8418.390019,
+                    281.434482,
+                    356.788952,
+                    221.222497,
+                    202.027422,
+                    209.945783,
+                    286.462016,
+                    232.225924
+                  ]
+                },
+                "processes": {
+                  "gtk": {
+                    "cpu_seconds": 3.07,
+                    "rss_mib": 106.1875
+                  },
+                  "server": {
+                    "cpu_seconds": 0.68,
+                    "rss_mib": 30.67578125
+                  }
+                }
+              },
+              {
+                "size": [
+                  640,
+                  480
+                ],
+                "decoded_corner": [
+                  127,
+                  223,
+                  90,
+                  255
+                ],
+                "complete_frame_ms": 173.34199500328396,
+                "metrics": {
+                  "decoded_updates": 10,
+                  "update_intervals_ms": [
+                    8418.390019,
+                    281.434482,
+                    356.788952,
+                    221.222497,
+                    202.027422,
+                    209.945783,
+                    286.462016,
+                    232.225924,
+                    233.347391
+                  ]
+                },
+                "processes": {
+                  "gtk": {
+                    "cpu_seconds": 3.16,
+                    "rss_mib": 106.1875
+                  },
+                  "server": {
+                    "cpu_seconds": 0.69,
+                    "rss_mib": 30.67578125
+                  }
+                }
+              },
+              {
+                "size": [
+                  2560,
+                  1440
+                ],
+                "decoded_corner": [
+                  255,
+                  159,
+                  90,
+                  255
+                ],
+                "complete_frame_ms": 248.06642399926204,
+                "metrics": {
+                  "decoded_updates": 11,
+                  "update_intervals_ms": [
+                    8418.390019,
+                    281.434482,
+                    356.788952,
+                    221.222497,
+                    202.027422,
+                    209.945783,
+                    286.462016,
+                    232.225924,
+                    233.347391,
+                    267.068957
+                  ]
+                },
+                "processes": {
+                  "gtk": {
+                    "cpu_seconds": 3.33,
+                    "rss_mib": 146.5390625
+                  },
+                  "server": {
+                    "cpu_seconds": 0.74,
+                    "rss_mib": 41.73828125
+                  }
+                }
+              },
+              {
+                "size": [
+                  3000,
+                  1800
+                ],
+                "decoded_corner": [
+                  183,
+                  7,
+                  90,
+                  255
+                ],
+                "complete_frame_ms": 317.56293299258687,
+                "metrics": {
+                  "decoded_updates": 12,
+                  "update_intervals_ms": [
+                    8418.390019,
+                    281.434482,
+                    356.788952,
+                    221.222497,
+                    202.027422,
+                    209.945783,
+                    286.462016,
+                    232.225924,
+                    233.347391,
+                    267.068957,
+                    369.17479
+                  ]
+                },
+                "processes": {
+                  "gtk": {
+                    "cpu_seconds": 3.57,
+                    "rss_mib": 200.8125
+                  },
+                  "server": {
+                    "cpu_seconds": 0.83,
+                    "rss_mib": 62.3359375
+                  }
+                }
+              },
+              {
+                "size": [
+                  1024,
+                  768
+                ],
+                "decoded_corner": [
+                  255,
+                  255,
+                  90,
+                  255
+                ],
+                "complete_frame_ms": 194.359742992674,
+                "metrics": {
+                  "decoded_updates": 13,
+                  "update_intervals_ms": [
+                    8418.390019,
+                    281.434482,
+                    356.788952,
+                    221.222497,
+                    202.027422,
+                    209.945783,
+                    286.462016,
+                    232.225924,
+                    233.347391,
+                    267.068957,
+                    369.17479,
+                    272.5729
+                  ]
+                },
+                "processes": {
+                  "gtk": {
+                    "cpu_seconds": 3.69,
+                    "rss_mib": 106.19140625
+                  },
+                  "server": {
+                    "cpu_seconds": 0.9,
+                    "rss_mib": 30.67578125
+                  }
+                }
+              },
+              {
+                "size": [
+                  640,
+                  480
+                ],
+                "decoded_corner": [
+                  127,
+                  223,
+                  90,
+                  255
+                ],
+                "complete_frame_ms": 171.43738899903838,
+                "metrics": {
+                  "decoded_updates": 14,
+                  "update_intervals_ms": [
+                    8418.390019,
+                    281.434482,
+                    356.788952,
+                    221.222497,
+                    202.027422,
+                    209.945783,
+                    286.462016,
+                    232.225924,
+                    233.347391,
+                    267.068957,
+                    369.17479,
+                    272.5729,
+                    230.47546899999998
+                  ]
+                },
+                "processes": {
+                  "gtk": {
+                    "cpu_seconds": 3.76,
+                    "rss_mib": 106.19140625
+                  },
+                  "server": {
+                    "cpu_seconds": 0.91,
+                    "rss_mib": 30.67578125
+                  }
+                }
+              },
+              {
+                "size": [
+                  2560,
+                  1440
+                ],
+                "decoded_corner": [
+                  255,
+                  159,
+                  90,
+                  255
+                ],
+                "complete_frame_ms": 246.67802300245967,
+                "metrics": {
+                  "decoded_updates": 15,
+                  "update_intervals_ms": [
+                    8418.390019,
+                    281.434482,
+                    356.788952,
+                    221.222497,
+                    202.027422,
+                    209.945783,
+                    286.462016,
+                    232.225924,
+                    233.347391,
+                    267.068957,
+                    369.17479,
+                    272.5729,
+                    230.47546899999998,
+                    250.38719700000001
+                  ]
+                },
+                "processes": {
+                  "gtk": {
+                    "cpu_seconds": 3.92,
+                    "rss_mib": 146.54296875
+                  },
+                  "server": {
+                    "cpu_seconds": 0.96,
+                    "rss_mib": 42.91015625
+                  }
+                }
+              },
+              {
+                "size": [
+                  3000,
+                  1800
+                ],
+                "decoded_corner": [
+                  183,
+                  7,
+                  90,
+                  255
+                ],
+                "complete_frame_ms": 288.45332699711435,
+                "metrics": {
+                  "decoded_updates": 16,
+                  "update_intervals_ms": [
+                    8418.390019,
+                    281.434482,
+                    356.788952,
+                    221.222497,
+                    202.027422,
+                    209.945783,
+                    286.462016,
+                    232.225924,
+                    233.347391,
+                    267.068957,
+                    369.17479,
+                    272.5729,
+                    230.47546899999998,
+                    250.38719700000001,
+                    336.04283699999996
+                  ]
+                },
+                "processes": {
+                  "gtk": {
+                    "cpu_seconds": 4.15,
+                    "rss_mib": 200.81640625
+                  },
+                  "server": {
+                    "cpu_seconds": 1.06,
+                    "rss_mib": 56.97265625
+                  }
+                }
+              },
+              {
+                "size": [
+                  1024,
+                  768
+                ],
+                "decoded_corner": [
+                  255,
+                  255,
+                  90,
+                  255
+                ],
+                "complete_frame_ms": 179.3711810023524,
+                "metrics": {
+                  "decoded_updates": 17,
+                  "update_intervals_ms": [
+                    8418.390019,
+                    281.434482,
+                    356.788952,
+                    221.222497,
+                    202.027422,
+                    209.945783,
+                    286.462016,
+                    232.225924,
+                    233.347391,
+                    267.068957,
+                    369.17479,
+                    272.5729,
+                    230.47546899999998,
+                    250.38719700000001,
+                    336.04283699999996,
+                    265.31702
+                  ]
+                },
+                "processes": {
+                  "gtk": {
+                    "cpu_seconds": 4.25,
+                    "rss_mib": 106.19140625
+                  },
+                  "server": {
+                    "cpu_seconds": 1.12,
+                    "rss_mib": 30.45703125
+                  }
+                }
+              },
+              {
+                "size": [
+                  640,
+                  480
+                ],
+                "decoded_corner": [
+                  127,
+                  223,
+                  90,
+                  255
+                ],
+                "complete_frame_ms": 181.3385450077476,
+                "metrics": {
+                  "decoded_updates": 18,
+                  "update_intervals_ms": [
+                    8418.390019,
+                    281.434482,
+                    356.788952,
+                    221.222497,
+                    202.027422,
+                    209.945783,
+                    286.462016,
+                    232.225924,
+                    233.347391,
+                    267.068957,
+                    369.17479,
+                    272.5729,
+                    230.47546899999998,
+                    250.38719700000001,
+                    336.04283699999996,
+                    265.31702,
+                    231.888547
+                  ]
+                },
+                "processes": {
+                  "gtk": {
+                    "cpu_seconds": 4.35,
+                    "rss_mib": 106.19140625
+                  },
+                  "server": {
+                    "cpu_seconds": 1.13,
+                    "rss_mib": 30.45703125
+                  }
+                }
+              },
+              {
+                "size": [
+                  2560,
+                  1440
+                ],
+                "decoded_corner": [
+                  255,
+                  159,
+                  90,
+                  255
+                ],
+                "complete_frame_ms": 239.25466599757783,
+                "metrics": {
+                  "decoded_updates": 19,
+                  "update_intervals_ms": [
+                    8418.390019,
+                    281.434482,
+                    356.788952,
+                    221.222497,
+                    202.027422,
+                    209.945783,
+                    286.462016,
+                    232.225924,
+                    233.347391,
+                    267.068957,
+                    369.17479,
+                    272.5729,
+                    230.47546899999998,
+                    250.38719700000001,
+                    336.04283699999996,
+                    265.31702,
+                    231.888547,
+                    269.075044
+                  ]
+                },
+                "processes": {
+                  "gtk": {
+                    "cpu_seconds": 4.51,
+                    "rss_mib": 146.54296875
+                  },
+                  "server": {
+                    "cpu_seconds": 1.18,
+                    "rss_mib": 41.73828125
+                  }
+                }
+              },
+              {
+                "size": [
+                  3000,
+                  1800
+                ],
+                "decoded_corner": [
+                  183,
+                  7,
+                  90,
+                  255
+                ],
+                "complete_frame_ms": 281.83281399833504,
+                "metrics": {
+                  "decoded_updates": 20,
+                  "update_intervals_ms": [
+                    8418.390019,
+                    281.434482,
+                    356.788952,
+                    221.222497,
+                    202.027422,
+                    209.945783,
+                    286.462016,
+                    232.225924,
+                    233.347391,
+                    267.068957,
+                    369.17479,
+                    272.5729,
+                    230.47546899999998,
+                    250.38719700000001,
+                    336.04283699999996,
+                    265.31702,
+                    231.888547,
+                    269.075044,
+                    331.223237
+                  ]
+                },
+                "processes": {
+                  "gtk": {
+                    "cpu_seconds": 4.73,
+                    "rss_mib": 200.81640625
+                  },
+                  "server": {
+                    "cpu_seconds": 1.27,
+                    "rss_mib": 62.3359375
+                  }
+                }
+              },
+              {
+                "size": [
+                  1024,
+                  768
+                ],
+                "decoded_corner": [
+                  255,
+                  255,
+                  90,
+                  255
+                ],
+                "complete_frame_ms": 154.20186400297098,
+                "metrics": {
+                  "decoded_updates": 21,
+                  "update_intervals_ms": [
+                    8418.390019,
+                    281.434482,
+                    356.788952,
+                    221.222497,
+                    202.027422,
+                    209.945783,
+                    286.462016,
+                    232.225924,
+                    233.347391,
+                    267.068957,
+                    369.17479,
+                    272.5729,
+                    230.47546899999998,
+                    250.38719700000001,
+                    336.04283699999996,
+                    265.31702,
+                    231.888547,
+                    269.075044,
+                    331.223237,
+                    221.872725
+                  ]
+                },
+                "processes": {
+                  "gtk": {
+                    "cpu_seconds": 4.84,
+                    "rss_mib": 106.19140625
+                  },
+                  "server": {
+                    "cpu_seconds": 1.34,
+                    "rss_mib": 30.67578125
+                  }
+                }
+              }
+            ],
+            "negotiation": "actual Display Control DVC plus server DeactivateAll/reactivation",
+            "resize_storm": {
+              "gtk_allocation_changes": 20,
+              "settled_size": [
+                784,
+                568
+              ],
+              "stable_after_800ms": true
+            },
+            "post_resize_clipboard": true,
+            "other_tabs_unchanged": true,
+            "codec": "raw bitmap fixture; RemoteFX/GNOME issue remains a separate gate"
+          }
+        },
+        {
+          "id": "RDP-PROFILE-KEYRING-PREFERENCES",
+          "status": "PASS",
+          "details": {
+            "normal_sidebar_connection": "actual CredSSP with disposable Secret Service lookup and verified fixture CA",
+            "decoded_frame": [
+              784,
+              568
+            ],
+            "runtime_preferences_saved": true,
+            "profile_protected_then_released": true,
+            "owner_secrets_accessed": false,
+            "native_toolbar": {
+              "visible_theme_icons": 7,
+              "zoom_fit": true,
+              "disconnect_reconnect_authentication": true,
+              "neighbor_transports_preserved": true,
+              "actual_GTK_render": "rdp-toolbar.png",
+              "physical_input": false
+            }
+          }
+        },
+        {
+          "id": "MACHINES-RESTART-1000",
+          "status": "PASS",
+          "details": {
+            "restart_identical_ids_preferences_groups": true,
+            "generated_profiles": 1000,
+            "load_and_fixture_ready_ms": 982.3819269950036,
+            "search_widget_roundtrip_ms": 93.20609900169075,
+            "search_rows": 1
+          }
+        }
+      ],
+      "rss_mib": {
+        "gtk": 102.0078125,
+        "rdp_server": 33.68359375
+      },
+      "environment": "Owned Weston/Xvfb, real native GTK/GDK peer, actual loopback IronRDP server; generated credentials and frames",
+      "limitations": [
+        "No external Windows/GNOME login",
+        "No physical keyboard/touchpad acceptance",
+        "No external Windows/GNOME Display Control or RemoteFX qualification"
+      ]
+    },
+    "stable": "not qualified"
   }
 }

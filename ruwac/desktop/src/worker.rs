@@ -138,36 +138,32 @@ impl Worker {
                                 Ok(("close".into(), json!({})))
                             }
                             Command::History(pane) => {
-                                let mut text = String::new();
-                                let mut offset = 0;
-                                let mut total = 0;
-                                let mut truncated = false;
-                                let mut epoch = None;
-                                let result = (|| -> io::Result<()> {
+                                let mut text=String::new();let mut offset=0;let mut total=0;
+                                let mut truncated=false;let mut epoch=None;let mut pin=None;
+                                let mut result=(||->io::Result<()> {
+                                    if schema["methods"].as_array().is_some_and(|methods|methods.iter().any(|m|m=="pane.history.freeze")) {
+                                        let metadata=rpc.call("pane.history.freeze",json!({"pane":pane}))?;
+                                        pin=Some(metadata["snapshot"].as_str().ok_or_else(||io::Error::other("Copy snapshot ID missing"))?.to_owned());
+                                        truncated=metadata["dropped_lines"].as_u64().unwrap_or(0)>0;
+                                    }
                                     loop {
-                                        let page = rpc.call(
-                                            "pane.history",
-                                            json!({"pane":pane,"offset":offset,"lines":500,"epoch":epoch}),
-                                        )?;
-                                        epoch = page["epoch"].as_u64();
-                                        let part = page["text"].as_str().unwrap_or("");
-                                        let next = page["next_offset"].as_u64().unwrap_or(0);
-                                        total = page["total_lines"].as_u64().unwrap_or(0);
-                                        if text.len() + part.len() > 8 * 1024 * 1024 {
-                                            truncated = true;
-                                            break;
-                                        }
+                                        let mut params=json!({"pane":pane,"offset":offset,"lines":500,"epoch":epoch});
+                                        if let Some(pin)=&pin {params["snapshot"]=json!(pin);}
+                                        let page=rpc.call("pane.history",params)?;epoch=page["epoch"].as_u64();
+                                        let part=page["text"].as_str().unwrap_or("");let next=page["next_offset"].as_u64().unwrap_or(0);
+                                        total=page["total_lines"].as_u64().unwrap_or(0);
+                                        if text.len()+part.len()>8*1024*1024 {truncated=true;break;}
                                         text.push_str(part);
-                                        if next >= total
-                                            || next <= offset
-                                            || halt.load(Ordering::Relaxed)
-                                        {
-                                            break;
-                                        }
-                                        offset = next;
+                                        if next>=total||halt.load(Ordering::Relaxed){break;}
+                                        if next<=offset{return Err(io::Error::other("Copy history paging stalled"));}
+                                        offset=next;
                                     }
                                     Ok(())
                                 })();
+                                if let Some(pin)=pin {
+                                    let release=rpc.call("pane.history.release",json!({"snapshot":pin}));
+                                    if result.is_ok(){result=release.map(|_|());}
+                                }
                                 result.map(|()|("pane.history".into(),json!({"pane":pane,"text":text,"total_lines":total,"truncated":truncated})))
                             }
                             Command::Paste(pane, text) => {

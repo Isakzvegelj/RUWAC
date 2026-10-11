@@ -1,3 +1,4 @@
+mod copy;
 use ruwac_protocol::{MAX_TEXT, read_frame, request, write_frame};
 use serde_json::{Value, json};
 use std::{
@@ -133,6 +134,10 @@ impl Decoder {
                 }
                 continue;
             }
+            if self.buf[1] == b'O' {
+                if self.buf.len()<3 {break;}
+                out.push(Input::Keyboard(self.buf.drain(..3).collect()));continue;
+            }
             if self.buf[1] == b']' {
                 let end = self
                     .buf
@@ -225,8 +230,9 @@ fn dimensions() -> (u16, u16) {
     }
 }
 fn call(s: &mut UnixStream, m: &str, v: Value) -> io::Result<Value> {
-    write_frame(s, &request(m, v))?;
+    let sent=request(m,v);write_frame(s,&sent)?;
     let r = read_frame(s)?;
+    if r["version"]!=0||r["id"]!=sent.id {return Err(io::Error::other("Protocol/correlation rejected"));}
     if let Some(e) = r.get("error") {
         return Err(io::Error::other(e.to_string()));
     }
@@ -327,256 +333,261 @@ fn draw(v: &Value, size: (u16, u16), status: &str) -> io::Result<()> {
     stdout.write_all(out.as_bytes())?;
     stdout.flush()
 }
-pub fn attach(socket: &Path, session: &str) -> io::Result<()> {
-    STOP.store(false, Ordering::Relaxed);
-    let _raw = Raw::enter()?;
-    let mut s = UnixStream::connect(socket)?;
-    s.set_read_timeout(Some(Duration::from_secs(5)))?;
-    s.set_write_timeout(Some(Duration::from_secs(5)))?;
-    let mut size = dimensions();
-    call(
-        &mut s,
-        "session.attach",
-        json!({"session":session,"rows":size.0,"cols":size.1}),
-    )?;
-    let (tx, rx) = mpsc::sync_channel(64);
-    std::thread::spawn(move || {
-        let mut stdin = io::stdin().lock();
-        let mut b = [0; 8192];
-        loop {
-            match stdin.read(&mut b) {
-                Ok(0) | Err(_) => {
-                    let _ = tx.send(None);
-                    break;
-                }
-                Ok(n) => {
-                    if tx.send(Some(b[..n].to_vec())).is_err() {
-                        break;
-                    }
+#[derive(Default)]
+struct Config {prefix:u8,remaps:std::collections::HashMap<char,char>}
+impl Config {
+    fn load()->io::Result<Self> {
+        let mut c=Self{prefix:1,..Self::default()};
+        if let Ok(value)=std::env::var("RUWAC_SHORTCUTS") {
+            let map:std::collections::HashMap<String,String>=serde_json::from_str(&value).map_err(io::Error::other)?;
+            if let Some(prefix)=map.get("prefix") {
+                let letter=prefix.strip_prefix("<Control>").or_else(||prefix.strip_prefix("Ctrl+")).or_else(||prefix.strip_prefix("Ctrl-")).or_else(||prefix.strip_prefix('^'));
+                c.prefix=letter.filter(|s|s.len()==1&&s.as_bytes()[0].is_ascii_alphabetic()).map(|s|s.as_bytes()[0].to_ascii_lowercase()&31)
+                    .ok_or_else(||io::Error::other("TUI prefix must be Control+A through Control+Z"))?;
+            }
+        }
+        if let Ok(value)=std::env::var("RUWAC_KEYMAP") {
+            let map:std::collections::HashMap<String,String>=serde_json::from_str(&value).map_err(io::Error::other)?;
+            for (from,to)in map {
+                let from=if from=="Tab"{Some('\t')}else{from.chars().next().filter(|_|from.len()==1)};
+                if let Some(from)=from {
+                    let to=if to=="Tab"{'\t'}else{to.chars().next().filter(|_|to.len()==1).ok_or_else(||io::Error::other("TUI remaps require one implemented prefix command"))?};
+                    if !"acnpdS|\t[]\"?:z0123456789".contains(to){return Err(io::Error::other("Unsupported TUI prefix remap"));}
+                    c.remaps.insert(from,to);
                 }
             }
         }
-    });
-    let mut decoder = Decoder::default();
-    let mut prefix = false;
-    let mut snapshot = call(&mut s, "client.render", json!({}))?;
-    draw(&snapshot, size, "")?;
-    let mut rendered = Instant::now();
-    let mut input_at = Instant::now();
-    let mut status = String::new();
-    let mut drawn_status = String::new();
-    while !STOP.load(Ordering::Relaxed) {
-        let events = match rx.recv_timeout(Duration::from_millis(10)) {
-            Ok(Some(b)) => {
-                input_at = Instant::now();
-                decoder.feed(&b)
-            }
-            Ok(None) => break,
-            Err(mpsc::RecvTimeoutError::Disconnected) => break,
-            Err(_) => {
-                if input_at.elapsed() > Duration::from_millis(40) {
-                    decoder.escape_timeout()
-                } else {
-                    vec![]
-                }
-            }
-        };
-        for event in events {
-            let result: io::Result<()> = (|| {
-                match event {
-                    Input::Rejected(e) => {
-                        status = e.into();
-                    }
-                    e @ (Input::Mouse(_) | Input::Paste(_)) => {
-                        let kind = if matches!(&e, Input::Mouse(_)) {
-                            "mouse"
-                        } else {
-                            "paste"
-                        };
-                        let b = match e {
-                            Input::Mouse(b) | Input::Paste(b) => b,
-                            _ => unreachable!(),
-                        };
-                        let t = String::from_utf8(b).map_err(io::Error::other)?;
-                        call(
-                            &mut s,
-                            "client.input",
-                            json!({"pane":snapshot["active_pane"],"kind":kind,"text":t}),
-                        )?;
-                    }
-                    Input::Keyboard(b) => {
-                        let mut plain = Vec::new();
-                        for x in b {
-                            if prefix {
-                                prefix = false;
-                                if !plain.is_empty() {
-                                    let t = String::from_utf8(std::mem::take(&mut plain))
-                                        .map_err(io::Error::other)?;
-                                    call(
-                                        &mut s,
-                                        "client.input",
-                                        json!({"pane":snapshot["active_pane"],"kind":"keyboard","text":t}),
-                                    )?;
-                                }
-                                match x {
-                                    b'd' => {
-                                        call(&mut s, "session.detach", json!({}))?;
-                                        STOP.store(true, Ordering::Relaxed);
-                                        break;
-                                    }
-                                    1 => {
-                                        call(&mut s, "window.previous", json!({"session":session}))?;
-                                    }
-                                    b'a' => {
-                                        call(
-                                            &mut s,
-                                            "pane.sendKey",
-                                            json!({"pane":snapshot["active_pane"],"key":"CtrlA"}),
-                                        )?;
-                                    }
-                                    b'c' => {
-                                        call(&mut s, "window.create", json!({"session":session}))?;
-                                    }
-                                    b'n' | b'p' => {
-                                        call(
-                                            &mut s,
-                                            "window.cycle",
-                                            json!({"session":session,"previous":x==b'p'}),
-                                        )?;
-                                    }
-                                    b'S' | b'|' => {
-                                        call(
-                                            &mut s,
-                                            "pane.create",
-                                            json!({"window":snapshot["window"],"orientation":if x==b'|'{"vertical"}else{"horizontal"}}),
-                                        )?;
-                                    }
-                                    b'[' => {
-                                        let c = call(
-                                            &mut s,
-                                            "pane.capture",
-                                            json!({"pane":snapshot["active_pane"],"lines":250}),
-                                        )?;
-                                        call(
-                                            &mut s,
-                                            "buffer.set",
-                                            json!({"session":session,"text":c["text"]}),
-                                        )?;
-                                        status="copied bounded capture internally; selection UI pending".into();
-                                    }
-                                    b']' => {
-                                        call(
-                                            &mut s,
-                                            "buffer.paste",
-                                            json!({"pane":snapshot["active_pane"]}),
-                                        )?;
-                                    }
-                                    b'\t' => {
-                                        let p = snapshot["panes"].as_array().unwrap();
-                                        let i = p
-                                            .iter()
-                                            .position(|p| p["id"] == snapshot["active_pane"])
-                                            .unwrap_or(0);
-                                        call(
-                                            &mut s,
-                                            "pane.select",
-                                            json!({"pane":p[(i+1)%p.len()]["id"]}),
-                                        )?;
-                                    }
-                                    b'0'..=b'9' => {
-                                        let w = call(
-                                            &mut s,
-                                            "window.list",
-                                            json!({"session":session}),
-                                        )?;
-                                        if let Some(w) =
-                                            w.as_array().unwrap().get((x - b'0') as usize)
-                                        {
-                                            call(
-                                                &mut s,
-                                                "window.select",
-                                                json!({"window":w["id"]}),
-                                            )?;
-                                        }
-                                    }
-                                    b'?' => {
-                                        status="spike: c n p 0-9 a d S Tab [capture ]paste; full Screen keys pending".into();
-                                    }
-                                    _ => {
-                                        status =
-                                            "unsupported prefix key; ^A ? lists implemented keys"
-                                                .into();
-                                    }
-                                }
-                                if STOP.load(Ordering::Relaxed) {
-                                    break;
-                                }
-                                snapshot = call(&mut s, "client.render", json!({}))?;
-                            } else if x == 1 {
-                                if !plain.is_empty() {
-                                    let t = String::from_utf8(std::mem::take(&mut plain))
-                                        .map_err(io::Error::other)?;
-                                    call(
-                                        &mut s,
-                                        "client.input",
-                                        json!({"pane":snapshot["active_pane"],"kind":"keyboard","text":t}),
-                                    )?;
-                                }
-                                prefix = true;
-                            } else {
-                                plain.push(x)
-                            }
-                        }
-                        if !plain.is_empty() {
-                            let t = String::from_utf8(plain).map_err(io::Error::other)?;
-                            call(
-                                &mut s,
-                                "client.input",
-                                json!({"pane":snapshot["active_pane"],"kind":"keyboard","text":t}),
-                            )?;
-                        }
-                    }
-                }
-                Ok(())
-            })();
-            if let Err(e) = result {
-                status = e.to_string();
-            }
-        }
-        if STOP.load(Ordering::Relaxed) {
-            break;
-        }
-        let newsize = dimensions();
-        if newsize != size {
-            size = newsize;
-            call(
-                &mut s,
-                "client.resize",
-                json!({"rows":size.0,"cols":size.1}),
-            )?;
-            snapshot = call(&mut s, "client.render", json!({}))?;
-            draw(&snapshot, size, &status)?;
-        }
-        if rendered.elapsed() > Duration::from_millis(25) {
-            let fresh = call(
-                &mut s,
-                "client.render",
-                json!({"revision":snapshot["revision"]}),
-            )?;
-            if fresh["unchanged"] != true {
-                snapshot = fresh;
-                draw(&snapshot, size, &status)?;
-                drawn_status = status.clone();
-            } else if status != drawn_status {
-                draw(&snapshot, size, &status)?;
-                drawn_status = status.clone();
-            }
-            rendered = Instant::now();
-        }
+        Ok(c)
     }
-    let _ = call(&mut s, "session.detach", json!({}));
+    fn label(&self)->String {format!("^{}",(self.prefix+b'@')as char)}
+}
+struct WindowRow {id:String,name:String}
+enum Mode {Live,Copy(copy::Copy),Chooser{rows:Vec<WindowRow>,index:usize,typed:String},Prompt(String),Help(usize)}
+fn history(s:&mut UnixStream,pane:&str)->io::Result<copy::Copy> {
+    let metadata=call(s,"pane.history.freeze",json!({"pane":pane}))?;
+    let pin=metadata["snapshot"].as_str().ok_or_else(||io::Error::other("History snapshot ID missing"))?.to_owned();
+    let result=(||->io::Result<copy::Copy>{
+        let total=metadata["total_lines"].as_u64().filter(|n|*n>0&&*n<=50000).ok_or_else(||io::Error::other("History snapshot row cap rejected"))? as usize;
+        let cols=metadata["cols"].as_u64().filter(|n|*n>0&&*n<=200).ok_or_else(||io::Error::other("History columns rejected"))? as usize;
+        let mut lines=Vec::new();let mut offset=0;let mut bytes=0;
+        while offset<total {
+            let page=call(s,"pane.history",json!({"pane":pane,"snapshot":pin,"offset":offset,"lines":500}))?;
+            if page["epoch"]!=metadata["epoch"]||page["total_lines"]!=metadata["total_lines"]{return Err(io::Error::other("Inconsistent history snapshot rejected"));}
+            let rows=page["rows"].as_array().ok_or_else(||io::Error::other("Canonical history rows unavailable; use a matching daemon"))?;
+            for row in rows {
+                let text=row["text"].as_str().ok_or_else(||io::Error::other("Invalid canonical row"))?;
+                if text.chars().any(char::is_control){return Err(io::Error::other("Canonical row controls rejected"));}
+                bytes+=text.len()+1;if bytes>8*1024*1024{return Err(io::Error::other("Copy view exceeds 8 MiB"));}
+                let wrapped=row["wrapped"].as_bool().ok_or_else(||io::Error::other("Canonical wrap flag missing"))?;
+                lines.push(copy::Line{text:text.into(),wrapped});
+            }
+            let next=page["next_offset"].as_u64().unwrap_or(0)as usize;
+            if next!=offset+rows.len()||next<=offset||next>total{return Err(io::Error::other("History paging failed"));}offset=next;
+        }
+        Ok(copy::Copy::new(lines,cols,copy::Position{row:metadata["cursor_row"].as_u64().unwrap_or(0)as usize,col:metadata["cursor_col"].as_u64().unwrap_or(0)as usize},
+            metadata["dropped_lines"].as_u64().unwrap_or(0)as usize,pane.into()))
+    })();
+    let release=call(s,"pane.history.release",json!({"snapshot":pin}));
+    match result {Ok(value)=>{release?;Ok(value)},Err(e)=>Err(e)}
+}
+fn windows(s:&mut UnixStream,session:&str,current:&Value)->io::Result<Mode> {
+    let v=call(s,"window.list",json!({"session":session}))?;
+    let data=v.as_array().ok_or_else(||io::Error::other("Window list missing"))?;
+    if data.is_empty()||data.len()>128{return Err(io::Error::other("Window chooser bound rejected"));}
+    let mut rows=Vec::new();
+    for row in data {
+        let id=row["id"].as_str().filter(|id|ruwac_protocol::valid_id(id,"window")).ok_or_else(||io::Error::other("Window ID rejected"))?;
+        rows.push(WindowRow{id:id.into(),name:safe(row["name"].as_str().unwrap_or("Window"))});
+    }
+    let index=rows.iter().position(|row|current.as_str()==Some(&row.id)).unwrap_or(0);
+    Ok(Mode::Chooser{rows,index,typed:String::new()})
+}
+fn plain(s:&mut UnixStream,v:&Value,text:&mut String)->io::Result<()> {
+    if text.is_empty(){return Ok(());}
+    call(s,"client.input",json!({"pane":v["active_pane"],"kind":"keyboard","text":std::mem::take(text)}))?;Ok(())
+}
+fn command(s:&mut UnixStream,session:&str,snapshot:&Value,text:&str,mode:&mut Mode)->io::Result<()> {
+    let trimmed=text.trim();let (name,arg)=trimmed.split_once(char::is_whitespace).unwrap_or((trimmed,""));let arg=arg.trim();
+    if !arg.is_empty()&&!matches!(name,"select"|"rename"|"split"){return Err(io::Error::other("This command takes no arguments"));}
+    match name {
+        ""=>(),"new"=>{call(s,"window.create",json!({"session":session}))?;},
+        "next"|"prev"=>{call(s,"window.cycle",json!({"session":session,"previous":name=="prev"}))?;},
+        "other"=>{call(s,"window.previous",json!({"session":session}))?;},
+        "select"=>{let index:usize=arg.parse().map_err(|_|io::Error::other("select requires a window index"))?;
+            let rows=call(s,"window.list",json!({"session":session}))?;let row=rows.as_array().and_then(|a|a.get(index)).ok_or_else(||io::Error::other("Window index out of range"))?;
+            call(s,"window.select",json!({"window":row["id"]}))?;},
+        "rename"=>{if arg.is_empty(){return Err(io::Error::other("rename requires a name"));}call(s,"window.rename",json!({"window":snapshot["window"],"name":arg}))?;},
+        "split"=>{if !matches!(arg,"horizontal"|"vertical"){return Err(io::Error::other("split requires horizontal or vertical"));}
+            call(s,"pane.create",json!({"window":snapshot["window"],"orientation":arg}))?;},
+        "zoom"=>{call(s,"pane.layout",json!({"window":snapshot["window"],"zoom":snapshot["zoom"]!=true}))?;},
+        "copy"=>*mode=Mode::Copy(history(s,snapshot["active_pane"].as_str().ok_or_else(||io::Error::other("Active pane missing"))?)?),
+        "paste"=>{call(s,"buffer.paste",json!({"pane":snapshot["active_pane"]}))?;},
+        "windows"=>*mode=windows(s,session,&snapshot["window"])? ,
+        "help"=>*mode=Mode::Help(0),
+        "detach"=>{call(s,"session.detach",json!({}))?;STOP.store(true,Ordering::Relaxed);},
+        _=>return Err(io::Error::other("Unknown command; help lists implemented commands")),
+    }
     Ok(())
 }
+fn draw_mode(mode:&mut Mode,snapshot:&Value,size:(u16,u16),status:&str,config:&Config)->io::Result<()> {
+    if matches!(mode,Mode::Live){return draw(snapshot,size,&format!("{} · {}",config.label(),status));}
+    let height=size.0 as usize;let columns=size.1 as usize;
+    let mut out=if let Mode::Copy(copy)=mode {copy.render(height,columns)}else{
+        let mut out=String::from("\x1b[?25l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[0m\x1b[H\x1b[2J");
+        match mode {
+            Mode::Chooser{rows,index,..}=>{
+                let top=index.saturating_sub(height.saturating_sub(1));
+                for (y,row)in rows.iter().enumerate().skip(top).take(height) {
+                    out.push_str(&format!("\x1b[{};1H{}{}\x1b[0m",y-top+1,if y==*index{"\x1b[7m"}else{""},copy::clip(&format!("{:>3}  {}",y,row.name),columns)));
+                }
+                out.push_str(&format!("\x1b[{};1H\x1b[7m{}\x1b[0m",height+1,copy::clip(&format!("WINDOWS · arrows/digits, Enter select, Esc cancel · {}",status),columns)));
+            },
+            Mode::Prompt(text)=>{
+                out.push_str(&copy::clip("RUWAC command · help · new · next/prev · other · select N · rename NAME · split horizontal/vertical · zoom · copy · paste · detach",columns));
+                out.push_str(&format!("\x1b[{};1H:{}\x1b[?25h",height+1,copy::clip(text,columns.saturating_sub(1))));
+            },
+            Mode::Help(offset)=>{
+                let text=format!("RUWAC Screen controls (prefix {})\nc new window; n/p next/previous; double prefix previous window\na literal configured prefix; d detach; 0–9 select window\nS horizontal split; | vertical split; Tab change pane; z zoom\n[ copy/search; ] internal paste; \" window chooser; : command\nCopy: arrows/hjkl; g/G and Home/End; 0/^/$; w/b/e\nPage Up/Down or Ctrl+B/F; Ctrl+U/D half page; H/M/L viewport\nSpace or Enter first mark; move then mark again to copy\n/ forward search; ? reverse; n/N repeat; searches wrap\nv rectangular selection; c/C left/right margins; Esc cancel\nCounts before movement; Unicode graphemes stay intact\nInternal copy buffer is separate from desktop clipboard\nCopy snapshot: newest 8 MiB/50,000 rows; selection cap 256 KiB\nCommands: new, next, prev, other, select N, rename NAME\nsplit horizontal/vertical, zoom, copy, paste, windows, help, detach\nRUWAC_SHORTCUTS prefix: <Control>a through <Control>z\nRUWAC_KEYMAP remaps one prefix key to an implemented key\nCtrl/arrow escape sequences go to applications outside modals\nModal paste/mouse cannot reach a child; search/prompt paste is text\nEsc/Enter close help; arrows/Page Up/Down scroll",config.label());
+                let lines:Vec<_>=text.lines().collect();*offset=(*offset).min(lines.len().saturating_sub(height));
+                for (y,line)in lines.iter().skip(*offset).take(height).enumerate(){out.push_str(&format!("\x1b[{};1H{}",y+1,copy::clip(line,columns)));}
+                out.push_str(&format!("\x1b[{};1H\x1b[7mHELP · Esc/Enter exit\x1b[0m",height+1));
+            },_=>(),
+        }
+        out
+    };
+    if !status.is_empty()&&!matches!(mode,Mode::Copy(_)|Mode::Chooser{..}){out.push_str(&format!("\x1b[{};1H\x1b[7m{}\x1b[0m",height+1,copy::clip(status,columns)));}
+    let mut stdout=io::stdout().lock();stdout.write_all(out.as_bytes())?;stdout.flush()
+}
+
+fn verified_connect(socket:&Path)->io::Result<UnixStream> {
+    use std::os::unix::{fs::{FileTypeExt,MetadataExt},io::AsRawFd};
+    for (path,mode)in [(socket.parent().ok_or_else(||io::Error::other("Socket parent missing"))?,0o700),(socket,0o600)] {
+        let m=std::fs::symlink_metadata(path)?;
+        if m.uid()!=unsafe{libc::geteuid()}||m.mode()&0o777!=mode||m.file_type().is_symlink(){return Err(io::Error::other("Socket ownership/mode rejected"));}
+    }
+    if !std::fs::symlink_metadata(socket)?.file_type().is_socket(){return Err(io::Error::other("Not a socket"));}
+    let s=UnixStream::connect(socket)?;let mut cred:libc::ucred=unsafe{std::mem::zeroed()};let mut n=std::mem::size_of_val(&cred)as libc::socklen_t;
+    if unsafe{libc::getsockopt(s.as_raw_fd(),libc::SOL_SOCKET,libc::SO_PEERCRED,&mut cred as *mut _ as *mut _,&mut n)}!=0||cred.uid!=unsafe{libc::geteuid()}{return Err(io::Error::other("Server peer UID rejected"));}
+    s.set_read_timeout(Some(Duration::from_secs(5)))?;s.set_write_timeout(Some(Duration::from_secs(5)))?;Ok(s)
+}
+pub fn attach(socket:&Path,session:&str)->io::Result<()> {
+    STOP.store(false,Ordering::Relaxed);let config=Config::load()?;
+    let mut s=verified_connect(socket)?;let _raw=Raw::enter()?;let mut size=dimensions();
+    call(&mut s,"session.attach",json!({"session":session,"rows":size.0,"cols":size.1}))?;
+    let(tx,rx)=mpsc::sync_channel(64);
+    std::thread::spawn(move||{let mut stdin=io::stdin().lock();let mut b=[0;8192];loop{match stdin.read(&mut b){Ok(0)|Err(_)=>{let _=tx.send(None);break;},Ok(n)=>if tx.send(Some(b[..n].to_vec())).is_err(){break;}}}});
+    let mut decoder=Decoder::default();let mut prefix=false;let mut mode=Mode::Live;
+    let mut snapshot=call(&mut s,"client.render",json!({}))?;let mut status=String::new();
+    draw_mode(&mut mode,&snapshot,size,&status,&config)?;
+    let mut rendered=Instant::now();let mut input_at=Instant::now();
+    while !STOP.load(Ordering::Relaxed) {
+        let events=match rx.recv_timeout(Duration::from_millis(10)) {
+            Ok(Some(b))=>{input_at=Instant::now();decoder.feed(&b)},Ok(None)|Err(mpsc::RecvTimeoutError::Disconnected)=>break,
+            Err(_)=>if input_at.elapsed()>Duration::from_millis(40){decoder.escape_timeout()}else{vec![]},
+        };
+        let mut dirty=!events.is_empty();
+        for event in events {
+            match event {
+                Input::Rejected(e)=>{prefix=false;status=e.into();if let Mode::Copy(c)=&mut mode{c.message=status.clone();}},
+                Input::Mouse(b)=>if matches!(mode,Mode::Live){
+                    let result=String::from_utf8(b).map_err(io::Error::other).and_then(|text|call(&mut s,"client.input",json!({"pane":snapshot["active_pane"],"kind":"mouse","text":text})));
+                    if let Err(e)=result{status=e.to_string();}
+                },
+                Input::Paste(b)=>{
+                    prefix=false;
+                    match String::from_utf8(b){Ok(text)=>match &mut mode{
+                        Mode::Live=>if let Err(e)=call(&mut s,"client.input",json!({"pane":snapshot["active_pane"],"kind":"paste","text":text})){status=e.to_string();},
+                        Mode::Copy(c)=>c.paste_query(&text),
+                        Mode::Prompt(prompt)=>{for c in text.chars().filter(|c|!c.is_control()){if prompt.len()+c.len_utf8()>4096{break;}prompt.push(c);}status.clear();},
+                        _=>status="Paste ignored in this view".into(),
+                    },Err(e)=>status=e.to_string()}
+                },
+                Input::Keyboard(b)=>{
+                    let text=String::from_utf8(b).map_err(io::Error::other)?;let mut pending=String::new();
+                    for key in copy::keys(&text) {
+                        let mut refresh=false;
+                        let result=(||->io::Result<()>{
+                            match &mut mode {
+                                Mode::Copy(c)=>match c.key(&key,size.0 as usize){
+                                    copy::Action::Cancel=>{mode=Mode::Live;status="Copy cancelled; buffer unchanged".into();refresh=true;},
+                                    copy::Action::Save=>{let text=c.selected(MAX_TEXT).map_err(io::Error::other)?;let bytes=text.len();
+                                        call(&mut s,"buffer.set",json!({"session":session,"text":text}))?;
+                                        mode=Mode::Live;status=format!("Copied {bytes} bytes internally");refresh=true;},_=>(),
+                                },
+                                Mode::Chooser{rows,index,typed}=>{
+                                    if key.escape()||matches!(key,copy::Key::Char('q'|'\x03')){mode=Mode::Live;status="Window choice cancelled".into();refresh=true;}
+                                    else {match &key{
+                                        copy::Key::Char('\r'|'\n')=>{call(&mut s,"window.select",json!({"window":rows[*index].id}))?;mode=Mode::Live;status.clear();refresh=true;},
+                                        copy::Key::Char('j'|'\x0e')=>{*index=(*index+1).min(rows.len()-1);typed.clear();},
+                                        copy::Key::Char('k'|'\x10')=>{*index=index.saturating_sub(1);typed.clear();},
+                                        copy::Key::Char('g')=>{*index=0;typed.clear();},copy::Key::Char('G')=>{*index=rows.len()-1;typed.clear();},
+                                        copy::Key::Char(c @ '0'..='9')=>{if typed.len()>=3{typed.clear();}typed.push(*c);if let Ok(n)=typed.parse::<usize>(){if n<rows.len(){*index=n;}}},
+                                        copy::Key::Sequence(seq)=>{typed.clear();match seq.as_str(){"\x1b[A"|"\x1bOA"=>*index=index.saturating_sub(1),"\x1b[B"|"\x1bOB"=>*index=(*index+1).min(rows.len()-1),"\x1b[5~"=>*index=index.saturating_sub(size.0 as usize),"\x1b[6~"=>*index=(*index+size.0 as usize).min(rows.len()-1),_=>()}},_=>(),
+                                    }}
+                                },
+                                Mode::Prompt(prompt)=>{
+                                    if key.escape()||matches!(key,copy::Key::Char('\x03')){mode=Mode::Live;status="Command cancelled".into();refresh=true;}
+                                    else {match &key{
+                                        copy::Key::Char('\r'|'\n')=>{let text=prompt.clone();let mut next=Mode::Live;command(&mut s,session,&snapshot,&text,&mut next)?;mode=next;status.clear();refresh=true;},
+                                        copy::Key::Char('\x7f'|'\x08')=>{copy::backspace(prompt);status.clear();},
+                                        copy::Key::Char(c)if !c.is_control()=>{if prompt.len()+c.len_utf8()<=4096{prompt.push(*c);}status.clear();},_=>(),
+                                    }}
+                                },
+                                Mode::Help(offset)=>{if key.escape()||matches!(key,copy::Key::Char('\r'|'\n'|'q'|'?')){mode=Mode::Live;status.clear();refresh=true;}
+                                    else {match &key{copy::Key::Char('j')=>*offset+=1,copy::Key::Char('k')=>*offset=offset.saturating_sub(1),copy::Key::Sequence(seq)=>match seq.as_str(){"\x1b[A"=>*offset=offset.saturating_sub(1),"\x1b[B"=>*offset+=1,"\x1b[5~"=>*offset=offset.saturating_sub(size.0 as usize),"\x1b[6~"=>*offset+=size.0 as usize,_=>()},_=>()}}},
+                                Mode::Live=>{
+                                    if prefix {
+                                        prefix=false;plain(&mut s,&snapshot,&mut pending)?;
+                                        status.clear();
+                                        if matches!(&key,copy::Key::Char(c)if *c as u32==config.prefix as u32){call(&mut s,"window.previous",json!({"session":session}))?;}
+                                        else {
+                                            let copy::Key::Char(mut binding)=key else{return Err(io::Error::other("Unsupported prefix key; ? opens help"));};
+                                            if binding!='\t'&&(1..=26).contains(&(binding as u32)){binding=(binding as u8+b'a'-1)as char;}
+                                            binding=*config.remaps.get(&binding).unwrap_or(&binding);
+                                            match binding {
+                                                'a'=>{call(&mut s,"client.input",json!({"pane":snapshot["active_pane"],"kind":"keyboard","text":(config.prefix as char).to_string()}))?;},
+                                                'c'=>{call(&mut s,"window.create",json!({"session":session}))?;},
+                                                'n'|'p'=>{call(&mut s,"window.cycle",json!({"session":session,"previous":binding=='p'}))?;},
+                                                'd'=>{call(&mut s,"session.detach",json!({}))?;STOP.store(true,Ordering::Relaxed);},
+                                                'S'|'|'=>{call(&mut s,"pane.create",json!({"window":snapshot["window"],"orientation":if binding=='|'{"vertical"}else{"horizontal"}}))?;},
+                                                '['=>mode=Mode::Copy(history(&mut s,snapshot["active_pane"].as_str().ok_or_else(||io::Error::other("Active pane missing"))?)?),
+                                                ']'=>{call(&mut s,"buffer.paste",json!({"pane":snapshot["active_pane"]}))?;},
+                                                'z'=>{call(&mut s,"pane.layout",json!({"window":snapshot["window"],"zoom":snapshot["zoom"]!=true}))?;},
+                                                '"'=>mode=windows(&mut s,session,&snapshot["window"])? ,
+                                                ':'=>mode=Mode::Prompt(String::new()),'?'=>mode=Mode::Help(0),
+                                                '\t'=>{let panes=snapshot["panes"].as_array().filter(|a|!a.is_empty()).ok_or_else(||io::Error::other("Pane list empty"))?;
+                                                    let index=panes.iter().position(|p|p["id"]==snapshot["active_pane"]).unwrap_or(0);call(&mut s,"pane.select",json!({"pane":panes[(index+1)%panes.len()]["id"]}))?;},
+                                                '0'..='9'=>{let windows=call(&mut s,"window.list",json!({"session":session}))?;let window=windows.as_array().and_then(|a|a.get(binding as usize-'0' as usize)).ok_or_else(||io::Error::other("Window index unavailable"))?;call(&mut s,"window.select",json!({"window":window["id"]}))?;},
+                                                _=>return Err(io::Error::other("Unsupported prefix key; ? opens help")),
+                                            }
+                                        }
+                                        refresh=true;
+                                    }else if matches!(&key,copy::Key::Char(c)if *c as u32==config.prefix as u32){plain(&mut s,&snapshot,&mut pending)?;prefix=true;}
+                                    else {pending.push_str(&key.bytes());}
+                                },
+                            }
+                            Ok(())
+                        })();
+                        if let Err(e)=result {status=e.to_string();if let Mode::Copy(c)=&mut mode{c.message=status.clone();}}
+                        if STOP.load(Ordering::Relaxed){break;}
+                        if refresh {snapshot=call(&mut s,"client.render",json!({}))?;}
+                    }
+                    if !pending.is_empty(){if let Err(e)=plain(&mut s,&snapshot,&mut pending){status=e.to_string();}}
+                },
+            }
+            if STOP.load(Ordering::Relaxed){break;}
+        }
+        if STOP.load(Ordering::Relaxed){break;}
+        let newsize=dimensions();if newsize!=size {size=newsize;call(&mut s,"client.resize",json!({"rows":size.0,"cols":size.1}))?;dirty=true;}
+        if rendered.elapsed()>Duration::from_millis(25) {
+            if matches!(mode,Mode::Live){let fresh=call(&mut s,"client.render",json!({"revision":snapshot["revision"]}))?;if fresh["unchanged"]!=true{snapshot=fresh;dirty=true;}}
+            rendered=Instant::now();
+        }
+        if dirty {draw_mode(&mut mode,&snapshot,size,&status,&config)?;}
+    }
+    let _=call(&mut s,"session.detach",json!({}));Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

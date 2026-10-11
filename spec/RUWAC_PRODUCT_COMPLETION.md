@@ -4,7 +4,7 @@ The full product is not yet complete. A runnable source prerelease and isolated 
 
 | Requirement | Current evidence | Status / remaining work |
 |---|---|---|
-| T-01 Screen commands | Native Screen card and headless prefix tests | PARTIAL: full headless interactive copy/chooser and nested behavior need qualification |
+| T-01 Screen commands | Nine real-PTY copy/chooser/prompt/configuration and 2–5 RUWAC nesting groups | PARTIAL: implemented bounded headless interaction; mixed GNU Screen/tmux and physical input qualification remain |
 | T-02 startup input | 100 adversarial probes in headless suite | PASS fixture |
 | T-03 multiple PTYs and load | Independent PTYs, layout suite, prior 40-pane API fixture | PASS bounded fixture |
 | T-04 detach and reattach | Native crash/reattach and workspace same-PID tests | PASS daemon lifetime; no process resurrection claim |

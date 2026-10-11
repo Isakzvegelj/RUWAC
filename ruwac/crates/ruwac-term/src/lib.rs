@@ -41,6 +41,35 @@ pub struct Archive {
     pub dropped_lines: usize,
 }
 
+/// Immutable, bounded canonical copy view, independent of later output/resize.
+pub struct HistorySnapshot {
+    pub rows: Vec<(String, bool)>,
+    pub bytes: usize,
+    pub cols: u16,
+    pub epoch: u64,
+    pub dropped: usize,
+    pub cursor: (usize, usize),
+    pub alternate: bool,
+}
+impl HistorySnapshot {
+    pub fn metadata(&self) -> Value {
+        json!({"epoch":self.epoch,"total_lines":self.rows.len(),"cols":self.cols,
+            "text_bytes":self.bytes,"dropped_lines":self.dropped,"cursor_row":self.cursor.0,"cursor_col":self.cursor.1,
+            "alternate_screen":self.alternate})
+    }
+    pub fn page(&self, offset: usize, lines: usize) -> Value {
+        let mut text=String::new();let mut rows=Vec::new();let mut wrapped=Vec::new();
+        for (row,wrap) in self.rows.iter().skip(offset.min(self.rows.len())).take(lines.min(500)) {
+            if text.len()+row.len()+1>128*1024 {break;}
+            text.push_str(row);if !wrap {text.push('\n');}
+            wrapped.push(*wrap);rows.push(json!({"text":row,"wrapped":wrap}));
+        }
+        let mut result=self.metadata();result["offset"]=json!(offset);
+        result["next_offset"]=json!(offset.saturating_add(rows.len()));
+        result["text"]=json!(text);result["rows"]=json!(rows);result["wrapped"]=json!(wrapped);result
+    }
+}
+
 pub struct Terminal {
     archived: Option<Archive>,
     term: Term<Events>,
@@ -152,6 +181,37 @@ impl Terminal {
             history,
             grid: self.snapshot(),
         }
+    }
+    pub fn freeze_history(&self) -> HistorySnapshot {
+        if let Some(a)=&self.archived {
+            let cursor=a.history.len().saturating_sub(a.rows as usize)
+                +a.grid["cursor"]["row"].as_u64().unwrap_or(0) as usize;
+            return HistorySnapshot {rows:a.history.clone(),bytes:a.history.iter().map(|(s,_)|s.len()+1).sum(),cols:a.cols,epoch:self.history_epoch,
+                dropped:a.dropped_lines,cursor:(cursor,a.grid["cursor"]["col"].as_u64().unwrap_or(0)as usize),
+                alternate:a.grid["alternate_screen"]==true};
+        }
+        let g=self.term.grid();let top=g.topmost_line().0;let bottom=g.bottommost_line().0;
+        let total=(bottom-top+1)as usize;let mut rows=Vec::new();let mut bytes=0;
+        'history: for r in (top..=bottom).rev().take(50000) {
+            let mut row=String::new();
+            for c in 0..self.cols as usize {
+                let cell=&g[Point::new(Line(r),Column(c))];
+                if !cell.flags.intersects(Flags::WIDE_CHAR_SPACER|Flags::LEADING_WIDE_CHAR_SPACER) {
+                    for ch in std::iter::once(if cell.c=='\t' {' '}else{cell.c}).chain(cell.zerowidth().into_iter().flat_map(|z|z.iter().copied())) {
+                        if row.len()+ch.len_utf8()> (8*1024*1024-bytes).min(128*1024)+self.cols as usize*4 {break 'history;}
+                        row.push(ch);
+                    }
+                }
+            }
+            let wrap=g[Point::new(Line(r),Column(self.cols as usize-1))].flags.contains(Flags::WRAPLINE);
+            if !wrap {row.truncate(row.trim_end().len());}
+            if row.len()+1>128*1024 || bytes+row.len()+1>8*1024*1024 {break;}
+            row.shrink_to_fit();bytes+=row.len()+1;rows.push((row,wrap));
+        }
+        rows.reverse();let dropped=total-rows.len();
+        HistorySnapshot {rows,bytes,cols:self.cols,epoch:self.history_epoch,dropped,
+            cursor:(((g.cursor.point.line.0-top).max(0)as usize).saturating_sub(dropped),g.cursor.point.column.0),
+            alternate:self.term.mode().contains(TermMode::ALT_SCREEN)}
     }
     pub fn restore(mut a: Archive) -> std::result::Result<Self, String> {
         if !(1..=100).contains(&a.rows)
@@ -478,6 +538,27 @@ mod tests {
                 .unwrap()
                 > 0
         );
+    }
+    #[test]
+    fn frozen_history_survives_output_resize_and_enforces_tail_bound() {
+        let mut t = Terminal::new(4, 10);
+        t.feed("ž界e\u{301}abcdefghijk\r\nMARK\r\n".as_bytes());
+        let frozen = t.freeze_history();
+        let before = frozen.page(0, 500);
+        t.feed(b"LIVE-OUTPUT\r\n");
+        t.resize(8, 25);
+        assert_eq!(frozen.page(0, 500), before);
+        assert_eq!(frozen.metadata()["cols"], 10);
+        assert_ne!(t.history_page(0, 500)["epoch"], before["epoch"]);
+        let mut large = Terminal::new(4, 80);
+        for n in 0..51000 {
+            large.feed(format!("line-{n:05}\r\n").as_bytes());
+        }
+        let tail = large.freeze_history();
+        assert_eq!(tail.metadata()["total_lines"], 50000);
+        assert!(tail.metadata()["dropped_lines"].as_u64().unwrap() > 0);
+        assert!(tail.metadata()["text_bytes"].as_u64().unwrap() <= 8 * 1024 * 1024);
+        assert!(tail.page(49500, 500)["text"].as_str().unwrap().contains("line-50999"));
     }
     #[test]
     fn replies_and_clipboard() {

@@ -4,7 +4,7 @@ members = ["crates/*"]
 
 [workspace.package]
 license = "Apache-2.0"
-version = "0.1.12"
+version = "0.1.13"
 edition = "2024"
 publish = false
 
@@ -18,6 +18,8 @@ portable-pty = "=0.9.0"
 alacritty_terminal = "=0.26.0"
 sha2 = "=0.10.9"
 png = "=0.18.0"
+unicode-segmentation = "=1.13.3"
+unicode-width = "=0.2.2"
 
 [profile.dev]
 debug = 0

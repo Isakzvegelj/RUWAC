@@ -2,9 +2,11 @@
 
 RUWAC is a compiled Rust terminal daemon/CLI and an optional native GTK4/libadwaita desktop with mixed terminal, embedded RDP and SSH/SFTP workspaces. Existing terminals and connections remain independent of desktop presentation.
 
-This increment adds a Remmina-inspired machine sidebar with protocol icons and two-line profile rows, and a visible RDP toolbar for reconnect, disconnect, fit, dynamic resolution, zoom and fullscreen. Standard native theme icons are used; Remmina code and artwork are not copied. Advanced remote keys, clipboard policy and endpoint controls remain in the existing popover. Alt+1–9/0 still selects workspace tabs.
+This increment completes bounded headless interactive copy/search, Unicode marks, rectangular selection, physical soft-wrap joining, word/page movement, window chooser, command prompt, help, zoom and configurable Control prefixes. Modal paste/mouse input cannot reach running applications. Cancellation and oversize selections preserve the previous internal buffer.
 
-Screen's double prefix switches to the previous window; prefix followed by a plain `a` sends the literal prefix. The remembered window survives private checkpoints. Checkpoint schema 2 reads schema 1, preserves ended-history semantics and rejects invalid previous-window references. Canonical text expands tab cells once rather than emitting a tab followed by already-expanded blanks; raw cells retain the tab marker. Paged history exposes physical rows and wrap flags alongside the existing text response.
+Canonical copy uses immutable, connection-owned history snapshots, retained for at most 30 idle seconds and reclaimed on disconnect. Each snapshot is bounded to 50,000 physical rows or 8 MiB, with a global eight-pin cap. GTK copy uses this protocol when available and retains compatible fallback for older daemons. Nine real-PTY groups include actual two-through-five-layer RUWAC nesting; three API groups validate ownership, resize/output stability, limits and actual expiry. Mixed GNU Screen/tmux nesting remains a separate gate.
+
+The Remmina-inspired native machine sidebar, visible RDP toolbar and Alt+1–9/0 workspace navigation remain available. Existing daemon sessions are preserved.
 
 Validation distinguishes actual authenticated local RDP, GTK/GDK integration and real PTYs/SSH from physical input or external-host qualification. Detailed results are maintained in the acceptance report and sanitized evidence inventory.
 
