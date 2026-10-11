@@ -2,9 +2,11 @@
 
 RUWAC is a compiled Rust terminal daemon/CLI and an optional native GTK4/libadwaita desktop with mixed terminal, embedded RDP and SSH/SFTP workspaces. Existing terminals and connections remain independent of desktop presentation.
 
-This increment makes the native machine sidebar easier to use alongside RDP tabs. Saved machines receive most of its height, with creation, search, favorites and paging visible. Machine maintenance and Remmina import/review are grouped in native panels collapsed by default; the expanded import area scrolls within a bounded height. Existing credentials, endpoints and connection handlers are preserved.
+This increment adds reproducible mixed terminal compatibility qualification. Sixteen real private GNU Screen/tmux/RUWAC chains cover two-to-five layers, both common Control-A and native tmux Control-B configurations, exact Unicode input and literal prefix routing, deep window creation/selection, exact resize propagation and detach/reattach with the same leaf PID/start time. The existing terminal implementation is preserved.
 
-Eight actual GTK library groups cover allocated layout and native panel toggling, all 1,000 endpoints across 20 pages, reviewed merge/Cancel/Undo, active/stale protection and restart. Full authenticated local RDP text/PNG/ownership/display/profile regression, headless and SSH checks accompany the stamped build. Synthetic widget actions do not qualify physical desktop input.
+GNU Screen 5.0.1 still interprets its own Control-A detach command inside a pasted payload despite forwarding bracketed-paste markers. A separate fixture reproduces this upstream boundary; arbitrary-control paste through Screen is not qualified. tmux/RUWAC chains contain both control prefixes correctly. Use the explicit leaf RUWAC pane API when bypassing intermediate key parsers is required; never assume terminal paste bypasses Screen commands.
+
+Normal build tests run the mixed matrix when GNU Screen and tmux test tools are installed and explicitly report a blocked qualification otherwise. They are not runtime dependencies of the daemon or CLI. Native library, RDP and authenticated SSH regressions remain part of the candidate workflow; physical input and external RDP remain separate gates.
 
 Validation distinguishes actual authenticated local RDP, GTK/GDK integration and real PTYs/SSH from physical input or external-host qualification. Detailed results are maintained in the acceptance report and sanitized evidence inventory.
 

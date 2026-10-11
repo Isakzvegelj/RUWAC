@@ -147,3 +147,9 @@ The GitHub workflow publishes verified source releases and does not compile down
 Prefix these commands with `--host user@host` to use the existing verified SSH transport and installed remote RUWAC CLI. The remote desktop must already be running with its trusted GUI socket and matching permissions. Missing GUI endpoints do not start graphical or daemon processes. This does not enable remote input, credential retrieval, clipboard reads or event subscriptions.
 
 The machine sidebar keeps saved endpoints, search/filter controls, paging and **New machine / endpoint…** visible. Expand **Machine tools** for network defaults, refresh and Undo; expand **Import from Remmina** for explicit file selection, preview and reviewed import/merge. Both panels start collapsed. The import area scrolls when expanded, and diagnostic text is selectable.
+
+### Mixed terminal compatibility
+
+Reproduce the two-to-five-layer GNU Screen/tmux/RUWAC matrix with `python3 ruwac/tests/integration/mixed_nesting.py --binary /path/to/ruwac --evidence /path/to/private-evidence`. The fixture creates only private sessions/sockets/configuration and records actual tool versions, leaf PID/start time, byte hashes and dimensions. GNU Screen and tmux are test-only tools; missing tools mean blocked compatibility qualification.
+
+Both common Control-A and native tmux Control-B configurations are exercised. Escape a prefix at each intermediate layer to address a deeper layer. Normal Unicode/multiline paste and a single bracket pair are verified; tmux/RUWAC also contain control prefixes in paste. GNU Screen 5.0.1 interprets its own Control-A commands inside a pasted payload: do not assume arbitrary-control paste is safe through Screen. Explicit `pane.sendText` to a known leaf RUWAC daemon bypasses intermediate client key parsers. [GNU Screen’s command bindings](https://www.gnu.org/software/screen/manual/screen.html) describe its detach and literal-prefix controls.

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## v0.1.17 — 2026-10-11 — Prerelease
+
+- Qualify sixteen real mixed GNU Screen/tmux/RUWAC chains at two-to-five layers with common and native tmux prefix configurations.
+- Verify Unicode input, literal prefixes, deep window commands, exact resize and same-process detach/reattach using owned PTYs.
+- Add a separate verified GNU Screen paste-prefix limitation instead of claiming arbitrary-control paste safety.
+- Include the reproducible mixed compatibility matrix in normal tests when test-only tools are available.
+
 ## v0.1.16 — 2026-10-11 — Prerelease
 
 - Give saved machines most of the sidebar; group maintenance and Remmina import controls in native collapsed panels.

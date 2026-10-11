@@ -4,7 +4,7 @@ The full product is not yet complete. A runnable source prerelease and isolated 
 
 | Requirement | Current evidence | Status / remaining work |
 |---|---|---|
-| T-01 Screen commands | Nine real-PTY copy/chooser/prompt/configuration and 2–5 RUWAC nesting groups | PARTIAL: implemented bounded headless interaction; mixed GNU Screen/tmux and physical input qualification remain |
+| T-01 Screen commands | Nine real-PTY copy/chooser/prompt/configuration and 2–5 RUWAC nesting groups | PARTIAL: implemented bounded headless interaction; mixed GNU Screen/tmux 2–5 layers pass in scoped configurations; Screen arbitrary-control paste and physical input qualification remain |
 | T-02 startup input | 100 adversarial probes in headless suite | PASS fixture |
 | T-03 multiple PTYs and load | Independent PTYs, layout suite, prior 40-pane API fixture | PASS bounded fixture |
 | T-04 detach and reattach | Native crash/reattach and workspace same-PID tests | PASS daemon lifetime; no process resurrection claim |
@@ -12,7 +12,7 @@ The full product is not yet complete. A runnable source prerelease and isolated 
 | T-06 VT/Unicode/applications | Native Vim/less/htop, Unicode, alternate-screen and input tests | PARTIAL: complete fzf/combining/extended-input matrix |
 | T-07 mouse recovery | Native routing and disposable Bash raw-child exit | PARTIAL: physical touchpad gate blocked |
 | T-08 history/internal buffer | Canonical history, paged capture, independent internal/system clipboard tests | PASS bounded fixture |
-| T-09 SSH/nested terminals | Real authorized SSH remote-PTY detach/reattach and Unicode | PARTIAL: actual 2–5 RUWAC layers pass; mixed GNU Screen/tmux combinations remain |
+| T-09 SSH/nested terminals | Real authorized SSH remote-PTY detach/reattach and Unicode | PARTIAL: actual 2–5 mixed GNU Screen/tmux/RUWAC layers pass with both prefix modes; Screen arbitrary-control paste remains an upstream limitation |
 | T-10 performance | Retained matched 1/5/20/40-pane measurements | PARTIAL: current idle-qualified 30-trial acceptance |
 | A-01 negotiation/discovery | Existing v0 schema/capabilities/typed errors | PARTIAL: describe/local GUI targeting and typed RDP lifecycle over actual SSH implemented; host inventory and workspace open/restore remain |
 | A-02 literal input | Unicode, quotes, shell metacharacters and separate Enter | PASS |
