@@ -1,5 +1,10 @@
 # RUWAC component provenance
 
+## Current persistent graphical identities and permission-scoped workspace API — 2026-10-11
+
+The retained Rust daemon, existing GTK/libadwaita tree and IronRDP implement persistent graphical targeting and local control. No engine replacement or repeated market research was performed.
+
+
 ## Current native shortcuts, appearance and safe diagnostics — 2026-10-11
 
 The existing Rust engine, GTK/libadwaita frontend and IronRDP remain the foundation. The owner’s installed Ptyxis supplies an appearance reference; no terminal replacement or market reevaluation was performed.

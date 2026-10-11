@@ -1,5 +1,16 @@
 # RUWAC protocol and desktop boundaries
 
+## Current persistent graphical identities and permission-scoped workspace API — 2026-10-11
+
+Each native tab and individual terminal/RDP/Files view now has an opaque ID independent of its label, index, underlying terminal session and RDP worker. IDs survive reparenting, join/separate, view movement and desktop crash/restart. A newly created tab gets a new tab ID; moving a view retains its view ID. Closing a view/tab invalidates that graphical target without terminating persistent terminal processes.
+
+Schema-three private workspace metadata records tab/view IDs and the last focused leaf per tab. Versions one and two migrate with a mode-0600 backup of the original bytes. Duplicate IDs, invalid focus targets and cross-tab focus references fail validation. Restoration retains the exact selected view; removed profiles become ended placeholders with their original view IDs. Focus after reparenting waits for GTK mapping, is bounded and is cancelled when the selected tab changes. The native Views dialog now offers Focus alongside Move and Close.
+
+A separately authenticated GUI socket serves protocol-zero workspace.describe, workspace.list, workspace.activate and workspace.focus. The CLI uses the same private daemon target to find the GUI endpoint, verifies same-UID credentials/correlation and never starts a daemon or GUI for a workspace command. Discovery/listing is read-only; focus mutations require the desktop’s “Allow automation to change workspace focus” permission, which can be revoked at runtime and defaults off each launch. --allow-workspace-control enables it explicitly for that launch. The API returns stable IDs, view kinds, terminal-session references, remembered focus and actual input-focus/window state; it does not expose clipboard contents, credentials or remote input.
+
+The socket uses an owned 0700 parent, mode-0600 endpoint/lock and SO_PEERCRED. It bounds frames to 1 MiB, peers to eight and queue capacity to sixteen. Socket workers do not touch GTK. Input and dispatch have two-second deadlines; queued expired requests cannot change focus. The CLI has a five-second total deadline. A nonblocking startup probe preserves a live listener with a full backlog. Audit records contain actor, operation, valid target ID and verdict, excluding arbitrary request values. Clipboard ownership follows native window activation: focusing a view through IPC while RUWAC is in the background does not grant its RDP session desktop ownership.
+
+
 ## Current native shortcuts, appearance and safe diagnostics — 2026-10-11
 
 The native desktop now captures Alt+1 through Alt+9 and Alt+0 at window level, selecting workspace positions 1–10 across terminal, RDP and Files views. Missing positions are a no-op. Ctrl+Alt/AltGr-style combinations, Shift and Super chords are not captured; Caps Lock is allowed. Tab selection retains existing focus/clipboard ownership handling and persistent connections.

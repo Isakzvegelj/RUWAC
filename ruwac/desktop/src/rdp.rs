@@ -1740,6 +1740,9 @@ impl RdpView {
         crate::tiles::contains(&self.area, widget)
     }
     pub fn activate_clipboard(&self) {
+        let foreground = self.area.root().and_then(|r|r.downcast::<gtk::Window>().ok()).is_some_and(|w|w.is_active());
+        if !foreground { self.inactive(); if self.broker.borrow().active()==Some(self.id.as_str()){self.broker.borrow_mut().focus(None);} return; }
+
         if self.broker.borrow().active() != Some(self.id.as_str()) {
             self.broker.borrow_mut().focus(Some(&self.id));
         }
@@ -1749,8 +1752,8 @@ impl RdpView {
             .store(self.broker.borrow().epoch(), Ordering::Release);
     }
     pub fn focus(&self) {
-        self.activate_clipboard();
         self.area.grab_focus();
+        self.activate_clipboard();
     }
     fn release_keys(&self) {
         let (x, y) = self.pointer_position.get();

@@ -1,5 +1,10 @@
 # RUWAC desktop / protocol test matrix
 
+## Current persistent graphical identities and permission-scoped workspace API — 2026-10-11
+
+Native window activation now gates remote clipboard ownership, including IPC focus changes in the background. Four authenticated isolated RDP groups pass, including three live sessions against an independent foreground GDK clipboard sentinel, mixed transport retention and Files isolation. External interoperability, PRIMARY and physical desktop remain separate gates.
+
+
 ## Current native shortcuts, appearance and safe diagnostics — 2026-10-11
 
 Window-level Alt-number tab changes retain the existing focus/clipboard ownership transitions. The authenticated isolated RDP clipboard regression is repeated separately from the synthetic shortcut RDP view. External Windows/Fedora and physical desktop clipboard remain unqualified.

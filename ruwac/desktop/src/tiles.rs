@@ -2,6 +2,9 @@
 use adw::prelude::*;
 use gtk::{Orientation, glib};
 
+pub type FocusMemory = std::rc::Rc<std::cell::RefCell<std::collections::HashMap<String, String>>>;
+pub type FocusView = std::rc::Rc<dyn Fn(&gtk::Widget)>;
+
 pub fn contains(root: &impl IsA<gtk::Widget>, child: &impl IsA<gtk::Widget>) -> bool {
     root.as_ref() == child.as_ref() || child.as_ref().is_ancestor(root)
 }
@@ -16,6 +19,14 @@ pub fn append(tabs: &adw::TabView, child: &impl IsA<gtk::Widget>) -> adw::TabPag
     let body = gtk::Box::new(Orientation::Vertical, 0);
     body.set_hexpand(true);
     body.set_vexpand(true);
+    body.set_widget_name(&ruwac_protocol::id("tab"));
+    let mut roots = Vec::new();
+    leaves(child.as_ref().clone(), &mut roots);
+    for root in roots {
+        if !ruwac_protocol::valid_id(root.widget_name().as_str(), "view") {
+            root.set_widget_name(&ruwac_protocol::id("view"));
+        }
+    }
     body.append(child);
     let page = tabs.append(&body);
     let weak = body.downgrade();
@@ -106,6 +117,104 @@ fn leaves(node: gtk::Widget, out: &mut Vec<gtk::Widget>) {
     } else {
         out.push(node);
     }
+}
+
+pub fn views(tabs: &adw::TabView) -> Vec<gtk::Widget> {
+    let mut out = Vec::new();
+    for i in 0..tabs.n_pages() {
+        if let Some(tree) = tabs.nth_page(i).child().first_child() {
+            leaves(tree, &mut out);
+        }
+    }
+    out
+}
+pub fn remember(tabs: &adw::TabView, memory: &FocusMemory, focus: &gtk::Widget) {
+    if let Some(leaf) = views(tabs).into_iter().find(|root| contains(root, focus)) {
+        if let Some(p) = page(tabs, &leaf) {
+            memory.borrow_mut().insert(
+                p.child().widget_name().to_string(),
+                leaf.widget_name().to_string(),
+            );
+        }
+    }
+    memory.borrow_mut().retain(|id, _| {
+        (0..tabs.n_pages()).any(|i| tabs.nth_page(i).child().widget_name().as_str() == id)
+    });
+}
+pub fn focused_id(tabs: &adw::TabView, memory: &FocusMemory) -> Option<String> {
+    let page = tabs.selected_page()?;
+    let id = memory
+        .borrow()
+        .get(page.child().widget_name().as_str())
+        .cloned()?;
+    views(tabs)
+        .iter()
+        .any(|w| w.widget_name().as_str() == id && contains(&page.child(), w))
+        .then_some(id)
+}
+pub fn focus_selected(tabs: &adw::TabView, memory: &FocusMemory, focus: &FocusView) {
+    let Some(page) = tabs.selected_page() else {
+        return;
+    };
+    let wanted = memory
+        .borrow()
+        .get(page.child().widget_name().as_str())
+        .cloned();
+    let mut own = Vec::new();
+    if let Some(tree) = page.child().first_child() {
+        leaves(tree, &mut own);
+    }
+    let leaf = own
+        .iter()
+        .find(|w| wanted.as_deref() == Some(w.widget_name().as_str()))
+        .or_else(|| own.first());
+    if let Some(leaf) = leaf {
+        focus(leaf);
+    }
+}
+pub fn focus_id(tabs: &adw::TabView, id: &str, focus: &FocusView) -> Result<(), String> {
+    if !ruwac_protocol::valid_id(id, "view") {
+        return Err("An explicit valid view ID is required".into());
+    }
+    let leaf = views(tabs)
+        .into_iter()
+        .find(|w| w.widget_name().as_str() == id)
+        .ok_or("This view has closed")?;
+    let page = page(tabs, &leaf).ok_or("This view is detached")?;
+    tabs.set_selected_page(&page);
+    focus(&leaf);
+    Ok(())
+}
+
+pub fn join_focused(
+    tabs: &adw::TabView,
+    other: i32,
+    vertical: bool,
+    memory: &FocusMemory,
+    focus: &FocusView,
+) -> Result<(), String> {
+    let wanted = focused_id(tabs, memory);
+    join(tabs, other, vertical)?;
+    if let Some(id) = wanted {
+        focus_id(tabs, &id, focus)?;
+    } else {
+        focus_selected(tabs, memory, focus);
+    }
+    Ok(())
+}
+pub fn separate_focused(
+    tabs: &adw::TabView,
+    memory: &FocusMemory,
+    focus: &FocusView,
+) -> Result<usize, String> {
+    let wanted = focused_id(tabs, memory);
+    let count = separate(tabs)?;
+    if let Some(id) = wanted {
+        focus_id(tabs, &id, focus)?;
+    } else {
+        focus_selected(tabs, memory, focus);
+    }
+    Ok(count)
 }
 
 pub fn separate(tabs: &adw::TabView) -> Result<usize, String> {
@@ -233,7 +342,7 @@ pub fn close_view(
     Ok(())
 }
 
-fn manage(tabs: &adw::TabView, button: &gtk::Button, close: CloseView) {
+fn manage(tabs: &adw::TabView, button: &gtk::Button, close: CloseView, focus: FocusView) {
     button.grab_focus();
     let d = gtk::Dialog::builder()
         .title("Workspace views")
@@ -246,7 +355,7 @@ fn manage(tabs: &adw::TabView, button: &gtk::Button, close: CloseView) {
     d.add_button("Done", gtk::ResponseType::Close);
     d.connect_response(|d, _| d.close());
     let message = gtk::Label::new(Some(
-        "Move or close one view. Closing a terminal detaches it; its programs keep running. Closing RDP disconnects only that view. Closing Files cancels its transfers.",
+        "Focus, move or close one view. Closing a terminal detaches it; its programs keep running. Closing RDP disconnects only that view. Closing Files cancels its transfers.",
     ));
     message.set_wrap(true);
     d.content_area().append(&message);
@@ -258,12 +367,20 @@ fn manage(tabs: &adw::TabView, button: &gtk::Button, close: CloseView) {
         leaves(tree, &mut views);
         for (index, leaf) in views.into_iter().enumerate() {
             let row = gtk::Box::new(Orientation::Horizontal, 6);
-            let title = gtk::Label::new(leaf.tooltip_text().as_deref());
+            let title = gtk::Label::new(Some(&format!(
+                "{}\n{}",
+                leaf.tooltip_text().as_deref().unwrap_or("Workspace view"),
+                leaf.widget_name()
+            )));
             title.set_hexpand(true);
             title.set_xalign(0.0);
             title.set_ellipsize(gtk::pango::EllipsizeMode::End);
             row.append(&title);
-            for (name, action) in [("Move to own tab", "move"), ("Close view", "close")] {
+            for (name, action) in [
+                ("Focus", "focus"),
+                ("Move to own tab", "move"),
+                ("Close view", "close"),
+            ] {
                 let b = gtk::Button::with_label(name);
                 b.set_widget_name(&format!("{action}-view-{index}"));
                 let (t, leaf, close, status, dialog) = (
@@ -273,7 +390,22 @@ fn manage(tabs: &adw::TabView, button: &gtk::Button, close: CloseView) {
                     status.clone(),
                     d.downgrade(),
                 );
+                let focus = focus.clone();
                 b.connect_clicked(move |_| {
+                    if action == "focus" {
+                        if page(&t, &leaf).is_none() {
+                            status.set_text("This view has closed");
+                            return;
+                        }
+                        if let Some(d) = dialog.upgrade() {
+                            d.close();
+                        }
+                        let (t, leaf, focus) = (t.clone(), leaf.clone(), focus.clone());
+                        glib::idle_add_local_once(move || {
+                            let _ = focus_id(&t, leaf.widget_name().as_str(), &focus);
+                        });
+                        return;
+                    }
                     let result = if action == "move" {
                         move_view(&t, &leaf)
                     } else {
@@ -325,7 +457,12 @@ pub fn fixture(action: &str, index: usize) -> bool {
     false
 }
 
-pub fn controls(tabs: &adw::TabView, close: CloseView) -> gtk::Box {
+pub fn controls(
+    tabs: &adw::TabView,
+    close: CloseView,
+    focus: FocusView,
+    memory: FocusMemory,
+) -> gtk::Box {
     let root = gtk::Box::new(Orientation::Horizontal, 4);
     let button = gtk::Button::with_label("Split tabs…");
     let separate_button = gtk::Button::with_label("Separate views");
@@ -338,7 +475,10 @@ pub fn controls(tabs: &adw::TabView, close: CloseView) -> gtk::Box {
     manage_button.set_tooltip_text(Some("Move or close an individual workspace view"));
     root.append(&manage_button);
     let t = tabs.clone();
-    manage_button.connect_clicked(move |button| manage(&t, button, close.clone()));
+    let manage_focus = focus.clone();
+    manage_button
+        .connect_clicked(move |button| manage(&t, button, close.clone(), manage_focus.clone()));
+    let (join_focus, join_memory) = (focus.clone(), memory.clone());
     let t = tabs.clone();
     button.connect_clicked(move |button| {
         let d = gtk::Dialog::builder()
@@ -371,16 +511,25 @@ pub fn controls(tabs: &adw::TabView, close: CloseView) -> gtk::Box {
                 orientation.clone(),
                 status.clone(),
             );
+            let (focus, memory) = (join_focus.clone(), join_memory.clone());
             add.connect_clicked(move |_| {
                 if crate::tiles::page(&tabs, &page.child()).is_none() {
                     status.set_text("The selected tab closed");
                     return;
                 }
-                match join(&tabs, tabs.page_position(&page), o.selected() == 1) {
+                match join_focused(
+                    &tabs,
+                    tabs.page_position(&page),
+                    o.selected() == 1,
+                    &memory,
+                    &focus,
+                ) {
                     Ok(()) => {
                         if let Some(d) = dialog.upgrade() {
                             d.close();
                         }
+                        let (tabs, memory, focus) = (tabs.clone(), memory.clone(), focus.clone());
+                        glib::idle_add_local_once(move || focus_selected(&tabs, &memory, &focus));
                     }
                     Err(e) => status.set_text(&e),
                 }
@@ -391,27 +540,28 @@ pub fn controls(tabs: &adw::TabView, close: CloseView) -> gtk::Box {
     });
     let t = tabs.clone();
     separate_button.connect_clicked(move |button| {
-        if let Err(e) = separate(&t) {
+        if let Err(e) = separate_focused(&t, &memory, &focus) {
             button.set_tooltip_text(Some(&e));
         }
     });
     root
 }
 
-pub fn inspect(tabs: &adw::TabView) -> serde_json::Value {
+pub fn inspect(tabs: &adw::TabView, memory: &FocusMemory) -> serde_json::Value {
     fn node(w: gtk::Widget) -> serde_json::Value {
         if let Some(p) = w.downcast_ref::<gtk::Paned>() {
             serde_json::json!({"split":if p.orientation()==Orientation::Vertical{"vertical"}else{"horizontal"},"position":p.position(),"width":p.width(),"height":p.height(),"first":p.start_child().map(node),"second":p.end_child().map(node)})
         } else {
-            serde_json::json!({"view":w.type_().name(),"mapped":w.is_mapped(),"width":w.width(),"height":w.height()})
+            serde_json::json!({"id":w.widget_name().as_str(),"view":w.type_().name(),"mapped":w.is_mapped(),"width":w.width(),"height":w.height()})
         }
     }
-    serde_json::json!({"tabs":(0..tabs.n_pages()).map(|i|{let p=tabs.nth_page(i);serde_json::json!({"title":p.title().as_str(),"layout":p.child().first_child().map(node)})}).collect::<Vec<_>>()})
+    serde_json::json!({"focused_view":focused_id(tabs,memory),"selected_tab":tabs.selected_page().map(|p|p.child().widget_name().to_string()),"tabs":(0..tabs.n_pages()).map(|i|{let p=tabs.nth_page(i);serde_json::json!({"id":p.child().widget_name().as_str(),"title":p.title().as_str(),"layout":p.child().first_child().map(node)})}).collect::<Vec<_>>()})
 }
 
 pub fn snapshot(
     tabs: &adw::TabView,
     describe: impl Fn(&gtk::Widget) -> Option<crate::workspace::Layout>,
+    memory: &FocusMemory,
 ) -> Result<Vec<crate::workspace::Tab>, String> {
     fn walk(
         w: &gtk::Widget,
@@ -442,7 +592,15 @@ pub fn snapshot(
     (0..tabs.n_pages())
         .map(|i| {
             let p = tabs.nth_page(i);
+            let id = p.child().widget_name().to_string();
+            let focused_view = memory.borrow().get(&id).cloned().filter(|id| {
+                views(tabs)
+                    .iter()
+                    .any(|w| w.widget_name().as_str() == id && contains(&p.child(), w))
+            });
             Ok(crate::workspace::Tab {
+                id,
+                focused_view,
                 title: p.title().to_string(),
                 layout: walk(&p.child().first_child().ok_or("Empty tab")?, &describe)?,
             })
@@ -453,6 +611,7 @@ pub fn snapshot(
 pub fn restore(
     tabs: &adw::TabView,
     saved: &[crate::workspace::Tab],
+    memory: &FocusMemory,
     mut create: impl FnMut(&crate::workspace::Layout) -> gtk::Widget,
 ) {
     fn build(
@@ -498,12 +657,20 @@ pub fn restore(
             });
             p.upcast()
         } else {
-            create(layout)
+            let root = create(layout);
+            if let Some(id) = layout.view_id() {
+                root.set_widget_name(id);
+            }
+            root
         }
     }
     for tab in saved {
         let tree = build(&tab.layout, &mut create);
         let page = append(tabs, &tree);
+        page.child().set_widget_name(&tab.id);
+        if let Some(id) = &tab.focused_view {
+            memory.borrow_mut().insert(tab.id.clone(), id.clone());
+        }
         page.set_title(&tab.title);
     }
 }

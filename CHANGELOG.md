@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## v0.1.10 — 2026-10-11 — Prerelease
+
+- Add persistent tab/view IDs, exact mixed-view focus, native Focus actions and schema-three workspace migration with preserved original metadata.
+- Add authenticated local workspace discovery/listing and explicit ID-based focus/activation with revocable desktop permission, bounded transport and content-free audit records.
+- Gate RDP clipboard ownership on native window activation, including authorized background API focus changes.
+- Validate graphical identity/crash restoration, permission and malformed/stalled-peer boundaries, CLI-to-GTK latency and terminal/GDK/authenticated-RDP regressions; external/physical acceptance and remaining product gates stay open.
+
 ## v0.1.9 — 2026-10-11 — Prerelease
 
 - Add global Alt+1…9/0 workspace tab navigation across terminal, RDP and Files, with modifier guards and missing-tab no-op behavior.

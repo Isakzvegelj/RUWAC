@@ -1,10 +1,10 @@
 {
-  "baseline_commit": "4cc1a08b2d15a03bd4972b0442773a2fd5e54f71",
+  "baseline_commit": "c1e9478419aca54d130ee1fb77606fb7f06f73aa",
   "current_report": "spec/RUWAC_INTEGRATION_SPIKE.md",
   "public_evidence": [
     "architecture/acceptance-results.json",
     "architecture/benchmark-results.json",
     "architecture/dependency-licenses.json"
   ],
-  "private_capsule": "doctor-r10: local foreground-PTY diagnostic/repair safety; authorized SSH read-only diagnostics; nested-Wayland XTest Alt-number shortcuts and actual GTK dark-window export; final workspace, terminal/GDK and authenticated RDP mixed regressions; standard controller publication and matching installations"
+  "private_capsule": "identities-r11: real native graphical IDs/exact focus, same-UID GUI IPC permission/stale/oversized/stalled-peer and full-backlog boundaries, 30 CLI-to-GTK latency trials, v1/v2 migration, desktop crash restoration, headless/named/diagnostics, native terminal/GDK and four authenticated RDP groups including background clipboard isolation, Alt-number regression, existing-controller publication and matching installations"
 }

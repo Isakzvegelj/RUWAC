@@ -23,7 +23,7 @@ def focus(who):
   subprocess.run(['xdotool','key','--clearmodifiers','Super_L+Tab'],env={**os.environ,'DISPLAY':os.environ['RUWAC_XTEST_DISPLAY']},check=True);time.sleep(.12)
  raise AssertionError('Isolated compositor focus failed')
 def case(name,fn):
- if a.mixed_only and name not in {'RDP-NATIVE-AUTH-3','MIXED-NATIVE-RDP-TERMINAL','FILES-CLIPBOARD-OWNERSHIP'}:return
+ if a.mixed_only and name not in {'RDP-NATIVE-AUTH-3','MIXED-NATIVE-RDP-TERMINAL','FILES-CLIPBOARD-OWNERSHIP','GUI-IPC-BACKGROUND-RDP-OWNERSHIP'}:return
  if a.r5_only and name not in {"RDP-NATIVE-AUTH-3","MACHINES-NATIVE-EDITOR","RDP-NATIVE-RESIZE-20","MACHINES-RESTART-1000","FILES-CLIPBOARD-OWNERSHIP","RDP-PROFILE-KEYRING-PREFERENCES"}:return
  try:results.append({'id':name,'status':'PASS','details':fn()});print(name,'PASS',flush=True)
  except Exception as e:results.append({'id':name,'status':'FAIL','error':str(e),'traceback':traceback.format_exc()});print(name,'FAIL',str(e),flush=True)
@@ -53,6 +53,19 @@ try:
    started=time.perf_counter();command('gui','rdp-open',port=port);r=spike.eventually(lambda:r if (r:=command('gui','rdp-inspect',rdp=tab)).get('size')==[320,180] else False,20);assert r['status'].startswith('Connected'),r;r['connect_to_decoded_frame_ms']=(time.perf_counter()-started)*1000;connections.append(r)
   return {'server':ready,'connections':connections,'authentication':'actual CredSSP/NLA','frames':'decoded live loopback server frames, generated desktop'}
  case('RDP-NATIVE-AUTH-3',lifecycle)
+ def background_ipc():
+  focus('gui');command('gui','rdp-switch',rdp=0);command('gui','workspace-permission',enabled=True)
+  sentinel=b'Foreground GDK peer owns clipboard';remote=b'Authorized loopback RDP background offer';(root/'background-local.txt').write_bytes(sentinel);(root/'background-remote.txt').write_bytes(remote)
+  def api(args):
+   r=subprocess.run([a.binary,'--socket',str(sock),'workspace',*args,'--json'],env=env,capture_output=True,text=True,timeout=7);assert r.returncode==0,(r.stdout,r.stderr);return json.loads(r.stdout)['result']
+  state=api(['list']);rdp_id=next(v['id']for v in state['views']if v['kind']=='rdp')
+  focus('peer');command('peer','set-text',file='background-local.txt');before=[command('gui','rdp-inspect',rdp=i)['received_generation']for i in range(3)]
+  api(['focus','--id',rdp_id]);assert not api(['list'])['window_active'];assert command('gui','inspect')['clipboard_owner']is None
+  for i in range(3):command(f'server-{i}',format='text',file='background-remote.txt')
+  time.sleep(.25);assert command('peer','read-text')['sha256']==digest(sentinel);assert [command('gui','rdp-inspect',rdp=i)['received_generation']for i in range(3)]==before
+  focus('gui');command('gui','rdp-switch',rdp=0);got=read_remote(0,'text','background-remote.txt');assert got['sha256']==digest(remote);focus('gui');command('gui','workspace-permission',enabled=False)
+  return {'actual_authenticated_rdp_sessions':3,'authorized_ipc_focus_in_background':True,'foreground_peer_clipboard_preserved':True,'inactive_transfers_not_started':True,'transfer_after_native_window_activation':True,'physical_input':False}
+ case('GUI-IPC-BACKGROUND-RDP-OWNERSHIP',background_ipc)
  texts=['Živjo Łódź 🦀\nMultiline clipboard '+str(i) for i in range(8)]+['x'*10240,'z'*(1024*1024)]
  def text_transfer():
   evidence=[]

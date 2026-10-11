@@ -30,7 +30,7 @@ try:
  ordered=sorted(stored,key=lambda s:rpc('pane.list',{'session':s['id']})[0]['pid']);closed=ordered[1]
  assert command('sessions-open',session=closed['id'])['clicked'];spike.eventually(lambda:command('inspect')['tabs']==3)
  command('workspace-close');gui.wait(timeout=10)
- path=root/'config/RUWAC/workspace.json';saved=json.loads(path.read_text());assert saved['schema']==2 and len(saved['sessions'])==3 and path.stat().st_mode&0o777==0o600
+ path=root/'config/RUWAC/workspace.json';saved=json.loads(path.read_text());assert saved['schema']==3 and len(saved['sessions'])==3 and path.stat().st_mode&0o777==0o600
  before={s['id']:rpc('pane.list',{'session':s['id']})[0]['pid']for s in stored}
  gui=launch('restored');seq=0;assert command('inspect')['tabs']==3
  assert before=={s['id']:rpc('pane.list',{'session':s['id']})[0]['pid']for s in rpc('session.list')}
@@ -39,10 +39,10 @@ try:
  legacy={'schema':1,'socket':str(sock),'sessions':list(before),'selected':next(iter(before))}
  path.write_text(json.dumps(legacy))
  gui=launch('legacy-migration');seq=0;assert command('inspect')['tabs']==3
- spike.eventually(lambda:json.loads(path.read_text())['schema']==2,5)
+ spike.eventually(lambda:json.loads(path.read_text())['schema']==3,5)
  backup=path.with_name('workspace-v1.json');assert json.loads(backup.read_text())==legacy and backup.stat().st_mode&0o777==0o600
  assert before=={s['id']:rpc('pane.list',{'session':s['id']})[0]['pid']for s in rpc('session.list')}
- results.append({'id':'NATIVE-WORKSPACE-MIGRATION','status':'PASS','schema_1_to_2':True,'original_backup_mode':'0600','same_terminal_pids':True})
+ results.append({'id':'NATIVE-WORKSPACE-MIGRATION','status':'PASS','schema_1_to_3':True,'original_backup_mode':'0600','same_terminal_pids':True})
  command('profiles',search='Disposable SSH');r=command('profile-editor',operation='new',fields={'0':'Disposable SSH','3':'127.0.0.1:1','4':'fixture','13':1})
  assert r['applied'] and not r['error'],r
  assert command('profiles',search='Disposable SSH',open=True)['rows']==1
@@ -80,7 +80,7 @@ try:
  live_before={sid:rpc('pane.list',{'session':sid})[0]['pid']for sid in before}
  spike.eventually(lambda:len(json.loads(path.read_text()).get('tabs',[]))==4,5)
  gui.kill();gui.wait(timeout=10)
- saved=json.loads(path.read_text());assert saved['schema']==2 and len(saved['tabs'])==4 and saved['selected_tab']==0,saved
+ saved=json.loads(path.read_text());assert saved['schema']==3 and len(saved['tabs'])==4 and saved['selected_tab']==0,saved
  first=saved['tabs'][0]['layout'];assert first['kind']=='split' and first['vertical'] and first['first']['kind']=='split' and first['second']['kind']=='files',first
  assert first['second']['directory']=='/generated/directory with spaces'
  assert 'password' not in path.read_text().lower()
@@ -91,7 +91,7 @@ try:
  assert live_before=={sid:rpc('pane.list',{'session':sid})[0]['pid']for sid in before}
  protected=command('profile-editor',operation='edit',response='delete',confirm=True)
  assert len(protected['items'])==len(profile['items']),protected
- results.append({'id':'NATIVE-MIXED-RESTORE','status':'PASS','saved_schema':2,'mixed_tab_kinds':['terminal','rdp','files'],'nested_orientations':['vertical','horizontal'],'same_terminal_pids':True,'directory_and_profile_restored':True,'credentials_not_serialized':True,'restored_rdp_disconnected':True,'restored_profile_lease':True,'autosave_survived_gui_sigkill':True})
+ results.append({'id':'NATIVE-MIXED-RESTORE','status':'PASS','saved_schema':3,'mixed_tab_kinds':['terminal','rdp','files'],'nested_orientations':['vertical','horizontal'],'same_terminal_pids':True,'directory_and_profile_restored':True,'credentials_not_serialized':True,'restored_rdp_disconnected':True,'restored_profile_lease':True,'autosave_survived_gui_sigkill':True})
  command('mixed-separate');command('close-tab',tab=5);time.sleep(.2);command('close-tab',tab=3);time.sleep(.2)
  removed=command('profile-editor',operation='edit',response='delete',confirm=True);assert len(removed['items'])==len(profile['items'])-1,removed
  command('workspace-close');gui.wait(timeout=10)

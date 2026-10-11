@@ -2,6 +2,7 @@ mod clipboard;
 mod cliprdr;
 mod credentials;
 mod files;
+mod ipc;
 mod profiles;
 mod rdp;
 mod sessions;
@@ -33,6 +34,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut fixture = None;
     let mut stage = None;
     let mut clipboard_disabled = false;
+    let mut allow_workspace_control = false;
     let mut theme = adw::ColorScheme::PreferDark;
     let args: Vec<_> = std::env::args().skip(1).collect();
     let mut i = 0;
@@ -59,6 +61,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 ));
             }
             "--clipboard-disabled" => clipboard_disabled = true,
+            "--allow-workspace-control" => allow_workspace_control = true,
             "--theme" => {
                 i += 1;
                 theme = match args.get(i).map(String::as_str) {
@@ -74,7 +77,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
             "--help" => {
                 println!(
-                    "ruwac-desktop --socket PRIVATE_SOCKET [--session SESSION]... [--staging-dir PRIVATE_DIRECTORY]\nAlt+1…9/0 workspace tabs; --theme dark|light|system (default dark).\nCtrl+A prefix; Ctrl+Shift+C/V desktop selection; Shift+drag overrides application mouse.\nOptional independent GTK client; daemon owns PTYs. Image staging is not agent attachment."
+                    "ruwac-desktop --socket PRIVATE_SOCKET [--session SESSION]... [--staging-dir PRIVATE_DIRECTORY]\nOptional --allow-workspace-control authorizes local IPC focus changes.\nAlt+1…9/0 workspace tabs; --theme dark|light|system (default dark).\nCtrl+A prefix; Ctrl+Shift+C/V desktop selection; Shift+drag overrides application mouse.\nOptional independent GTK client; daemon owns PTYs. Image staging is not agent attachment."
                 );
                 return Ok(());
             }
@@ -177,12 +180,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         .build();
     let views: Rc<RefCell<Vec<Rc<View>>>> = Rc::new(RefCell::new(Vec::new()));
     let all = views.clone();
+    let services:Rc<RefCell<Vec<(ipc::Server,glib::SourceId)>>>=Rc::new(RefCell::new(Vec::new()));
+    let active_services=services.clone();
     app.connect_activate(move|app|{
   app.style_manager().set_color_scheme(theme);
   if let Some(window)=app.active_window(){window.present();return;}
   let window=adw::ApplicationWindow::builder().application(app).title("RUWAC").default_width(1040).default_height(780).build();
-  let box_=gtk::Box::new(gtk::Orientation::Vertical,0);let header=adw::HeaderBar::new();box_.append(&header);let tabs=adw::TabView::new();tabs.set_vexpand(true);let bar=adw::TabBar::builder().view(&tabs).autohide(false).build();box_.append(&bar);let tools=gtk::Box::new(gtk::Orientation::Horizontal,6);tools.set_margin_start(6);tools.set_margin_end(6);tools.set_margin_top(4);tools.set_margin_bottom(4);box_.append(&tools);
+  let box_=gtk::Box::new(gtk::Orientation::Vertical,0);let header=adw::HeaderBar::new();box_.append(&header);let tabs=adw::TabView::new();let focus_memory:tiles::FocusMemory=Rc::new(RefCell::new(std::collections::HashMap::new()));tabs.set_vexpand(true);let bar=adw::TabBar::builder().view(&tabs).autohide(false).build();box_.append(&bar);let tools=gtk::Box::new(gtk::Orientation::Horizontal,6);tools.set_margin_start(6);tools.set_margin_end(6);tools.set_margin_top(4);tools.set_margin_bottom(4);box_.append(&tools);
   if let Some(message)=workspace_warning.as_ref(){box_.append(&gtk::Label::new(Some(message)));}
+  let control_policy=Rc::new(Cell::new(allow_workspace_control));let consent=gtk::CheckButton::with_label("Allow automation to change workspace focus");consent.set_active(control_policy.get());let policy=control_policy.clone();consent.connect_toggled(move|c|policy.set(c.is_active()));let preferences=gtk::Popover::new();preferences.set_child(Some(&consent));let options=gtk::MenuButton::builder().icon_name("open-menu-symbolic").tooltip_text("Workspace automation permissions").popover(&preferences).build();header.pack_end(&options);
   let broker=Rc::new(RefCell::new(ruwac_clipboard::FocusBroker::default()));
   let last_focus:Rc<RefCell<Option<String>>>=Rc::new(RefCell::new(None));
   broker.borrow_mut().set_desktop_disabled(clipboard_disabled);
@@ -191,8 +197,19 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
   let rdp_views:Rc<RefCell<Vec<Rc<rdp::RdpView>>>>=Rc::new(RefCell::new(Vec::new()));
   let file_views:Rc<RefCell<Vec<(gtk::Box,profiles::Profile)>>> = Rc::new(RefCell::new(Vec::new()));
   let placeholders:Rc<RefCell<Vec<(gtk::Widget,workspace::Layout)>>> = Rc::new(RefCell::new(Vec::new()));
+  let (terminal_focus,rdp_focus,focus_tabs,focus_state)=(all.clone(),rdp_views.clone(),tabs.clone(),focus_memory.clone());let focus_view:tiles::FocusView=Rc::new(move|root|{
+    tiles::remember(&focus_tabs,&focus_state,root);
+    if root.is_mapped(){
+      if let Some(v)=terminal_focus.borrow().iter().find(|v|v.root.upcast_ref::<gtk::Widget>()==root){v.focus();}
+      else if let Some(v)=rdp_focus.borrow().iter().find(|v|v.root.upcast_ref::<gtk::Widget>()==root){v.focus();}
+      else if !root.child_focus(gtk::DirectionType::TabForward){root.grab_focus();}
+    }else{
+      let(root,t,m,terminal,remote)=(root.downgrade(),focus_tabs.clone(),focus_state.clone(),terminal_focus.clone(),rdp_focus.clone());
+      let deadline=Instant::now()+Duration::from_secs(1);glib::timeout_add_local(Duration::from_millis(16),move||{let Some(root)=root.upgrade().filter(|r|t.selected_page().is_some_and(|p|tiles::contains(&p.child(),r)))else{return glib::ControlFlow::Break;};if !root.is_mapped(){return if Instant::now()<deadline{glib::ControlFlow::Continue}else{glib::ControlFlow::Break};}tiles::remember(&t,&m,&root);if let Some(v)=terminal.borrow().iter().find(|v|v.root.upcast_ref::<gtk::Widget>()==&root){v.focus();}else if let Some(v)=remote.borrow().iter().find(|v|v.root.upcast_ref::<gtk::Widget>()==&root){v.focus();}else if !root.child_focus(gtk::DirectionType::TabForward){root.grab_focus();}glib::ControlFlow::Break});
+    }
+  });
   let rdp_button=gtk::Button::with_label("New RDP tab");header.pack_start(&rdp_button);let rv=rdp_views.clone();let t=tabs.clone();let b=broker.clone();rdp_button.connect_clicked(move|_|{let v=rdp::RdpView::new(b.clone());let p=tiles::append(&t,&v.root);p.set_title("RDP · embedded IronRDP");rv.borrow_mut().push(v.clone());t.set_selected_page(&p);v.focus();});
-  let rv=rdp_views.clone();let vv=all.clone();let b=broker.clone();tabs.connect_selected_page_notify(move|t|{if let Some(page)=t.selected_page(){for v in rv.borrow().iter(){if !tiles::contains(&page.child(),&v.root){v.inactive();}}if let Some(v)=vv.borrow().iter().find(|v|tiles::contains(&page.child(),&v.root)){v.focus();}else if let Some(v)=rv.borrow().iter().find(|v|tiles::contains(&page.child(),&v.root)){v.focus();}else{b.borrow_mut().focus(None);}}});
+  let rv=rdp_views.clone();let b=broker.clone();let (memory,focus)=(focus_memory.clone(),focus_view.clone());tabs.connect_selected_page_notify(move|t|{if let Some(page)=t.selected_page(){for v in rv.borrow().iter(){if !tiles::contains(&page.child(),&v.root){v.inactive();}}b.borrow_mut().focus(None);tiles::focus_selected(t,&memory,&focus);}});
   let rv=rdp_views.clone();tabs.connect_close_page(move|_,page|{let mut views=rv.borrow_mut();for v in views.iter(){if tiles::contains(&page.child(),&v.root){v.close();}}views.retain(|v|!tiles::contains(&page.child(),&v.root));glib::Propagation::Proceed});
   let rv=rdp_views.clone();window.connect_close_request(move|_|{for v in rv.borrow().iter(){v.close();}glib::Propagation::Proceed});
   let owned_images:Rc<RefCell<Vec<PathBuf>>>=Rc::new(RefCell::new(Vec::new()));
@@ -204,37 +221,44 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
   if let Some(id)=selected.as_ref(){if let Some(v)=all.borrow().iter().find(|v|&v.session==id){if let Some(page)=tiles::page(&tabs,&v.root){tabs.set_selected_page(&page);}}}
   header.pack_start(&sessions::controls(tabs.clone(),all.clone(),socket.clone(),broker.clone()));
   let (vv,rv,fv,ph,t,b)=(all.clone(),rdp_views.clone(),file_views.clone(),placeholders.clone(),tabs.clone(),broker.clone());
+  let (close_focus,close_memory)=(focus_view.clone(),focus_memory.clone());
   let close_view:tiles::CloseView=Rc::new(move|root|{
     {let mut views=vv.borrow_mut();for v in views.iter().filter(|v|v.root.upcast_ref::<gtk::Widget>()==root){v.close();}views.retain(|v|v.root.upcast_ref::<gtk::Widget>()!=root);}
     {let mut views=rv.borrow_mut();for v in views.iter().filter(|v|v.root.upcast_ref::<gtk::Widget>()==root){v.close();}views.retain(|v|v.root.upcast_ref::<gtk::Widget>()!=root);}
     fv.borrow_mut().retain(|(v,_)|v.upcast_ref::<gtk::Widget>()!=root);ph.borrow_mut().retain(|(v,_)|v!=root);
     b.borrow_mut().focus(None);
-    if let Some(page)=t.selected_page(){if let Some(v)=vv.borrow().iter().find(|v|tiles::contains(&page.child(),&v.root)){v.focus();}else if let Some(v)=rv.borrow().iter().find(|v|tiles::contains(&page.child(),&v.root)){v.focus();}}
+    tiles::focus_selected(&t,&close_memory,&close_focus);
   });
-  tools.prepend(&tiles::controls(&tabs,close_view));let spacer=gtk::Box::new(gtk::Orientation::Horizontal,0);spacer.set_hexpand(true);tools.insert_child_after(&spacer,tools.first_child().as_ref());
-  let(rv,vv,b,last,h,actions)=(rdp_views.clone(),all.clone(),broker.clone(),last_focus.clone(),header.clone(),tools.clone());window.connect_focus_widget_notify(move|w|{let focus=gtk::prelude::GtkWindowExt::focus(w);let mut owner=false;for r in rv.borrow().iter(){if focus.as_ref().is_some_and(|f|r.owns_focus(f)){r.activate_clipboard();*last.borrow_mut()=b.borrow().active().map(str::to_owned);owner=true;}else{r.inactive();}}if !owner{if let Some(v)=vv.borrow().iter().find(|v|focus.as_ref().is_some_and(|f|tiles::contains(&v.root,f))){*last.borrow_mut()=Some(v.session.clone());if b.borrow().active()!=Some(v.session.as_str()){b.borrow_mut().focus(Some(&v.session));}}else{if !focus.as_ref().is_some_and(|f|(tiles::contains(&h,f)||tiles::contains(&actions,f))){*last.borrow_mut()=None;}if b.borrow().active().is_some(){b.borrow_mut().focus(None);}}}});
+  tools.prepend(&tiles::controls(&tabs,close_view,focus_view.clone(),focus_memory.clone()));let spacer=gtk::Box::new(gtk::Orientation::Horizontal,0);spacer.set_hexpand(true);tools.insert_child_after(&spacer,tools.first_child().as_ref());
+  let (focus_tabs,focus_state)=(tabs.clone(),focus_memory.clone());
+  let(rv,vv,b,last,h,actions)=(rdp_views.clone(),all.clone(),broker.clone(),last_focus.clone(),header.clone(),tools.clone());window.connect_focus_widget_notify(move|w|{let focus=gtk::prelude::GtkWindowExt::focus(w);if let Some(f)=&focus{tiles::remember(&focus_tabs,&focus_state,f);}if !w.is_active(){b.borrow_mut().focus(None);for r in rv.borrow().iter(){r.inactive();}return;}let mut owner=false;for r in rv.borrow().iter(){if focus.as_ref().is_some_and(|f|r.owns_focus(f)){r.activate_clipboard();*last.borrow_mut()=b.borrow().active().map(str::to_owned);owner=true;}else{r.inactive();}}if !owner{if let Some(v)=vv.borrow().iter().find(|v|focus.as_ref().is_some_and(|f|tiles::contains(&v.root,f))){*last.borrow_mut()=Some(v.session.clone());if b.borrow().active()!=Some(v.session.as_str()){b.borrow_mut().focus(Some(&v.session));}}else{if !focus.as_ref().is_some_and(|f|(tiles::contains(&h,f)||tiles::contains(&actions,f))){*last.borrow_mut()=None;}if b.borrow().active().is_some(){b.borrow_mut().focus(None);}}}});
 
+  let (vv,rv,b,last)=(all.clone(),rdp_views.clone(),broker.clone(),last_focus.clone());window.connect_is_active_notify(move|w|{
+    let focus=gtk::prelude::GtkWindowExt::focus(w);b.borrow_mut().focus(None);
+    for r in rv.borrow().iter(){if w.is_active()&&focus.as_ref().is_some_and(|f|r.owns_focus(f)){r.activate_clipboard();*last.borrow_mut()=b.borrow().active().map(str::to_owned);}else{r.inactive();}}
+    if w.is_active(){if let Some(v)=vv.borrow().iter().find(|v|focus.as_ref().is_some_and(|f|tiles::contains(&v.root,f))){b.borrow_mut().focus(Some(&v.session));*last.borrow_mut()=Some(v.session.clone());}}
+  });
   let rv=rdp_views.clone();let t=tabs.clone();let b=broker.clone();let(sock,views)=(socket.clone(),all.clone());let fv=file_views.clone();
   let (sidebar,search,restore_profile)=profiles::sidebar(move|profile,persist,lease|{if profile.protocol=="RDP"{let v=rdp::RdpView::new(b.clone());v.configure(&profile);v.set_preferences_sink(persist);lease.bind(&v.root);let page=tiles::append(&t,&v.root);page.set_title(&format!("{} / {} · {}",profile.group,profile.name,profile.protocol));rv.borrow_mut().push(v.clone());t.set_selected_page(&page);v.focus();v.connect_profile();}else{let file_panel=files::panel(profile.clone());fv.borrow_mut().push((file_panel.clone(),profile.clone()));lease.fork().bind(&file_panel);let file_page=tiles::append(&t,&file_panel);file_page.set_title(&format!("{} / {} · Files",profile.group,profile.name));let socket=sock.clone();let name=profile.name.clone();let argv=profiles::ssh_argv(&profile);let(tx,rx)=std::sync::mpsc::sync_channel(1);std::thread::spawn(move||{let result=(||->Result<String,String>{let mut client=worker::Rpc::connect(&socket).map_err(|e|e.to_string())?;let reply=client.call("session.create",json!({"name":name,"argv":argv?})).map_err(|e|e.to_string())?;reply["session"].as_str().map(str::to_owned).ok_or("SSH session creation failed".into())})();let _=tx.send(result);});let(t,b,views,socket)=(t.clone(),b.clone(),views.clone(),sock.clone());let mut pending_lease=Some(lease);glib::timeout_add_local(Duration::from_millis(10),move||{match rx.try_recv(){Ok(Ok(session))=>{let v=View::new(socket.clone(),session,b.clone());if let Some(lease)=pending_lease.take(){lease.bind(&v.root);}let page=tiles::append(&t,&v.root);page.set_title(&format!("{} / {} · {}",profile.group,profile.name,profile.protocol));views.borrow_mut().push(v.clone());t.set_selected_page(&page);v.focus();glib::ControlFlow::Break},Ok(Err(_))|Err(std::sync::mpsc::TryRecvError::Disconnected)=>glib::ControlFlow::Break,Err(std::sync::mpsc::TryRecvError::Empty)=>glib::ControlFlow::Continue}});}});
   if !restored_tabs.is_empty(){
-    tiles::restore(&tabs,&restored_tabs,|layout|match layout{
-      workspace::Layout::Terminal{session}=>{
+    tiles::restore(&tabs,&restored_tabs,&focus_memory,|layout|match layout{
+      workspace::Layout::Terminal{session,..}=>{
         let view=all.borrow().iter().find(|v|&v.session==session).cloned();
         if let Some(v)=view{if let Some(page)=tiles::page(&tabs,&v.root){if let Ok(body)=page.child().downcast::<gtk::Box>(){body.remove(&v.root);tabs.close_page(&page);}}v.root.clone().upcast()}
-        else{let label=gtk::Label::new(Some("This terminal session ended. Use New terminal to start another; the old process was not resurrected."));label.set_wrap(true);let root:gtk::Widget=label.upcast();placeholders.borrow_mut().push((root.clone(),layout.clone()));root}
+        else{let label=gtk::Label::new(Some("This terminal session ended. Use New terminal to start another; the old process was not resurrected."));label.set_wrap(true);label.set_focusable(true);let root:gtk::Widget=label.upcast();placeholders.borrow_mut().push((root.clone(),layout.clone()));root}
       },
-      workspace::Layout::Rdp{profile}=>{
+      workspace::Layout::Rdp{profile,..}=>{
         let v=rdp::RdpView::new(broker.clone());
         if let Some(p)=profile{
           if p.id.is_empty(){v.configure(p);}
           else if let Some((current,sink,lease))=restore_profile(&p.id).filter(|(p,_,_)|p.protocol=="RDP"){v.configure(&current);v.set_preferences_sink(sink);lease.bind(&v.root);}
-          else{let label=gtk::Label::new(Some("This RDP profile was removed. Reopen an authorized profile from Machines."));label.set_wrap(true);let root:gtk::Widget=label.upcast();placeholders.borrow_mut().push((root.clone(),layout.clone()));return root;}
+          else{let label=gtk::Label::new(Some("This RDP profile was removed. Reopen an authorized profile from Machines."));label.set_wrap(true);label.set_focusable(true);let root:gtk::Widget=label.upcast();placeholders.borrow_mut().push((root.clone(),layout.clone()));return root;}
         }
         rdp_views.borrow_mut().push(v.clone());v.root.clone().upcast()
       },
-      workspace::Layout::Files{profile,directory}=>{
+      workspace::Layout::Files{profile,directory,..}=>{
         if let Some((current,_,lease))=restore_profile(&profile.id).filter(|(p,_,_)|p.protocol=="SSH"){let root=files::panel(current.clone());files::directory(&root,Some(directory));lease.bind(&root);file_views.borrow_mut().push((root.clone(),current));root.upcast()}
-        else{let label=gtk::Label::new(Some("This file profile was removed. Reopen an authorized SSH profile from Machines."));label.set_wrap(true);let root:gtk::Widget=label.upcast();placeholders.borrow_mut().push((root.clone(),layout.clone()));root}
+        else{let label=gtk::Label::new(Some("This file profile was removed. Reopen an authorized SSH profile from Machines."));label.set_wrap(true);label.set_focusable(true);let root:gtk::Widget=label.upcast();placeholders.borrow_mut().push((root.clone(),layout.clone()));root}
       },
       workspace::Layout::Split{..}=>unreachable!(),
     });
@@ -245,28 +269,52 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
   let vv=all.clone();tabs.connect_close_page(move|_,page|{let mut views=vv.borrow_mut();for v in views.iter(){if tiles::contains(&page.child(),&v.root){v.close();}}views.retain(|v|!tiles::contains(&page.child(),&v.root));glib::Propagation::Proceed});
   let(vv,rv,fv,ph,saved_tabs,saved_socket)=(all.clone(),rdp_views.clone(),file_views.clone(),placeholders.clone(),tabs.clone(),socket.clone());
+  let recorded_focus=focus_memory.clone();
   let recorder:workspace::Recorder=Rc::new(move||{
-    let open=vv.borrow();let mut ids=Vec::new();for i in 0..saved_tabs.n_pages(){let page=saved_tabs.nth_page(i);for v in open.iter().filter(|v|tiles::contains(&page.child(),&v.root)){ids.push(v.session.clone());}}for (_,layout)in ph.borrow().iter(){if let workspace::Layout::Terminal{session}=layout{if !ids.contains(session){ids.push(session.clone());}}}let selected=saved_tabs.selected_page().and_then(|p|open.iter().find(|v|tiles::contains(&p.child(),&v.root)).map(|v|v.session.clone()));let layouts=tiles::snapshot(&saved_tabs,|root|{
-      if let Some(v)=open.iter().find(|v|v.root.upcast_ref::<gtk::Widget>()==root){return Some(workspace::Layout::Terminal{session:v.session.clone()});}
-      if let Some(v)=rv.borrow().iter().find(|v|v.root.upcast_ref::<gtk::Widget>()==root){return Some(workspace::Layout::Rdp{profile:v.configuration()});}
-      if let Some((view,profile))=fv.borrow().iter().find(|(v,_)|v.upcast_ref::<gtk::Widget>()==root){return Some(workspace::Layout::Files{profile:profile.clone(),directory:files::directory(view,None)});}
+    let open=vv.borrow();let mut ids=Vec::new();for i in 0..saved_tabs.n_pages(){let page=saved_tabs.nth_page(i);for v in open.iter().filter(|v|tiles::contains(&page.child(),&v.root)){ids.push(v.session.clone());}}for (_,layout)in ph.borrow().iter(){if let workspace::Layout::Terminal{session,..}=layout{if !ids.contains(session){ids.push(session.clone());}}}let selected=saved_tabs.selected_page().and_then(|p|open.iter().find(|v|tiles::contains(&p.child(),&v.root)).map(|v|v.session.clone()));let layouts=tiles::snapshot(&saved_tabs,|root|{
+      if let Some(v)=open.iter().find(|v|v.root.upcast_ref::<gtk::Widget>()==root){return Some(workspace::Layout::Terminal{view_id:root.widget_name().to_string(),session:v.session.clone()});}
+      if let Some(v)=rv.borrow().iter().find(|v|v.root.upcast_ref::<gtk::Widget>()==root){return Some(workspace::Layout::Rdp{view_id:root.widget_name().to_string(),profile:v.configuration()});}
+      if let Some((view,profile))=fv.borrow().iter().find(|(v,_)|v.upcast_ref::<gtk::Widget>()==root){return Some(workspace::Layout::Files{view_id:root.widget_name().to_string(),profile:profile.clone(),directory:files::directory(view,None)});}
       ph.borrow().iter().find(|(w,_)|w==root).map(|(_,l)|l.clone())
-    });
+    },&recorded_focus);
 
     let layouts=layouts?;
     let selected_tab=saved_tabs.selected_page().map(|p|saved_tabs.page_position(&p)as usize);
-    Ok(workspace::Workspace{schema:2,socket:saved_socket.clone(),sessions:ids,selected,tabs:layouts,selected_tab})
+    Ok(workspace::Workspace{schema:3,socket:saved_socket.clone(),sessions:ids,selected,tabs:layouts,selected_tab})
   });
   workspace::watch(&window,recorder.clone());
+  match ipc::Server::start(&socket){
+   Ok((server,requests))=>{
+    let (t,memory,focus,policy,terminal,remote,files)=(tabs.clone(),focus_memory.clone(),focus_view.clone(),control_policy.clone(),all.clone(),rdp_views.clone(),file_views.clone());
+    let api_window=window.downgrade();let workspace_id=workspace::identity(&socket);let gui_id=ruwac_protocol::id("gui");
+    let source=glib::timeout_add_local(Duration::from_millis(16),move||{
+     for _ in 0..4 {let Ok(task)=requests.try_recv()else{break;};let req=&task.request;let params=req.params.as_object();let empty=params.is_some_and(|p|p.is_empty());let target=params.and_then(|p|p.get("id")).and_then(Value::as_str);let explicit=params.is_some_and(|p|p.len()==1)&&target.is_some();
+      let result=if Instant::now()>=task.expires{Err(ruwac_protocol::Error::new("GUI_TIMEOUT","Expired GUI request was not executed"))}else{match req.method.as_str(){
+       "workspace.describe" if empty=>Ok(json!({"protocol":0,"gui_api":1,"workspace_id":workspace_id,"gui_instance":gui_id,"methods":["workspace.describe","workspace.list","workspace.activate","workspace.focus"],"permissions":{"metadata_read":true,"focus_control":policy.get(),"clipboard_read":false,"remote_input":false},"transport":{"same_uid":true,"frame_limit":ruwac_protocol::MAX_FRAME,"peer_limit":8,"queue_limit":16}})),
+       "workspace.list" if empty=>{let mut state=tiles::inspect(&t,&memory);let input_focus=api_window.upgrade().and_then(|w|gtk::prelude::GtkWindowExt::focus(&w));state["input_focus_view"]=json!(tiles::views(&t).iter().find(|root|input_focus.as_ref().is_some_and(|f|tiles::contains(*root,f))).map(|r|r.widget_name().to_string()));state["window_active"]=json!(api_window.upgrade().is_some_and(|w|w.is_active()));state["workspace_id"]=json!(workspace_id);state["gui_instance"]=json!(gui_id);state["views"]=json!(tiles::views(&t).iter().map(|root|{let session=terminal.borrow().iter().find(|v|v.root.upcast_ref::<gtk::Widget>()==root).map(|v|v.session.clone());let kind=if session.is_some(){"terminal"}else if remote.borrow().iter().any(|v|v.root.upcast_ref::<gtk::Widget>()==root){"rdp"}else if files.borrow().iter().any(|(w,_)|w.upcast_ref::<gtk::Widget>()==root){"files"}else{"ended"};json!({"id":root.widget_name().as_str(),"tab":tiles::page(&t,root).map(|p|p.child().widget_name().to_string()),"kind":kind,"session":session})}).collect::<Vec<_>>());Ok(state)},
+       "workspace.activate"|"workspace.focus" if !explicit=>Err(ruwac_protocol::Error::new("INVALID_TARGET","An explicit target ID is required; focus is never an implicit target")),
+       "workspace.activate"|"workspace.focus" if !policy.get()=>Err(ruwac_protocol::Error::new("PERMISSION_DENIED","Enable workspace focus control in the desktop permissions menu")),
+       "workspace.focus"=>tiles::focus_id(&t,target.unwrap(),&focus).map(|_|json!({"focused_view":tiles::focused_id(&t,&memory)})).map_err(|_|ruwac_protocol::Error::new("STALE_TARGET","View ID is invalid, detached or closed")),
+       "workspace.activate"=>{let id=target.unwrap();if let Some(page)=(0..t.n_pages()).map(|i|t.nth_page(i)).find(|p|p.child().widget_name().as_str()==id&&ruwac_protocol::valid_id(id,"tab")){t.set_selected_page(&page);tiles::focus_selected(&t,&memory,&focus);Ok(json!({"selected_tab":id,"focused_view":tiles::focused_id(&t,&memory)}))}else{Err(ruwac_protocol::Error::new("STALE_TARGET","Tab ID is invalid or closed"))}},
+       "workspace.describe"|"workspace.list"=>Err(ruwac_protocol::Error::new("INVALID_REQUEST","This operation takes an empty parameter object")),
+       _=>Err(ruwac_protocol::Error::new("UNSUPPORTED_METHOD","GUI method unavailable")),
+      }};
+      let operation=match req.method.as_str(){"workspace.describe"|"workspace.list"|"workspace.activate"|"workspace.focus"=>req.method.as_str(),_=>"unsupported"};let safe_target=target.filter(|id|ruwac_protocol::valid_id(id,"view")||ruwac_protocol::valid_id(id,"tab"));let verdict=result.as_ref().err().map(|e|e.code.as_str()).unwrap_or("allowed");eprintln!("{}",json!({"audit":"workspace_ipc","actor_uid":task.actor_uid,"actor_pid":task.actor_pid,"operation":operation,"target":safe_target,"verdict":verdict}));let _=task.reply.try_send(result);
+     }
+     glib::ControlFlow::Continue
+    });active_services.borrow_mut().push((server,source));
+   },Err(e)=>eprintln!("Workspace API unavailable; desktop remains usable: {e}"),
+  }
+
   let(owned,vv)=(owned_images.clone(),all.clone());window.connect_close_request(move|_|{
     match recorder(){Ok(w)=>{if let Err(e)=workspace::save(&w){eprintln!("Workspace save failed: {e}");}},Err(e)=>eprintln!("Workspace save failed: {e}")};
     for v in vv.borrow().iter(){v.close();}for path in owned.borrow_mut().drain(..){let _=std::fs::remove_file(path);}glib::Propagation::Proceed
-  });window.present();if let Some(page)=tabs.selected_page(){for v in all.borrow().iter(){if tiles::contains(&page.child(),&v.root){v.focus();}}}
+  });window.present();tiles::focus_selected(&tabs,&focus_memory,&focus_view);
   let vv=all.clone();let tabs=tabs.clone();let app=app.clone();let fixture=fixture.clone();let staging=stage.clone();let owned=owned_images.clone();let tick=Rc::new(Cell::new(0u64));let last=Rc::new(Cell::new(Instant::now()));let max_gap=Rc::new(Cell::new(0u128));let sequence=Rc::new(Cell::new(0u64));
   glib::timeout_add_local(Duration::from_millis(16),move||{
    tick.set(tick.get()+1);let now=Instant::now();max_gap.set(max_gap.get().max(now.duration_since(last.replace(now)).as_millis()));for v in vv.borrow().iter(){v.update();}
    if let Some(dir)=fixture.as_ref(){let request=dir.join("gui-request.json");if let Ok(bytes)=std::fs::read(&request){if let Ok(q)=serde_json::from_slice::<Value>(&bytes){let seq=q["seq"].as_u64().unwrap_or(0);if seq>sequence.get(){sequence.set(seq);let index=q["view"].as_u64().unwrap_or(0)as usize;let view=vv.borrow().get(index).cloned();let reply_dir=dir.clone();let reply=move|result:Value|{let path=reply_dir.join("gui-response.json");let temp=reply_dir.join("gui-response.tmp");let _=std::fs::write(&temp,json!({"seq":seq,"result":result}).to_string());let _=std::fs::rename(temp,path);};if view.is_none(){match q["action"].as_str().unwrap_or(""){
-    "inspect"=>reply(json!({"display":gtk::prelude::WidgetExt::display(&window).type_().name(),"active":window.is_active(),"tabs":tabs.n_pages(),"selected_tab":tabs.selected_page().map(|p|tabs.page_position(&p)),"dark":app.style_manager().is_dark(),"terminal_views":0,"rdp_views":rdp_views.borrow().len(),"panes":[],"ticks":tick.get()})),
+    "inspect"=>reply(json!({"display":gtk::prelude::WidgetExt::display(&window).type_().name(),"active":window.is_active(),"tabs":tabs.n_pages(),"selected_tab":tabs.selected_page().map(|p|tabs.page_position(&p)),"dark":app.style_manager().is_dark(),"focused_view":tiles::focused_id(&tabs,&focus_memory),"clipboard_owner":broker.borrow().active(),"terminal_views":0,"rdp_views":rdp_views.borrow().len(),"panes":[],"ticks":tick.get()})),
     "new-terminal"=>reply(json!({"clicked":sessions::fixture(&window,"New terminal")})),
     "workspace-close"=>{reply(json!({"closing":true}));window.close();},
     _=>reply(json!({"error":"This terminal fixture action requires an open terminal view"})),
@@ -274,19 +322,22 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     "new-terminal"=>reply(json!({"clicked":sessions::fixture(&window,"New terminal")})),
     "sessions-open"=>{let label=q["session"].as_str().unwrap_or("Sessions…");let mut clicked=sessions::fixture(&window,label);if !clicked{for widget in gtk::Window::list_toplevels(){if let Ok(w)=widget.downcast::<gtk::Window>(){if w.title().as_deref()==Some("Persistent terminal sessions"){clicked=sessions::fixture(&w,label);}}}}reply(json!({"clicked":clicked}));},
     "close-rdp"=>{let r=rdp_views.borrow().get(q["rdp"].as_u64().unwrap_or(0)as usize).cloned();if let Some(r)=r{if let Some(page)=tiles::page(&tabs,&r.root){tabs.close_page(&page);}}reply(json!({"rdp_views":rdp_views.borrow().len()}));},
-    "close-tab"=>{let i=q["tab"].as_i64().unwrap_or(0)as i32;if i>=0&&i<tabs.n_pages(){let page=tabs.nth_page(i);tabs.close_page(&page);}reply(json!({"tabs":tabs.n_pages(),"selected_tab":tabs.selected_page().map(|p|tabs.page_position(&p)),"dark":app.style_manager().is_dark(),"terminal_views":vv.borrow().len()}));},
+    "close-tab"=>{let i=q["tab"].as_i64().unwrap_or(0)as i32;if i>=0&&i<tabs.n_pages(){let page=tabs.nth_page(i);tabs.close_page(&page);}reply(json!({"tabs":tabs.n_pages(),"selected_tab":tabs.selected_page().map(|p|tabs.page_position(&p)),"dark":app.style_manager().is_dark(),"focused_view":tiles::focused_id(&tabs,&focus_memory),"clipboard_owner":broker.borrow().active(),"terminal_views":vv.borrow().len()}));},
     "tab-select"=>{let i=q["tab"].as_i64().unwrap_or(0)as i32;if i>=0&&i<tabs.n_pages(){tabs.set_selected_page(&tabs.nth_page(i));}reply(json!({"tabs":tabs.n_pages()}));},
     "focus-view"=>{if let Some(page)=tiles::page(&tabs,&v.root){tabs.set_selected_page(&page);}v.focus();reply(json!({"focused":v.session}));},
     "stage-png"=>{image_button.grab_focus();image_button.emit_clicked();reply(json!({"queued":true,"native_toolbar":true}));},
-    "mixed-join"=>{reply(match tiles::join(&tabs,q["tab"].as_i64().unwrap_or(-1)as i32,q["vertical"]==true){Ok(())=>tiles::inspect(&tabs),Err(e)=>json!({"error":e})});},
-    "mixed-separate"=>{reply(match tiles::separate(&tabs){Ok(_)=>tiles::inspect(&tabs),Err(e)=>json!({"error":e})});},
-    "mixed-inspect"=>reply(tiles::inspect(&tabs)),
+    "mixed-join"=>{reply(match tiles::join_focused(&tabs,q["tab"].as_i64().unwrap_or(-1)as i32,q["vertical"]==true,&focus_memory,&focus_view){Ok(())=>tiles::inspect(&tabs,&focus_memory),Err(e)=>json!({"error":e})});},
+    "mixed-separate"=>{reply(match tiles::separate_focused(&tabs,&focus_memory,&focus_view){Ok(_)=>tiles::inspect(&tabs,&focus_memory),Err(e)=>json!({"error":e})});},
+    "workspace-permission"=>{consent.set_active(q["enabled"]==true);reply(json!({"focus_control":control_policy.get(),"native_checkbutton":true}));},
+    "ipc-delay"=>{reply(json!({"synthetic_main_loop_delay":true}));std::thread::sleep(Duration::from_millis(q["ms"].as_u64().unwrap_or(0).min(4000)));},
+    "view-focus"=>{reply(match tiles::focus_id(&tabs,q["id"].as_str().unwrap_or(""),&focus_view){Ok(())=>tiles::inspect(&tabs,&focus_memory),Err(e)=>json!({"error":e})});},
+    "mixed-inspect"=>reply(tiles::inspect(&tabs,&focus_memory)),
     "views-manage"=>reply(json!({"clicked":sessions::fixture(&window,"Views…")})),
-    "views-action"=>reply(json!({"clicked":tiles::fixture(q["operation"].as_str().unwrap_or(""),q["index"].as_u64().unwrap_or(0)as usize),"layout":tiles::inspect(&tabs),"terminal_views":vv.borrow().len(),"rdp_views":rdp_views.borrow().len()})),
+    "views-action"=>reply(json!({"clicked":tiles::fixture(q["operation"].as_str().unwrap_or(""),q["index"].as_u64().unwrap_or(0)as usize),"layout":tiles::inspect(&tabs,&focus_memory),"terminal_views":vv.borrow().len(),"rdp_views":rdp_views.borrow().len()})),
     "mixed-focus"=>{if q["kind"]=="rdp"{if let Some(r)=rdp_views.borrow().get(q["index"].as_u64().unwrap_or(0)as usize){r.focus();}}else if let Some(v)=vv.borrow().get(q["index"].as_u64().unwrap_or(0)as usize){v.focus();}reply(json!({"owner":broker.borrow().active()}));},
     "workspace-close"=>{reply(json!({"closing":true}));window.close();},
     "switch"=>{v.show_terminal();if let Some(page)=tiles::page(&tabs,&v.root){tabs.set_selected_page(&page);}if let Some(pane)=q["pane"].as_str(){*v.target.borrow_mut()=pane.into();v.command("pane.select",json!({"pane":pane}));}v.focus();if let Some(text)=q["text"].as_str(){for c in text.chars(){let key=unsafe{glib::translate::from_glib(gdk::ffi::gdk_unicode_to_keyval(c as u32))};v.key(key,gdk::ModifierType::empty());}}reply(json!({"queued":true}));},
-    "rdp-open"=>{rdp_button.emit_clicked();if let Some(r)=rdp_views.borrow().last(){if let Some(port)=q["port"].as_u64().filter(|p|*p>0&&*p<=65535){r.fixture_connect(port as u16,&dir.join("cert.pem"));}else{r.fixture_frame();}}reply(json!({"tabs":tabs.n_pages(),"selected_tab":tabs.selected_page().map(|p|tabs.page_position(&p)),"dark":app.style_manager().is_dark(),"backend":"IronRDP","synthetic_frame":q["port"].is_null()}));},
+    "rdp-open"=>{rdp_button.emit_clicked();if let Some(r)=rdp_views.borrow().last(){if let Some(port)=q["port"].as_u64().filter(|p|*p>0&&*p<=65535){r.fixture_connect(port as u16,&dir.join("cert.pem"));}else{r.fixture_frame();}}reply(json!({"tabs":tabs.n_pages(),"selected_tab":tabs.selected_page().map(|p|tabs.page_position(&p)),"dark":app.style_manager().is_dark(),"focused_view":tiles::focused_id(&tabs,&focus_memory),"clipboard_owner":broker.borrow().active(),"backend":"IronRDP","synthetic_frame":q["port"].is_null()}));},
     "rdp-inspect"|"rdp-switch"|"rdp-send"|"rdp-receive"|"rdp-policy"=>{if let Some(r)=rdp_views.borrow().get(q["rdp"].as_u64().unwrap_or(0)as usize){match q["action"].as_str().unwrap_or(""){"rdp-switch"=>{if let Some(page)=tiles::page(&tabs,&r.root){tabs.set_selected_page(&page);}r.focus();},"rdp-policy"=>r.fixture_policy(q["policy"].as_u64().unwrap_or(0)as u32),"rdp-send"=>r.fixture_clipboard(false),"rdp-receive"=>r.fixture_clipboard(true),_=>()}let mut result=r.fixture_inspect();result["tab"]=tiles::page(&tabs,&r.root).map(|p|json!(tabs.page_position(&p))).unwrap_or(Value::Null);reply(result);}else{reply(json!({"error":"RDP tab missing"}));}},
     "rdp-display"=>{if let Some(v)=rdp_views.borrow().get(q["rdp"].as_u64().unwrap_or(0) as usize){if let(Some(w),Some(h))=(q["window_width"].as_i64(),q["window_height"].as_i64()){v.fixture_window(w.clamp(700,3200)as i32,h.clamp(500,2000)as i32);}
 v.fixture_display(q["mode"].as_str().unwrap_or("fit"),q["zoom"].as_f64().unwrap_or(1.0),q["width"].as_u64().unwrap_or(0) as u16,q["height"].as_u64().unwrap_or(0) as u16);reply(v.fixture_inspect());}},
@@ -310,7 +361,7 @@ v.fixture_display(q["mode"].as_str().unwrap_or("fit"),q["zoom"].as_f64().unwrap_
     "grid-copy"=>{v.select_grid_fixture();v.copy_clipboard(false);reply(json!({"offered":true}));},
     "cancel"=>{v.broker.borrow_mut().local_copy();reply(json!({"epoch":v.broker.borrow().epoch()}));},
     "snapshot"=>{let paint=gtk::WidgetPaintable::new(Some(&window));let snap=gtk::Snapshot::new();paint.snapshot(&snap,window.width()as f64,window.height()as f64);if let(Some(node),Some(renderer))=(snap.to_node(),window.renderer()){let texture=renderer.render_texture(&node,None);let _=texture.save_to_png(dir.join("native-rust.png"));}reply(json!({"image":"native-rust.png"}));},
-    "inspect"=>reply(json!({"display":v.area.display().type_().name(),"active":window.is_active(),"tabs":tabs.n_pages(),"selected_tab":tabs.selected_page().map(|p|tabs.page_position(&p)),"dark":app.style_manager().is_dark(),"layout":v.frame.borrow().as_ref().map(|f|f["layout"].clone()),"zoom":v.frame.borrow().as_ref().map(|f|f["zoom"].clone()),"target":*v.target.borrow(),"drawn":vv.borrow().iter().map(|v|v.drawn.get()).collect::<Vec<_>>(),"panes":vv.borrow().iter().map(|v|v.frame.borrow().as_ref().and_then(|f|f["panes"].as_array()).map(|a|a.len()).unwrap_or(0)).collect::<Vec<_>>(),"ticks":tick.get(),"max_tick_gap_ms":max_gap.get(),"acknowledgements":v.worker.state.lock().unwrap().acknowledgements,"status":v.status.text().to_string()})),
+    "inspect"=>reply(json!({"display":v.area.display().type_().name(),"active":window.is_active(),"tabs":tabs.n_pages(),"selected_tab":tabs.selected_page().map(|p|tabs.page_position(&p)),"dark":app.style_manager().is_dark(),"focused_view":tiles::focused_id(&tabs,&focus_memory),"clipboard_owner":broker.borrow().active(),"layout":v.frame.borrow().as_ref().map(|f|f["layout"].clone()),"zoom":v.frame.borrow().as_ref().map(|f|f["zoom"].clone()),"target":*v.target.borrow(),"drawn":vv.borrow().iter().map(|v|v.drawn.get()).collect::<Vec<_>>(),"panes":vv.borrow().iter().map(|v|v.frame.borrow().as_ref().and_then(|f|f["panes"].as_array()).map(|a|a.len()).unwrap_or(0)).collect::<Vec<_>>(),"ticks":tick.get(),"max_tick_gap_ms":max_gap.get(),"acknowledgements":v.worker.state.lock().unwrap().acknowledgements,"status":v.status.text().to_string()})),
     "quit"=>{for v in vv.borrow().iter(){v.close();}for path in owned.borrow_mut().drain(..){let _=std::fs::remove_file(path);}reply(json!({"detached":true}));app.quit();return glib::ControlFlow::Break;},
     _=>reply(json!({"error":"unknown fixture action"}))
    }}else{reply(json!({"error":"view not found"}));}}}}}
@@ -318,6 +369,7 @@ v.fixture_display(q["mode"].as_str().unwrap_or("fit"),q["zoom"].as_f64().unwrap_
   });
  });
     app.run_with_args::<&str>(&[]);
+    for (server,source) in services.borrow_mut().drain(..) { source.remove(); drop(server); }
     for view in views.borrow().iter() {
         view.close();
     }

@@ -23,6 +23,10 @@ pub struct Workspace {
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Tab {
+    #[serde(default)]
+    pub id: String,
+    #[serde(default)]
+    pub focused_view: Option<String>,
     pub title: String,
     pub layout: Layout,
 }
@@ -30,12 +34,18 @@ pub struct Tab {
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Layout {
     Terminal {
+        #[serde(default)]
+        view_id: String,
         session: String,
     },
     Rdp {
+        #[serde(default)]
+        view_id: String,
         profile: Option<crate::profiles::Profile>,
     },
     Files {
+        #[serde(default)]
+        view_id: String,
         profile: crate::profiles::Profile,
         directory: String,
     },
@@ -45,6 +55,27 @@ pub enum Layout {
         first: Box<Layout>,
         second: Box<Layout>,
     },
+}
+impl Layout {
+    pub fn view_id(&self) -> Option<&str> {
+        match self {
+            Self::Terminal { view_id, .. }
+            | Self::Rdp { view_id, .. }
+            | Self::Files { view_id, .. } => Some(view_id),
+            Self::Split { .. } => None,
+        }
+    }
+    fn assign_ids(&mut self) {
+        match self {
+            Self::Terminal { view_id, .. }
+            | Self::Rdp { view_id, .. }
+            | Self::Files { view_id, .. } => *view_id = ruwac_protocol::id("view"),
+            Self::Split { first, second, .. } => {
+                first.assign_ids();
+                second.assign_ids();
+            }
+        }
+    }
 }
 fn validate(w: &Workspace) -> io::Result<()> {
     fn walk(
@@ -58,12 +89,14 @@ fn validate(w: &Workspace) -> io::Result<()> {
             return Err(io::Error::other("workspace layout exceeds limit"));
         }
         match l {
-            Layout::Terminal { session } => {
+            Layout::Terminal { session, .. } => {
                 if !ruwac_protocol::valid_id(session, "session") || !ids.insert(session.clone()) {
                     return Err(io::Error::other("invalid or duplicate terminal identity"));
                 }
             }
-            Layout::Rdp { profile: Some(p) } => {
+            Layout::Rdp {
+                profile: Some(p), ..
+            } => {
                 p.validate().map_err(io::Error::other)?;
                 if p.protocol != "RDP" {
                     return Err(io::Error::other(
@@ -98,7 +131,7 @@ fn validate(w: &Workspace) -> io::Result<()> {
         }
         Ok(())
     }
-    if !matches!(w.schema, 1 | 2)
+    if !matches!(w.schema, 1 | 2 | 3)
         || w.sessions.len() > 64
         || w.tabs.len() > 64
         || w.sessions
@@ -114,6 +147,51 @@ fn validate(w: &Workspace) -> io::Result<()> {
             "version-one workspace has unsupported fields",
         ));
     }
+    fn identities(
+        l: &Layout,
+        own: &mut std::collections::HashSet<String>,
+        all: &mut std::collections::HashSet<String>,
+        schema: u32,
+    ) -> io::Result<()> {
+        if let Some(id) = l.view_id() {
+            if schema == 3 {
+                if !ruwac_protocol::valid_id(id, "view") || !all.insert(id.to_owned()) {
+                    return Err(io::Error::other("invalid or duplicate view identity"));
+                }
+                own.insert(id.to_owned());
+            } else if !id.is_empty() {
+                return Err(io::Error::other(
+                    "legacy workspace contains view identity fields",
+                ));
+            }
+        }
+        if let Layout::Split { first, second, .. } = l {
+            identities(first, own, all, schema)?;
+            identities(second, own, all, schema)?;
+        }
+        Ok(())
+    }
+    let mut tab_ids = std::collections::HashSet::new();
+    let mut view_ids = std::collections::HashSet::new();
+    for tab in &w.tabs {
+        let mut own = std::collections::HashSet::new();
+        identities(&tab.layout, &mut own, &mut view_ids, w.schema)?;
+        if w.schema == 3 {
+            if !ruwac_protocol::valid_id(&tab.id, "tab")
+                || !tab_ids.insert(tab.id.clone())
+                || tab
+                    .focused_view
+                    .as_ref()
+                    .is_some_and(|id| !own.contains(id))
+            {
+                return Err(io::Error::other("invalid tab or focused-view identity"));
+            }
+        } else if !tab.id.is_empty() || tab.focused_view.is_some() {
+            return Err(io::Error::other(
+                "legacy workspace contains tab identity fields",
+            ));
+        }
+    }
     let mut count = 0;
     let mut ids = std::collections::HashSet::new();
     for tab in &w.tabs {
@@ -122,7 +200,7 @@ fn validate(w: &Workspace) -> io::Result<()> {
         }
         walk(&tab.layout, 0, &mut count, &mut ids)?;
     }
-    if w.schema == 2
+    if w.schema >= 2
         && !w.tabs.is_empty()
         && (ids.len() != w.sessions.len() || w.sessions.iter().any(|s| !ids.contains(s)))
     {
@@ -131,6 +209,14 @@ fn validate(w: &Workspace) -> io::Result<()> {
         ));
     }
     Ok(())
+}
+pub fn identity(socket: &Path) -> String {
+    use sha2::{Digest, Sha256};
+    let hash = format!(
+        "{:x}",
+        Sha256::digest(socket.as_os_str().as_encoded_bytes())
+    );
+    format!("workspace_{}", &hash[..32])
 }
 fn directory() -> io::Result<PathBuf> {
     let p = std::env::var_os("XDG_CONFIG_HOME")
@@ -184,8 +270,13 @@ pub fn load(socket: &Path) -> io::Result<Workspace> {
             .sessions
             .iter()
             .map(|s| Tab {
+                id: String::new(),
+                focused_view: None,
                 title: "Terminal".into(),
-                layout: Layout::Terminal { session: s.clone() },
+                layout: Layout::Terminal {
+                    view_id: String::new(),
+                    session: s.clone(),
+                },
             })
             .collect();
         w.selected_tab = w
@@ -194,8 +285,18 @@ pub fn load(socket: &Path) -> io::Result<Workspace> {
             .and_then(|s| w.sessions.iter().position(|x| x == s));
         validate(&w)?;
     }
+    if w.schema < 3 {
+        for tab in &mut w.tabs {
+            tab.id = ruwac_protocol::id("tab");
+            tab.layout.assign_ids();
+        }
+        w.schema = 3;
+        validate(&w)?;
+    }
     if w.socket != socket {
-        if p.file_name().is_none_or(|n|n!="workspace.json"){return Err(io::Error::other("socket workspace identity mismatch"));}
+        if p.file_name().is_none_or(|n| n != "workspace.json") {
+            return Err(io::Error::other("socket workspace identity mismatch"));
+        }
         return Ok(Workspace::default());
     }
     Ok(w)
@@ -222,13 +323,14 @@ mod tests {
     use super::*;
     fn terminal() -> Layout {
         Layout::Terminal {
+            view_id: ruwac_protocol::id("view"),
             session: ruwac_protocol::id("session"),
         }
     }
     fn workspace(layout: Layout) -> Workspace {
         fn ids(l: &Layout, out: &mut Vec<String>) {
             match l {
-                Layout::Terminal { session } => out.push(session.clone()),
+                Layout::Terminal { session, .. } => out.push(session.clone()),
                 Layout::Split { first, second, .. } => {
                     ids(first, out);
                     ids(second, out);
@@ -239,11 +341,13 @@ mod tests {
         let mut sessions = Vec::new();
         ids(&layout, &mut sessions);
         Workspace {
-            schema: 2,
+            schema: 3,
             socket: "private.sock".into(),
             sessions,
             selected: None,
             tabs: vec![Tab {
+                id: ruwac_protocol::id("tab"),
+                focused_view: None,
                 title: "Mixed workspace".into(),
                 layout,
             }],
@@ -256,7 +360,10 @@ mod tests {
             vertical: false,
             ratio: 0.37,
             first: Box::new(terminal()),
-            second: Box::new(Layout::Rdp { profile: None }),
+            second: Box::new(Layout::Rdp {
+                view_id: ruwac_protocol::id("view"),
+                profile: None,
+            }),
         });
         validate(&w).unwrap();
         let decoded: Workspace = serde_json::from_slice(&serde_json::to_vec(&w).unwrap()).unwrap();
@@ -275,7 +382,10 @@ mod tests {
         let mut w = workspace(terminal());
         w.sessions.clear();
         assert!(validate(&w).is_err());
-        let mut w = workspace(Layout::Rdp { profile: None });
+        let mut w = workspace(Layout::Rdp {
+            view_id: ruwac_protocol::id("view"),
+            profile: None,
+        });
         w.schema = 99;
         assert!(validate(&w).is_err());
         let mut raw = serde_json::to_value(workspace(terminal())).unwrap();
@@ -289,12 +399,36 @@ mod tests {
         );
     }
     #[test]
+    fn graphical_identities_and_focus_are_validated() {
+        let mut w = workspace(terminal());
+        w.tabs[0].focused_view = w.tabs[0].layout.view_id().map(str::to_owned);
+        validate(&w).unwrap();
+        w.tabs[0].focused_view = Some(ruwac_protocol::id("view"));
+        assert!(validate(&w).is_err());
+        w.tabs[0].focused_view = None;
+        let mut second = w.tabs[0].clone();
+        second.id = ruwac_protocol::id("tab");
+        if let Layout::Terminal { session, .. } = &mut second.layout {
+            *session = ruwac_protocol::id("session");
+            w.sessions.push(session.clone());
+        }
+        w.tabs.push(second);
+        assert!(validate(&w).is_err()); // same graphical view ID, different valid sessions
+        w.tabs[1].layout.assign_ids();
+        validate(&w).unwrap();
+        w.tabs[1].id = w.tabs[0].id.clone();
+        assert!(validate(&w).is_err());
+    }
+    #[test]
     fn deep_and_invalid_ratio_layouts_are_bounded() {
         let bad = workspace(Layout::Split {
             vertical: false,
             ratio: 1.2,
             first: Box::new(terminal()),
-            second: Box::new(Layout::Rdp { profile: None }),
+            second: Box::new(Layout::Rdp {
+                view_id: ruwac_protocol::id("view"),
+                profile: None,
+            }),
         });
         assert!(validate(&bad).is_err());
         let mut tree = terminal();
@@ -303,7 +437,10 @@ mod tests {
                 vertical: false,
                 ratio: 0.5,
                 first: Box::new(tree),
-                second: Box::new(Layout::Rdp { profile: None }),
+                second: Box::new(Layout::Rdp {
+                    view_id: ruwac_protocol::id("view"),
+                    profile: None,
+                }),
             };
         }
         assert!(validate(&workspace(tree)).is_err());
@@ -319,7 +456,7 @@ pub fn save(w: &Workspace) -> io::Result<()> {
     if fs::symlink_metadata(&path).is_ok() && previous.socket != w.socket {
         path = socket_path(&dir, &w.socket);
     }
-    backup_v1(&dir, &path)?;
+    backup_previous(&dir, &path)?;
     let temp = dir.join(ruwac_protocol::id("workspace-tmp"));
     let result = (|| {
         let mut file = fs::OpenOptions::new()
@@ -343,7 +480,7 @@ pub fn save(w: &Workspace) -> io::Result<()> {
     result
 }
 
-fn backup_v1(dir: &Path, path: &Path) -> io::Result<()> {
+fn backup_previous(dir: &Path, path: &Path) -> io::Result<()> {
     let mut file = match fs::OpenOptions::new()
         .read(true)
         .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
@@ -366,11 +503,15 @@ fn backup_v1(dir: &Path, path: &Path) -> io::Result<()> {
         .take(1048577)
         .read_to_end(&mut raw)?;
     let previous: Workspace = serde_json::from_slice(&raw)?;
-    if previous.schema != 1 {
+    if !matches!(previous.schema, 1 | 2) {
         return Ok(());
     }
     validate(&previous)?;
-    let backup = dir.join("workspace-v1.json");
+    let stem = path
+        .file_stem()
+        .ok_or_else(|| io::Error::other("workspace filename missing"))?
+        .to_string_lossy();
+    let backup = dir.join(format!("{stem}-v{}.json", previous.schema));
     if let Ok(m) = fs::symlink_metadata(&backup) {
         if !m.is_file() || m.uid() != unsafe { libc::geteuid() } || m.mode() & 0o777 != 0o600 {
             return Err(io::Error::other(

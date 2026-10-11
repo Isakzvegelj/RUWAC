@@ -1,5 +1,34 @@
 # RUWAC implementation and qualification evidence
 
+## Current persistent graphical identities and permission-scoped workspace API — 2026-10-11
+
+Each native tab and individual terminal/RDP/Files view now has an opaque ID independent of its label, index, underlying terminal session and RDP worker. IDs survive reparenting, join/separate, view movement and desktop crash/restart. A newly created tab gets a new tab ID; moving a view retains its view ID. Closing a view/tab invalidates that graphical target without terminating persistent terminal processes.
+
+Schema-three private workspace metadata records tab/view IDs and the last focused leaf per tab. Versions one and two migrate with a mode-0600 backup of the original bytes. Duplicate IDs, invalid focus targets and cross-tab focus references fail validation. Restoration retains the exact selected view; removed profiles become ended placeholders with their original view IDs. Focus after reparenting waits for GTK mapping, is bounded and is cancelled when the selected tab changes. The native Views dialog now offers Focus alongside Move and Close.
+
+A separately authenticated GUI socket serves protocol-zero workspace.describe, workspace.list, workspace.activate and workspace.focus. The CLI uses the same private daemon target to find the GUI endpoint, verifies same-UID credentials/correlation and never starts a daemon or GUI for a workspace command. Discovery/listing is read-only; focus mutations require the desktop’s “Allow automation to change workspace focus” permission, which can be revoked at runtime and defaults off each launch. --allow-workspace-control enables it explicitly for that launch. The API returns stable IDs, view kinds, terminal-session references, remembered focus and actual input-focus/window state; it does not expose clipboard contents, credentials or remote input.
+
+The socket uses an owned 0700 parent, mode-0600 endpoint/lock and SO_PEERCRED. It bounds frames to 1 MiB, peers to eight and queue capacity to sixteen. Socket workers do not touch GTK. Input and dispatch have two-second deadlines; queued expired requests cannot change focus. The CLI has a five-second total deadline. A nonblocking startup probe preserves a live listener with a full backlog. Audit records contain actor, operation, valid target ID and verdict, excluding arbitrary request values. Clipboard ownership follows native window activation: focusing a view through IPC while RUWAC is in the background does not grant its RDP session desktop ownership.
+
+Nine compiled native workspace/API groups pass: no autostart/unsafe-path preservation; full-backlog listener preservation without freezing GTK startup; mixed view IDs and native Focus button; permission revocation, malformed/oversized frames, version/correlation, stale/missing targets, eight-peer limits and responsive GTK; expired queued commands; move/close; exact focus after join/separate; crash restoration and stale-socket recovery; and schema-two migration with byte-for-byte backup and stable IDs on the next launch. Terminal PIDs remain unchanged. The API measurement uses 30 actual CLI/process/socket/GTK round trips: median 16.15 ms, p95 32.43 ms, maximum 33.97 ms. This is an isolated-compositor API measurement, not matched tmux or idle-host qualification.
+
+Eight existing workspace groups pass with schema-three metadata. Native terminal/GDK regressions pass 21 checks, with PRIMARY blocked by the compositor. Four authenticated local RDP groups pass, including the new background API test: three live CredSSP sessions cannot replace an independent foreground GDK peer’s clipboard after an authorized background focus command; transfer works again after actual native window activation. Mixed transport reparent/move/close and Files clipboard isolation still pass. All four compositor-delivered Alt-number groups, named CLI regressions and seven safe diagnostic groups pass. The standard build/release runs the headless Rust units, 100 startup races, state acceptance and all 20 native Rust units.
+
+Retained private failures include initial Rust syntax/type errors and the first extended focus test, which exposed GTK mapping timing after separation. The final candidate has bounded deferred focus and separate actual input-focus evidence. Synthetic RDP in the ID fixture is distinguished from the independently authenticated local RDP transport tests. The owner’s existing desktop and terminal sessions are preserved.
+
+```sh
+./build.sh --release --test --desktop
+python3 ruwac/tests/integration/workspace_api.py --binary "$CARGO_TARGET_DIR/release/ruwac" --gui "$CARGO_TARGET_DIR/release/ruwac-desktop" --evidence "$RUWAC_EVIDENCE_DIR"
+python3 ruwac/tests/integration/workspace.py --binary "$CARGO_TARGET_DIR/release/ruwac" --evidence "$RUWAC_EVIDENCE_DIR"
+python3 ruwac/tests/integration/native_rust.py --binary "$CARGO_TARGET_DIR/release/ruwac" --gui "$CARGO_TARGET_DIR/release/ruwac-desktop" --evidence "$RUWAC_EVIDENCE_DIR" --primary-unavailable
+python3 ruwac/tests/integration/rdp_clipboard.py --binary "$CARGO_TARGET_DIR/release/ruwac" --gui "$CARGO_TARGET_DIR/release/ruwac-desktop" --server "$CARGO_TARGET_DIR/release/examples/rdp-fixture" --evidence "$RUWAC_EVIDENCE_DIR" --mixed-only
+./release.sh beta
+./release.sh --verify
+./build.sh --release --desktop --install-user
+```
+Graphical acceptance requires an owned compositor and RUWAC_XTEST_DISPLAY. Exact node commands, hashes, failed attempts, latency summaries, publication and installation receipts are retained in the private identities-r11 evidence capsule. The existing release controller owns versioning; no shared release infrastructure was changed.
+
+
 ## Current native shortcuts, appearance and safe diagnostics — 2026-10-11
 
 The native desktop now captures Alt+1 through Alt+9 and Alt+0 at window level, selecting workspace positions 1–10 across terminal, RDP and Files views. Missing positions are a no-op. Ctrl+Alt/AltGr-style combinations, Shift and Super chords are not captured; Caps Lock is allowed. Tab selection retains existing focus/clipboard ownership handling and persistent connections.

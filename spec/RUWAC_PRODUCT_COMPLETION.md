@@ -14,13 +14,13 @@ The full product is not yet complete. A runnable source prerelease and isolated 
 | T-08 history/internal buffer | Canonical history, paged capture, independent internal/system clipboard tests | PASS bounded fixture |
 | T-09 SSH/nested terminals | Real authorized SSH remote-PTY detach/reattach and Unicode | PARTIAL: full 2–5-level nesting |
 | T-10 performance | Retained matched 1/5/20/40-pane measurements | PARTIAL: current idle-qualified 30-trial acceptance |
-| A-01 negotiation/discovery | Existing v0 schema/capabilities/typed errors | PARTIAL: describe/host implemented; GUI workspace API remains open |
+| A-01 negotiation/discovery | Existing v0 schema/capabilities/typed errors | PARTIAL: describe/host and local GUI list/focus implemented; workspace open/restore and RDP automation remain open |
 | A-02 literal input | Unicode, quotes, shell metacharacters and separate Enter | PASS |
 | A-03 concurrent routes | Idempotency, focus changes, stale IDs | PASS |
 | A-04 non-TTY/SSH | Real --host JSON/file control and three SSH PTY cycles | PASS authorized SSH fixture; endpoint provisioning remains explicit |
 | A-05 capture/wait/events | Bounded capture, event subscription, revision and wait tests | PASS |
 | A-06 socket/backpressure | Owned daemon socket, malformed frames, concurrency limits | PARTIAL: same-UID peer verification implemented; further fuzz/soak |
-| A-07 GUI control | Explicit unavailable response and independent headless graph | PARTIAL: usable permission-scoped GUI/RDP automation adapter |
+| A-07 GUI control | Explicit unavailable response and independent headless graph | PARTIAL: permission-scoped local GUI targeting implemented; RDP commands, GUI events and remote GUI control remain open |
 | R-01 Windows | Authenticated loopback is implemented | BLOCKED: authorized Windows endpoint identified; credential/trust qualification pending |
 | R-02 Fedora GNOME | Authenticated loopback is implemented | BLOCKED: authorized GNOME endpoint identified; credential/certificate identity pending |
 | R-03 independent tabs | Three authenticated loopback tabs; 200 switches/450 inactive offers | PARTIAL: external-host qualification |
@@ -46,7 +46,7 @@ The full product is not yet complete. A runnable source prerelease and isolated 
 | F-06 install/upgrade/uninstall | Reversible private per-user installer and desktop entry | PARTIAL: per-user installer fixtures pass; Fedora RPM lifecycle remains open |
 | F-07 standard workflow | Existing build/release/controller and verified tagged source releases | PARTIAL: immutable binary/RPM publication remains unqualified |
 | F-08 public hygiene | Explicit permitted source inventory, outgoing-history checks | PASS for verified source publications |
-| Mixed workspace | Live mixed GTK trees and all-view checkpoints/crash restore | PARTIAL: individual mixed view move/close now qualified; stable GUI view IDs and exact leaf focus remain open |
+| Mixed workspace | Live mixed GTK trees and all-view checkpoints/crash restore | PASS bounded native fixture: persistent tab/view IDs, exact leaf focus, move/close and crash restoration; external-host/physical qualification remains separate |
 | Persistent metadata/history after daemon loss | PTYs persist across client loss | OPEN: restore history/metadata after daemon restart with ended state |
 | Native accessibility and diagnostics | GTK controls and configurable keys | PARTIAL: global Alt-number navigation and safe targeted doctor implemented; physical keyboard/accessibility matrix open |
 | Distribution/governance | Locked dependency license inventory and source release receipts | PARTIAL: Apache-2.0 approved; package qualification, contributor/security docs and broader CI |

@@ -1,6 +1,7 @@
 mod doctor;
 mod remote;
 mod startup;
+mod workspace_api;
 use ruwac_protocol::{Request, read_frame, request, write_frame};
 use serde_json::{Value, json};
 use std::{
@@ -247,7 +248,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 json!({"version":0,"result":{"ready":true,"start_requested":started}})
             );
         }
-        Some("rdp" | "workspace") => {
+        Some("workspace") => {
+            let v=workspace_api::run(&socket,&a[1..])?;
+            println!("{v}");
+            if v.get("error").is_some(){return Err("workspace operation failed".into());}
+        }
+        Some("rdp") => {
             println!(
                 "{}",
                 json!({"error":{"code":"GUI_UNAVAILABLE","message":"RDP/workspace adapter is not implemented; no headless rendering fallback"}})
@@ -327,7 +333,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         Some("--help" | "help") | None => {
             println!(
-                "RUWAC\n  ruwac doctor [--desktop] [--terminal [--repair]] [--json]\n  ruwac --version\n  ruwac start  # starts/reuses a private persistent daemon\n  ruwac gui [--session session_ID]\n  ruwac session create --name NAME --detach --json\n  ruwac session list --json\n  ruwac pane list --session session_ID --json\n  ruwac pane send-text --id pane_ID --text TEXT --json\n  ruwac pane send-text --id pane_ID --file UTF8_FILE --json\n  ruwac pane send-key --id pane_ID --key Enter --json\n  ruwac pane capture --id pane_ID --lines 250 --json\n  ruwac pane wait --id pane_ID --contains TEXT --timeout-ms 5000 --json\n  ruwac --socket PATH serve\n  ruwac --socket PATH rpc METHOD --params JSON [--idempotency KEY]\n  ruwac --socket PATH request < request.json\n  ruwac --socket PATH attach --session session_ID\n  ruwac image-stage PNG PRIVATE_DIRECTORY\n  ruwac --socket PATH health|version|capabilities|schema|describe\nRemote: ruwac --host SSH_HOST [--remote-binary PATH] [--socket REMOTE_PATH] COMMAND.\n  ruwac --host SSH_HOST describe\n  ruwac --host SSH_HOST pane send-text --id pane_ID --file LOCAL_UTF8_FILE\n  ruwac --host SSH_HOST attach --session session_ID\nUses existing SSH keys/config and verified host keys; no credential or agent forwarding. Without explicit --socket, the remote CLI selects its own private default.\nNo desktop clipboard, image attachment, recovery after daemon loss or full Screen compatibility claim."
+                "RUWAC\n  ruwac workspace describe|list [--json]\n  ruwac workspace activate --id tab_ID --json\n  ruwac workspace focus --id view_ID --json\n  ruwac doctor [--desktop] [--terminal [--repair]] [--json]\n  ruwac --version\n  ruwac start  # starts/reuses a private persistent daemon\n  ruwac gui [--session session_ID]\n  ruwac session create --name NAME --detach --json\n  ruwac session list --json\n  ruwac pane list --session session_ID --json\n  ruwac pane send-text --id pane_ID --text TEXT --json\n  ruwac pane send-text --id pane_ID --file UTF8_FILE --json\n  ruwac pane send-key --id pane_ID --key Enter --json\n  ruwac pane capture --id pane_ID --lines 250 --json\n  ruwac pane wait --id pane_ID --contains TEXT --timeout-ms 5000 --json\n  ruwac --socket PATH serve\n  ruwac --socket PATH rpc METHOD --params JSON [--idempotency KEY]\n  ruwac --socket PATH request < request.json\n  ruwac --socket PATH attach --session session_ID\n  ruwac image-stage PNG PRIVATE_DIRECTORY\n  ruwac --socket PATH health|version|capabilities|schema|describe\nRemote: ruwac --host SSH_HOST [--remote-binary PATH] [--socket REMOTE_PATH] COMMAND.\n  ruwac --host SSH_HOST describe\n  ruwac --host SSH_HOST pane send-text --id pane_ID --file LOCAL_UTF8_FILE\n  ruwac --host SSH_HOST attach --session session_ID\nUses existing SSH keys/config and verified host keys; no credential or agent forwarding. Without explicit --socket, the remote CLI selects its own private default.\nNo desktop clipboard, image attachment, recovery after daemon loss or full Screen compatibility claim."
             );
         }
         _ => return Err("unknown command; use --help".into()),

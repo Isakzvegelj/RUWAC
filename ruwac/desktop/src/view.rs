@@ -836,12 +836,13 @@ impl View {
         }
     }
     pub fn focus(&self) {
-        self.broker.borrow_mut().focus(Some(&self.session));
         if self.stack.visible_child_name().as_deref() == Some("copy") {
             self.copy.grab_focus();
         } else {
             self.area.grab_focus();
         }
+        let foreground=self.root.root().and_then(|r|r.downcast::<gtk::Window>().ok()).is_some_and(|w|w.is_active());
+        if foreground{self.broker.borrow_mut().focus(Some(&self.session));}else if self.broker.borrow().active()==Some(self.session.as_str()){self.broker.borrow_mut().focus(None);}
     }
     pub fn focus_at(&self, x: f64, y: f64) {
         if let Some((p, _, _)) = self.point(x, y) {

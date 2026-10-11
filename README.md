@@ -108,3 +108,18 @@ Global `--remote-binary PATH` and `--socket REMOTE_PATH` select an explicit exec
 Launch `ruwac gui`. Alt+1 through Alt+9 select workspace tabs 1–9; Alt+0 selects tab 10. The shortcuts work from terminal, RDP and Files views. Missing tabs are a no-op. Ctrl+Alt and Shift+Alt remain available to applications. Use `ruwac gui --theme system` to follow the desktop color preference, or `--theme light` / `--theme dark` explicitly.
 
 `ruwac doctor --desktop` checks local runtime availability without changing it. `ruwac doctor --terminal` inspects the current terminal. After a crashed client leaves raw/no-echo attributes, run `ruwac doctor --terminal --repair` directly in that affected foreground terminal. Repair never targets another terminal and does not reset emulator mouse/private modes. Remote read-only checks use `ruwac --host SSH_HOST doctor`; remote terminal repair is refused.
+
+## Address native workspace views
+
+Run the desktop, then query its separate local API using the same daemon/socket target:
+
+```sh
+ruwac workspace describe --json
+ruwac workspace list --json
+ruwac workspace activate --id "$RUWAC_TAB_ID" --json
+ruwac workspace focus --id "$RUWAC_VIEW_ID" --json
+```
+
+Use actual IDs returned by list; titles and numeric positions are not automation identities. Enable **Allow automation to change workspace focus** in the desktop menu before activate/focus. The permission resets to off for a new launch; `ruwac gui --allow-workspace-control` enables it for that launch. Listing needs a running GUI and never launches one. Clipboard contents and RDP input are outside this API. `input_focus_view` reports actual GTK input focus separately from remembered focus, which may briefly precede widget mapping. Background focus changes do not grant remote clipboard ownership.
+
+The native **Views… → Focus** action selects one mixed-workspace view. IDs and each tab’s selected view persist in schema-three metadata. Older workspace files get a private migration backup; terminal programs continue running across desktop restarts.
