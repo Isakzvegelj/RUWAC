@@ -59,7 +59,7 @@ try:
   before=c.call('client.render');before_ids=[x['id']for x in before['panes']]
  captures={pid:rpc('pane.capture',{'pane':pid,'lines':2000})['text']for pid in before_ids}
  histories={pid:page(pid)for pid in before_ids}
- assert '\t'in histories[one['pane']]['text']
+ assert '\t'not in histories[one['pane']]['text'] and 'TAB'in histories[one['pane']]['text']
  rpc('daemon.checkpoint');data=state.read_bytes();assert stat.S_IMODE(state.stat().st_mode)==0o600
  assert b'PRIVATE-REGISTER-SENTINEL-DO-NOT-PERSIST'not in data
  assert not any(key in json.loads(data)for key in ['clients','argv','input','cache'])
@@ -80,7 +80,7 @@ try:
    assert new['grid']['restored']and not new['grid']['mouse']and not new['grid']['bracketed_paste']
   c.call('client.resize',{'rows':30,'cols':100});render=c.call('client.render')
   assert all(len(p['grid']['cells'])==p['rect']['rows']for p in render['panes'])
- results.append({'id':'DAEMON-SIGKILL-RECOVERY','status':'PASS','panes':3,'stable_ids':True,'history_rows':histories[one['pane']]['total'],'canonical_cells_equal':True,'wrapped_unicode_history_equal':True,'literal_tabs_restored':True,'clipboard_register_excluded':True,'restored_input_refused':True,'exit_code':23,'checkpoint_bytes':len(data)})
+ results.append({'id':'DAEMON-SIGKILL-RECOVERY','status':'PASS','panes':3,'stable_ids':True,'history_rows':histories[one['pane']]['total'],'canonical_cells_equal':True,'wrapped_unicode_history_equal':True,'tab_cells_restored':True,'plain_tabs_expanded_once':True,'clipboard_register_excluded':True,'restored_input_refused':True,'exit_code':23,'checkpoint_bytes':len(data)})
  # Read-only queries do not trigger recurring disk writes once the checkpoint is current.
  rpc('daemon.checkpoint');time.sleep(.3);original=state.stat().st_mtime_ns
  for _ in range(12):rpc('health');rpc('session.list');time.sleep(.2)

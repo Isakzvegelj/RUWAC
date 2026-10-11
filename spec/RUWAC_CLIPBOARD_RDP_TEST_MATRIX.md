@@ -1,5 +1,22 @@
 # RUWAC desktop / protocol test matrix
 
+## Current RDP presentation and Screen correction — 2026-10-11
+
+Toolbar reconnect/disconnect uses the same authenticated IronRDP and FocusBroker paths. Qualification uses disposable credential-backed Secret Service profiles, real TLS/CredSSP sessions, decoded frames and GDK clipboard consumers. External Windows/Fedora and physical-seat acceptance stay separate.
+
+
+
+## Validation for current increment — 2026-10-11
+
+Compiled package 0.1.12: the normal build/release workflow runs standard Rust/headless regressions, including 11 groups and 100 startup races, seven recovery groups and two real-PTY previous/literal/checkpoint-migration groups. Authorized SSH repeated both previous-window groups against a private endpoint candidate; no live session was replaced. The final native build also passes an actual older-daemon compatibility case: unsupported previous-window capability is visible and subsequent input reaches the same child, without freezing navigation.
+
+The stamped candidate passes two native recovery groups, eight workspace groups, nine GUI API groups and 21 native terminal/GDK cards; PRIMARY is explicitly blocked on the owned compositor. Fourteen authenticated local RDP groups pass in the full presentation regression, including 60 text transfers, 18 PNG/DIBV5 cases, 200 tab switches/450 inactive offers, 20 negotiated resizes plus the GTK resize storm, editor/keyring and 1,000-profile checks. Six editor/display/RDP groups are repeated against the final stamped build. Actual visible toolbar callbacks reconnect using a disposable Secret Service credential and verified CA, decode a new framebuffer and preserve both neighboring transports; zoom/fit and unknown-action behavior pass. The actual GTK render is retained privately, with generated server pixels distinguished from external Windows login.
+
+CLI SHA-256: `129d2d784653fd67238ca93cef11eb858c690f530a2d43f1f89687aa98e4ac07`. GTK SHA-256: `9515d9645262c6badcf00d484ee4386efc629d0b699e82d85a1755c277fcb9b2`. Builds and raw fixtures stay in the build workspace. Original source is Apache-2.0. Standard theme icons are resolved from the native desktop; no upstream artwork or code was copied. Earlier failed compilation receipts are preserved, including a fixture JSON GString conversion corrected before publication.
+
+Stable is still unqualified: authorized Windows/Fedora login and clipboard/display/input, physical GNOME/PRIMARY/HiDPI, full headless selection/chooser/nesting, agent/file/automation milestones and Fedora package distribution remain open. `build.sh --release --package rpm` returns 78 with “RPM candidate packaging is blocked: no qualified app-linux package adapter installed.” Exact private feedback is recorded for 0rig; the node relay remains unavailable. Shared release infrastructure and versions were not edited. GitHub publishes source/tag pages; local build.sh compiles and the private installer deploys binaries.
+
+
 ## Current private daemon checkpoint and ended-history recovery — 2026-10-11
 
 Internal clipboard registers are not serialized into daemon checkpoints. Native recovery can copy ended history into the independent internal buffer. Four genuinely authenticated isolated IronRDP clipboard/mixed-workspace groups remain passing; external-host and physical PRIMARY acceptance remain separate.

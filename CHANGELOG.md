@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## v0.1.12 — 2026-10-11 — Prerelease
+
+- Add a Remmina-inspired native machine sidebar and visible RDP connection/display toolbar with accessible theme icons, retaining existing connection and clipboard handlers.
+- Correct Screen double-prefix previous-window navigation in both clients, persist its previous-window metadata with backward checkpoint migration, and expose canonical physical history rows.
+- Expand tab placeholders once in copied canonical text while preserving raw cells; validate native RDP reconnect/neighbor ownership, real PTY prefix behavior, recovery and authorized SSH regressions.
+
 ## v0.1.11 — 2026-10-11 — Prerelease
 
 - Add private atomic daemon checkpoints and restore the same terminal IDs, split metadata, bounded canonical Unicode/tab/cell history and known exit codes as ended resources.

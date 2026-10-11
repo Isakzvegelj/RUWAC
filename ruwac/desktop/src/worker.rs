@@ -97,6 +97,7 @@ pub struct State {
     pub reply: VecDeque<(String, Value)>,
     pub acknowledgements: u64,
     pub coalesced: u64,
+    pub supports_previous_window: bool,
 }
 pub struct Worker {
     tx: SyncSender<Command>,
@@ -118,6 +119,8 @@ impl Worker {
                 if schema["protocol"] != 0 {
                     return Err(io::Error::other("unsupported daemon API"));
                 }
+                st.lock().unwrap().supports_previous_window=schema["methods"].as_array()
+                    .is_some_and(|methods|methods.iter().any(|m|m=="window.previous"));
                 rpc.call("capabilities", json!({}))?;
                 rpc.call(
                     "session.attach",

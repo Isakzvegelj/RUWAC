@@ -380,7 +380,7 @@ impl View {
     }
     fn show_help(&self) {
         let text = format!(
-            "Prefix: {}\nDesktop copy: {}\nDesktop paste: {}\n\nPrefix commands: c new · n/p windows · 0–9 select · \" chooser · S horizontal / | vertical split · Tab pane · z zoom/restore · [ copy/search · ] internal paste · : command · d detach · a literal prefix.\n\nCopy mode: arrows/hjkl, Page Up/Down, g/G, Space mark, Enter save internally, / search, Escape exit. Drag dividers to resize. Shift+drag overrides application mouse.\n\nCustom prefix command mappings: {}",
+            "Prefix: {}\nDesktop copy: {}\nDesktop paste: {}\n\nPrefix commands: double prefix previous window · c new · n/p windows · 0–9 select · \" chooser · S horizontal / | vertical split · Tab pane · z zoom/restore · [ copy/search · ] internal paste · : command · d detach · a literal prefix.\n\nCopy mode: arrows/hjkl, Page Up/Down, g/G, Space mark, Enter save internally, / search, Escape exit. Drag dividers to resize. Shift+drag overrides application mouse.\n\nCustom prefix command mappings: {}",
             self.shortcuts
                 .get("prefix")
                 .map(String::as_str)
@@ -795,7 +795,7 @@ impl View {
                     }
                 }
             }
-            if method == "window.create" || method == "window.select" || method == "window.cycle" {
+            if method == "window.create" || method == "window.select" || method == "window.cycle" || method == "window.previous" {
                 *self.expected_window.borrow_mut() = v["window"]
                     .as_str()
                     .or(v["selected"].as_str())
@@ -1121,6 +1121,14 @@ impl View {
         let ctrl = mods.contains(gdk::ModifierType::CONTROL_MASK);
         let ch = key.to_unicode();
         if self.prefix.replace(false) {
+            if self.binding(key,mods,"prefix","<Control>a") {
+                if self.worker.state.lock().unwrap().supports_previous_window {
+                    self.navigate("window.previous",json!({"session":self.session}));
+                } else {
+                    self.warn("Previous-window navigation requires a newer daemon; the active session is preserved");
+                }
+                return;
+            }
             let binding = if key == gdk::Key::Tab {
                 "Tab".into()
             } else {

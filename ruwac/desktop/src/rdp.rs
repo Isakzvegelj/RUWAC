@@ -437,7 +437,7 @@ async fn run_session(
     }
     .build();
     state.lock().unwrap().status =
-        Some("Connected · embedded IronRDP · CLIPRDR text and images".into());
+        Some("Connected · text and image clipboard sharing".into());
     let (mut reader, mut writer) = ironrdp_tokio::split_tokio_framed(framed);
     loop {
         if state
@@ -658,6 +658,15 @@ pub struct RdpView {
     entries: [gtk::Entry; 4],
     profile_metadata: RefCell<Option<crate::profiles::Profile>>,
 }
+fn quick_action(toolbar: &gtk::Box, name: &str, icon: &str, label: &str, target: &gtk::Button) {
+    let button=gtk::Button::from_icon_name(icon);
+    button.set_widget_name(name);
+    button.set_tooltip_text(Some(label));
+    button.update_property(&[gtk::accessible::Property::Label(label)]);
+    let target=target.clone();
+    button.connect_clicked(move |_|target.emit_clicked());
+    toolbar.append(&button);
+}
 impl RdpView {
     pub fn new(broker: crate::clipboard::Broker) -> Rc<Self> {
         let root = gtk::Box::new(gtk::Orientation::Vertical, 4);
@@ -695,11 +704,25 @@ impl RdpView {
             .popover(&popup)
             .halign(gtk::Align::Start)
             .build();
-        root.append(&menu);
+        let toolbar = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+        toolbar.set_widget_name("rdp-toolbar");
+        toolbar.add_css_class("toolbar");
+        let title = gtk::Label::new(Some("Remote desktop"));
+        title.set_xalign(0.0);
+        title.set_hexpand(true);
+        title.add_css_class("heading");
+        toolbar.append(&gtk::Image::from_icon_name("computer-symbolic"));
+        toolbar.append(&title);
+        toolbar.append(&menu);
+        root.append(&toolbar);
+        quick_action(&toolbar, "reconnect", "view-refresh-symbolic", "Connect / reconnect", &connect);
+        quick_action(&toolbar, "disconnect", "network-offline-symbolic", "Disconnect", &disconnect);
         let status = gtk::Label::new(Some(
-            "Embedded IronRDP · enter an authorized endpoint and a RUWAC Secret Service reference",
+            "Choose a machine from the sidebar or open RDP controls to connect",
         ));
-        status.set_wrap(true);
+        status.set_xalign(0.0);
+        status.set_ellipsize(gtk::pango::EllipsizeMode::End);
+        status.add_css_class("dim-label");
         status.set_max_width_chars(80);
         root.append(&status);
         let area = gtk::DrawingArea::builder()
@@ -812,6 +835,10 @@ impl RdpView {
         ] {
             let b = gtk::Button::with_label(name);
             tools.insert(&b, -1);
+            if matches!(mode, Scale::Fit | Scale::Dynamic) {
+                quick_action(&toolbar, if mode==Scale::Fit {"fit"} else {"dynamic"},
+                    if mode==Scale::Fit {"zoom-fit-best-symbolic"} else {"view-restore-symbolic"}, name, &b);
+            }
             let w = Rc::downgrade(&v);
             b.connect_clicked(move |_| {
                 if let Some(v) = w.upgrade() {
@@ -828,6 +855,8 @@ impl RdpView {
         for (label, multiplier) in [("Zoom −", 0.8), ("Zoom +", 1.25)] {
             let b = gtk::Button::with_label(label);
             tools.insert(&b, -1);
+            quick_action(&toolbar, if multiplier<1.0 {"zoom-out"} else {"zoom-in"},
+                if multiplier<1.0 {"zoom-out-symbolic"} else {"zoom-in-symbolic"}, label, &b);
             let weak = Rc::downgrade(&v);
             b.connect_clicked(move |_| {
                 if let Some(v) = weak.upgrade() {
@@ -848,6 +877,7 @@ impl RdpView {
         });
         let full = gtk::Button::with_label("Fullscreen");
         tools.insert(&full, -1);
+        quick_action(&toolbar, "fullscreen", "view-fullscreen-symbolic", "Fullscreen", &full);
         let w = Rc::downgrade(&v);
         full.connect_clicked(move |_| {
             if let Some(v) = w.upgrade() {
@@ -1191,6 +1221,23 @@ impl RdpView {
         *self.bridge.borrow_mut() = c.state.lock().unwrap().bridge.clone();
         *self.connection.borrow_mut() = Some(c);
         self.focus();
+    }
+    pub fn fixture_toolbar(&self, action: Option<&str>) -> serde_json::Value {
+        let Some(toolbar)=self.root.first_child().and_then(|w|w.downcast::<gtk::Box>().ok()) else {
+            return serde_json::json!({"error":"toolbar unavailable"});
+        };
+        let mut controls=Vec::new();
+        let mut clicked=false;
+        let mut child=toolbar.first_child();
+        while let Some(w)=child {
+            child=w.next_sibling();
+            if let Some(b)=w.downcast_ref::<gtk::Button>() {
+                let name=b.widget_name().to_string();
+                controls.push(serde_json::json!({"action":name,"icon":b.icon_name().map(|s|s.to_string()),"label":b.tooltip_text().map(|s|s.to_string()),"mapped":b.is_mapped()}));
+                if action==Some(name.as_str()) {b.emit_clicked();clicked=true;}
+            }
+        }
+        serde_json::json!({"controls":controls,"clicked":clicked,"state":self.fixture_inspect()})
     }
     pub fn fixture_inspect(&self) -> serde_json::Value {
         let metrics = self.connection.borrow().as_ref().map(|c| {

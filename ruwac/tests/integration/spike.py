@@ -158,7 +158,7 @@ def run(args):
   case('C09_PNG_STAGE',images)
   def screen_prefix():
    rpc('window.select',{'window':s['window']});before=path.read_bytes();t=Tui(binary,sock,sid,root/'screen-prefix.pty');live.append(t);eventually(lambda:b'\x1b[H\x1b[2J' in t.data)
-   t.send(b'\x01a\x01\x01');eventually(lambda:path.read_bytes()==before+b'\x01\x01')
+   t.send(b'\x01a\x01a');eventually(lambda:path.read_bytes()==before+b'\x01\x01')
    t.send(b'\x01n');eventually(lambda:rpc('session.list')[0]['active_window']!=s['window']);t.send(b'\x01p');eventually(lambda:rpc('session.list')[0]['active_window']==s['window'])
    count=len(rpc('window.list',{'session':sid}));t.send(b'\x01c');eventually(lambda:len(rpc('window.list',{'session':sid}))==count+1);t.finish('detach');live.remove(t);os.kill(pid,0)
    return {'create_next_previous_detach':True,'literal_ctrl_a_hex':'0101','stable_receiver_pid':pid}

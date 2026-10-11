@@ -424,7 +424,10 @@ pub fn attach(socket: &Path, session: &str) -> io::Result<()> {
                                         STOP.store(true, Ordering::Relaxed);
                                         break;
                                     }
-                                    b'a' | 1 => {
+                                    1 => {
+                                        call(&mut s, "window.previous", json!({"session":session}))?;
+                                    }
+                                    b'a' => {
                                         call(
                                             &mut s,
                                             "pane.sendKey",

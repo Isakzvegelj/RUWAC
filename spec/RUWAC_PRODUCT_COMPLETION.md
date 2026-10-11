@@ -48,7 +48,7 @@ The full product is not yet complete. A runnable source prerelease and isolated 
 | F-08 public hygiene | Explicit permitted source inventory, outgoing-history checks | PASS for verified source publications |
 | Mixed workspace | Live mixed GTK trees and all-view checkpoints/crash restore | PASS bounded native fixture: persistent tab/view IDs, exact leaf focus, move/close and crash restoration; external-host/physical qualification remains separate |
 | Persistent metadata/history after daemon loss | Real SIGKILL and runtime-tree removal restore stable IDs, canonical active-screen tail/cells, layout and ended status; native copy passes | PARTIAL: active-screen recovery passes; retain hidden primary buffer separately and qualify maximum-load checkpoint performance |
-| Native accessibility and diagnostics | GTK controls and configurable keys | PARTIAL: global Alt-number navigation and safe targeted doctor implemented; physical keyboard/accessibility matrix open |
+| Native accessibility and diagnostics | GTK controls, configurable keys and accessible visible RDP toolbar | PARTIAL: global Alt-number navigation and safe targeted doctor implemented; physical keyboard/accessibility matrix open |
 | Distribution/governance | Locked dependency license inventory and source release receipts | PARTIAL: Apache-2.0 approved; package qualification, contributor/security docs and broader CI |
 
 External-host and physical-seat gates remain separate from implementation. No owner clipboard/keyring/session may be used as an acceptance fixture. Optional browser/structured agent adapters and later macOS builds remain staged scope; no protocol or scheduler replacement is justified by those features.

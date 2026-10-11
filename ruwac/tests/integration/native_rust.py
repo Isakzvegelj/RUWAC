@@ -64,10 +64,12 @@ try:
  def screen_keys():
   command('gui','switch',view=0,pane=targets[0]);before=files[0].read_bytes()
   def prefix(key):command('gui','key',key='a',mods=4);command('gui','key',key=key)
-  command('gui','key',key='a',mods=4);command('gui','key',key='a',mods=4);spike.eventually(lambda:files[0].read_bytes()==before+b'\x01')
+  command('gui','key',key='a',mods=4);command('gui','key',key='a');spike.eventually(lambda:files[0].read_bytes()==before+b'\x01')
   split_before=files[1].read_bytes();prefix('Tab');command('gui','key',key='F');spike.eventually(lambda:files[1].read_bytes()==split_before+b'F');prefix('Tab')
   def active():return next(x['active_window'] for x in rpc('session.list') if x['id']==one['session'])
   prefix('c');new_window=spike.eventually(lambda:active() if active()!=one['window'] else False);time.sleep(.2)
+  command('gui','key',key='a',mods=4);command('gui','key',key='a',mods=4);spike.eventually(lambda:active()==one['window']);time.sleep(.2)
+  command('gui','key',key='a',mods=4);command('gui','key',key='a',mods=4);spike.eventually(lambda:active()==new_window);time.sleep(.2)
   prefix('n');spike.eventually(lambda:active()==one['window']);time.sleep(.2)
   prefix('p');spike.eventually(lambda:active()==new_window);time.sleep(.2)
   prefix('0');spike.eventually(lambda:active()==one['window']);time.sleep(.2);command('gui','switch',view=0,pane=targets[0])

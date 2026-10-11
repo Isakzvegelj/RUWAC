@@ -52,6 +52,16 @@ struct Session {
     cols: u16,
     #[serde(skip)]
     buffer: String,
+    #[serde(default, skip_serializing_if="Option::is_none")]
+    previous: Option<String>,
+}
+impl Session {
+    fn select_window(&mut self, window:String) {
+        if self.active!=window {
+            self.previous=(!self.active.is_empty()).then(||self.active.clone());
+            self.active=window;
+        }
+    }
 }
 struct Client {
     session: String,
@@ -366,7 +376,7 @@ impl State {
         );
         let session = self.sessions.get_mut(s).unwrap();
         session.windows.push(w.clone());
-        session.active = w.clone();
+        session.select_window(w.clone());
         Ok(json!({"window":w,"pane":p,"pid":self.panes[&p].pty.as_ref().map(|p|p.pid)}))
     }
     fn layout(&mut self, s: &str) {
@@ -462,6 +472,7 @@ impl State {
                         rows,
                         cols,
                         buffer: String::new(),
+                        previous: None,
                     },
                 );
                 match self.create_window(&s, v) {
@@ -475,7 +486,7 @@ impl State {
                 }
             }
             "session.list" => {
-                let mut a:Vec<_>=self.sessions.values().map(|s|json!({"id":s.id,"name":s.name,"active_window":s.active,"windows":s.windows,"rows":s.rows,"cols":s.cols,"restored":s.windows.iter().filter_map(|w|self.windows.get(w)).flat_map(|w|w.panes.iter()).all(|p|self.panes.get(p).is_some_and(|p|p.pty.is_none()))})).collect();
+                let mut a:Vec<_>=self.sessions.values().map(|s|json!({"id":s.id,"name":s.name,"active_window":s.active,"windows":s.windows,"rows":s.rows,"cols":s.cols,"previous_window":s.previous,"restored":s.windows.iter().filter_map(|w|self.windows.get(w)).flat_map(|w|w.panes.iter()).all(|p|self.panes.get(p).is_some_and(|p|p.pty.is_none()))})).collect();
                 a.sort_by_key(|v| v["id"].as_str().unwrap().to_owned());
                 Ok(json!(a))
             }
@@ -535,8 +546,19 @@ impl State {
                     .windows
                     .get(&w)
                     .ok_or_else(|| Error::new("STALE_ID", "window does not exist"))?;
-                self.sessions.get_mut(&w.session).unwrap().active = w.id.clone();
+                self.sessions.get_mut(&w.session).unwrap().select_window(w.id.clone());
                 Ok(json!({"selected":w.id}))
+            }
+            "window.previous" => {
+                let s=target(v,"session","session")?;
+                let s=self.sessions.get_mut(&s).ok_or_else(||Error::new("STALE_ID","session does not exist"))?;
+                if let Some(previous)=s.previous.clone().filter(|id|s.windows.contains(id)) {
+                    s.select_window(previous);
+                } else if s.windows.len()>1 {
+                    let index=s.windows.iter().position(|w|w==&s.active).unwrap_or(0);
+                    s.select_window(s.windows[(index+1)%s.windows.len()].clone());
+                }
+                Ok(json!({"selected":s.active}))
             }
             "window.cycle" => {
                 let s = target(v, "session", "session")?;
@@ -551,7 +573,7 @@ impl State {
                 } else {
                     (i + 1) % n
                 };
-                s.active = s.windows[j].clone();
+                s.select_window(s.windows[j].clone());
                 Ok(json!({"selected":s.active}))
             }
             "pane.create" => {
@@ -627,9 +649,11 @@ impl State {
                     self.windows.remove(&w);
                     let ss = self.sessions.get_mut(&session).unwrap();
                     ss.windows.retain(|x| x != &w);
+                    if ss.previous.as_deref()==Some(w.as_str()) {ss.previous=None;}
                     if let Some(first) = ss.windows.first() {
                         if ss.active == w {
-                            ss.active = first.clone();
+                            ss.select_window(first.clone());
+                            ss.previous=None;
                         }
                     } else {
                         self.sessions.remove(&session);
@@ -907,5 +931,5 @@ impl State {
     }
 }
 pub fn schema() -> Value {
-    json!({"protocol":0,"framing":"u32 big-endian byte length + UTF-8 JSON","max_frame_bytes":ruwac_protocol::MAX_FRAME,"methods":["health","version","capabilities","schema","describe","session.create","session.list","session.attach","session.detach","window.create","window.list","window.rename","window.select","window.cycle","pane.create","pane.layout","pane.history","pane.close","pane.list","pane.select","pane.sendText","pane.sendKey","pane.capture","pane.wait","buffer.set","buffer.get","buffer.paste","client.resize","client.render","client.input","events.subscribe","daemon.checkpoint","daemon.stop"],"targets":{"session":"session_ + 32 hex","window":"window_ + 32 hex","pane":"pane_ + 32 hex"},"request":{"version":0,"id":"JSON request correlation value","method":"method name","params":"object","idempotency_key":"optional 1..128 byte daemon-lifetime key"}})
+    json!({"protocol":0,"framing":"u32 big-endian byte length + UTF-8 JSON","max_frame_bytes":ruwac_protocol::MAX_FRAME,"methods":["health","version","capabilities","schema","describe","session.create","session.list","session.attach","session.detach","window.create","window.list","window.rename","window.select","window.cycle","window.previous","pane.create","pane.layout","pane.history","pane.close","pane.list","pane.select","pane.sendText","pane.sendKey","pane.capture","pane.wait","buffer.set","buffer.get","buffer.paste","client.resize","client.render","client.input","events.subscribe","daemon.checkpoint","daemon.stop"],"targets":{"session":"session_ + 32 hex","window":"window_ + 32 hex","pane":"pane_ + 32 hex"},"request":{"version":0,"id":"JSON request correlation value","method":"method name","params":"object","idempotency_key":"optional 1..128 byte daemon-lifetime key"}})
 }

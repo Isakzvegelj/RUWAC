@@ -127,7 +127,7 @@ impl Terminal {
                     .flags
                     .intersects(Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER)
                 {
-                    row.push(cell.c);
+                    row.push(if cell.c=='\t' {' '} else {cell.c});
                     if let Some(z) = cell.zerowidth() {
                         row.extend(z.iter());
                     }
@@ -153,7 +153,7 @@ impl Terminal {
             grid: self.snapshot(),
         }
     }
-    pub fn restore(a: Archive) -> std::result::Result<Self, String> {
+    pub fn restore(mut a: Archive) -> std::result::Result<Self, String> {
         if !(1..=100).contains(&a.rows)
             || !(1..=200).contains(&a.cols)
             || a.history.len() > 50000
@@ -186,6 +186,9 @@ impl Terminal {
                 }
             }
         }
+        // Legacy checkpoints contain the tab placeholder plus already expanded cells.
+        // One blank cell preserves displayed columns without expanding it twice.
+        for (row,_) in &mut a.history { *row=row.replace('\t'," "); }
         let mut term = Self::new(a.rows, a.cols);
         term.history_epoch = a.epoch.wrapping_add(1);
         term.archived = Some(a);
@@ -212,7 +215,7 @@ impl Terminal {
                     .flags
                     .intersects(Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER)
                 {
-                    row.push(cell.c);
+                    row.push(if cell.c=='\t' {' '} else {cell.c});
                     if let Some(z) = cell.zerowidth() {
                         row.extend(z.iter())
                     }
@@ -227,6 +230,7 @@ impl Terminal {
         if let Some(a) = &self.archived {
             let mut text = String::new();
             let mut wrapped = Vec::new();
+            let mut rows = Vec::new();
             for (row, wrap) in a
                 .history
                 .iter()
@@ -241,8 +245,9 @@ impl Terminal {
                     text.push('\n');
                 }
                 wrapped.push(*wrap);
+                rows.push(json!({"text":row,"wrapped":wrap}));
             }
-            return json!({"text":text,"offset":offset,"next_offset":offset.saturating_add(wrapped.len()),"epoch":self.history_epoch,"total_lines":a.history.len(),"wrapped":wrapped,"alternate_screen":a.grid["alternate_screen"] == true,"restored":true,"dropped_lines":a.dropped_lines});
+            return json!({"text":text,"offset":offset,"next_offset":offset.saturating_add(wrapped.len()),"epoch":self.history_epoch,"total_lines":a.history.len(),"wrapped":wrapped,"rows":rows,"alternate_screen":a.grid["alternate_screen"] == true,"restored":true,"dropped_lines":a.dropped_lines});
         }
         let g = self.term.grid();
         let start = g.topmost_line().0;
@@ -251,6 +256,7 @@ impl Terminal {
         let mut text = String::new();
         let mut count = 0;
         let mut wrapped = Vec::new();
+        let mut rows = Vec::new();
         for r in (start + offset.min(total) as i32)..=bottom {
             if count >= lines.min(500) {
                 break;
@@ -262,7 +268,7 @@ impl Terminal {
                     .flags
                     .intersects(Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER)
                 {
-                    row.push(cell.c);
+                    row.push(if cell.c=='\t' {' '} else {cell.c});
                     if let Some(z) = cell.zerowidth() {
                         row.extend(z.iter());
                     }
@@ -280,9 +286,10 @@ impl Terminal {
                 text.push('\n');
             }
             wrapped.push(wrap);
+            rows.push(json!({"text":row,"wrapped":wrap}));
             count += 1;
         }
-        json!({"text":text,"offset":offset,"next_offset":offset.saturating_add(count),"epoch":self.history_epoch,"total_lines":total,"wrapped":wrapped,"alternate_screen":self.term.mode().contains(TermMode::ALT_SCREEN)})
+        json!({"text":text,"offset":offset,"next_offset":offset.saturating_add(count),"epoch":self.history_epoch,"total_lines":total,"wrapped":wrapped,"rows":rows,"alternate_screen":self.term.mode().contains(TermMode::ALT_SCREEN)})
     }
     pub fn snapshot(&self) -> Value {
         if let Some(a) = &self.archived {
@@ -390,6 +397,19 @@ mod tests {
         assert!(t.capture(4).contains("ž界"));
     }
     #[test]
+    fn tabs_copy_at_canonical_columns() {
+        let mut t=Terminal::new(4,16);
+        t.feed(b"A\tB\r\n");
+        assert_eq!(t.capture(4).lines().next(),Some("A       B"));
+        let page=t.history_page(0,500);
+        assert_eq!(page["rows"][0]["text"],"A       B");
+        assert_eq!(page["rows"][0]["wrapped"],false);
+        assert_eq!(t.snapshot()["cells"][0][1][0],"\t");
+        let restored=Terminal::restore(t.archive()).unwrap();
+        assert_eq!(restored.history_page(0,500)["rows"],page["rows"]);
+        assert_eq!(restored.capture(4),t.capture(4));
+    }
+    #[test]
     fn paged_scrollback_and_wrapping() {
         let mut t = Terminal::new(4, 80);
         for n in 0..51000 {
@@ -419,7 +439,8 @@ mod tests {
         );
         t.feed(b"\r\nTAB\tEND");
         let before = t.history_page(0, 500);
-        assert!(before["text"].as_str().unwrap().contains('\t'));
+        assert!(before["text"].as_str().unwrap().contains("TAB"));
+        assert!(!before["text"].as_str().unwrap().contains('\t'));
         let a: Archive =
             serde_json::from_slice(&serde_json::to_vec(&t.archive()).unwrap()).unwrap();
         let mut restored = Terminal::restore(a.clone()).unwrap();

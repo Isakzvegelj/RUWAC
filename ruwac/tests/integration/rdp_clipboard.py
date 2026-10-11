@@ -249,11 +249,34 @@ try:
    data=json.loads((root/'config/RUWAC/machines.json').read_text());p=next(p for p in data['items']if p['id']==item['id']);return p if p['preferences']['display']=='stretch' and p['preferences']['zoom']==1.5 else False
   spike.eventually(persisted,5)
   protected=command('gui','profile-editor',operation='edit',response='delete',confirm=True);assert any(p['id']==item['id']for p in protected['items'])
+  # Exercise the visible native toolbar against the ordinary credential-backed connection.
+  command('gui','rdp-switch',rdp=2)
+  toolbar=command('gui','rdp-toolbar',rdp=2)
+  assert {b['action'] for b in toolbar['controls']}=={'reconnect','disconnect','fit','dynamic','zoom-out','zoom-in','fullscreen'},toolbar
+  assert all(b['icon'] and b['label'] and b['mapped'] for b in toolbar['controls']),toolbar
+  neighbors=[command('gui','rdp-inspect',rdp=i)['transport_id'] for i in [0,1]]
+  before_zoom=command('gui','rdp-inspect',rdp=2)['zoom']
+  assert command('gui','rdp-toolbar',rdp=2,control='zoom-in')['clicked']
+  assert command('gui','rdp-inspect',rdp=2)['zoom']>before_zoom
+  assert command('gui','rdp-toolbar',rdp=2,control='zoom-out')['clicked']
+  assert abs(command('gui','rdp-inspect',rdp=2)['zoom']-before_zoom)<1e-6
+  assert command('gui','rdp-toolbar',rdp=2,control='fit')['clicked']
+  assert not command('gui','rdp-toolbar',rdp=2,control='unknown')['clicked']
+  old_transport=command('gui','rdp-inspect',rdp=2)['transport_id']
+  assert command('gui','rdp-toolbar',rdp=2,control='disconnect')['clicked']
+  assert command('gui','rdp-inspect',rdp=2)['transport_id'] is None
+  assert command('gui','rdp-toolbar',rdp=2,control='reconnect')['clicked']
+  restored=spike.eventually(lambda:r if (r:=command('gui','rdp-inspect',rdp=2)).get('status','').startswith('Connected') and min(r.get('size',[0,0]))>0 else False,20)
+  assert restored['transport_id']!=old_transport
+  assert [command('gui','rdp-inspect',rdp=i)['transport_id']for i in [0,1]]==neighbors
+  command('gui','snapshot');time.sleep(.15)
+  assert (root/'native-rust.png').is_file()
+  (root/'native-rust.png').replace(root/'rdp-toolbar.png')
   command('gui','close-rdp',rdp=2);time.sleep(.3)
   removed=command('gui','profile-editor',operation='edit',response='delete',confirm=True);assert not any(p['id']==item['id']for p in removed['items'])
   subprocess.run(['secret-tool','clear','application','RUWAC','profile',item['secret_reference']],env=env,check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=10)
   provider.terminate();provider.wait(timeout=5)
-  return {'normal_sidebar_connection':'actual CredSSP with disposable Secret Service lookup and verified fixture CA','decoded_frame':r['size'],'runtime_preferences_saved':True,'profile_protected_then_released':True,'owner_secrets_accessed':False}
+  return {'normal_sidebar_connection':'actual CredSSP with disposable Secret Service lookup and verified fixture CA','decoded_frame':r['size'],'runtime_preferences_saved':True,'profile_protected_then_released':True,'owner_secrets_accessed':False,'native_toolbar':{'visible_theme_icons':7,'zoom_fit':True,'disconnect_reconnect_authentication':True,'neighbor_transports_preserved':True,'actual_GTK_render':'rdp-toolbar.png','physical_input':False}}
  case('RDP-PROFILE-KEYRING-PREFERENCES',profile_keyring_preferences)
 
  def restart_and_thousand():

@@ -587,7 +587,17 @@ pub fn sidebar(
     open: impl Fn(Profile, PreferenceSink, ConnectionLease) + 'static,
 ) -> (gtk::Box, gtk::SearchEntry, ProfileRestorer) {
     let root = gtk::Box::new(gtk::Orientation::Vertical, 6);
-    root.set_width_request(240);
+    root.set_width_request(260);
+    root.add_css_class("background");
+    root.set_margin_start(8);
+    root.set_margin_end(8);
+    root.set_margin_top(8);
+    let heading=gtk::Box::new(gtk::Orientation::Horizontal,6);
+    heading.append(&gtk::Image::from_icon_name("network-workgroup-symbolic"));
+    let label=gtk::Label::new(Some("Machines"));
+    label.add_css_class("heading");
+    heading.append(&label);
+    root.append(&heading);
     let search = gtk::SearchEntry::new();
     search.set_placeholder_text(Some("Machines, groups, tags (Ctrl+K)"));
     root.append(&search);
@@ -672,6 +682,23 @@ pub fn sidebar(
                         &p.preferences.label
                     }
                 ));
+                let details=button.label().unwrap_or_default();
+                button.set_widget_name("machine-connect");
+                button.set_tooltip_text(Some(&details));
+                let content=gtk::Box::new(gtk::Orientation::Horizontal,6);
+                content.append(&gtk::Image::from_icon_name(if p.protocol=="RDP" {"computer-symbolic"}else{"utilities-terminal-symbolic"}));
+                let text=gtk::Box::new(gtk::Orientation::Vertical,0);
+                let name=gtk::Label::new(Some(&p.name));
+                name.set_xalign(0.0);
+                name.set_ellipsize(gtk::pango::EllipsizeMode::End);
+                name.add_css_class("heading");
+                let endpoint=gtk::Label::new(Some(&format!("{} · {}",p.protocol,if p.preferences.label.is_empty(){&p.server}else{&p.preferences.label})));
+                endpoint.set_xalign(0.0);
+                endpoint.set_ellipsize(gtk::pango::EllipsizeMode::End);
+                endpoint.add_css_class("dim-label");
+                text.append(&name);text.append(&endpoint);content.append(&text);
+                button.set_child(Some(&content));
+                button.update_property(&[gtk::accessible::Property::Label(details.as_str())]);
                 button.set_hexpand(true);
                 row.append(&star);
                 row.append(&button);
@@ -954,7 +981,7 @@ pub fn fixture(
             star.emit_clicked();
         }
     }
-    serde_json::json!({"rows":rows.len(),"favorites":rows.iter().filter(|(s,_)|s.label().as_deref()==Some("★")).count(),"labels":rows.iter().map(|(_,b)|b.label().unwrap_or_default().to_string()).collect::<Vec<_>>()})
+    serde_json::json!({"rows":rows.len(),"favorites":rows.iter().filter(|(s,_)|s.label().as_deref()==Some("★")).count(),"labels":rows.iter().map(|(_,b)|b.tooltip_text().or(b.label()).unwrap_or_default().to_string()).collect::<Vec<_>>()})
 }
 #[cfg(test)]
 mod special_file_tests {

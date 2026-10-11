@@ -36,7 +36,7 @@ R="$CARGO_TARGET_DIR/release/ruwac"
 
 The default socket is beneath your private runtime directory. `RUWAC_SOCKET` or `--socket PATH` selects an explicit socket; its parent must be owned by you with mode 0700. Use the same socket in each terminal.
 
-Ctrl-A then `c/n/p/d/a` creates/cycles/detaches/sends literal Ctrl-A. Ctrl-A `S` splits horizontally and `|` vertically; `Tab` changes pane; `0–9` selects windows. `[` opens interactive keyboard copy/search in the desktop (bounded capture in the TUI); `]` pastes the independent internal buffer. Desktop `z` zooms, `"` opens the window chooser, `:` opens commands and `?` shows configured shortcuts. PTYs survive final-client detach. `rpc daemon.stop` stops the selected daemon and its owned panes.
+Ctrl-A then `c/n/p/d/a` creates/cycles/detaches/sends literal Ctrl-A. Double Ctrl-A switches to the previous window on a matching daemon. Ctrl-A `S` splits horizontally and `|` vertically; `Tab` changes pane; `0–9` selects windows. `[` opens interactive keyboard copy/search in the desktop (bounded capture in the TUI); `]` pastes the independent internal buffer. Desktop `z` zooms, `"` opens the window chooser, `:` opens commands and `?` shows configured shortcuts. PTYs survive final-client detach. `rpc daemon.stop` stops the selected daemon and its owned panes.
 
 Unix PTYs are required. The tested toolchain is Fedora Rust 1.98.1. Cargo.lock pins registry checksums. Prereleases describe a prototype, not production or desktop acceptance. Tagged source prereleases preserve operational implementation and engineering history. RUWAC’s original source is licensed under Apache-2.0; see [LICENSE](LICENSE). Dependencies retain their own licenses. Binary packaging remains subject to dependency notice and packaging validation.
 
@@ -84,7 +84,7 @@ The per-user installer adds a RUWAC desktop launcher and commands in the standar
 
 The full headless suite and three genuine SSH remote-PTY detach/reattach cycles also pass on an authorized Fedora host. This does not establish external RDP login or physical-desktop acceptance. See [all remaining product gates](spec/RUWAC_PRODUCT_COMPLETION.md).
 
-Use **Split tabs…** to place existing terminal, RDP or Files views side by side or above/below each other. **Separate views** returns them to tabs while preserving connections. RDP connection/display/clipboard actions are under **RDP controls**. Clipboard ownership follows the focused canvas; local controls and Files cannot let inactive RDP sessions take over CLIPBOARD.
+Use **Split tabs…** to place existing terminal, RDP or Files views side by side or above/below each other. **Separate views** returns them to tabs while preserving connections. RDP reconnect/disconnect, fit, dynamic resolution, zoom and fullscreen are visible in the native toolbar. Additional connection, remote-key and clipboard actions are under **RDP controls**. Clipboard ownership follows the focused canvas; local controls and Files cannot let inactive RDP sessions take over CLIPBOARD.
 
 **Views…** lets you move one mixed view to its own tab or close it. Closing a terminal view detaches it; use Sessions to reopen its still-running programs. Closing RDP disconnects just that view. Closing Files cancels its work. Neighboring views and connections remain open. Empty workspaces can create a new terminal from the toolbar.
 
@@ -131,3 +131,11 @@ The ordinary daemon checkpoints private metadata and a bounded canonical history
 `ruwac rpc daemon.checkpoint --params '{}'` waits for a completed checkpoint. `ruwac rpc health --params '{}'` reports checkpoint progress/failures. Changed state saves every two seconds; a crash may lose changes since the last completed save. The retained tail is up to 50,000 lines or 512 KiB per pane, with explicit truncation counts. Internal clipboard buffers, input/request logs and credentials are not serialized; displayed output remains private terminal state.
 
 Default state is `RUWAC/terminal-history.json` under `XDG_STATE_HOME` or the standard home state directory. Custom sockets keep a sibling history file; set `RUWAC_STATE_FILE` to a file beneath an existing owned 0700 durable directory when persistence across runtime-directory removal is needed. Files must be owned regular 0600 files; corrupt/unsafe archives are preserved and rejected. Closing ended panes and checkpointing removes their history. Hidden primary-screen history while an alternate-screen application runs is not yet stored separately. Existing older daemons are preserved during installation and require a later owner-controlled restart to gain checkpoints.
+
+## Native machine and RDP controls
+
+The searchable machine sidebar shows grouped profiles with native protocol icons, names and endpoints. Use **New machine / endpoint…** to create a profile and **Edit → Set/replace credential** to enter its password through Secret Service. Passwords remain out of the profile file and command arguments. A connection still requires trusted server identity.
+
+The RDP toolbar reuses the same authenticated connection and display handlers as the advanced controls. Reconnect/disconnect affects only that view; fit and zoom do not restart the connection. Dynamic resolution requests a negotiated remote display change, with local fit as a fallback when unsupported. Closing the GUI preserves daemon-owned terminal programs. A previously running older GUI remains active during installation; close/reopen its window to see a newly installed interface. Older daemons visibly reject unsupported previous-window navigation without losing subsequent input.
+
+The GitHub workflow publishes verified source releases and does not compile downloadable executables. Local build.sh compiles the independent headless binary and optional GTK binary. A final stable release and Fedora binary/package publication remain subject to the acceptance gates in the product audit.
