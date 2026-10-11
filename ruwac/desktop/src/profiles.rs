@@ -1520,6 +1520,15 @@ fn editor(button: &gtk::Button, store: Rc<RefCell<Store>>, id: Option<String>, s
 }
 fn refresh_widgets(root: Option<&impl IsA<gtk::Widget>>) {
     fn visit(w: &gtk::Widget) {
+        // A collapsed Expander retains its content without parenting it into
+        // the visible widget tree. Refresh lives in Tools, so visit that content
+        // explicitly instead of requiring the owner to search or expand Tools.
+        if let Some(expander) = w.downcast_ref::<gtk::Expander>() {
+            if let Some(child) = expander.child() {
+                visit(&child);
+            }
+            return;
+        }
         if let Some(b) = w.downcast_ref::<gtk::Button>() {
             if b.label().as_deref() == Some("Refresh machines") {
                 b.emit_clicked();

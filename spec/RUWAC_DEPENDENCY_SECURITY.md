@@ -25,3 +25,7 @@ Viable upstream work is a maintained IronRDP/SSPI/Picky release that adopts revi
 Pinned cargo-audit 0.22.2 scans both lockfiles without ignored advisories. The inspected database commit is `7eebec69c352c7191b1f13eb95dd510eeca5d1de`: headless exits 0, desktop exits 1 for RUSTSEC-2023-0071. Desktop additionally reports unmaintained `atomic-polyfill` and `rustls-pemfile`; they remain visible maintenance work. Hosted source/format/lint/tests run in a separate quality job. Each lockfile has its own advisory step, so an earlier scan failure does not hide desktop results.
 
 Operational source backup releases remain distinct from stable security qualification, RPM distribution, Windows/GNOME external-host acceptance and physical desktop acceptance. No finding is suppressed to obtain a green badge.
+
+## Maintenance-warning runtime scope
+
+Production-only dependency trees on the Fedora target contain neither maintenance-warning package. An all-platform production tree places atomic-polyfill under heapless → iso7816 → winscard → SSPI; it is a platform-conditioned route. rustls-pemfile is absent even from the all-platform normal graph and appears through the development IronRDP server fixture. Both lockfile warnings remain visible. These distinctions do not remove or downgrade the production RSA finding.

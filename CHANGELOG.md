@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v0.1.24 — 2026-10-12 — Prerelease
+
+- Refresh machine rows immediately after Save, Edit and Delete when Tools is collapsed, without typing in search or resetting pagination. Show the compiled version in the window title so older running windows are identifiable.
+
 ## v0.1.23 — 2026-10-12 — Prerelease
 
 - Fix Fedora container checkout ownership for subsequent Git checks with an exact workspace trust entry; separate inventory, format, lint, unit tests and each dependency advisory scan in hosted results.
