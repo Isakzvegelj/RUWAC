@@ -30,21 +30,75 @@ try:
  ordered=sorted(stored,key=lambda s:rpc('pane.list',{'session':s['id']})[0]['pid']);closed=ordered[1]
  assert command('sessions-open',session=closed['id'])['clicked'];spike.eventually(lambda:command('inspect')['tabs']==3)
  command('workspace-close');gui.wait(timeout=10)
- path=root/'config/RUWAC/workspace.json';saved=json.loads(path.read_text());assert saved['schema']==1 and len(saved['sessions'])==3 and path.stat().st_mode&0o777==0o600
+ path=root/'config/RUWAC/workspace.json';saved=json.loads(path.read_text());assert saved['schema']==2 and len(saved['sessions'])==3 and path.stat().st_mode&0o777==0o600
  before={s['id']:rpc('pane.list',{'session':s['id']})[0]['pid']for s in stored}
  gui=launch('restored');seq=0;assert command('inspect')['tabs']==3
  assert before=={s['id']:rpc('pane.list',{'session':s['id']})[0]['pid']for s in rpc('session.list')}
  results.append({'id':'NATIVE-WORKSPACE-REOPEN','status':'PASS','terminal_tabs':3,'persistent_pids':True,'closed_views_removed':True,'saved_mode':'0600'})
+ command('workspace-close');gui.wait(timeout=10)
+ legacy={'schema':1,'socket':str(sock),'sessions':list(before),'selected':next(iter(before))}
+ path.write_text(json.dumps(legacy))
+ gui=launch('legacy-migration');seq=0;assert command('inspect')['tabs']==3
+ spike.eventually(lambda:json.loads(path.read_text())['schema']==2,5)
+ backup=path.with_name('workspace-v1.json');assert json.loads(backup.read_text())==legacy and backup.stat().st_mode&0o777==0o600
+ assert before=={s['id']:rpc('pane.list',{'session':s['id']})[0]['pid']for s in rpc('session.list')}
+ results.append({'id':'NATIVE-WORKSPACE-MIGRATION','status':'PASS','schema_1_to_2':True,'original_backup_mode':'0600','same_terminal_pids':True})
  command('profiles',search='Disposable SSH');r=command('profile-editor',operation='new',fields={'0':'Disposable SSH','3':'127.0.0.1:1','4':'fixture','13':1})
  assert r['applied'] and not r['error'],r
  assert command('profiles',search='Disposable SSH',open=True)['rows']==1
  spike.eventually(lambda:command('inspect')['tabs']==5)
+ command('tab-select',tab=4)
+ mixed=command('mixed-join',tab=3,vertical=False);assert len(mixed['tabs'])==4 and mixed['tabs'][3]['layout']['split']=='horizontal',mixed
+ time.sleep(.3)
  protected=command('profile-editor',operation='edit',response='delete',confirm=True)
  assert len(protected['items'])==len(r['items']),protected
+ separated=command('mixed-separate');assert len(separated['tabs'])==5,separated
  for _ in range(2):command('close-tab',tab=3);time.sleep(.3)
  removed=command('profile-editor',operation='edit',response='delete',confirm=True)
  assert len(removed['items'])==len(r['items'])-1,removed
- results.append({'id':'NATIVE-PROFILE-LEASE','status':'PASS','protected_while_open':True,'deleted_after_both_views_closed':True})
+ results.append({'id':'NATIVE-PROFILE-LEASE','status':'PASS','protected_while_open':True,'deleted_after_both_views_closed':True,'mixed_reparent_kept_leases':True})
+ # Save/restore all view kinds and a nested mixed tree. The RDP view here is deliberately
+ # disconnected/synthetic; real authenticated reparenting is qualified by rdp_clipboard.py.
+ command('rdp-open')
+ command('profiles',search='Saved files')
+ profile=command('profile-editor',operation='new',fields={'0':'Saved files','3':'127.0.0.1:1','4':'fixture','13':1})
+ assert profile['applied'] and not profile['error'],profile
+ assert command('profiles',search='Saved files',open=True)['rows']==1
+ spike.eventually(lambda:command('inspect')['tabs']==6)
+ command('files-directory',path='/generated/directory with spaces')
+ command('tab-select',tab=0)
+ command('mixed-join',tab=3,vertical=False)
+ mixed=command('mixed-join',tab=3,vertical=True)
+ assert len(mixed['tabs'])==4 and mixed['tabs'][0]['layout']['split']=='vertical',mixed
+ live_before={sid:rpc('pane.list',{'session':sid})[0]['pid']for sid in before}
+ spike.eventually(lambda:len(json.loads(path.read_text()).get('tabs',[]))==4,5)
+ gui.kill();gui.wait(timeout=10)
+ saved=json.loads(path.read_text());assert saved['schema']==2 and len(saved['tabs'])==4 and saved['selected_tab']==0,saved
+ first=saved['tabs'][0]['layout'];assert first['kind']=='split' and first['vertical'] and first['first']['kind']=='split' and first['second']['kind']=='files',first
+ assert first['second']['directory']=='/generated/directory with spaces'
+ assert 'password' not in path.read_text().lower()
+ gui=launch('mixed-restored');seq=0;assert command('inspect')['tabs']==4
+ restored=command('mixed-inspect');assert restored['tabs'][0]['layout']['split']=='vertical' and restored['tabs'][0]['layout']['first']['split']=='horizontal',restored
+ assert command('files-directory')['directory']=='/generated/directory with spaces'
+ assert command('rdp-inspect',rdp=0)['transport_id']is None
+ assert live_before=={sid:rpc('pane.list',{'session':sid})[0]['pid']for sid in before}
+ protected=command('profile-editor',operation='edit',response='delete',confirm=True)
+ assert len(protected['items'])==len(profile['items']),protected
+ results.append({'id':'NATIVE-MIXED-RESTORE','status':'PASS','saved_schema':2,'mixed_tab_kinds':['terminal','rdp','files'],'nested_orientations':['vertical','horizontal'],'same_terminal_pids':True,'directory_and_profile_restored':True,'credentials_not_serialized':True,'restored_rdp_disconnected':True,'restored_profile_lease':True,'autosave_survived_gui_sigkill':True})
+ command('mixed-separate');command('close-tab',tab=5);time.sleep(.2);command('close-tab',tab=3);time.sleep(.2)
+ removed=command('profile-editor',operation='edit',response='delete',confirm=True);assert len(removed['items'])==len(profile['items'])-1,removed
+ command('workspace-close');gui.wait(timeout=10)
+ original=path.read_bytes();other=sock.with_name('other.sock')
+ gui=subprocess.Popen([a.binary,'--socket',str(other),'gui','--fixture-dir',str(root)],env=env,stdout=(root/'other-socket.log').open('wb'),stderr=subprocess.STDOUT);seq=0
+ assert command('inspect')['tabs']==1
+ spike.eventually(lambda:len(list(path.parent.glob('workspace-*.json')))==2,5) # migration backup plus one socket sidecar
+ assert path.read_bytes()==original
+ command('workspace-close');gui.wait(timeout=10)
+ subprocess.run([a.binary,'--socket',str(other),'rpc','daemon.stop','--params','{}'],capture_output=True,check=True,timeout=10)
+ gui=launch('original-socket-return');seq=0
+ assert command('inspect')['tabs']==4
+ assert before=={sid:rpc('pane.list',{'session':sid})[0]['pid']for sid in before}
+ results.append({'id':'NATIVE-WORKSPACE-SOCKETS','status':'PASS','second_daemon_sidecar':True,'original_metadata_preserved':True,'original_live_pids_preserved':True})
  command('workspace-close');gui.wait(timeout=10)
  path.unlink();path.symlink_to(root/'never-overwrite');gui=launch('unsafe-metadata');seq=0;command('inspect');command('workspace-close');gui.wait(timeout=10);assert path.is_symlink() and not(root/'never-overwrite').exists()
  results.append({'id':'NATIVE-WORKSPACE-UNSAFE','status':'PASS','symlink_preserved':True})

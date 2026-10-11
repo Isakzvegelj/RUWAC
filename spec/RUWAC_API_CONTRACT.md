@@ -1,5 +1,17 @@
 # RUWAC protocol and desktop boundaries
 
+## Current mixed workspace increment — 2026-10-11
+
+The authenticated daemon protocol is unchanged. Workspace schema 2 adds a bounded tagged terminal/RDP/Files/split tree, validates profile protocols, session identity, split ratios and depth, and migrates schema 1 with an original backup. Socket metadata is isolated. GUI fixture handlers are test-only and are not a production automation API.
+
+Native **Split tabs…** joins existing terminal, RDP and Files views into nested horizontal/vertical GTK Paned trees. **Separate views** returns the leaves to tabs without replacing terminal PTYs or RDP transports. Profile deletion leases survive reparenting. RDP controls now live in a popup, leaving room for the framebuffer in mixed splits.
+
+Clipboard ownership follows the focused terminal canvas or RDP canvas, rather than the enclosing tab. Files and local controls clear remote ownership and release held RDP input. Stage clipboard PNG remembers the focused terminal across the toolbar click, refocuses it before staging, and keeps a visible success/error message. Inactive RDP offers remain isolated.
+
+Private workspace schema 2 records all tab kinds, nested split orientations/ratios, selected tab, nonsecret RDP configuration and Files directories. A 750 ms checkpoint and final close save support GUI-crash restoration while the daemon remains alive. Schema-1 migration preserves a mode-0600 original backup. Other daemon sockets use separate hashed metadata files. Restoration reuses live terminal IDs; missing sessions become ended placeholders. RDP restores disconnected; Files restores without silently authenticating or refreshing. Current library identities govern profile binding and deletion leases. No password, terminal output or clipboard payload is serialized.
+
+## Earlier milestone evidence
+
 The headless v0 protocol is unchanged: big-endian u32 framing, bounded UTF-8 JSON, owned 0700 socket parent/0600 socket and same-UID peers. Existing pane layout/history/input/buffer methods retain their types and caps. GTK, IronRDP, SFTP and credentials remain outside the daemon dependency graph. Binary clipboard and file data never enter the daemon JSON transport.
 
 Machine metadata now uses schema 1 with items/groups, stable endpoint/machine/group IDs, endpoint preferences and explicit inheritance. The legacy nonsecret array migrates once with a previous-library backup. Unsupported versions and malformed/unsafe input protect the existing library. Group path/name changes do not define identity; active connection settings are snapshots.

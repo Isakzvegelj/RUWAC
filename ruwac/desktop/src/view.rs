@@ -53,8 +53,8 @@ impl View {
             .hexpand(true)
             .vexpand(true)
             .focusable(true)
-            .content_width(800)
-            .content_height(500)
+            .content_width(200)
+            .content_height(80)
             .build();
         let stack = gtk::Stack::builder().hexpand(true).vexpand(true).build();
         stack.set_transition_type(gtk::StackTransitionType::None);

@@ -12,17 +12,17 @@ The full product is not yet complete. A runnable source prerelease and isolated 
 | T-06 VT/Unicode/applications | Native Vim/less/htop, Unicode, alternate-screen and input tests | PARTIAL: complete fzf/combining/extended-input matrix |
 | T-07 mouse recovery | Native routing and disposable Bash raw-child exit | PARTIAL: physical touchpad gate blocked |
 | T-08 history/internal buffer | Canonical history, paged capture, independent internal/system clipboard tests | PASS bounded fixture |
-| T-09 SSH/nested terminals | SSH endpoint and persistent PTY implementation | PARTIAL: full 2–5-level nesting and SSH control round trip |
+| T-09 SSH/nested terminals | Real authorized SSH remote-PTY detach/reattach and Unicode | PARTIAL: full 2–5-level nesting |
 | T-10 performance | Retained matched 1/5/20/40-pane measurements | PARTIAL: current idle-qualified 30-trial acceptance |
 | A-01 negotiation/discovery | Existing v0 schema/capabilities/typed errors | PARTIAL: missing describe/host/workspace API surfaces |
 | A-02 literal input | Unicode, quotes, shell metacharacters and separate Enter | PASS |
 | A-03 concurrent routes | Idempotency, focus changes, stale IDs | PASS |
-| A-04 non-TTY/SSH | Existing non-TTY JSON control | PARTIAL: authorized SSH CLI round trip and host option |
+| A-04 non-TTY/SSH | Real SSH CLI/PTY round trips | PARTIAL: explicit host option |
 | A-05 capture/wait/events | Bounded capture, event subscription, revision and wait tests | PASS |
-| A-06 socket/backpressure | Owned daemon socket, malformed frames, concurrency limits | PARTIAL: uniform CLI peer verification and further fuzz/soak |
+| A-06 socket/backpressure | Owned daemon socket, malformed frames, concurrency limits | PARTIAL: same-UID peer verification implemented; further fuzz/soak |
 | A-07 GUI control | Explicit unavailable response and independent headless graph | PARTIAL: usable permission-scoped GUI/RDP automation adapter |
-| R-01 Windows | Authenticated loopback is implemented | BLOCKED: designated Windows endpoint/account/trust reference |
-| R-02 Fedora GNOME | Authenticated loopback is implemented | BLOCKED: designated GNOME RDP endpoint/account/trust reference |
+| R-01 Windows | Authenticated loopback is implemented | BLOCKED: authorized Windows endpoint identified; credential/trust qualification pending |
+| R-02 Fedora GNOME | Authenticated loopback is implemented | BLOCKED: authorized GNOME endpoint identified; credential/certificate identity pending |
 | R-03 independent tabs | Three authenticated loopback tabs; 200 switches/450 inactive offers | PARTIAL: external-host qualification |
 | R-04 display modes | Actual Display Control/reactivation, viewport transforms and resize storm | PARTIAL: external server and physical pointer acceptance |
 | R-05 remote keys | Scancode mapping and send-key menu | PARTIAL: actual Windows/GNOME layouts, AltGr/IME/compositor restrictions |
@@ -46,12 +46,12 @@ The full product is not yet complete. A runnable source prerelease and isolated 
 | F-06 install/upgrade/uninstall | Reversible private per-user installer and desktop entry | PARTIAL: per-user installer fixtures pass; Fedora RPM lifecycle remains open |
 | F-07 standard workflow | Existing build/release/controller and verified tagged source releases | PARTIAL: immutable binary/RPM publication remains unqualified |
 | F-08 public hygiene | Explicit permitted source inventory, outgoing-history checks | PASS for verified source publications |
-| Mixed workspace | Terminal splits and independent RDP/Files tabs | OPEN: terminal/RDP/Files mixed splits and complete workspace restoration |
+| Mixed workspace | Live mixed GTK trees and all-view checkpoints/crash restore | PARTIAL: per-pane management, stable GUI view IDs and exact leaf focus |
 | Persistent metadata/history after daemon loss | PTYs persist across client loss | OPEN: restore history/metadata after daemon restart with ended state |
 | Native accessibility and diagnostics | GTK controls and configurable keys | PARTIAL: keyboard coverage, accessibility matrix and targeted doctor |
-| Distribution/governance | Locked dependency license inventory and source release receipts | OPEN: owner source-license decision, package qualification, contributor/security docs and broader CI |
+| Distribution/governance | Locked dependency license inventory and source release receipts | PARTIAL: Apache-2.0 approved; package qualification, contributor/security docs and broader CI |
 
 External-host and physical-seat gates remain separate from implementation. No owner clipboard/keyring/session may be used as an acceptance fixture. Optional browser/structured agent adapters and later macOS builds remain staged scope; no protocol or scheduler replacement is justified by those features.
 
 
-Authorized Fedora SSH headless/real remote-PTY acceptance passed on 2026-10-11. Native terminal workspace restoration and normal application activation are implemented; all-view restoration remains open. Every remaining full-product gate above continues to apply.
+Authorized Fedora SSH headless/real remote-PTY acceptance passed on 2026-10-11. Mixed terminal/RDP/Files checkpoint restoration and normal application activation are implemented; detailed remaining view-management gates apply. Every remaining full-product gate above continues to apply.

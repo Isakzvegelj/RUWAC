@@ -1,4 +1,5 @@
 [package]
+license.workspace = true
 name = "ruwac-term"
 version.workspace = true
 edition.workspace = true

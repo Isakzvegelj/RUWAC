@@ -13,12 +13,14 @@ pub fn append(
     name: &str,
 ) {
     if let Some(v) = views.borrow().iter().find(|v| v.session == id).cloned() {
-        tabs.set_selected_page(&tabs.page(&v.root));
+        if let Some(page) = crate::tiles::page(tabs, &v.root) {
+            tabs.set_selected_page(&page);
+        }
         v.focus();
         return;
     }
     let v = View::new(socket.clone(), id.into(), broker.clone());
-    let page = tabs.append(&v.root);
+    let page = crate::tiles::append(tabs, &v.root);
     page.set_title(name);
     views.borrow_mut().push(v.clone());
     tabs.set_selected_page(&page);

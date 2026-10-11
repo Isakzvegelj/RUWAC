@@ -1,5 +1,21 @@
 # RUWAC acceptance status
 
+## Current mixed workspace increment — 2026-10-11
+
+The owned nested Wayland compositor exercises real GTK/GDK. Six workspace cases cover live same-PID reopening, schema-1 migration with private backup, profile leases during reparenting, nested terminal/RDP/Files restoration after GUI SIGKILL, separate socket metadata and unsafe symlink preservation. The restored RDP metadata test uses a disconnected placeholder; it does not establish remote login.
+
+All 13 full RDP groups pass against disposable authenticated IronRDP servers, including the new live mixed-tree test. Three authenticated transports keep their connection IDs during join/separate; actual CLIPRDR text and inactive offers are verified while mixed. After compacting controls, six editor/keyring/display/Files groups and three authenticated mixed/ownership groups are rerun. The isolated Secret Service provider performs real credential lookup for normal sidebar connections. These are real local TLS/CredSSP, framebuffer and clipboard integrations, not external-host acceptance.
+
+Six SFTP groups pass with real isolated SSH transport, SHA-256 integrity, cancellation, slow peer/loss and native panel listing. Native terminal acceptance retains 21 passing cards, actual Vim/less/htop, independent GDK clipboard consumers and actual toolbar PNG staging followed by GUI-crash cleanup; PRIMARY is separately unavailable on this compositor. Reparenting an active file operation is preserved by implementation, but not yet separately qualified during an in-flight transfer.
+
+Matched API benchmarks use 30 alternating samples for each action at 1/5/20/40 panes. All 12 median ratios are within 2× tmux; the VM was 25.7% busy, so idle-qualified acceptance remains open. Key-to-emitted-render median/p95 is 36.16/38.12 ms, with a 5 ms observer; this is not physical display latency. At 40 panes daemon/TUI RSS is 13.82/5.22 MiB, excluding child interpreters. The independent daemon/CLI source is preserved.
+
+Remaining product limits: individual mixed-pane close/move UI, stable GUI view IDs and exact per-leaf focus restoration; durable terminal history after daemon loss; permission-scoped GUI automation and host CLI; supported local/remote agent image consumption; encrypted SSH-key passphrase UI, recursive/resumable/rsync files; physical GNOME PRIMARY/AltGr/IME/touchpad/accessibility; external Windows/Fedora RDP login/clipboard and matched Remmina/FreeRDP performance; qualified RPM/binary publication and broader governance/CI. Authorized external endpoints are identified, but credentials must be entered through the owner’s profile editor and certificate identity must validate. No owner credential store was used in tests. Apache-2.0 is now approved for original source; dependency notices and packaging qualification remain separate.
+
+The full product remains incomplete; see [product completion](RUWAC_PRODUCT_COMPLETION.md).
+
+## Earlier milestone evidence
+
 2026-10-11 increment from published v0.1.3.
 
 | Gate | Result | Evidence |

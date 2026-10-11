@@ -23,7 +23,9 @@ def focus(who):
   for _ in range(4):
    state=command('gui','inspect').get('active')
    if state==(who=='gui'):
-    subprocess.run(['xdotool','key','Shift_L'],env={**os.environ,'DISPLAY':os.environ['RUWAC_XTEST_DISPLAY']},check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL);time.sleep(.1);return
+    subprocess.run(['xdotool','key','Shift_L'],env={**os.environ,'DISPLAY':os.environ['RUWAC_XTEST_DISPLAY']},check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL);time.sleep(.1)
+    if who=='gui':command('gui','focus-view',view=0)
+    return
    subprocess.run(['xdotool','key','--clearmodifiers','Super_L+Tab'],env={**os.environ,'DISPLAY':os.environ['RUWAC_XTEST_DISPLAY']},check=True)
    time.sleep(.15)
   raise AssertionError('isolated compositor did not focus '+who)
@@ -45,7 +47,8 @@ try:
   r=command('gui','inspect');return r if r.get('panes')==[2,1] else False
  initial=spike.eventually(ready,15)
  def native_tabs():
-  command('gui','switch',view=1,pane=targets[2]);time.sleep(.2);command('gui','switch',view=0,pane=targets[0]);time.sleep(.2);r=command('gui','inspect');assert r['display']=='GdkWaylandDisplay' and all(n>0 for n in r['drawn']),r;command('gui','snapshot');assert (root/'native-rust.png').stat().st_size>1000;return r
+  focus('gui')
+  command('gui','switch',view=1,pane=targets[2]);time.sleep(.2);command('gui','switch',view=0,pane=targets[0]);time.sleep(.2);r=command('gui','inspect');assert r['display']=='GdkWaylandDisplay' and all(n>0 for n in r['drawn']),r;command('gui','snapshot');spike.eventually(lambda:(root/'native-rust.png').exists() and (root/'native-rust.png').stat().st_size>1000,5);return r
  case('GUI-R1',native_tabs)
  if not a.no_clipboard:
   def grid_selection():
@@ -168,7 +171,7 @@ try:
  if not a.no_clipboard:
   def crash_cleanup():
    global native
-   focus('peer');command('peer','set-png',file='fixture-64.png');time.sleep(.1);focus('gui');r=command('gui','read-image');assert 'path' in r,r;abandoned=Path(r['path']).parent;assert abandoned.exists()
+   focus('peer');command('peer','set-png',file='fixture-64.png');time.sleep(.1);focus('gui');command('gui','switch',view=0);command('gui','stage-png');spike.eventually(lambda:command('gui','inspect')['status'].startswith('PNG staged:'),5);r=command('gui','read-image');assert 'path' in r,r;abandoned=Path(r['path']).parent;assert abandoned.exists()
    native.kill();native.wait(timeout=5)
    for pid in pids:os.kill(pid,0)
    native=start([str(gui),'--socket',str(sock),'--session',one['session'],'--session',two['session'],'--fixture-dir',str(root),'--staging-dir',str(stage)],'gui-after-crash')

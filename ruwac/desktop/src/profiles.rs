@@ -156,7 +156,7 @@ impl Profile {
         .to_lowercase()
         .contains(&s.to_lowercase())
     }
-    fn validate(&self) -> Result<(), String> {
+    pub(crate) fn validate(&self) -> Result<(), String> {
         if self.name.is_empty()
             || self.server.is_empty()
             || !matches!(self.protocol.as_str(), "RDP" | "SSH")
@@ -475,24 +475,117 @@ fn parse_library(b: &[u8]) -> Result<Vec<Profile>, String> {
     }
     Ok(items)
 }
-pub struct ConnectionLease {store: Rc<RefCell<Store>>, id: String, released: Cell<bool>}
+pub struct ConnectionLease {
+    store: Rc<RefCell<Store>>,
+    id: String,
+    released: Cell<bool>,
+}
 impl ConnectionLease {
     pub fn fork(&self) -> Self {
-        *self.store.borrow_mut().active.entry(self.id.clone()).or_default() += 1;
-        Self {store:self.store.clone(),id:self.id.clone(),released:Cell::new(false)}
+        *self
+            .store
+            .borrow_mut()
+            .active
+            .entry(self.id.clone())
+            .or_default() += 1;
+        Self {
+            store: self.store.clone(),
+            id: self.id.clone(),
+            released: Cell::new(false),
+        }
     }
     fn release(&self) {
-        if self.released.replace(true) {return;}
-        let mut s=self.store.borrow_mut();
-        if let Some(n)=s.active.get_mut(&self.id) {*n-=1;if *n==0{s.active.remove(&self.id);}}
+        if self.released.replace(true) {
+            return;
+        }
+        let mut s = self.store.borrow_mut();
+        if let Some(n) = s.active.get_mut(&self.id) {
+            *n -= 1;
+            if *n == 0 {
+                s.active.remove(&self.id);
+            }
+        }
     }
     pub fn bind(self, widget: &impl IsA<gtk::Widget>) {
-        widget.connect_unrealize(move |_|self.release());
+        let lease = Rc::new(self);
+        widget.connect_unrealize(move |w| {
+            let (weak, lease) = (w.downgrade(), lease.clone());
+            gtk::glib::idle_add_local_once(move || {
+                if weak.upgrade().is_none_or(|w| w.root().is_none()) {
+                    lease.release();
+                }
+            });
+        });
     }
 }
-impl Drop for ConnectionLease {fn drop(&mut self){self.release();}}
+impl Drop for ConnectionLease {
+    fn drop(&mut self) {
+        self.release();
+    }
+}
 pub type PreferenceSink = Rc<dyn Fn(&str, f64, bool, u32)>;
-pub fn sidebar(open: impl Fn(Profile, PreferenceSink, ConnectionLease) + 'static) -> (gtk::Box, gtk::SearchEntry) {
+pub type ProfileRestorer = Rc<dyn Fn(&str) -> Option<(Profile, PreferenceSink, ConnectionLease)>>;
+fn acquire(
+    s: &Rc<RefCell<Store>>,
+    st: &gtk::Label,
+    id: &str,
+) -> Option<(Profile, PreferenceSink, ConnectionLease)> {
+    let store_handle = s.clone();
+    let mut s = s.borrow_mut();
+    let i = s.items.iter().position(|p| p.id == id)?;
+    s.items[i].last_used = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let mut p = s.items[i].clone();
+    if p.inherit {
+        if let Some(g) = s
+            .groups
+            .iter()
+            .filter(|g| p.group == g.path || p.group.starts_with(&(g.path.clone() + "/")))
+            .max_by_key(|g| g.path.len())
+        {
+            p.preferences.display = g.defaults.display.clone();
+            p.preferences.clipboard = g.defaults.clipboard;
+        }
+    }
+    *s.active.entry(p.id.clone()).or_default() += 1;
+    if let Err(e) = s.save() {
+        st.set_text(&e);
+    }
+    drop(s);
+    let (store, status, id) = (store_handle, st.clone(), p.id.clone());
+    let lease = ConnectionLease {
+        store: store.clone(),
+        id: id.clone(),
+        released: Cell::new(false),
+    };
+    let sink: PreferenceSink = Rc::new(move |mode, zoom, full, policy| {
+        let mut s = store.borrow_mut();
+        let old = s.items.clone();
+        if let Some(p) = s.items.iter_mut().find(|p| p.id == id) {
+            p.preferences.display = mode.into();
+            p.preferences.zoom = zoom;
+            p.preferences.fullscreen = full;
+            p.preferences.clipboard = policy;
+            p.inherit = false;
+        } else {
+            status.set_text("Endpoint removed; connection preferences not saved");
+            return;
+        }
+        if let Err(e) = s.save() {
+            s.items = old;
+            status.set_text(&e);
+        } else {
+            status.set_text("Connection preferences saved");
+        }
+    });
+
+    Some((p, sink, lease))
+}
+pub fn sidebar(
+    open: impl Fn(Profile, PreferenceSink, ConnectionLease) + 'static,
+) -> (gtk::Box, gtk::SearchEntry, ProfileRestorer) {
     let root = gtk::Box::new(gtk::Orientation::Vertical, 6);
     root.set_width_request(240);
     let search = gtk::SearchEntry::new();
@@ -513,6 +606,10 @@ pub fn sidebar(open: impl Fn(Profile, PreferenceSink, ConnectionLease) + 'static
         status.set_text(e);
     }
     let callback: Rc<dyn Fn(Profile, PreferenceSink, ConnectionLease)> = Rc::new(open);
+    let restore: ProfileRestorer = {
+        let (s, st) = (store.clone(), status.clone());
+        Rc::new(move |id| acquire(&s, &st, id))
+    };
     let refresh: Rc<dyn Fn()> = {
         let list = list.clone();
         let store = store.clone();
@@ -605,54 +702,9 @@ pub fn sidebar(open: impl Fn(Profile, PreferenceSink, ConnectionLease) + 'static
                 let cb = callback.clone();
                 let st = status.clone();
                 button.connect_clicked(move |_| {
-                    let store_handle = s.clone();
-                    let mut s = s.borrow_mut();
-                    s.items[i].last_used = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_secs();
-                    let mut p = s.items[i].clone();
-                    if p.inherit {
-                        if let Some(g) = s
-                            .groups
-                            .iter()
-                            .filter(|g| {
-                                p.group == g.path || p.group.starts_with(&(g.path.clone() + "/"))
-                            })
-                            .max_by_key(|g| g.path.len())
-                        {
-                            p.preferences.display = g.defaults.display.clone();
-                            p.preferences.clipboard = g.defaults.clipboard;
-                        }
+                    if let Some((p, sink, lease)) = acquire(&s, &st, &p.id) {
+                        cb(p, sink, lease);
                     }
-                    *s.active.entry(p.id.clone()).or_default() += 1;
-                    if let Err(e) = s.save() {
-                        st.set_text(&e);
-                    }
-                    drop(s);
-                    let (store, status, id) = (store_handle, st.clone(), p.id.clone());
-                    let lease = ConnectionLease {store: store.clone(), id: id.clone(), released: Cell::new(false)};
-                    let sink: PreferenceSink = Rc::new(move |mode, zoom, full, policy| {
-                        let mut s = store.borrow_mut();
-                        let old = s.items.clone();
-                        if let Some(p) = s.items.iter_mut().find(|p| p.id == id) {
-                            p.preferences.display = mode.into();
-                            p.preferences.zoom = zoom;
-                            p.preferences.fullscreen = full;
-                            p.preferences.clipboard = policy;
-                            p.inherit = false;
-                        } else {
-                            status.set_text("Endpoint removed; connection preferences not saved");
-                            return;
-                        }
-                        if let Err(e) = s.save() {
-                            s.items = old;
-                            status.set_text(&e);
-                        } else {
-                            status.set_text("Connection preferences saved");
-                        }
-                    });
-                    cb(p, sink, lease);
                 });
             }
         })
@@ -807,7 +859,7 @@ pub fn sidebar(open: impl Fn(Profile, PreferenceSink, ConnectionLease) + 'static
         }
     });
     refresh();
-    (root, search)
+    (root, search, restore)
 }
 #[cfg(test)]
 mod tests {

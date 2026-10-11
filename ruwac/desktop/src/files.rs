@@ -355,6 +355,7 @@ pub fn transfer(
 }
 pub fn panel(profile: Profile) -> gtk::Box {
     let root = gtk::Box::new(gtk::Orientation::Vertical, 6);
+    root.set_tooltip_text(Some(&format!("{} · Files", profile.name)));
     let title = gtk::Label::new(Some(&format!(
         "Remote SFTP · {} / {} · verified SSH host keys",
         profile.group, profile.name
@@ -592,10 +593,15 @@ pub fn panel(profile: Profile) -> gtk::Box {
         }
     });
     let b = busy.clone();
-    root.connect_unrealize(move |_| {
-        if let Some(token) = b.borrow().as_ref() {
-            token.store(true, Ordering::Relaxed);
-        }
+    root.connect_unrealize(move |w| {
+        let (weak, b) = (w.downgrade(), b.clone());
+        gtk::glib::idle_add_local_once(move || {
+            if weak.upgrade().is_none_or(|w| w.root().is_none()) {
+                if let Some(token) = b.borrow().as_ref() {
+                    token.store(true, Ordering::Relaxed);
+                }
+            }
+        });
     });
     root
 }
@@ -636,4 +642,19 @@ pub fn fixture(root: &gtk::Box, path: Option<&str>, refresh: bool) -> serde_json
         }
     }
     serde_json::json!({"labels":labels,"buttons":buttons.iter().map(|b|b.label().unwrap_or_default().to_string()).collect::<Vec<_>>()})
+}
+
+/// The current directory is nonsecret workspace metadata; restoring it does not connect.
+pub fn directory(root: &gtk::Box, value: Option<&str>) -> String {
+    let mut child = root.first_child();
+    while let Some(w) = child {
+        child = w.next_sibling();
+        if let Some(e) = w.downcast_ref::<gtk::Entry>() {
+            if let Some(value) = value {
+                e.set_text(value);
+            }
+            return e.text().to_string();
+        }
+    }
+    ".".into()
 }

@@ -38,7 +38,7 @@ The default socket is beneath your private runtime directory. `RUWAC_SOCKET` or 
 
 Ctrl-A then `c/n/p/d/a` creates/cycles/detaches/sends literal Ctrl-A. Ctrl-A `S` splits horizontally and `|` vertically; `Tab` changes pane; `0–9` selects windows. `[` opens interactive keyboard copy/search in the desktop (bounded capture in the TUI); `]` pastes the independent internal buffer. Desktop `z` zooms, `"` opens the window chooser, `:` opens commands and `?` shows configured shortcuts. PTYs survive final-client detach. `rpc daemon.stop` stops the selected daemon and its owned panes.
 
-Unix PTYs are required. The tested toolchain is Fedora Rust 1.98.1. Cargo.lock pins registry checksums. Prereleases describe a prototype, not production or desktop acceptance. Tagged source prereleases preserve operational implementation and engineering history. The product distribution license remains undecided.
+Unix PTYs are required. The tested toolchain is Fedora Rust 1.98.1. Cargo.lock pins registry checksums. Prereleases describe a prototype, not production or desktop acceptance. Tagged source prereleases preserve operational implementation and engineering history. RUWAC’s original source is licensed under Apache-2.0; see [LICENSE](LICENSE). Dependencies retain their own licenses. Binary packaging remains subject to dependency notice and packaging validation.
 
 See [architecture decisions](architecture/00-RUWAC-DECISION.md), [protocol](architecture/02-PROTOCOL-V0.md), [acceptance](architecture/03-ACCEPTANCE-MATRIX.md) and [benchmarks](architecture/04-BENCHMARKS.md).
 
@@ -80,6 +80,8 @@ Use the existing build workflow after a controller-assigned release:
 ruwac gui
 ```
 
-The per-user installer adds a RUWAC desktop launcher and commands in the standard user binary directory. `ruwac gui` starts or reuses the persistent daemon. Use New terminal for another session and Sessions to reopen a running one. Closing a terminal tab detaches it; normal window close saves terminal tabs/order/selection for the next launch. RDP/Files tab restoration remains open. `ruwac start` starts the daemon without a graphical client.
+The per-user installer adds a RUWAC desktop launcher and commands in the standard user binary directory. `ruwac gui` starts or reuses the persistent daemon. Use New terminal for another session and Sessions to reopen a running one. Closing a terminal tab detaches it; automatic checkpoints and normal window close save terminal/RDP/Files tabs, split geometry and selected tab. RDP restores disconnected, and Files restores its directory without automatic authentication. `ruwac start` starts the daemon without a graphical client.
 
 The full headless suite and three genuine SSH remote-PTY detach/reattach cycles also pass on an authorized Fedora host. This does not establish external RDP login or physical-desktop acceptance. See [all remaining product gates](spec/RUWAC_PRODUCT_COMPLETION.md).
+
+Use **Split tabs…** to place existing terminal, RDP or Files views side by side or above/below each other. **Separate views** returns them to tabs while preserving connections. RDP connection/display/clipboard actions are under **RDP controls**. Clipboard ownership follows the focused canvas; local controls and Files cannot let inactive RDP sessions take over CLIPBOARD.

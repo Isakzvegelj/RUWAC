@@ -1,5 +1,17 @@
 # RUWAC current state — machine workspaces, display and files
 
+## Current mixed workspace increment — 2026-10-11
+
+Native **Split tabs…** joins existing terminal, RDP and Files views into nested horizontal/vertical GTK Paned trees. **Separate views** returns the leaves to tabs without replacing terminal PTYs or RDP transports. Profile deletion leases survive reparenting. RDP controls now live in a popup, leaving room for the framebuffer in mixed splits.
+
+Clipboard ownership follows the focused terminal canvas or RDP canvas, rather than the enclosing tab. Files and local controls clear remote ownership and release held RDP input. Stage clipboard PNG remembers the focused terminal across the toolbar click, refocuses it before staging, and keeps a visible success/error message. Inactive RDP offers remain isolated.
+
+Private workspace schema 2 records all tab kinds, nested split orientations/ratios, selected tab, nonsecret RDP configuration and Files directories. A 750 ms checkpoint and final close save support GUI-crash restoration while the daemon remains alive. Schema-1 migration preserves a mode-0600 original backup. Other daemon sockets use separate hashed metadata files. Restoration reuses live terminal IDs; missing sessions become ended placeholders. RDP restores disconnected; Files restores without silently authenticating or refreshing. Current library identities govern profile binding and deletion leases. No password, terminal output or clipboard payload is serialized.
+
+Remaining product limits: individual mixed-pane close/move UI, stable GUI view IDs and exact per-leaf focus restoration; durable terminal history after daemon loss; permission-scoped GUI automation and host CLI; supported local/remote agent image consumption; encrypted SSH-key passphrase UI, recursive/resumable/rsync files; physical GNOME PRIMARY/AltGr/IME/touchpad/accessibility; external Windows/Fedora RDP login/clipboard and matched Remmina/FreeRDP performance; qualified RPM/binary publication and broader governance/CI. Authorized external endpoints are identified, but credentials must be entered through the owner’s profile editor and certificate identity must validate. No owner credential store was used in tests. Apache-2.0 is now approved for original source; dependency notices and packaging qualification remain separate.
+
+## Earlier milestone evidence
+
 Continuation from published v0.1.3, 2026-10-11. Existing Rust daemon, CLI, canonical terminal state, authenticated IPC and CLIPRDR remain the foundation.
 
 Native machine/endpoint dialogs create, edit, duplicate, move and confirm deletion of metadata, with stable machine and endpoint identities, shared multi-endpoint machines, full nested group paths, endpoint labels, tags, favorites and recents. Groups have stable IDs and explicit inherited display/clipboard defaults; saved endpoint overrides are retained. Schema 1 migrates the legacy array atomically and keeps a private previous-library backup for Undo. Invalid/unknown schemas, duplicate IDs, unsafe/special files and oversized libraries fail closed. Metadata remains 0700/0600 and contains credential references, never secret values.

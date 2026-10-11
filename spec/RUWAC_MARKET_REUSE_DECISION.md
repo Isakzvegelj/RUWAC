@@ -1,5 +1,11 @@
 # RUWAC component provenance
 
+## Current mixed workspace increment — 2026-10-11
+
+No new market investigation or component substitution. Existing GTK Paned and IronRDP transports provide mixed views; existing private metadata primitives provide restoration. No dependency additions.
+
+## Earlier milestone evidence
+
 No new market evaluation or engine replacement. Existing GTK/libadwaita 0.11.5/0.9.2, IronRDP 0.17.0/session/connector and CLIPRDR remain. Display Control 0.8 uses a bounded framing adapter with an encoded-PDU regression. The dev-only IronRDP server 0.13 generates lossless bitmap fixtures and real reactivation.
 
 SFTP reuses [ssh2 0.9.6](https://docs.rs/ssh2/0.9.6/ssh2/) (MIT OR Apache-2.0) and libssh2 (BSD-3-Clause). Secret Service uses the installed GIO/libsecret-compatible secret-tool instead of a custom vault. Locked package declarations and native component boundaries are recorded in architecture/dependency-licenses.json; this is not binary-distribution license clearance.

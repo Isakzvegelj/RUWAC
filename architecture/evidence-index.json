@@ -1,10 +1,10 @@
 {
-  "baseline_commit": "d992dab08af7c90f751bf7b43afded1a17bb0cb1",
+  "baseline_commit": "1bfe04a0335e91cff99d4abcdb4007cec2a6d5e3",
   "current_report": "spec/RUWAC_INTEGRATION_SPIKE.md",
   "public_evidence": [
     "architecture/acceptance-results.json",
     "architecture/benchmark-results.json",
     "architecture/dependency-licenses.json"
   ],
-  "private_capsule": "usability-r6: frozen optimized builds; startup/workspace/native/RDP/SFTP receipts; normal production launch; installer; authorized Fedora full regression and actual SSH PTY transcripts; 30-trial benchmarks; certificate diagnostics; retained failures; final publication/install verification"
+  "private_capsule": "mixed-r7: optimized native builds; six workspace/migration/crash/socket cases; 13 full authenticated RDP groups; six controls plus three mixed focused reruns; 21 native terminal passes and separate PRIMARY block; six SFTP groups; retained failures; 30-trial matched busy-VM benchmarks; exact final publication/install receipts"
 }

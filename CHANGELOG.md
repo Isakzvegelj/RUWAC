@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## v0.1.6 — 2026-10-11 — Prerelease
+
+- Add nested native terminal/RDP/Files splits and separation while preserving live PTYs, RDP transports and profile leases; compact RDP controls into a popup.
+- Checkpoint and restore all view kinds and split geometry after GUI crashes; preserve schema-1 backups and isolate workspaces by daemon socket.
+- Route clipboard ownership by focused canvas and fix toolbar PNG staging with persistent feedback; validate mixed authenticated RDP, workspace, terminal and SFTP regressions.
+- Apply owner-approved Apache-2.0 to original source and retain dependency license boundaries.
+
 ## v0.1.5 — 2026-10-11 — Prerelease
 
 - Add on-demand authenticated daemon startup, single-instance native desktop activation, terminal session reopening and private workspace restoration.

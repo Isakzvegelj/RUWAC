@@ -149,6 +149,7 @@ struct State {
     status: Option<String>,
 }
 struct Connection {
+    id: String,
     tx: tokio::sync::mpsc::Sender<Command>,
     stop: Arc<AtomicBool>,
     state: Arc<Mutex<State>>,
@@ -178,7 +179,12 @@ impl Connection {
             st.lock().unwrap().status =
                 Some(result.err().unwrap_or_else(|| "RDP disconnected".into()));
         });
-        Self { tx, stop, state }
+        Self {
+            id: ruwac_protocol::id("rdp-transport"),
+            tx,
+            stop,
+            state,
+        }
     }
     fn send(&self, events: Vec<FastPathInputEvent>) -> Result<(), String> {
         self.tx
@@ -642,6 +648,7 @@ pub struct RdpView {
     bridge: RefCell<Bridge>,
     advertised: Cell<u64>,
     received_generation: Cell<u64>,
+    offers_seen: Cell<u64>,
     remote: Cell<Option<(ClipboardFormatId, Format, u64, u64)>>,
     pending: RefCell<Option<(Format, u64, u64, std::time::Instant)>>,
     replying: Cell<bool>,
@@ -649,6 +656,7 @@ pub struct RdpView {
     pending_paste: Cell<bool>,
     provider: RefCell<Option<gdk::ContentProvider>>,
     entries: [gtk::Entry; 4],
+    profile_metadata: RefCell<Option<crate::profiles::Profile>>,
 }
 impl RdpView {
     pub fn new(broker: crate::clipboard::Broker) -> Rc<Self> {
@@ -675,7 +683,18 @@ impl RdpView {
         }
         controls.attach(&connect, 0, 2, 1, 1);
         controls.attach(&disconnect, 1, 2, 1, 1);
-        root.append(&controls);
+        let popup = gtk::Popover::new();
+        controls.set_margin_top(8);
+        controls.set_margin_bottom(8);
+        controls.set_margin_start(8);
+        controls.set_margin_end(8);
+        popup.set_child(Some(&controls));
+        let menu = gtk::MenuButton::builder()
+            .label("RDP controls")
+            .popover(&popup)
+            .halign(gtk::Align::Start)
+            .build();
+        root.append(&menu);
         let status = gtk::Label::new(Some(
             "Embedded IronRDP · enter an authorized endpoint and a RUWAC Secret Service reference",
         ));
@@ -726,6 +745,7 @@ impl RdpView {
             bridge: RefCell::new(Bridge::default()),
             advertised: Cell::new(0),
             received_generation: Cell::new(0),
+            offers_seen: Cell::new(0),
             remote: Cell::new(None),
             pending: RefCell::new(None),
             replying: Cell::new(false),
@@ -733,6 +753,7 @@ impl RdpView {
             pending_paste: Cell::new(false),
             provider: RefCell::new(None),
             entries: [host.clone(), user.clone(), secret.clone(), ca.clone()],
+            profile_metadata: RefCell::new(None),
         });
         let weak = Rc::downgrade(&v);
         connect.connect_clicked(move |_| {
@@ -778,7 +799,7 @@ impl RdpView {
         let tools = gtk::FlowBox::builder()
             .selection_mode(gtk::SelectionMode::None)
             .min_children_per_line(1)
-            .max_children_per_line(8)
+            .max_children_per_line(3)
             .column_spacing(4)
             .row_spacing(4)
             .build();
@@ -939,7 +960,7 @@ impl RdpView {
                 v.paste();
             }
         });
-        root.prepend(&tools);
+        controls.attach(&tools, 0, 3, 2, 1);
         let w = Rc::downgrade(&v);
         v.area.set_draw_func(move |_, cr, width, height| {
             if let Some(v) = w.upgrade() {
@@ -1181,7 +1202,7 @@ impl RdpView {
                 .collect();
             serde_json::json!({"decoded_updates":s.frames,"update_intervals_ms":times})
         });
-        serde_json::json!({"requested_size":self.requested.get(),"metrics":metrics,"last_pixel":self.last_pixel.get(),"status":self.status.text().as_str(),"size":self.size.get(),"zoom":self.zoom.get(),"pan":[self.scroll.hadjustment().value(),self.scroll.vadjustment().value()],"viewport":[self.area.width(),self.area.height()],"window_width":self.root.root().and_then(|r|r.downcast::<gtk::Window>().ok()).map(|w|w.width()),"active":self.broker.borrow().active()==Some(self.id.as_str()),"epoch":self.broker.borrow().epoch(),"pending":self.pending.borrow().is_some(),"received_generation":self.received_generation.get(),"policy":format!("{:?}",self.policy.get())})
+        serde_json::json!({"transport_id":self.connection.borrow().as_ref().map(|c|c.id.as_str()),"requested_size":self.requested.get(),"metrics":metrics,"last_pixel":self.last_pixel.get(),"status":self.status.text().as_str(),"size":self.size.get(),"zoom":self.zoom.get(),"pan":[self.scroll.hadjustment().value(),self.scroll.vadjustment().value()],"viewport":[self.area.width(),self.area.height()],"window_width":self.root.root().and_then(|r|r.downcast::<gtk::Window>().ok()).map(|w|w.width()),"active":self.broker.borrow().active()==Some(self.id.as_str()),"epoch":self.broker.borrow().epoch(),"pending":self.pending.borrow().is_some(),"received_generation":self.received_generation.get(),"offers":self.offers_seen.get(),"policy":format!("{:?}",self.policy.get())})
     }
     pub fn fixture_policy(&self, index: u32) {
         fn find(w: &gtk::Widget) -> Option<gtk::DropDown> {
@@ -1239,7 +1260,50 @@ impl RdpView {
             self.preferences_due.set(Some(std::time::Instant::now()));
         }
     }
+    pub fn configuration(&self) -> Option<crate::profiles::Profile> {
+        if self.entries[0].text().is_empty() {
+            return None;
+        }
+        let mut p = self
+            .profile_metadata
+            .borrow()
+            .clone()
+            .unwrap_or(crate::profiles::Profile {
+                id: String::new(),
+                machine_id: String::new(),
+                preferences: crate::profiles::Preferences::default(),
+                inherit: false,
+                name: "RDP".into(),
+                group: String::new(),
+                protocol: "RDP".into(),
+                server: String::new(),
+                username: String::new(),
+                secret_reference: String::new(),
+                favorite: false,
+                last_used: 0,
+                tags: Vec::new(),
+            });
+        p.server = self.entries[0].text().into();
+        p.username = self.entries[1].text().into();
+        p.secret_reference = self.entries[2].text().into();
+        p.preferences.trust = self.entries[3].text().into();
+        p.preferences.display = match self.mode.get() {
+            Scale::Fit => "fit",
+            Scale::Native => "native",
+            Scale::Stretch => "stretch",
+            Scale::Dynamic => "dynamic",
+        }
+        .into();
+        p.preferences.zoom = self.zoom.get();
+        p.preferences.fullscreen = self.fullscreen.get();
+        p.preferences.reconnect = self.reconnect.get();
+        p.preferences.clipboard = self.policy.get() as u32;
+        Some(p)
+    }
     pub fn configure(&self, p: &crate::profiles::Profile) {
+        self.root
+            .set_tooltip_text(Some(&format!("{} · RDP", p.name)));
+        *self.profile_metadata.borrow_mut() = Some(p.clone());
         self.set_profile(
             &p.server,
             &p.username,
@@ -1429,6 +1493,8 @@ impl RdpView {
                 epoch,
                 selected,
             } => {
+                self.offers_seen
+                    .set(self.offers_seen.get().saturating_add(1));
                 self.remote
                     .set(selected.map(|(id, k)| (id, k, generation, epoch)));
                 if let Some((_, kind)) = selected {
@@ -1669,7 +1735,10 @@ impl RdpView {
             y_position: y,
         })]);
     }
-    pub fn focus(&self) {
+    pub fn owns_focus(&self, widget: &gtk::Widget) -> bool {
+        crate::tiles::contains(&self.area, widget)
+    }
+    pub fn activate_clipboard(&self) {
         if self.broker.borrow().active() != Some(self.id.as_str()) {
             self.broker.borrow_mut().focus(Some(&self.id));
         }
@@ -1677,6 +1746,9 @@ impl RdpView {
             .borrow()
             .epoch
             .store(self.broker.borrow().epoch(), Ordering::Release);
+    }
+    pub fn focus(&self) {
+        self.activate_clipboard();
         self.area.grab_focus();
     }
     fn release_keys(&self) {

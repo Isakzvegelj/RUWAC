@@ -3,7 +3,7 @@
 import argparse,hashlib,importlib.util,json,os,subprocess,sys,tempfile,time,traceback
 from pathlib import Path
 from PIL import Image
-p=argparse.ArgumentParser();p.add_argument('--binary',required=True);p.add_argument('--gui',required=True);p.add_argument('--server',required=True);p.add_argument('--evidence',required=True);p.add_argument('--r5-only',action='store_true');a=p.parse_args()
+p=argparse.ArgumentParser();p.add_argument('--binary',required=True);p.add_argument('--gui',required=True);p.add_argument('--server',required=True);p.add_argument('--evidence',required=True);p.add_argument('--r5-only',action='store_true');p.add_argument('--mixed-only',action='store_true');a=p.parse_args()
 spec=importlib.util.spec_from_file_location('spike',Path(__file__).with_name('spike.py'));spike=importlib.util.module_from_spec(spec);spec.loader.exec_module(spike)
 root=Path(tempfile.mkdtemp(prefix='rdp-native-',dir=a.evidence));root.chmod(0o700);env={**os.environ,'HOME':str(root/'home'),'XDG_CONFIG_HOME':str(root/'config'),'XDG_CACHE_HOME':str(root/'cache'),'XDG_DATA_HOME':str(root/'data'),'GSETTINGS_BACKEND':'memory','GTK_USE_PORTAL':'0','GTK_A11Y':'none'}
 for key in ['HOME','XDG_CONFIG_HOME','XDG_CACHE_HOME','XDG_DATA_HOME']:Path(env[key]).mkdir(mode=0o700)
@@ -23,6 +23,7 @@ def focus(who):
   subprocess.run(['xdotool','key','--clearmodifiers','Super_L+Tab'],env={**os.environ,'DISPLAY':os.environ['RUWAC_XTEST_DISPLAY']},check=True);time.sleep(.12)
  raise AssertionError('Isolated compositor focus failed')
 def case(name,fn):
+ if a.mixed_only and name not in {'RDP-NATIVE-AUTH-3','MIXED-NATIVE-RDP-TERMINAL','FILES-CLIPBOARD-OWNERSHIP'}:return
  if a.r5_only and name not in {"RDP-NATIVE-AUTH-3","MACHINES-NATIVE-EDITOR","RDP-NATIVE-RESIZE-20","MACHINES-RESTART-1000","FILES-CLIPBOARD-OWNERSHIP","RDP-PROFILE-KEYRING-PREFERENCES"}:return
  try:results.append({'id':name,'status':'PASS','details':fn()});print(name,'PASS',flush=True)
  except Exception as e:results.append({'id':name,'status':'FAIL','error':str(e),'traceback':traceback.format_exc()});print(name,'FAIL',str(e),flush=True)
@@ -102,6 +103,35 @@ try:
    if (i+1)%50==0:print('OWNERSHIP',i+1,flush=True)
   return {'focus_switches':200,'inactive_offers_checked':450,'peer_clipboard_hash':digest(sentinel),'physical_input':False}
  case('RDP-NATIVE-OWNERSHIP-200',ownership)
+ def mixed_workspace():
+  try:
+   before=[command('gui','rdp-inspect',rdp=i) for i in range(3)]
+   command('gui','switch',view=0)
+   tree=command('gui','mixed-join',tab=1,vertical=False)
+   assert len(tree['tabs'])==3 and tree['tabs'][0]['layout']['split']=='horizontal',tree
+   tree=command('gui','mixed-join',tab=1,vertical=True)
+   assert len(tree['tabs'])==2 and tree['tabs'][0]['layout']['split']=='vertical' and tree['tabs'][0]['layout']['first']['split']=='horizontal',tree
+   time.sleep(.4)
+   for i in range(3):
+    now=command('gui','rdp-inspect',rdp=i)
+    assert now['transport_id']==before[i]['transport_id'] and now['size']==before[i]['size'] and now['metrics']['decoded_updates']>0,now
+   command('gui','rdp-switch',rdp=0)
+   text='Mixed RDP/terminal clipboard Živjo 🦀';path=root/'mixed-text.txt';path.write_text(text)
+   received=transfer_to_remote(0,'text',path.name);assert received['sha256']==digest(text.encode()),received
+   baseline='Inactive mixed RDP must not own this clipboard';path=root/'mixed-baseline.txt';path.write_text(baseline)
+   focus('peer');command('peer','set-text',file=path.name);focus('gui')
+   owner=command('gui','mixed-focus',kind='terminal',index=0)
+   assert owner['owner']==session['session'],owner
+   before_offers=[command('gui','rdp-inspect',rdp=i)['offers'] for i in range(2)]
+   for i in range(2):command(f'server-{i}',format='text',file='mixed-text.txt')
+   spike.eventually(lambda:all(command('gui','rdp-inspect',rdp=i)['offers']>before_offers[i] for i in range(2)))
+   focus('peer');assert command('peer','read-text')['sha256']==digest(baseline.encode())
+   focus('gui');command('gui','snapshot');tree=command('gui','mixed-separate');assert len(tree['tabs'])==4,tree
+   for i in range(3):assert command('gui','rdp-inspect',rdp=i)['transport_id']==before[i]['transport_id']
+   return {'nested_orientation':['vertical','horizontal'],'actual_authenticated_rdp_connections_preserved':3,'text_sha256':digest(text.encode()),'inactive_mixed_offers_refused':2,'separated_without_reconnect':True}
+  finally:
+   command('gui','tab-select',tab=0);command('gui','mixed-separate')
+ case('MIXED-NATIVE-RDP-TERMINAL',mixed_workspace)
  def files_ownership():
   import socket,threading
   listener=socket.socket();listener.bind(('127.0.0.1',0));listener.listen(1);port=listener.getsockname()[1]

@@ -1,5 +1,17 @@
 # RUWAC architecture decisions for workspaces/display/files
 
+## Current mixed workspace increment — 2026-10-11
+
+Native **Split tabs…** joins existing terminal, RDP and Files views into nested horizontal/vertical GTK Paned trees. **Separate views** returns the leaves to tabs without replacing terminal PTYs or RDP transports. Profile deletion leases survive reparenting. RDP controls now live in a popup, leaving room for the framebuffer in mixed splits.
+
+Clipboard ownership follows the focused terminal canvas or RDP canvas, rather than the enclosing tab. Files and local controls clear remote ownership and release held RDP input. Stage clipboard PNG remembers the focused terminal across the toolbar click, refocuses it before staging, and keeps a visible success/error message. Inactive RDP offers remain isolated.
+
+Private workspace schema 2 records all tab kinds, nested split orientations/ratios, selected tab, nonsecret RDP configuration and Files directories. A 750 ms checkpoint and final close save support GUI-crash restoration while the daemon remains alive. Schema-1 migration preserves a mode-0600 original backup. Other daemon sockets use separate hashed metadata files. Restoration reuses live terminal IDs; missing sessions become ended placeholders. RDP restores disconnected; Files restores without silently authenticating or refreshing. Current library identities govern profile binding and deletion leases. No password, terminal output or clipboard payload is serialized.
+
+View topology remains independent of daemon terminal layout and RDP transport ownership. Joining tabs moves actual widgets; it does not reconnect or create processes. Local toolbar focus cannot grant remote clipboard ownership.
+
+## Earlier milestone evidence
+
 Native machine/endpoint dialogs create, edit, duplicate, move and confirm deletion of metadata, with stable machine and endpoint identities, shared multi-endpoint machines, full nested group paths, endpoint labels, tags, favorites and recents. Groups have stable IDs and explicit inherited display/clipboard defaults; saved endpoint overrides are retained. Schema 1 migrates the legacy array atomically and keeps a private previous-library backup for Undo. Invalid/unknown schemas, duplicate IDs, unsafe/special files and oversized libraries fail closed. Metadata remains 0700/0600 and contains credential references, never secret values.
 
 Set/replace/forget credential actions use system Secret Service through secret-tool and GIO/libsecret off the GTK thread. Passwords travel through stdin, never process arguments; reads and operations have caps/deadlines, and unavailable/locked providers produce recoverable messages. Normal RDP retrieves credentials only after explicit connect; Files authenticates after strict known-host verification. No owner secret store was inspected or changed.

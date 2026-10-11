@@ -1,5 +1,36 @@
 # RUWAC implementation and qualification evidence
 
+## Current mixed workspace increment — 2026-10-11
+
+Native **Split tabs…** joins existing terminal, RDP and Files views into nested horizontal/vertical GTK Paned trees. **Separate views** returns the leaves to tabs without replacing terminal PTYs or RDP transports. Profile deletion leases survive reparenting. RDP controls now live in a popup, leaving room for the framebuffer in mixed splits.
+
+Clipboard ownership follows the focused terminal canvas or RDP canvas, rather than the enclosing tab. Files and local controls clear remote ownership and release held RDP input. Stage clipboard PNG remembers the focused terminal across the toolbar click, refocuses it before staging, and keeps a visible success/error message. Inactive RDP offers remain isolated.
+
+Private workspace schema 2 records all tab kinds, nested split orientations/ratios, selected tab, nonsecret RDP configuration and Files directories. A 750 ms checkpoint and final close save support GUI-crash restoration while the daemon remains alive. Schema-1 migration preserves a mode-0600 original backup. Other daemon sockets use separate hashed metadata files. Restoration reuses live terminal IDs; missing sessions become ended placeholders. RDP restores disconnected; Files restores without silently authenticating or refreshing. Current library identities govern profile binding and deletion leases. No password, terminal output or clipboard payload is serialized.
+
+The owned nested Wayland compositor exercises real GTK/GDK. Six workspace cases cover live same-PID reopening, schema-1 migration with private backup, profile leases during reparenting, nested terminal/RDP/Files restoration after GUI SIGKILL, separate socket metadata and unsafe symlink preservation. The restored RDP metadata test uses a disconnected placeholder; it does not establish remote login.
+
+All 13 full RDP groups pass against disposable authenticated IronRDP servers, including the new live mixed-tree test. Three authenticated transports keep their connection IDs during join/separate; actual CLIPRDR text and inactive offers are verified while mixed. After compacting controls, six editor/keyring/display/Files groups and three authenticated mixed/ownership groups are rerun. The isolated Secret Service provider performs real credential lookup for normal sidebar connections. These are real local TLS/CredSSP, framebuffer and clipboard integrations, not external-host acceptance.
+
+Six SFTP groups pass with real isolated SSH transport, SHA-256 integrity, cancellation, slow peer/loss and native panel listing. Native terminal acceptance retains 21 passing cards, actual Vim/less/htop, independent GDK clipboard consumers and actual toolbar PNG staging followed by GUI-crash cleanup; PRIMARY is separately unavailable on this compositor. Reparenting an active file operation is preserved by implementation, but not yet separately qualified during an in-flight transfer.
+
+Matched API benchmarks use 30 alternating samples for each action at 1/5/20/40 panes. All 12 median ratios are within 2× tmux; the VM was 25.7% busy, so idle-qualified acceptance remains open. Key-to-emitted-render median/p95 is 36.16/38.12 ms, with a 5 ms observer; this is not physical display latency. At 40 panes daemon/TUI RSS is 13.82/5.22 MiB, excluding child interpreters. The independent daemon/CLI source is preserved.
+
+```sh
+./build.sh --release --test --desktop
+cargo build --locked --release --manifest-path ruwac/desktop/Cargo.toml --examples
+python3 ruwac/tests/integration/workspace.py --binary "$CARGO_TARGET_DIR/release/ruwac" --evidence "$RUWAC_EVIDENCE_DIR"
+python3 ruwac/tests/integration/native_rust.py --binary "$CARGO_TARGET_DIR/release/ruwac" --gui "$CARGO_TARGET_DIR/release/ruwac-desktop" --evidence "$RUWAC_EVIDENCE_DIR" --primary-unavailable
+python3 ruwac/tests/integration/rdp_clipboard.py --binary "$CARGO_TARGET_DIR/release/ruwac" --gui "$CARGO_TARGET_DIR/release/ruwac-desktop" --server "$CARGO_TARGET_DIR/release/examples/rdp-fixture" --evidence "$RUWAC_EVIDENCE_DIR"
+python3 ruwac/tests/integration/sftp.py --driver "$CARGO_TARGET_DIR/release/examples/files-fixture" --binary "$CARGO_TARGET_DIR/release/ruwac" --gui "$CARGO_TARGET_DIR/release/ruwac-desktop" --evidence "$RUWAC_EVIDENCE_DIR"
+./release.sh beta
+./release.sh --verify
+./build.sh --release --desktop --install-user
+```
+GUI tests require an owned compositor, private test D-Bus and disposable keyring; fixture credentials never enter public receipts. Exact build commands, hashes, benchmarks and retained failed trials are in the private mixed-r7 evidence capsule. Version allocation and publication remain the existing release controller’s responsibility.
+
+## Earlier milestone evidence
+
 Existing v0.1.3 foundation preserved; 2026-10-11 workspaces/display/files increment.
 
 Native machine/endpoint dialogs create, edit, duplicate, move and confirm deletion of metadata, with stable machine and endpoint identities, shared multi-endpoint machines, full nested group paths, endpoint labels, tags, favorites and recents. Groups have stable IDs and explicit inherited display/clipboard defaults; saved endpoint overrides are retained. Schema 1 migrates the legacy array atomically and keeps a private previous-library backup for Undo. Invalid/unknown schemas, duplicate IDs, unsafe/special files and oversized libraries fail closed. Metadata remains 0700/0600 and contains credential references, never secret values.
@@ -83,7 +114,7 @@ The matched CLI benchmark uses 30 alternating samples per action at 1/5/20/40 pa
 ./build.sh --release --test --desktop
 cargo build --locked --release --manifest-path ruwac/desktop/Cargo.toml --examples
 python3 ruwac/tests/integration/startup.py --binary "$CARGO_TARGET_DIR/release/ruwac" --evidence "$RUWAC_EVIDENCE_DIR"
-python3 ruwac/tests/integration/workspace.py --binary "$CARGO_TARGET_DIR/release/ruwac" --gui "$CARGO_TARGET_DIR/release/ruwac-desktop" --evidence "$RUWAC_EVIDENCE_DIR"
+python3 ruwac/tests/integration/workspace.py --binary "$CARGO_TARGET_DIR/release/ruwac" --evidence "$RUWAC_EVIDENCE_DIR"
 python3 ruwac/tests/integration/rdp_clipboard.py --binary "$CARGO_TARGET_DIR/release/ruwac" --gui "$CARGO_TARGET_DIR/release/ruwac-desktop" --server "$CARGO_TARGET_DIR/release/examples/rdp-fixture" --evidence "$RUWAC_EVIDENCE_DIR"
 python3 ruwac/tests/integration/sftp.py --driver "$CARGO_TARGET_DIR/release/examples/files-fixture" --binary "$CARGO_TARGET_DIR/release/ruwac" --gui "$CARGO_TARGET_DIR/release/ruwac-desktop" --evidence "$RUWAC_EVIDENCE_DIR"
 python3 ruwac/tests/integration/ssh_terminal.py --host "$RUWAC_AUTHORIZED_SSH_HOST" --binary "$RUWAC_REMOTE_BINARY" --receiver "$RUWAC_REMOTE_RECEIVER" --remote-evidence "$RUWAC_REMOTE_EVIDENCE" --evidence "$RUWAC_EVIDENCE_DIR"

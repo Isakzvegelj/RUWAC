@@ -1,5 +1,17 @@
 # RUWAC implementation reconciliation
 
+## Current mixed workspace increment — 2026-10-11
+
+Continues the published v0.1.5 baseline with existing history, daemon, CLI and dependencies. No replacement engine, market evaluation, shared controller edits or manual versions.
+
+Native **Split tabs…** joins existing terminal, RDP and Files views into nested horizontal/vertical GTK Paned trees. **Separate views** returns the leaves to tabs without replacing terminal PTYs or RDP transports. Profile deletion leases survive reparenting. RDP controls now live in a popup, leaving room for the framebuffer in mixed splits.
+
+Clipboard ownership follows the focused terminal canvas or RDP canvas, rather than the enclosing tab. Files and local controls clear remote ownership and release held RDP input. Stage clipboard PNG remembers the focused terminal across the toolbar click, refocuses it before staging, and keeps a visible success/error message. Inactive RDP offers remain isolated.
+
+Private workspace schema 2 records all tab kinds, nested split orientations/ratios, selected tab, nonsecret RDP configuration and Files directories. A 750 ms checkpoint and final close save support GUI-crash restoration while the daemon remains alive. Schema-1 migration preserves a mode-0600 original backup. Other daemon sockets use separate hashed metadata files. Restoration reuses live terminal IDs; missing sessions become ended placeholders. RDP restores disconnected; Files restores without silently authenticating or refreshing. Current library identities govern profile binding and deletion leases. No password, terminal output or clipboard payload is serialized.
+
+## Earlier milestone evidence
+
 Published baseline v0.1.3, commit 4d5572179de259ec8f9c87ec2fa50f51b91c39ed. Existing source/build registry, Git history, historical untracked architecture document, working daemon and owner cmux sessions are preserved. Prior nine reports and all evidence remain private and intact. All new sockets, keys, buses, displays, profiles and test trees are disposable and explicitly owned. No system service, shared release controller or owner configuration was modified.
 
 Existing build.sh and release.sh exclusively implement the build and source-release workflow. The controller owns versions, commit, tag, push and GitHub read-back. No new release adapter, manual publication or binary distribution is introduced.
