@@ -2,11 +2,9 @@
 
 RUWAC is a compiled Rust terminal daemon/CLI and an optional native GTK4/libadwaita desktop with mixed terminal, embedded RDP and SSH/SFTP workspaces. Existing terminals and connections remain independent of desktop presentation.
 
-This increment adds authenticated native RDP list/query/open/reconnect/disconnect operations. Lifecycle control requires explicit independent owner consent, disabled by default. Activation also requires focus consent. Background connection changes preserve neighboring transports, selected tabs and clipboard ownership. Saved-profile credentials resolve privately through Secret Service.
+This increment makes the native machine sidebar easier to use alongside RDP tabs. Saved machines receive most of its height, with creation, search, favorites and paging visible. Machine maintenance and Remmina import/review are grouped in native panels collapsed by default; the expanded import area scrolls within a bounded height. Existing credentials, endpoints and connection handlers are preserved.
 
-The headless CLI routes the same typed operations over verified SSH to an existing trusted GUI socket. Missing endpoints never start a GUI or daemon. Exact parameters, stable targets, stale-target errors, bounded replies and runtime revocation keep automation scoped.
-
-Seven authenticated local RDP groups and three actual SSH GUI forwarding groups accompany existing library, headless and GTK regressions. The SSH fixture forwards to a locally rendered GTK window; remote-seat rendering and external Windows/Fedora login are separate acceptance gates.
+Eight actual GTK library groups cover allocated layout and native panel toggling, all 1,000 endpoints across 20 pages, reviewed merge/Cancel/Undo, active/stale protection and restart. Full authenticated local RDP text/PNG/ownership/display/profile regression, headless and SSH checks accompany the stamped build. Synthetic widget actions do not qualify physical desktop input.
 
 Validation distinguishes actual authenticated local RDP, GTK/GDK integration and real PTYs/SSH from physical input or external-host qualification. Detailed results are maintained in the acceptance report and sanitized evidence inventory.
 

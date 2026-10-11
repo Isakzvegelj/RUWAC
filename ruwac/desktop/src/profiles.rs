@@ -620,11 +620,19 @@ pub fn sidebar(
     let status = gtk::Label::new(None);
     status.set_widget_name("machines-status");
     status.set_wrap(true);
+    status.set_max_width_chars(28);
+    status.set_xalign(0.0);
+    status.set_selectable(true);
+    status.add_css_class("dim-label");
+    status.connect_label_notify(|label| label.set_visible(!label.text().is_empty()));
+    status.set_visible(false);
     let list = gtk::Box::new(gtk::Orientation::Vertical, 4);
     let scroll = gtk::ScrolledWindow::builder()
         .vexpand(true)
         .child(&list)
         .build();
+    scroll.set_widget_name("machines-list-scroll");
+    scroll.set_min_content_height(120);
     root.append(&scroll);
     let page = Rc::new(Cell::new(0usize));
     let pager = gtk::Box::new(gtk::Orientation::Horizontal, 4);
@@ -777,8 +785,12 @@ pub fn sidebar(
     previous_page.connect_clicked(move |_| {p.set(p.get().saturating_sub(1)); r();});
     let (p, r) = (page.clone(), refresh.clone());
     next_page.connect_clicked(move |_| {p.set(p.get()+1); r();});
+    let maintenance = gtk::Box::new(gtk::Orientation::Vertical, 6);
+    let maintenance_panel = gtk::Expander::new(Some("Machine tools"));
+    maintenance_panel.set_widget_name("machines-tools-panel");
+    maintenance_panel.set_child(Some(&maintenance));
     let groups = gtk::Button::with_label("Network groups / defaults…");
-    root.append(&groups);
+    maintenance.append(&groups);
     let (s, st) = (store.clone(), status.clone());
     groups.connect_clicked(move |b| group_editor(b, s.clone(), st.clone()));
     let add = gtk::Button::with_label("New machine / endpoint…");
@@ -786,12 +798,13 @@ pub fn sidebar(
     let (s, st) = (store.clone(), status.clone());
     add.connect_clicked(move |b| editor(b, s.clone(), None, st.clone()));
     let refresh_button = gtk::Button::with_label("Refresh machines");
-    root.append(&refresh_button);
+    maintenance.append(&refresh_button);
     let r = refresh.clone();
     refresh_button.connect_clicked(move |_| r());
     let undo = gtk::Button::with_label("Undo last metadata change");
     undo.set_widget_name("machines-undo");
-    root.append(&undo);
+    maintenance.append(&undo);
+    root.append(&maintenance_panel);
     let (s, st, r) = (store.clone(), status.clone(), refresh.clone());
     undo.connect_clicked(move |_| {
         let mut s = s.borrow_mut();
@@ -846,18 +859,27 @@ pub fn sidebar(
     filter.connect_selected_notify(move |_| {p.set(0); r();});
     let (r, p) = (refresh.clone(), page.clone());
     search.connect_changed(move |_| {p.set(0); r();});
+    let import_controls = gtk::Box::new(gtk::Orientation::Vertical, 6);
+    let import_scroll = gtk::ScrolledWindow::builder().child(&import_controls)
+        .propagate_natural_height(true).max_content_height(280).build();
+    let import_panel = gtk::Expander::new(Some("Import from Remmina"));
+    import_panel.set_widget_name("machines-import-panel");
+    import_panel.set_child(Some(&import_scroll));
+    root.append(&import_panel);
     let selected = Rc::new(RefCell::new(None::<Profile>));
     let path = gtk::Entry::builder()
         .placeholder_text("Choose Remmina file explicitly")
         .build();
-    root.append(&path);
+    path.set_widget_name("machines-import-path");
+    import_controls.append(&path);
     let preview_button = gtk::Button::with_label("Preview selected Remmina file");
-    root.append(&preview_button);
+    preview_button.set_widget_name("machines-import-preview");
+    import_controls.append(&preview_button);
     let conflict = gtk::DropDown::from_strings(&[
         "Skip duplicate endpoint",
         "Import duplicate as new identity",
     ]);
-    root.append(&conflict);
+    import_controls.append(&conflict);
     let targets = gtk::StringList::new(&["Select an existing endpoint explicitly"]);
     let merge_target = gtk::DropDown::new(Some(targets.clone()), None::<gtk::Expression>);
     merge_target.set_enable_search(true);
@@ -868,17 +890,18 @@ pub fn sidebar(
 
     merge_target.set_widget_name("machines-merge-target");
     let target_ids = Rc::new(RefCell::new(Vec::<String>::new()));
-    root.append(&merge_target);
+    import_controls.append(&merge_target);
     let review_merge = gtk::Button::with_label("Review merge into selected endpoint");
     review_merge.set_widget_name("machines-merge-review");
     review_merge.set_sensitive(false);
-    root.append(&review_merge);
+    import_controls.append(&review_merge);
     let import = gtk::Button::with_label("Import preview metadata");
+    import.set_widget_name("machines-import-apply");
     import.set_sensitive(false);
-    root.append(&import);
+    import_controls.append(&import);
     root.append(&status);
     let choose = gtk::Button::with_label("Choose file…");
-    root.append(&choose);
+    import_controls.append(&choose);
     let entry = path.clone();
     choose.connect_clicked(move |b| {
         let dialog = gtk::FileDialog::new();
@@ -1015,6 +1038,16 @@ mod tests {
 }
 
 /// Exercises real sidebar widgets only within the desktop's explicit fixture mode.
+fn sidebar_widget(root: &impl IsA<gtk::Widget>, name: &str) -> Option<gtk::Widget> {
+    let w=root.as_ref();
+    if w.widget_name()==name {return Some(w.clone());}
+    let mut child=w.first_child();
+    while let Some(c)=child {child=c.next_sibling();if let Some(found)=sidebar_widget(&c,name){return Some(found);}}
+    None
+}
+fn expand_sidebar_panel(root: &gtk::Box, name: &str, expanded: bool) {
+    if let Some(panel)=sidebar_widget(root,name).and_then(|w|w.downcast::<gtk::Expander>().ok()) {panel.set_expanded(expanded);}
+}
 pub fn fixture(
     root: &gtk::Box,
     file: Option<&Path>,
@@ -1022,31 +1055,15 @@ pub fn fixture(
     favorite: bool,
     open: bool,
 ) -> serde_json::Value {
-    let mut child = root.first_child();
-    while let Some(w) = child {
-        child = w.next_sibling();
-        if let Some(e) = w.downcast_ref::<gtk::SearchEntry>() {
-            if let Some(q) = query {
-                e.set_text(q);
-            }
-        }
-        if let Some(e) = w.downcast_ref::<gtk::Entry>() {
-            if let Some(path) = file {
-                e.set_text(&path.to_string_lossy());
-            }
-        }
+    if let Some(query)=query {
+        let mut child=root.first_child();
+        while let Some(w)=child {child=w.next_sibling();if let Some(search)=w.downcast_ref::<gtk::SearchEntry>() {search.set_text(query);}}
     }
-    if file.is_some() {
-        for label in ["Preview selected Remmina file", "Import preview metadata"] {
-            let mut child = root.first_child();
-            while let Some(w) = child {
-                child = w.next_sibling();
-                if let Some(b) = w.downcast_ref::<gtk::Button>() {
-                    if b.label().as_deref() == Some(label) {
-                        b.emit_clicked();
-                    }
-                }
-            }
+    if let Some(file)=file {
+        expand_sidebar_panel(root,"machines-import-panel",true);
+        if let Some(entry)=sidebar_widget(root,"machines-import-path").and_then(|w|w.downcast::<gtk::Entry>().ok()) {entry.set_text(&file.to_string_lossy());}
+        for name in ["machines-import-preview","machines-import-apply"] {
+            if let Some(button)=sidebar_widget(root,name).and_then(|w|w.downcast::<gtk::Button>().ok()) {button.emit_clicked();}
         }
     }
     fn collect(w: &gtk::Widget, out: &mut Vec<(gtk::Button, gtk::Button)>) {
@@ -1561,6 +1578,7 @@ pub fn fixture_editor(root: &gtk::Box, q: &serde_json::Value) -> serde_json::Val
         None
     }
     let action = q["operation"].as_str().unwrap_or("new");
+    if action=="group" {expand_sidebar_panel(root,"machines-tools-panel",true);}
     if action == "new" || action == "group" || action == "edit" {
         if let Some(b) = find(
             root.upcast_ref(),
@@ -1730,9 +1748,12 @@ pub fn fixture_library(root: &gtk::Box, file: Option<&Path>, q: &serde_json::Val
         None
     }
     if let Some(file)=file {
-        let mut child=root.first_child();
-        while let Some(w)=child {child=w.next_sibling();if let Some(e)=w.downcast_ref::<gtk::Entry>() {e.set_text(&file.to_string_lossy());}if let Some(b)=w.downcast_ref::<gtk::Button>() {if b.label().as_deref()==Some("Preview selected Remmina file"){b.emit_clicked();}}}
+        expand_sidebar_panel(root,"machines-import-panel",true);
+        if let Some(entry)=find(root.upcast_ref(),"machines-import-path").and_then(|w|w.downcast::<gtk::Entry>().ok()) {entry.set_text(&file.to_string_lossy());}
+        if let Some(button)=find(root.upcast_ref(),"machines-import-preview").and_then(|w|w.downcast::<gtk::Button>().ok()) {button.emit_clicked();}
     }
+    if let Some(expanded)=q["import_expanded"].as_bool(){expand_sidebar_panel(root,"machines-import-panel",expanded);}
+    if let Some(expanded)=q["tools_expanded"].as_bool(){expand_sidebar_panel(root,"machines-tools-panel",expanded);}
     if let Some(id)=q["target"].as_str() {
         if let Some(w)=find(root.upcast_ref(),"machines-merge-target") {
             let dropdown=w.downcast::<gtk::DropDown>().unwrap();
@@ -1742,6 +1763,7 @@ pub fn fixture_library(root: &gtk::Box, file: Option<&Path>, q: &serde_json::Val
         }
     }
     let action=q["operation"].as_str().unwrap_or("inspect");
+    if action=="undo" {expand_sidebar_panel(root,"machines-tools-panel",true);}
     let name=match action {"next"=>"machines-page-next","previous"=>"machines-page-previous","review"=>"machines-merge-review","undo"=>"machines-undo",_=>""};
     if let Some(w)=find(root.upcast_ref(),name) {if let Some(b)=w.downcast_ref::<gtk::Button>() {if b.is_sensitive(){b.emit_clicked();}}}
     let mut review_text=None;
@@ -1755,7 +1777,9 @@ pub fn fixture_library(root: &gtk::Box, file: Option<&Path>, q: &serde_json::Val
     }
     let text=|name|find(root.upcast_ref(),name).and_then(|w|w.downcast::<gtk::Label>().ok()).map(|l|l.text().to_string());
     let sensitive=|name|find(root.upcast_ref(),name).is_some_and(|w|w.is_sensitive());
-    json!({"page":text("machines-page-label"),"previous":sensitive("machines-page-previous"),"next":sensitive("machines-page-next"),"status":text("machines-status"),"review_text":review_text,"visible":fixture(root,None,None,false,false)})
+    let panel=|name|find(root.upcast_ref(),name).and_then(|w|w.downcast::<gtk::Expander>().ok()).is_some_and(|w|w.is_expanded());
+    let list_height=find(root.upcast_ref(),"machines-list-scroll").map(|w|w.height()).unwrap_or(0);
+    json!({"import_expanded":panel("machines-import-panel"),"tools_expanded":panel("machines-tools-panel"),"list_height":list_height,"sidebar_height":root.height(),"page":text("machines-page-label"),"previous":sensitive("machines-page-previous"),"next":sensitive("machines-page-next"),"status":text("machines-status"),"review_text":review_text,"visible":fixture(root,None,None,false,false)})
 }
 #[cfg(test)]
 mod merge_tests {

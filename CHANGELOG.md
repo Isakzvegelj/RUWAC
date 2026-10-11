@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## v0.1.16 — 2026-10-11 — Prerelease
+
+- Give saved machines most of the sidebar; group maintenance and Remmina import controls in native collapsed panels.
+- Keep creation, search, favorites and paging visible; bound expanded import controls and wrap/select status messages.
+- Preserve native CRUD, import review/Cancel/Undo and connection handlers through the grouped layout.
+- Validate the allocated layout, all 1,000 endpoints and full authenticated local RDP clipboard/display regressions.
+
 ## v0.1.15 — 2026-10-11 — Prerelease
 
 - Add permission-scoped native RDP list/query/open/reconnect/disconnect with stable typed targets, independent focus consent and runtime revocation.

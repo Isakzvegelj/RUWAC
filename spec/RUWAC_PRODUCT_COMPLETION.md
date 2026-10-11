@@ -39,7 +39,7 @@ The full product is not yet complete. A runnable source prerelease and isolated 
 | C-10 transactions/errors | Epoch cancellation, policies, reconnect and limits | PASS bounded fixture; further malformed/slow-server soak remains |
 | C-11 unsupported format/consumer | Visible staging errors and no fake attachment claim | PARTIAL: final destination/consumer fallback UX |
 | F-01 import | Explicit read-only Remmina preview, 70 imports, metadata backup | PARTIAL: explicit-ID reviewed merge, policy preservation, stale/active guards and Undo validated; broader nonsecret mapping/skip reporting remains |
-| F-02 library | Native CRUD, groups, favorites, recents, 1,000-profile fixture | PARTIAL: native 50-row paging and all 1,000 endpoints/search validated; inherited routes and specified SQLite inventory remain |
+| F-02 library | Native compact sidebar/panels, CRUD, groups, favorites, recents, 1,000-profile fixture | PARTIAL: native 50-row paging and all 1,000 endpoints/search validated; inherited routes and specified SQLite inventory remain |
 | F-03 transfers | SFTP SHA-256, overwrite, cancel, slow-peer/loss and native listing | PARTIAL: recursive/resumable/rsync, encrypted keys and cleanup after loss |
 | F-04 agents | Ordinary daemon-owned terminal execution | PARTIAL: process metadata, monitor/jump/notify; optional structured adapters |
 | F-05 ordinary user/headless package | Independent graphical-free headless graph | PARTIAL: per-user installation implemented; RPM dependency/install qualification remains open |

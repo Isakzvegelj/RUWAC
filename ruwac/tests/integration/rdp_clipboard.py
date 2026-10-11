@@ -319,6 +319,7 @@ try:
   restored=spike.eventually(lambda:r if (r:=command('gui','rdp-inspect',rdp=2)).get('status','').startswith('Connected') and min(r.get('size',[0,0]))>0 else False,20)
   assert restored['transport_id']!=old_transport
   assert [command('gui','rdp-inspect',rdp=i)['transport_id']for i in [0,1]]==neighbors
+  command('gui','profiles-control',import_expanded=False,tools_expanded=False)
   command('gui','snapshot');time.sleep(.15)
   assert (root/'native-rust.png').is_file()
   (root/'native-rust.png').replace(root/'rdp-toolbar.png')

@@ -576,7 +576,7 @@ checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
 
 [[package]]
 name = "ruwac-cli"
-version = "0.1.15"
+version = "0.1.16"
 dependencies = [
  "libc",
  "ruwac-clipboard",
@@ -589,7 +589,7 @@ dependencies = [
 
 [[package]]
 name = "ruwac-clipboard"
-version = "0.1.15"
+version = "0.1.16"
 dependencies = [
  "libc",
  "png",
@@ -599,7 +599,7 @@ dependencies = [
 
 [[package]]
 name = "ruwac-core"
-version = "0.1.15"
+version = "0.1.16"
 dependencies = [
  "libc",
  "ruwac-protocol",
@@ -612,7 +612,7 @@ dependencies = [
 
 [[package]]
 name = "ruwac-daemon"
-version = "0.1.15"
+version = "0.1.16"
 dependencies = [
  "libc",
  "ruwac-core",
@@ -623,7 +623,7 @@ dependencies = [
 
 [[package]]
 name = "ruwac-protocol"
-version = "0.1.15"
+version = "0.1.16"
 dependencies = [
  "serde",
  "serde_json",
@@ -633,7 +633,7 @@ dependencies = [
 
 [[package]]
 name = "ruwac-pty"
-version = "0.1.15"
+version = "0.1.16"
 dependencies = [
  "libc",
  "portable-pty",
@@ -641,7 +641,7 @@ dependencies = [
 
 [[package]]
 name = "ruwac-term"
-version = "0.1.15"
+version = "0.1.16"
 dependencies = [
  "alacritty_terminal",
  "serde",
@@ -650,7 +650,7 @@ dependencies = [
 
 [[package]]
 name = "ruwac-tui"
-version = "0.1.15"
+version = "0.1.16"
 dependencies = [
  "libc",
  "ruwac-protocol",

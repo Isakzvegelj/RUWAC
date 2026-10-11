@@ -32,6 +32,13 @@ try:
  with Client(sock)as c:session=c.call('session.create',{'name':'Library acceptance','argv':['/bin/sh','-c','sleep 300']})
  gui=subprocess.Popen([a.gui,'--socket',str(sock),'--session',session['session'],'--fixture-dir',str(root)],env=env,stdout=(root/'gui.log').open('wb'),stderr=subprocess.STDOUT)
  eventually(lambda:command('inspect'),15)
+ state=eventually(lambda:(r if (r:=control())['list_height']>0 else None),10)
+ assert not state['import_expanded']and not state['tools_expanded'],state
+ assert state['list_height']>=state['sidebar_height']*0.50,state
+ control(import_expanded=True,tools_expanded=True)
+ assert control()['import_expanded']and control()['tools_expanded']
+ control(import_expanded=False,tools_expanded=False)
+ results.append({'id':'LIBRARY-COMPACT-NATIVE-SIDEBAR','status':'PASS','less_used_panels_collapsed_by_default':True,'list_gets_majority_of_sidebar':True,'native_expanders_open_and_close':True,'allocated_list_height':state['list_height'],'allocated_sidebar_height':state['sidebar_height']})
  start=time.perf_counter();seen=[]
  for page in range(20):
   r=control();assert r['visible']['rows']==50,r;assert r['page']==f'{page*50+1}–{page*50+50} of 1000',r
@@ -71,4 +78,4 @@ finally:
   except Exception:daemon.kill();daemon.wait()
  receipt={'results':results,'hashes':{n:hashlib.sha256(Path(path).read_bytes()).hexdigest()for n,path in [('ruwac',a.binary),('ruwac-desktop',a.gui)]},'evidence':str(root),'scope':'Actual native GTK widget/dialog callbacks on an owned compositor; synthetic actions; no owner credentials or physical input'}
  (root/'receipt.json').write_text(json.dumps(receipt,indent=2)+'\n');print(json.dumps(receipt,indent=2))
-assert len(results)==7
+assert len(results)==8
