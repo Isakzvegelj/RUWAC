@@ -7,7 +7,7 @@ p=argparse.ArgumentParser();p.add_argument('--binary',required=True);p.add_argum
 spec=importlib.util.spec_from_file_location('spike',Path(__file__).with_name('spike.py'));spike=importlib.util.module_from_spec(spec);spec.loader.exec_module(spike)
 root=Path(tempfile.mkdtemp(prefix='rdp-native-',dir=a.evidence));root.chmod(0o700);env={**os.environ,'HOME':str(root/'home'),'XDG_CONFIG_HOME':str(root/'config'),'XDG_CACHE_HOME':str(root/'cache'),'XDG_DATA_HOME':str(root/'data'),'GSETTINGS_BACKEND':'memory','GTK_USE_PORTAL':'0','GTK_A11Y':'none'}
 for key in ['HOME','XDG_CONFIG_HOME','XDG_CACHE_HOME','XDG_DATA_HOME']:Path(env[key]).mkdir(mode=0o700)
-processes=[];logs=[];results=[];sequences={};sock=root/'control.sock'
+processes=[];logs=[];results=[];sequences={};sock=root/'control.sock';private_bus=None;provider=None
 def start(argv,name):
  log=(root/(name+'.log')).open('wb');logs.append(log);proc=subprocess.Popen(argv,stdout=log,stderr=log,env=env);processes.append(proc);return proc
 def command(who,action=None,timeout=8,**kw):
@@ -23,7 +23,7 @@ def focus(who):
   subprocess.run(['xdotool','key','--clearmodifiers','Super_L+Tab'],env={**os.environ,'DISPLAY':os.environ['RUWAC_XTEST_DISPLAY']},check=True);time.sleep(.12)
  raise AssertionError('Isolated compositor focus failed')
 def case(name,fn):
- if a.r5_only and name not in {"RDP-NATIVE-AUTH-3","MACHINES-NATIVE-EDITOR","RDP-NATIVE-RESIZE-20","MACHINES-RESTART-1000","FILES-CLIPBOARD-OWNERSHIP"}:return
+ if a.r5_only and name not in {"RDP-NATIVE-AUTH-3","MACHINES-NATIVE-EDITOR","RDP-NATIVE-RESIZE-20","MACHINES-RESTART-1000","FILES-CLIPBOARD-OWNERSHIP","RDP-PROFILE-KEYRING-PREFERENCES"}:return
  try:results.append({'id':name,'status':'PASS','details':fn()});print(name,'PASS',flush=True)
  except Exception as e:results.append({'id':name,'status':'FAIL','error':str(e),'traceback':traceback.format_exc()});print(name,'FAIL',str(e),flush=True)
 def digest(data):return hashlib.sha256(data).hexdigest()
@@ -38,6 +38,9 @@ def transfer_to_remote(tab,kind,file):
  focus('peer');command('peer','set-text' if kind=='text' else 'set-png',file=file);focus('gui');before=receipt(tab).get('received',0);command('gui','rdp-send',rdp=tab)
  return spike.eventually(lambda:r if (r:=receipt(tab)).get('received',0)>before and 'error' not in r else False,12)
 try:
+ lines=subprocess.check_output(['dbus-daemon','--session','--fork','--print-address=1','--print-pid=1'],env=env,text=True).splitlines();private_bus=int(lines[1]);env['DBUS_SESSION_BUS_ADDRESS']=lines[0]
+ control=root/'private-keyring';control.mkdir(mode=0o700);env['GNOME_KEYRING_CONTROL']=str(control)
+ log=(root/'keyring.log').open('wb');logs.append(log);provider=subprocess.Popen(['gnome-keyring-daemon','--foreground','--components=secrets','--control-directory='+str(control),'--unlock'],env=env,stdin=subprocess.PIPE,stdout=log,stderr=log);processes.append(provider);provider.stdin.write(b'generated-disposable-keyring-only\n');provider.stdin.close();time.sleep(1)
  subprocess.run(['openssl','req','-x509','-newkey','rsa:2048','-nodes','-days','1','-subj','/CN=RUWAC-local-fixture','-addext','subjectAltName=IP:127.0.0.1','-keyout',str(root/'key.pem'),'-out',str(root/'cert.pem')],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL);(root/'key.pem').chmod(0o600)
  server=start([a.server,str(root)],'rdp-server');spike.eventually(lambda:(root/'server-ready.json').exists(),10);ready=json.loads((root/'server-ready.json').read_text())
  daemon=start([a.binary,'--socket',str(sock),'serve'],'daemon');spike.eventually(lambda:sock.exists())
@@ -173,6 +176,27 @@ try:
   return {'before':before['metrics'],'after':after['metrics'],'processes_before':start_metrics,'processes_after':process_metrics(),'wall_seconds':time.perf_counter()-wall_start,'transitions':transitions,'negotiation':'actual Display Control DVC plus server DeactivateAll/reactivation','resize_storm':{'gtk_allocation_changes':20,'settled_size':storm['size'],'stable_after_800ms':True},'post_resize_clipboard':True,'other_tabs_unchanged':True,'codec':'raw bitmap fixture; RemoteFX/GNOME issue remains a separate gate'}
  case('RDP-NATIVE-RESIZE-20',resize)
 
+ def profile_keyring_preferences():
+  assert provider and provider.poll() is None, 'Disposable Secret Service provider unavailable'
+  command('gui','profiles',search='R5 renamed')
+  r=command('gui','profile-editor',operation='edit',fields={'13':0,'3':'127.0.0.1:'+str(ready['ports'][0]),'4':'fixture','10':str(root/'cert.pem')});assert not r['error'],r
+  item=next(p for p in r['items']if p['name'].startswith('R5 renamed') and p['server']=='127.0.0.1:'+str(ready['ports'][0]))
+  subprocess.run(['secret-tool','store','--label=RUWAC disposable fixture','application','RUWAC','profile',item['secret_reference']],input=b'generated-local-only',env=env,check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=10)
+  command('gui','close-rdp',rdp=0);time.sleep(.3)
+  assert command('gui','profiles',search='R5 renamed',open=True)['rows']>=1
+  r=spike.eventually(lambda:r if (r:=command('gui','rdp-inspect',rdp=2)).get('status','').startswith('Connected') and min(r.get('size',[0,0]))>0 else False,20)
+  command('gui','rdp-display',rdp=2,mode='stretch',zoom=1.5)
+  def persisted():
+   data=json.loads((root/'config/RUWAC/machines.json').read_text());p=next(p for p in data['items']if p['id']==item['id']);return p if p['preferences']['display']=='stretch' and p['preferences']['zoom']==1.5 else False
+  spike.eventually(persisted,5)
+  protected=command('gui','profile-editor',operation='edit',response='delete',confirm=True);assert any(p['id']==item['id']for p in protected['items'])
+  command('gui','close-rdp',rdp=2);time.sleep(.3)
+  removed=command('gui','profile-editor',operation='edit',response='delete',confirm=True);assert not any(p['id']==item['id']for p in removed['items'])
+  subprocess.run(['secret-tool','clear','application','RUWAC','profile',item['secret_reference']],env=env,check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=10)
+  provider.terminate();provider.wait(timeout=5)
+  return {'normal_sidebar_connection':'actual CredSSP with disposable Secret Service lookup and verified fixture CA','decoded_frame':r['size'],'runtime_preferences_saved':True,'profile_protected_then_released':True,'owner_secrets_accessed':False}
+ case('RDP-PROFILE-KEYRING-PREFERENCES',profile_keyring_preferences)
+
  def restart_and_thousand():
   global gui
   saved=json.loads((root/'config/RUWAC/machines.json').read_text())
@@ -199,6 +223,7 @@ finally:
    proc.terminate()
    try:proc.wait(timeout=5)
    except subprocess.TimeoutExpired:proc.kill();proc.wait()
+ if private_bus is not None:os.kill(private_bus,15)
  for log in logs:log.close()
  def rss(proc):
   try:return int(next(l.split()[1] for l in Path(f'/proc/{proc.pid}/status').read_text().splitlines() if l.startswith('VmRSS:')))/1024

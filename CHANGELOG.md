@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## v0.1.5 — 2026-10-11 — Prerelease
+
+- Add on-demand authenticated daemon startup, single-instance native desktop activation, terminal session reopening and private workspace restoration.
+- Release profile deletion protection when all associated views close; validate sidebar RDP credential lookup and preference persistence with an isolated Secret Service provider.
+- Add an immutable per-user installer and desktop launcher through the existing build workflow; validate terminal persistence and exact Unicode input through an authorized Fedora SSH host.
+- Preserve full terminal, RDP clipboard and SFTP regressions; publish the complete product acceptance audit and remaining limitations.
+
 ## v0.1.4 — 2026-10-11 — Prerelease
 
 - Add native machine/profile editing and Secret Service credential actions, negotiated embedded RDP display control/reactivation with zoom and panning, and verified in-window SSH/SFTP files.

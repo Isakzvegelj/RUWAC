@@ -5,6 +5,8 @@ mod files;
 mod profiles;
 mod rdp;
 mod staging;
+mod sessions;
+mod workspace;
 mod view;
 mod worker;
 use adw::prelude::*;
@@ -69,18 +71,22 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         i += 1;
     }
     let socket = socket.ok_or("--socket required")?;
-    // Session creation precedes the GTK main loop; no synchronous RPC runs in UI callbacks.
+    let mut rpc = worker::Rpc::connect(&socket)?;
+    let available = rpc.call("session.list", json!({}))?;
+    let saved = workspace::load(&socket);
+    let workspace_warning = saved.as_ref().err().map(|e| format!("Workspace restore: {e}"));
+    let selected = saved.as_ref().ok().and_then(|w| w.selected.clone());
     if sessions.is_empty() {
-        let mut rpc = worker::Rpc::connect(&socket)?;
-        for name in ["Terminal 1", "Terminal 2"] {
-            sessions.push(
-                rpc.call("session.create", json!({"name":name}))?["session"]
-                    .as_str()
-                    .ok_or("no session ID")?
-                    .into(),
-            );
+        if let Ok(w) = saved.as_ref() {
+            sessions.extend(w.sessions.iter().filter(|id| available.as_array().is_some_and(|rows| rows.iter().any(|r| r["id"] == id.as_str()))).cloned());
+        }
+        if sessions.is_empty() {
+            if let Some(id) = available.as_array().and_then(|rows| rows.first()).and_then(|r| r["id"].as_str()) {sessions.push(id.into());}
+            else {sessions.push(rpc.call("session.create", json!({"name":"Terminal"}))?["session"].as_str().ok_or("no session ID")?.into());}
         }
     }
+    let session_names: std::collections::HashMap<String,String> = available.as_array().into_iter().flatten().filter_map(|r|Some((r["id"].as_str()?.into(),r["name"].as_str()?.into()))).collect();
+    drop(rpc);
     for id in &sessions {
         if !ruwac_protocol::valid_id(id, "session") {
             return Err("invalid session ID".into());
@@ -111,14 +117,16 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let stage_guard = stage.as_ref().map(|p| staging::Stage::new(p)).transpose()?;
     stage = stage_guard.as_ref().map(|s| s.path.clone());
     let app = adw::Application::builder()
-        .application_id("si.z4.ruwac.desktop")
-        .flags(gtk::gio::ApplicationFlags::NON_UNIQUE)
+        .application_id("si.z4.ruwac")
+        .flags(if fixture.is_some() {gtk::gio::ApplicationFlags::NON_UNIQUE} else {gtk::gio::ApplicationFlags::FLAGS_NONE})
         .build();
     let views: Rc<RefCell<Vec<Rc<View>>>> = Rc::new(RefCell::new(Vec::new()));
     let all = views.clone();
     app.connect_activate(move|app|{
-  let window=adw::ApplicationWindow::builder().application(app).title("RUWAC — terminal workspace candidate").default_width(1040).default_height(780).build();
+  if let Some(window)=app.active_window(){window.present();return;}
+  let window=adw::ApplicationWindow::builder().application(app).title("RUWAC").default_width(1040).default_height(780).build();
   let box_=gtk::Box::new(gtk::Orientation::Vertical,0);let header=adw::HeaderBar::new();box_.append(&header);let tabs=adw::TabView::new();tabs.set_vexpand(true);let bar=adw::TabBar::builder().view(&tabs).autohide(false).build();box_.append(&bar);
+  if let Some(message)=workspace_warning.as_ref(){box_.append(&gtk::Label::new(Some(message)));}
   let broker=Rc::new(RefCell::new(ruwac_clipboard::FocusBroker::default()));
   broker.borrow_mut().set_desktop_disabled(clipboard_disabled);
   let b=broker.clone();gtk::prelude::WidgetExt::display(&window).clipboard().connect_changed(move|_|b.borrow_mut().local_copy());
@@ -133,17 +141,26 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
   let image_button=gtk::Button::with_label("Stage clipboard PNG");header.pack_end(&image_button);
   let vb=all.clone();let tb=tabs.clone();let sb=stage.clone();let owned=owned_images.clone();
   image_button.connect_clicked(move|_|{let Some(page)=tb.selected_page()else{return;};let Some(v)=vb.borrow().iter().find(|v|page.child()==v.root).cloned()else{return;};let Some(dir)=sb.clone()else{v.status.set_text("Private staging directory is unavailable");return;};let epoch=v.broker.borrow().epoch();let weak=Rc::downgrade(&v);let owned=owned.clone();clipboard::ingest_png(&v.area.display().clipboard(),dir,v.broker.clone(),epoch,ruwac_clipboard::MAX_IMAGE_BYTES,Duration::ZERO,move|r|if let Some(v)=weak.upgrade(){match r{Ok(r)=>{owned.borrow_mut().push(r.path);v.status.set_text(&format!("PNG staged: {}×{}, {} bytes; no agent attachment",r.width,r.height,r.bytes));},Err(e)=>v.status.set_text(&e)}});});
-  for (i,session) in sessions.iter().enumerate(){let v=View::new(socket.clone(),session.clone(),broker.clone());let page=tabs.append(&v.root);page.set_title(&format!("Terminal {} · {}",i+1,&session[..session.len().min(16)]));all.borrow_mut().push(v);}
+  for session in &sessions{sessions::append(&tabs,&all,&socket,&broker,session,session_names.get(session).map(String::as_str).unwrap_or("Terminal"));}
+  if let Some(id)=selected.as_ref(){if let Some(v)=all.borrow().iter().find(|v|&v.session==id){tabs.set_selected_page(&tabs.page(&v.root));}}
+  header.pack_start(&sessions::controls(tabs.clone(),all.clone(),socket.clone(),broker.clone()));
+
   let rv=rdp_views.clone();let t=tabs.clone();let b=broker.clone();let(sock,views)=(socket.clone(),all.clone());
-  let (sidebar,search)=profiles::sidebar(move|profile,persist|{if profile.protocol=="RDP"{let v=rdp::RdpView::new(b.clone());v.configure(&profile);v.set_preferences_sink(persist);let page=t.append(&v.root);page.set_title(&format!("{} / {} · {}",profile.group,profile.name,profile.protocol));rv.borrow_mut().push(v.clone());t.set_selected_page(&page);v.focus();v.connect_profile();}else{let file_panel=files::panel(profile.clone());let file_page=t.append(&file_panel);file_page.set_title(&format!("{} / {} · Files",profile.group,profile.name));let socket=sock.clone();let name=profile.name.clone();let argv=profiles::ssh_argv(&profile);let(tx,rx)=std::sync::mpsc::sync_channel(1);std::thread::spawn(move||{let result=(||->Result<String,String>{let mut client=worker::Rpc::connect(&socket).map_err(|e|e.to_string())?;let reply=client.call("session.create",json!({"name":name,"argv":argv?})).map_err(|e|e.to_string())?;reply["session"].as_str().map(str::to_owned).ok_or("SSH session creation failed".into())})();let _=tx.send(result);});let(t,b,views,socket)=(t.clone(),b.clone(),views.clone(),sock.clone());glib::timeout_add_local(Duration::from_millis(10),move||{match rx.try_recv(){Ok(Ok(session))=>{let v=View::new(socket.clone(),session,b.clone());let page=t.append(&v.root);page.set_title(&format!("{} / {} · {}",profile.group,profile.name,profile.protocol));views.borrow_mut().push(v.clone());t.set_selected_page(&page);v.focus();glib::ControlFlow::Break},Ok(Err(_))|Err(std::sync::mpsc::TryRecvError::Disconnected)=>glib::ControlFlow::Break,Err(std::sync::mpsc::TryRecvError::Empty)=>glib::ControlFlow::Continue}});}});
+  let (sidebar,search)=profiles::sidebar(move|profile,persist,lease|{if profile.protocol=="RDP"{let v=rdp::RdpView::new(b.clone());v.configure(&profile);v.set_preferences_sink(persist);lease.bind(&v.root);let page=t.append(&v.root);page.set_title(&format!("{} / {} · {}",profile.group,profile.name,profile.protocol));rv.borrow_mut().push(v.clone());t.set_selected_page(&page);v.focus();v.connect_profile();}else{let file_panel=files::panel(profile.clone());lease.fork().bind(&file_panel);let file_page=t.append(&file_panel);file_page.set_title(&format!("{} / {} · Files",profile.group,profile.name));let socket=sock.clone();let name=profile.name.clone();let argv=profiles::ssh_argv(&profile);let(tx,rx)=std::sync::mpsc::sync_channel(1);std::thread::spawn(move||{let result=(||->Result<String,String>{let mut client=worker::Rpc::connect(&socket).map_err(|e|e.to_string())?;let reply=client.call("session.create",json!({"name":name,"argv":argv?})).map_err(|e|e.to_string())?;reply["session"].as_str().map(str::to_owned).ok_or("SSH session creation failed".into())})();let _=tx.send(result);});let(t,b,views,socket)=(t.clone(),b.clone(),views.clone(),sock.clone());let mut pending_lease=Some(lease);glib::timeout_add_local(Duration::from_millis(10),move||{match rx.try_recv(){Ok(Ok(session))=>{let v=View::new(socket.clone(),session,b.clone());if let Some(lease)=pending_lease.take(){lease.bind(&v.root);}let page=t.append(&v.root);page.set_title(&format!("{} / {} · {}",profile.group,profile.name,profile.protocol));views.borrow_mut().push(v.clone());t.set_selected_page(&page);v.focus();glib::ControlFlow::Break},Ok(Err(_))|Err(std::sync::mpsc::TryRecvError::Disconnected)=>glib::ControlFlow::Break,Err(std::sync::mpsc::TryRecvError::Empty)=>glib::ControlFlow::Continue}});}});
   let body=gtk::Box::new(gtk::Orientation::Horizontal,0);let reveal=gtk::Revealer::builder().child(&sidebar).reveal_child(true).build();body.append(&reveal);body.append(&tabs);tabs.set_hexpand(true);box_.append(&body);let toggle=gtk::Button::with_label("Machines");header.pack_start(&toggle);let r=reveal.clone();toggle.connect_clicked(move|_|r.set_reveal_child(!r.reveals_child()));let keys=gtk::EventControllerKey::new();keys.set_propagation_phase(gtk::PropagationPhase::Capture);keys.connect_key_pressed(move|_,key,_,mods|{if key==gdk::Key::k&&mods.contains(gdk::ModifierType::CONTROL_MASK){reveal.set_reveal_child(true);search.grab_focus();glib::Propagation::Stop}else{glib::Propagation::Proceed}});window.add_controller(keys);window.set_content(Some(&box_));
   let vv=all.clone();tabs.connect_selected_page_notify(move|t|{if let Some(page)=t.selected_page(){for v in vv.borrow().iter(){if page.child()==v.root{v.focus();break;}}}});
-  let vv=all.clone();tabs.connect_close_page(move|_,page|{for v in vv.borrow().iter(){if page.child()==v.root{v.close();}}glib::Propagation::Proceed});
-  let owned=owned_images.clone();let vv=all.clone();window.connect_close_request(move|_|{for v in vv.borrow().iter(){v.close();}for path in owned.borrow_mut().drain(..){let _=std::fs::remove_file(path);}glib::Propagation::Proceed});window.present();if let Some(v)=all.borrow().first(){v.focus();}
+  let vv=all.clone();tabs.connect_close_page(move|_,page|{let mut views=vv.borrow_mut();for v in views.iter(){if page.child()==v.root{v.close();}}views.retain(|v|page.child()!=v.root);glib::Propagation::Proceed});
+  let owned=owned_images.clone();let vv=all.clone();let saved_tabs=tabs.clone();let saved_socket=socket.clone();window.connect_close_request(move|_|{let open=vv.borrow();let mut ids=Vec::new();for i in 0..saved_tabs.n_pages(){let page=saved_tabs.nth_page(i);if let Some(v)=open.iter().find(|v|page.child()==v.root){ids.push(v.session.clone());}}let selected=saved_tabs.selected_page().and_then(|p|open.iter().find(|v|p.child()==v.root).map(|v|v.session.clone()));if let Err(e)=workspace::save(&workspace::Workspace{schema:1,socket:saved_socket.clone(),sessions:ids,selected}){eprintln!("Workspace save failed: {e}");}drop(open);for v in vv.borrow().iter(){v.close();}for path in owned.borrow_mut().drain(..){let _=std::fs::remove_file(path);}glib::Propagation::Proceed});window.present();if let Some(page)=tabs.selected_page(){for v in all.borrow().iter(){if page.child()==v.root{v.focus();}}}
   let vv=all.clone();let tabs=tabs.clone();let app=app.clone();let fixture=fixture.clone();let staging=stage.clone();let owned=owned_images.clone();let tick=Rc::new(Cell::new(0u64));let last=Rc::new(Cell::new(Instant::now()));let max_gap=Rc::new(Cell::new(0u128));let sequence=Rc::new(Cell::new(0u64));
   glib::timeout_add_local(Duration::from_millis(16),move||{
    tick.set(tick.get()+1);let now=Instant::now();max_gap.set(max_gap.get().max(now.duration_since(last.replace(now)).as_millis()));for v in vv.borrow().iter(){v.update();}
    if let Some(dir)=fixture.as_ref(){let request=dir.join("gui-request.json");if let Ok(bytes)=std::fs::read(&request){if let Ok(q)=serde_json::from_slice::<Value>(&bytes){let seq=q["seq"].as_u64().unwrap_or(0);if seq>sequence.get(){sequence.set(seq);let index=q["view"].as_u64().unwrap_or(0)as usize;let view=vv.borrow().get(index).cloned();let reply_dir=dir.clone();let reply=move|result:Value|{let path=reply_dir.join("gui-response.json");let temp=reply_dir.join("gui-response.tmp");let _=std::fs::write(&temp,json!({"seq":seq,"result":result}).to_string());let _=std::fs::rename(temp,path);};if let Some(v)=view{match q["action"].as_str().unwrap_or(""){
+    "new-terminal"=>reply(json!({"clicked":sessions::fixture(&window,"New terminal")})),
+    "sessions-open"=>{let label=q["session"].as_str().unwrap_or("Sessions…");let mut clicked=sessions::fixture(&window,label);if !clicked{for widget in gtk::Window::list_toplevels(){if let Ok(w)=widget.downcast::<gtk::Window>(){if w.title().as_deref()==Some("Persistent terminal sessions"){clicked=sessions::fixture(&w,label);}}}}reply(json!({"clicked":clicked}));},
+    "close-rdp"=>{let r=rdp_views.borrow().get(q["rdp"].as_u64().unwrap_or(0)as usize).cloned();if let Some(r)=r{tabs.close_page(&tabs.page(&r.root));}reply(json!({"rdp_views":rdp_views.borrow().len()}));},
+    "close-tab"=>{let i=q["tab"].as_i64().unwrap_or(0)as i32;if i>=0&&i<tabs.n_pages(){let page=tabs.nth_page(i);tabs.close_page(&page);}reply(json!({"tabs":tabs.n_pages(),"terminal_views":vv.borrow().len()}));},
+    "tab-select"=>{let i=q["tab"].as_i64().unwrap_or(0)as i32;if i>=0&&i<tabs.n_pages(){tabs.set_selected_page(&tabs.nth_page(i));}reply(json!({"tabs":tabs.n_pages()}));},
+    "workspace-close"=>{reply(json!({"closing":true}));window.close();},
     "switch"=>{v.show_terminal();let page=tabs.page(&v.root);tabs.set_selected_page(&page);if let Some(pane)=q["pane"].as_str(){*v.target.borrow_mut()=pane.into();v.command("pane.select",json!({"pane":pane}));}v.focus();if let Some(text)=q["text"].as_str(){for c in text.chars(){let key=unsafe{glib::translate::from_glib(gdk::ffi::gdk_unicode_to_keyval(c as u32))};v.key(key,gdk::ModifierType::empty());}}reply(json!({"queued":true}));},
     "rdp-open"=>{rdp_button.emit_clicked();if let Some(r)=rdp_views.borrow().last(){if let Some(port)=q["port"].as_u64().filter(|p|*p>0&&*p<=65535){r.fixture_connect(port as u16,&dir.join("cert.pem"));}else{r.fixture_frame();}}reply(json!({"tabs":tabs.n_pages(),"backend":"IronRDP","synthetic_frame":q["port"].is_null()}));},
     "rdp-inspect"|"rdp-switch"|"rdp-send"|"rdp-receive"|"rdp-policy"=>{if let Some(r)=rdp_views.borrow().get(q["rdp"].as_u64().unwrap_or(0)as usize){match q["action"].as_str().unwrap_or(""){"rdp-switch"=>{tabs.set_selected_page(&tabs.page(&r.root));r.focus();},"rdp-policy"=>r.fixture_policy(q["policy"].as_u64().unwrap_or(0)as u32),"rdp-send"=>r.fixture_clipboard(false),"rdp-receive"=>r.fixture_clipboard(true),_=>()}reply(r.fixture_inspect());}else{reply(json!({"error":"RDP tab missing"}));}},

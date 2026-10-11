@@ -2,7 +2,7 @@
 use gtk::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::{
-    cell::RefCell,
+    cell::{Cell, RefCell},
     io::Read,
     path::{Path, PathBuf},
     rc::Rc,
@@ -272,7 +272,7 @@ struct Store {
     path: Option<PathBuf>,
     error: Option<String>,
     groups: Vec<Group>,
-    active: std::collections::HashSet<String>,
+    active: std::collections::HashMap<String, usize>,
 }
 impl Store {
     fn load() -> Self {
@@ -475,8 +475,24 @@ fn parse_library(b: &[u8]) -> Result<Vec<Profile>, String> {
     }
     Ok(items)
 }
+pub struct ConnectionLease {store: Rc<RefCell<Store>>, id: String, released: Cell<bool>}
+impl ConnectionLease {
+    pub fn fork(&self) -> Self {
+        *self.store.borrow_mut().active.entry(self.id.clone()).or_default() += 1;
+        Self {store:self.store.clone(),id:self.id.clone(),released:Cell::new(false)}
+    }
+    fn release(&self) {
+        if self.released.replace(true) {return;}
+        let mut s=self.store.borrow_mut();
+        if let Some(n)=s.active.get_mut(&self.id) {*n-=1;if *n==0{s.active.remove(&self.id);}}
+    }
+    pub fn bind(self, widget: &impl IsA<gtk::Widget>) {
+        widget.connect_unrealize(move |_|self.release());
+    }
+}
+impl Drop for ConnectionLease {fn drop(&mut self){self.release();}}
 pub type PreferenceSink = Rc<dyn Fn(&str, f64, bool, u32)>;
-pub fn sidebar(open: impl Fn(Profile, PreferenceSink) + 'static) -> (gtk::Box, gtk::SearchEntry) {
+pub fn sidebar(open: impl Fn(Profile, PreferenceSink, ConnectionLease) + 'static) -> (gtk::Box, gtk::SearchEntry) {
     let root = gtk::Box::new(gtk::Orientation::Vertical, 6);
     root.set_width_request(240);
     let search = gtk::SearchEntry::new();
@@ -496,7 +512,7 @@ pub fn sidebar(open: impl Fn(Profile, PreferenceSink) + 'static) -> (gtk::Box, g
     if let Some(e) = &store.borrow().error {
         status.set_text(e);
     }
-    let callback: Rc<dyn Fn(Profile, PreferenceSink)> = Rc::new(open);
+    let callback: Rc<dyn Fn(Profile, PreferenceSink, ConnectionLease)> = Rc::new(open);
     let refresh: Rc<dyn Fn()> = {
         let list = list.clone();
         let store = store.clone();
@@ -609,12 +625,13 @@ pub fn sidebar(open: impl Fn(Profile, PreferenceSink) + 'static) -> (gtk::Box, g
                             p.preferences.clipboard = g.defaults.clipboard;
                         }
                     }
-                    s.active.insert(p.id.clone());
+                    *s.active.entry(p.id.clone()).or_default() += 1;
                     if let Err(e) = s.save() {
                         st.set_text(&e);
                     }
                     drop(s);
                     let (store, status, id) = (store_handle, st.clone(), p.id.clone());
+                    let lease = ConnectionLease {store: store.clone(), id: id.clone(), released: Cell::new(false)};
                     let sink: PreferenceSink = Rc::new(move |mode, zoom, full, policy| {
                         let mut s = store.borrow_mut();
                         let old = s.items.clone();
@@ -635,7 +652,7 @@ pub fn sidebar(open: impl Fn(Profile, PreferenceSink) + 'static) -> (gtk::Box, g
                             status.set_text("Connection preferences saved");
                         }
                     });
-                    cb(p, sink);
+                    cb(p, sink, lease);
                 });
             }
         })
@@ -1099,7 +1116,7 @@ fn editor(button: &gtk::Button, store: Rc<RefCell<Store>>, id: Option<String>, s
     }
     dialog.connect_response(move|d,response|{
         if response==gtk::ResponseType::Other(2) || response==gtk::ResponseType::Other(4) {
-            let machine=response==gtk::ResponseType::Other(4);if store.borrow().items.iter().any(|p|(p.id==original.id||(machine&&p.machine_id==original.machine_id))&&store.borrow().active.contains(&p.id)){info.set_text("This profile is used by an opened tab. Disconnect/close and restart before deleting it.");return;}
+            let machine=response==gtk::ResponseType::Other(4);if store.borrow().items.iter().any(|p|(p.id==original.id||(machine&&p.machine_id==original.machine_id))&&store.borrow().active.contains_key(&p.id)){info.set_text("This profile is used by an opened tab. Close all of its connection tabs before deleting it.");return;}
             let confirm=gtk::Dialog::builder().title("Delete endpoint metadata?").transient_for(d).modal(true).build();confirm.content_area().append(&gtk::Label::new(Some("Credentials remain in Secret Service. Undo restores metadata.")));confirm.add_button("Cancel",gtk::ResponseType::Cancel);confirm.add_button("Delete",gtk::ResponseType::Accept);
             let(s,id,machine_id,st,parent)=(store.clone(),original.id.clone(),original.machine_id.clone(),status.clone(),d.clone());confirm.connect_response(move|c,r|{if r==gtk::ResponseType::Accept {let mut s=s.borrow_mut();let old=s.items.clone();s.items.retain(|p|p.id!=id&&(!machine||p.machine_id!=machine_id));if let Err(e)=s.save(){s.items=old;st.set_text(&e);}else{drop(s);st.set_text("Metadata deleted; previous library retained for Undo");refresh_widgets(parent.transient_for().as_ref());parent.close();}}c.close();});confirm.present();return;
         }
@@ -1233,7 +1250,7 @@ fn group_editor(button: &gtk::Button, store: Rc<RefCell<Store>>, status: gtk::La
             let original = s.groups[(index - 1) as usize].path.clone();
             if s.items.iter().any(|p| {
                 (p.group == original || p.group.starts_with(&(original.clone() + "/")))
-                    && s.active.contains(&p.id)
+                    && s.active.contains_key(&p.id)
             }) {
                 info.set_text("Group is used by an opened tab; deletion protected");
                 return;

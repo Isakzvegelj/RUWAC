@@ -4,7 +4,7 @@ from pathlib import Path
 import argparse,ast,json,sys
 ROOT_FILES={'.gitignore','README.md','CHANGELOG.md','RELEASE-NOTES.md'}
 ARCH_FILES={f'{n:02}-{name}.md' for n,name in enumerate(['RUWAC-DECISION','ARCHITECTURE','PROTOCOL-V0','ACCEPTANCE-MATRIX','BENCHMARKS','OPEN-ISSUES','IMPLEMENTATION-ROADMAP','COMPONENTS-LICENSES'])}|{'evidence-index.json','dependency-licenses.json','benchmark-results.json','acceptance-results.json'}
-SCRIPT_FILES={'public-files.py'}
+SCRIPT_FILES={'public-files.py','install-user.py'}
 FORBIDDEN={'.agents','.codex','.claude','.kimi','.githooks','.vscode','.aws','AGENTS.md','CLAUDE.md','SKILL.md','FIRST-PROMPT.md','OWNER-SPIKE-SPEC.md'}
 def files(root):
  out=[]

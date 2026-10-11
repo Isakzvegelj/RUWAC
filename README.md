@@ -1,6 +1,6 @@
 # RUWAC
 
-A bounded Rust terminal multiplexer prototype: one daemon owns PTYs; replaceable TUI and JSON clients control sessions, windows and stable panes.
+A Rust remote workspace with persistent terminals: one daemon owns PTYs; replaceable TUI and JSON clients control sessions, windows and stable panes.
 
 Implemented: persistent daemon-owned children, shared focus, nested horizontal/vertical splits, zoom, paged scrollback, private Unix IPC and a separate compiled GTK desktop. The desktop supports keyboard marking/search, real GDK clipboard transport, private PNG staging and an embedded IronRDP client. Physical desktop/PRIMARY and authenticated remote-host acceptance remain unqualified; image attachment and recovery after daemon loss remain open.
 
@@ -63,10 +63,23 @@ Create windows with Ctrl-A c, split with Ctrl-A S or |, move between panes with 
 
 Private configuration may set RUWAC_SCROLLBACK_LINES (default 50000) and RUWAC_SCROLLBACK_MIB (default 256; approximate cell budget). Copy view has an 8 MiB cap with visible truncation. RUWAC_SHORTCUTS remaps GTK accelerators for prefix/copy/paste; RUWAC_KEYMAP remaps prefix commands. Both remapping variables contain JSON objects, for example `RUWAC_SHORTCUTS='{"prefix":"<Control>b"}'` and `RUWAC_KEYMAP='{"x":"z"}'` (x invokes zoom). See native help for the current configuration.
 
-“New RDP tab” opens the in-process client. Supply an authorized host:port, username, a Secret Service profile reference and optional trusted CA PEM. The lookup uses attributes application=RUWAC and profile=the reference; secrets are not stored in the project. System certificate/hostname validation is mandatory. Fit/native/stretch/fullscreen and explicit send-key actions are implemented. Text and PNG CLIPRDR works in both directions with five clipboard policies, explicit send/receive and remote paste. Authenticated loopback sessions are tested; external Windows/GNOME hosts and dynamic remote resizing remain unqualified.
+“New RDP tab” opens the in-process client. Supply an authorized host:port, username, a Secret Service profile reference and optional trusted CA PEM. The lookup uses attributes application=RUWAC and profile=the reference; secrets are not stored in the project. System certificate/hostname validation is mandatory. Fit/native/stretch/fullscreen and explicit send-key actions are implemented. Text and PNG CLIPRDR works in both directions with five clipboard policies, explicit send/receive and remote paste. Authenticated loopback sessions are tested; dynamic resizing is qualified against authenticated loopback sessions; external Windows/GNOME hosts remain unqualified.
 
-“Machines” toggles the sidebar; Ctrl+K searches names, full groups, endpoints and tags. Favorites and recent-use filters are available. Choose a Remmina file explicitly to preview approved nonsecret metadata, then import it. Passwords and key/certificate files are never imported. RDP entries open native tabs; SSH entries create daemon-owned SSH terminals. A full profile editor and Secret Service management UI remain future work.
+“Machines” toggles the sidebar; Ctrl+K searches names, full groups, endpoints and tags. Favorites and recent-use filters are available. Choose a Remmina file explicitly to preview approved nonsecret metadata, then import it. Passwords and key/certificate files are never imported. RDP entries open native tabs; SSH entries create daemon-owned SSH terminals. Native profile editing and Set/replace/forget credential controls are implemented.
 
 ## Machine workspaces and Files
 
 Use Machines → New machine / endpoint or Network groups / defaults, and Edit beside an endpoint. Add endpoint retains the machine identity; duplicate creates new identities and credential references. Set/replace/forget credentials use system Secret Service. Metadata Undo restores the previous private library. RDP connects inside its tab; SSH opens a persistent terminal plus a native Files tab. Files verifies known_hosts before authentication and offers navigation, upload/download, explicit overwrite, progress and cancellation. Dynamic RDP uses negotiated Display Control; fit/native/stretch, zoom, fullscreen and Pan viewport remain available. See the current acceptance report for fixture evidence and remaining defects.
+
+## Install and open the workspace
+
+Use the existing build workflow after a controller-assigned release:
+
+```sh
+./build.sh --release --desktop --install-user
+ruwac gui
+```
+
+The per-user installer adds a RUWAC desktop launcher and commands in the standard user binary directory. `ruwac gui` starts or reuses the persistent daemon. Use New terminal for another session and Sessions to reopen a running one. Closing a terminal tab detaches it; normal window close saves terminal tabs/order/selection for the next launch. RDP/Files tab restoration remains open. `ruwac start` starts the daemon without a graphical client.
+
+The full headless suite and three genuine SSH remote-PTY detach/reattach cycles also pass on an authorized Fedora host. This does not establish external RDP login or physical-desktop acceptance. See [all remaining product gates](spec/RUWAC_PRODUCT_COMPLETION.md).

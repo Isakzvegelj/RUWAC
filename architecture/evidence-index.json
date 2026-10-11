@@ -1,10 +1,10 @@
 {
-  "baseline_commit": "4d5572179de259ec8f9c87ec2fa50f51b91c39ed",
+  "baseline_commit": "d992dab08af7c90f751bf7b43afded1a17bb0cb1",
   "current_report": "spec/RUWAC_INTEGRATION_SPIKE.md",
   "public_evidence": [
     "architecture/acceptance-results.json",
     "architecture/benchmark-results.json",
     "architecture/dependency-licenses.json"
   ],
-  "private_capsule": "workspaces-display-files-r5: exact node commands/hashes, retained failed and passing trials, generated fixture credentials, owner-session health and publication verification"
+  "private_capsule": "usability-r6: frozen optimized builds; startup/workspace/native/RDP/SFTP receipts; normal production launch; installer; authorized Fedora full regression and actual SSH PTY transcripts; 30-trial benchmarks; certificate diagnostics; retained failures; final publication/install verification"
 }

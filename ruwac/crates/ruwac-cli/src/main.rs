@@ -1,17 +1,20 @@
+mod startup;
 use ruwac_protocol::{Request, read_frame, request, write_frame};
 use serde_json::{Value, json};
 use std::{
     io::{self, Read},
-    os::unix::net::UnixStream,
     path::PathBuf,
     time::Duration,
 };
 fn rpc(socket: &std::path::Path, r: &Request) -> io::Result<Value> {
-    let mut s = UnixStream::connect(socket)?;
+    let mut s = startup::connect(socket)?;
     s.set_read_timeout(Some(Duration::from_secs(65)))?;
     s.set_write_timeout(Some(Duration::from_secs(10)))?;
     write_frame(&mut s, r)?;
     let v = read_frame(&mut s)?;
+    if v["version"] != 0 || v["id"] != r.id {
+        return Err(io::Error::other("daemon protocol/correlation rejected"));
+    }
     if v.get("error").is_some() {
         println!("{}", v);
         return Err(io::Error::other("request failed"));
@@ -150,12 +153,28 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     "GUI unavailable: optional compiled ruwac-desktop is not installed".into(),
                 );
             }
+            if !a[1..]
+                .iter()
+                .any(|s| matches!(s.as_str(), "--help" | "--version"))
+            {
+                startup::ensure(&socket)?;
+            }
             return Err(std::process::Command::new(entry)
                 .arg("--socket")
                 .arg(&socket)
                 .args(&a[1..])
                 .exec()
                 .into());
+        }
+        Some("start") => {
+            if a.len() != 1 {
+                return Err("start takes only --socket before command".into());
+            }
+            let started = startup::ensure(&socket)?;
+            println!(
+                "{}",
+                json!({"version":0,"result":{"ready":true,"start_requested":started}})
+            );
         }
         Some("rdp" | "workspace") => {
             println!(
@@ -178,6 +197,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             if a.len() != 3 || a[1] != "--session" {
                 return Err("attach --session session_ID".into());
             }
+            drop(startup::connect(&socket)?);
             ruwac_tui::attach(&socket, &a[2])?;
         }
         Some("rpc") => {
@@ -227,7 +247,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         Some("--help" | "help") | None => {
             println!(
-                "RUWAC prototype\n  ruwac --version\n  ruwac gui [--session session_ID]\n  ruwac session create --name NAME --detach --json\n  ruwac session list --json\n  ruwac pane list --session session_ID --json\n  ruwac pane send-text --id pane_ID --text TEXT --json\n  ruwac pane send-text --id pane_ID --file UTF8_FILE --json\n  ruwac pane send-key --id pane_ID --key Enter --json\n  ruwac pane capture --id pane_ID --lines 250 --json\n  ruwac pane wait --id pane_ID --contains TEXT --timeout-ms 5000 --json\n  ruwac --socket PATH serve\n  ruwac --socket PATH rpc METHOD --params JSON [--idempotency KEY]\n  ruwac --socket PATH request < request.json\n  ruwac --socket PATH attach --session session_ID\n  ruwac image-stage PNG PRIVATE_DIRECTORY\n  ruwac --socket PATH health|version|capabilities|schema\nRemote: pipe JSON into an existing authenticated ssh HOST ruwac request.\nNo desktop clipboard, image attachment, recovery after daemon loss or full Screen compatibility claim."
+                "RUWAC\n  ruwac --version\n  ruwac start  # starts/reuses a private persistent daemon\n  ruwac gui [--session session_ID]\n  ruwac session create --name NAME --detach --json\n  ruwac session list --json\n  ruwac pane list --session session_ID --json\n  ruwac pane send-text --id pane_ID --text TEXT --json\n  ruwac pane send-text --id pane_ID --file UTF8_FILE --json\n  ruwac pane send-key --id pane_ID --key Enter --json\n  ruwac pane capture --id pane_ID --lines 250 --json\n  ruwac pane wait --id pane_ID --contains TEXT --timeout-ms 5000 --json\n  ruwac --socket PATH serve\n  ruwac --socket PATH rpc METHOD --params JSON [--idempotency KEY]\n  ruwac --socket PATH request < request.json\n  ruwac --socket PATH attach --session session_ID\n  ruwac image-stage PNG PRIVATE_DIRECTORY\n  ruwac --socket PATH health|version|capabilities|schema\nRemote: pipe JSON into an existing authenticated ssh HOST ruwac request.\nNo desktop clipboard, image attachment, recovery after daemon loss or full Screen compatibility claim."
             );
         }
         _ => return Err("unknown command; use --help".into()),
