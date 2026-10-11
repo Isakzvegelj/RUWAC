@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## v0.1.22 — 2026-10-12 — Prerelease
+
+- Repair hosted workflow context validation by initializing temporary build paths through the step environment.
+- Add checksum-pinned actionlint validation to catch invalid GitHub workflow contexts before publication.
+
 ## v0.1.21 — 2026-10-12 — Prerelease
 
 - Add contributor/security/conduct policies, CODEOWNERS and issue/pull-request templates.

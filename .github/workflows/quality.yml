@@ -15,15 +15,23 @@ jobs:
     timeout-minutes: 30
     env:
       CARGO_BUILD_JOBS: '2'
-      CARGO_HOME: ${{ runner.temp }}/cargo
-      CARGO_TARGET_DIR: ${{ runner.temp }}/target
       PYTHONDONTWRITEBYTECODE: '1'
     steps:
+      - name: Initialize isolated build paths
+        run: |
+          printf 'CARGO_HOME=%s/cargo\nCARGO_TARGET_DIR=%s/target\n' "$RUNNER_TEMP" "$RUNNER_TEMP" >> "$GITHUB_ENV"
       - name: Install Fedora test tools
         run: dnf install -y git cargo rust rustfmt clippy gcc gcc-c++ pkgconf-pkg-config gtk4-devel libadwaita-devel openssl openssl-devel libssh2-devel python3 screen tmux
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           persist-credentials: false
+      - name: Validate GitHub workflow syntax and contexts
+        run: |
+          curl -fsSL --retry 3 https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz -o "$RUNNER_TEMP/actionlint.tar.gz"
+          printf '8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  %s\n' "$RUNNER_TEMP/actionlint.tar.gz" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/workflow-tools"
+          tar -xzf "$RUNNER_TEMP/actionlint.tar.gz" -C "$RUNNER_TEMP/workflow-tools" actionlint
+          "$RUNNER_TEMP/workflow-tools/actionlint" -shellcheck= -pyflakes=
       - name: Public inventory and format
         run: |
           python3 scripts/public-files.py --tracked
@@ -52,9 +60,10 @@ jobs:
     timeout-minutes: 30
     env:
       CARGO_BUILD_JOBS: '2'
-      CARGO_HOME: ${{ runner.temp }}/audit-cargo
-      CARGO_TARGET_DIR: ${{ runner.temp }}/audit-target
     steps:
+      - name: Initialize isolated scanner paths
+        run: |
+          printf 'CARGO_HOME=%s/audit-cargo\nCARGO_TARGET_DIR=%s/audit-target\n' "$RUNNER_TEMP" "$RUNNER_TEMP" >> "$GITHUB_ENV"
       - name: Install advisory scanner prerequisites
         run: dnf install -y git cargo rust gcc gcc-c++ cmake perl openssl-devel pkgconf-pkg-config
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd

@@ -2,7 +2,9 @@
 
 RUWAC is a compiled Rust terminal daemon/CLI and an optional native GTK4/libadwaita desktop with mixed terminal, embedded RDP and SSH/SFTP workspaces. Existing terminals and connections remain independent of desktop presentation. The desktop uses a machine sidebar, tabs and visible connection/display controls inspired by Remmina, with Alt+1–0 tab switching.
 
-This increment adds contributor, security and conduct policies, CODEOWNERS, issue/pull-request templates, pinned Fedora source checks and guarded contribution labels. Both Rust workspaces are formatted so full format checks can be enforced. The read-only quality workflow checks Clippy, unit tests, actual headless protocol/persistence fixtures and locked declaration/checksum/headless-dependency boundaries. A separate base-only label workflow never executes PR-head code and leaves existing labels intact.
+This increment repairs hosted GitHub workflow validation. The previous source prerelease's quality workflow was rejected before jobs started because runner.temp was used in job-level environment declarations. Temporary build/scanner paths now initialize in steps through GITHUB_ENV. Checksum-pinned actionlint validates expression context availability locally and in CI; it reproduced the four original errors and passes the repair.
+
+Contributor/security/conduct policies, CODEOWNERS, issue/pull-request templates, pinned Fedora source checks and guarded contribution labels remain available. The read-only quality workflow checks formatting, Clippy, unit and actual headless fixtures, plus locked declaration/checksum/headless-dependency boundaries. Contribution labels use only trusted base code and preserve existing labels.
 
 Local and isolated pinned-Fedora tests validate the checks and synthetic label guards; complete functional regressions repeat on the stamped build. Missing OpenSSL CLI in the initial clean-container run was corrected in declared CI prerequisites. Live hosted workflow and actual PR label delivery remain distinct from local container/API-fixture evidence.
 
