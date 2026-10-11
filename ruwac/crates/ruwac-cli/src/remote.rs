@@ -165,8 +165,10 @@ impl Remote {
         Ok(v)
     }
     pub fn gui(&self, request: &Request) -> io::Result<Value> {
-        let value=self.exchange(&["gui-request"],serde_json::to_vec(request)?)?;
-        if value["version"]!=0||value["id"]!=request.id{return Err(io::Error::other("remote GUI correlation rejected"));}
+        let value = self.exchange(&["gui-request"], serde_json::to_vec(request)?)?;
+        if value["version"] != 0 || value["id"] != request.id {
+            return Err(io::Error::other("remote GUI correlation rejected"));
+        }
         Ok(value)
     }
     pub fn doctor(&self, args: &[String]) -> io::Result<Value> {

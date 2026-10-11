@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## v0.1.21 — 2026-10-12 — Prerelease
+
+- Add contributor/security/conduct policies, CODEOWNERS and issue/pull-request templates.
+- Add pinned Fedora pull-request checks for formatting, Clippy, unit and real headless fixtures, locked declarations and graphical dependency exclusion.
+- Add separately scoped base-only contribution labels with event, checkout and incomplete-file guards.
+- Format both Rust workspaces so the full format check can be enforced.
+
 ## v0.1.20 — 2026-10-11 — Prerelease
 
 - Bound serialized process metadata pages to 64 KiB, preventing valid long Unicode metadata from exceeding IPC framing limits.

@@ -1,0 +1,17 @@
+name: Feature request
+description: Describe a workspace need and its acceptance criteria.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: need
+    attributes:
+      label: User workflow and problem
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Desired behavior and acceptance evidence
+      description: Explain session persistence, clipboard ownership and external/physical requirements where relevant.
+    validations:
+      required: true

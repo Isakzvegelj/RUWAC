@@ -633,9 +633,9 @@ fn complete(
     cancel: &AtomicBool,
 ) -> Result<Receipt, String> {
     if job.upload && backup_valid(s, job, cancel)? {
-        s.unlink(&backup(job)).map_err(|_| {
-            "Transfer committed; original backup retained until Resume finishes cleanup"
-        })?;
+        s.unlink(&backup(job)).map_err(
+            |_| "Transfer committed; original backup retained until Resume finishes cleanup",
+        )?;
     }
     journal.remove()?;
     Ok(Receipt {

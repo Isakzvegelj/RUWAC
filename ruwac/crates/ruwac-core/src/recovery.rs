@@ -138,10 +138,13 @@ impl Store {
                 .mode(0o600)
                 .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
                 .open(&temp)?;
-            let mut limited = std::io::BufWriter::with_capacity(64 * 1024, LimitedWriter {
-                file,
-                remaining: MAX_FILE,
-            });
+            let mut limited = std::io::BufWriter::with_capacity(
+                64 * 1024,
+                LimitedWriter {
+                    file,
+                    remaining: MAX_FILE,
+                },
+            );
             serde_json::to_writer(&mut limited, &checkpoint)?;
             limited.flush()?;
             limited.get_ref().file.sync_all()?;
@@ -231,7 +234,7 @@ impl State {
             return Ok(());
         };
         let invalid = || io::Error::other("checkpoint resource graph rejected; original preserved");
-        if !matches!(saved.schema,1|2)
+        if !matches!(saved.schema, 1 | 2)
             || saved.sessions.len() > 64
             || saved.windows.len() > 128
             || saved.panes.len() > 128
@@ -282,7 +285,11 @@ impl State {
         let mut windows = std::collections::HashSet::new();
         let mut panes = std::collections::HashSet::new();
         for s in self.sessions.values() {
-            if !s.windows.contains(&s.active) || s.previous.as_ref().is_some_and(|p|!s.windows.contains(p) || *p==s.active) {
+            if !s.windows.contains(&s.active)
+                || s.previous
+                    .as_ref()
+                    .is_some_and(|p| !s.windows.contains(p) || *p == s.active)
+            {
                 return Err(invalid());
             }
             for wid in &s.windows {

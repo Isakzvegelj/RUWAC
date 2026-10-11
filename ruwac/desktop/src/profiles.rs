@@ -610,9 +610,9 @@ pub fn sidebar(
     root.set_margin_start(8);
     root.set_margin_end(8);
     root.set_margin_top(8);
-    let heading=gtk::Box::new(gtk::Orientation::Horizontal,6);
+    let heading = gtk::Box::new(gtk::Orientation::Horizontal, 6);
     heading.append(&gtk::Image::from_icon_name("network-workgroup-symbolic"));
-    let label=gtk::Label::new(Some("Machines"));
+    let label = gtk::Label::new(Some("Machines"));
     label.add_css_class("heading");
     heading.append(&label);
     root.append(&heading);
@@ -651,7 +651,9 @@ pub fn sidebar(
     next_page.set_widget_name("machines-page-next");
     next_page.set_tooltip_text(Some("Next machine page"));
     next_page.update_property(&[gtk::accessible::Property::Label("Next machine page")]);
-    pager.append(&previous_page); pager.append(&page_label); pager.append(&next_page);
+    pager.append(&previous_page);
+    pager.append(&page_label);
+    pager.append(&next_page);
     root.append(&pager);
     let store = Rc::new(RefCell::new(Store::load()));
     if let Some(e) = &store.borrow().error {
@@ -669,7 +671,12 @@ pub fn sidebar(
         let filter = filter.clone();
         let status = status.clone();
         let callback = callback.clone();
-        let (page, previous_page, next_page, page_label) = (page.clone(), previous_page.clone(), next_page.clone(), page_label.clone());
+        let (page, previous_page, next_page, page_label) = (
+            page.clone(),
+            previous_page.clone(),
+            next_page.clone(),
+            page_label.clone(),
+        );
         Rc::new(move || {
             while let Some(c) = list.first_child() {
                 list.remove(&c);
@@ -700,10 +707,20 @@ pub fn sidebar(
             let total = rows.len();
             page.set(page.get().min(total.saturating_sub(1) / 50));
             let start = page.get() * 50;
-            page_label.set_label(&format!("{}–{} of {}", if total == 0 {0} else {start+1}, (start+50).min(total), total));
+            page_label.set_label(&format!(
+                "{}–{} of {}",
+                if total == 0 { 0 } else { start + 1 },
+                (start + 50).min(total),
+                total
+            ));
             previous_page.set_sensitive(page.get() > 0);
-            next_page.set_sensitive(start+50 < total);
-            for g in store.borrow().groups.iter().take(if page.get()==0 {50} else {0}) {
+            next_page.set_sensitive(start + 50 < total);
+            for g in store
+                .borrow()
+                .groups
+                .iter()
+                .take(if page.get() == 0 { 50 } else { 0 })
+            {
                 if !rows.iter().any(|(_, p)| p.group == g.path)
                     && (search.text().is_empty()
                         || g.path
@@ -731,21 +748,35 @@ pub fn sidebar(
                         &p.preferences.label
                     }
                 ));
-                let details=button.label().unwrap_or_default();
+                let details = button.label().unwrap_or_default();
                 button.set_widget_name("machine-connect");
                 button.set_tooltip_text(Some(&format!("{details}\n{} · {}", p.server, p.id)));
-                let content=gtk::Box::new(gtk::Orientation::Horizontal,6);
-                content.append(&gtk::Image::from_icon_name(if p.protocol=="RDP" {"computer-symbolic"}else{"utilities-terminal-symbolic"}));
-                let text=gtk::Box::new(gtk::Orientation::Vertical,0);
-                let name=gtk::Label::new(Some(&p.name));
+                let content = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+                content.append(&gtk::Image::from_icon_name(if p.protocol == "RDP" {
+                    "computer-symbolic"
+                } else {
+                    "utilities-terminal-symbolic"
+                }));
+                let text = gtk::Box::new(gtk::Orientation::Vertical, 0);
+                let name = gtk::Label::new(Some(&p.name));
                 name.set_xalign(0.0);
                 name.set_ellipsize(gtk::pango::EllipsizeMode::End);
                 name.add_css_class("heading");
-                let endpoint=gtk::Label::new(Some(&format!("{} · {}",p.protocol,if p.preferences.label.is_empty(){&p.server}else{&p.preferences.label})));
+                let endpoint = gtk::Label::new(Some(&format!(
+                    "{} · {}",
+                    p.protocol,
+                    if p.preferences.label.is_empty() {
+                        &p.server
+                    } else {
+                        &p.preferences.label
+                    }
+                )));
                 endpoint.set_xalign(0.0);
                 endpoint.set_ellipsize(gtk::pango::EllipsizeMode::End);
                 endpoint.add_css_class("dim-label");
-                text.append(&name);text.append(&endpoint);content.append(&text);
+                text.append(&name);
+                text.append(&endpoint);
+                content.append(&text);
                 button.set_child(Some(&content));
                 button.update_property(&[gtk::accessible::Property::Label(details.as_str())]);
                 button.set_hexpand(true);
@@ -786,9 +817,15 @@ pub fn sidebar(
         })
     };
     let (p, r) = (page.clone(), refresh.clone());
-    previous_page.connect_clicked(move |_| {p.set(p.get().saturating_sub(1)); r();});
+    previous_page.connect_clicked(move |_| {
+        p.set(p.get().saturating_sub(1));
+        r();
+    });
     let (p, r) = (page.clone(), refresh.clone());
-    next_page.connect_clicked(move |_| {p.set(p.get()+1); r();});
+    next_page.connect_clicked(move |_| {
+        p.set(p.get() + 1);
+        r();
+    });
     let maintenance = gtk::Box::new(gtk::Orientation::Vertical, 6);
     let maintenance_panel = gtk::Expander::new(Some("Machine tools"));
     maintenance_panel.set_widget_name("machines-tools-panel");
@@ -860,12 +897,21 @@ pub fn sidebar(
         r();
     });
     let (r, p) = (refresh.clone(), page.clone());
-    filter.connect_selected_notify(move |_| {p.set(0); r();});
+    filter.connect_selected_notify(move |_| {
+        p.set(0);
+        r();
+    });
     let (r, p) = (refresh.clone(), page.clone());
-    search.connect_changed(move |_| {p.set(0); r();});
+    search.connect_changed(move |_| {
+        p.set(0);
+        r();
+    });
     let import_controls = gtk::Box::new(gtk::Orientation::Vertical, 6);
-    let import_scroll = gtk::ScrolledWindow::builder().child(&import_controls)
-        .propagate_natural_height(true).max_content_height(280).build();
+    let import_scroll = gtk::ScrolledWindow::builder()
+        .child(&import_controls)
+        .propagate_natural_height(true)
+        .max_content_height(280)
+        .build();
     let import_panel = gtk::Expander::new(Some("Import from Remmina"));
     import_panel.set_widget_name("machines-import-panel");
     import_panel.set_child(Some(&import_scroll));
@@ -887,9 +933,30 @@ pub fn sidebar(
     let targets = gtk::StringList::new(&["Select an existing endpoint explicitly"]);
     let merge_target = gtk::DropDown::new(Some(targets.clone()), None::<gtk::Expression>);
     merge_target.set_enable_search(true);
-    let factory=gtk::SignalListItemFactory::new();
-    factory.connect_setup(|_,object| {if let Some(item)=object.downcast_ref::<gtk::ListItem>() {item.set_child(Some(&gtk::Label::builder().xalign(0.0).ellipsize(gtk::pango::EllipsizeMode::End).max_width_chars(28).build()));}});
-    factory.connect_bind(|_,object| {if let Some(item)=object.downcast_ref::<gtk::ListItem>() {if let (Some(value),Some(label))=(item.item().and_then(|o|o.downcast::<gtk::StringObject>().ok()),item.child().and_then(|w|w.downcast::<gtk::Label>().ok())) {label.set_text(&value.string());label.set_tooltip_text(Some(&value.string()));}}});
+    let factory = gtk::SignalListItemFactory::new();
+    factory.connect_setup(|_, object| {
+        if let Some(item) = object.downcast_ref::<gtk::ListItem>() {
+            item.set_child(Some(
+                &gtk::Label::builder()
+                    .xalign(0.0)
+                    .ellipsize(gtk::pango::EllipsizeMode::End)
+                    .max_width_chars(28)
+                    .build(),
+            ));
+        }
+    });
+    factory.connect_bind(|_, object| {
+        if let Some(item) = object.downcast_ref::<gtk::ListItem>() {
+            if let (Some(value), Some(label)) = (
+                item.item()
+                    .and_then(|o| o.downcast::<gtk::StringObject>().ok()),
+                item.child().and_then(|w| w.downcast::<gtk::Label>().ok()),
+            ) {
+                label.set_text(&value.string());
+                label.set_tooltip_text(Some(&value.string()));
+            }
+        }
+    });
     merge_target.set_factory(Some(&factory));
 
     merge_target.set_widget_name("machines-merge-target");
@@ -923,12 +990,23 @@ pub fn sidebar(
             },
         );
     });
-    let (stale, disable_import, disable_merge) = (selected.clone(), import.clone(), review_merge.clone());
-    path.connect_changed(move |_| {stale.borrow_mut().take(); disable_import.set_sensitive(false); disable_merge.set_sensitive(false);});
+    let (stale, disable_import, disable_merge) =
+        (selected.clone(), import.clone(), review_merge.clone());
+    path.connect_changed(move |_| {
+        stale.borrow_mut().take();
+        disable_import.set_sensitive(false);
+        disable_merge.set_sensitive(false);
+    });
     let sel = selected.clone();
     let st = status.clone();
     let enable = import.clone();
-    let (merge_enable, merge_model, merge_ids, merge_choice, merge_store) = (review_merge.clone(), targets.clone(), target_ids.clone(), merge_target.clone(), store.clone());
+    let (merge_enable, merge_model, merge_ids, merge_choice, merge_store) = (
+        review_merge.clone(),
+        targets.clone(),
+        target_ids.clone(),
+        merge_target.clone(),
+        store.clone(),
+    );
     preview_button.connect_clicked(move |_| match preview(Path::new(path.text().as_str())) {
         Ok(p) => {
             st.set_text(&format!(
@@ -938,7 +1016,10 @@ pub fn sidebar(
             merge_model.splice(1, merge_model.n_items().saturating_sub(1), &[]);
             merge_ids.borrow_mut().clear();
             for item in &merge_store.borrow().items {
-                merge_model.append(&format!("{} / {} · {} · {}", item.group, item.name, item.server, item.id));
+                merge_model.append(&format!(
+                    "{} / {} · {} · {}",
+                    item.group, item.name, item.server, item.id
+                ));
                 merge_ids.borrow_mut().push(item.id.clone());
             }
             merge_choice.set_selected(0);
@@ -953,7 +1034,14 @@ pub fn sidebar(
             merge_enable.set_sensitive(false);
         }
     });
-    let (s, selected_preview, ids, choice, st, refresh_merge) = (store.clone(), selected.clone(), target_ids.clone(), merge_target.clone(), status.clone(), refresh.clone());
+    let (s, selected_preview, ids, choice, st, refresh_merge) = (
+        store.clone(),
+        selected.clone(),
+        target_ids.clone(),
+        merge_target.clone(),
+        status.clone(),
+        refresh.clone(),
+    );
     review_merge.connect_clicked(move |button| {
         let chosen = choice.selected() as usize;
         let Some(id) = chosen.checked_sub(1).and_then(|i| ids.borrow().get(i).cloned()) else {st.set_text("Select an existing endpoint explicitly; names are never used to merge"); return;};
@@ -982,7 +1070,7 @@ pub fn sidebar(
     });
     let st = status.clone();
     let r = refresh.clone();
-    let import_store=store.clone();
+    let import_store = store.clone();
     import.connect_clicked(move |_| {
         if let Some(mut p) = selected.borrow_mut().take() {
             p.identify();
@@ -1009,8 +1097,18 @@ pub fn sidebar(
             r();
         }
     });
-    let (s,st)=(store.clone(),status.clone());
-    let remote:ProfileRestorer=Rc::new(move|id| {if !s.borrow().items.iter().any(|p|p.id==id&&p.protocol=="RDP"&&!p.username.is_empty()&&!p.secret_reference.is_empty()){return None;}acquire(&s,&st,id)});
+    let (s, st) = (store.clone(), status.clone());
+    let remote: ProfileRestorer = Rc::new(move |id| {
+        if !s.borrow().items.iter().any(|p| {
+            p.id == id
+                && p.protocol == "RDP"
+                && !p.username.is_empty()
+                && !p.secret_reference.is_empty()
+        }) {
+            return None;
+        }
+        acquire(&s, &st, id)
+    });
     refresh();
     (root, search, restore, remote)
 }
@@ -1043,14 +1141,24 @@ mod tests {
 
 /// Exercises real sidebar widgets only within the desktop's explicit fixture mode.
 fn sidebar_widget(root: &impl IsA<gtk::Widget>, name: &str) -> Option<gtk::Widget> {
-    let w=root.as_ref();
-    if w.widget_name()==name {return Some(w.clone());}
-    let mut child=w.first_child();
-    while let Some(c)=child {child=c.next_sibling();if let Some(found)=sidebar_widget(&c,name){return Some(found);}}
+    let w = root.as_ref();
+    if w.widget_name() == name {
+        return Some(w.clone());
+    }
+    let mut child = w.first_child();
+    while let Some(c) = child {
+        child = c.next_sibling();
+        if let Some(found) = sidebar_widget(&c, name) {
+            return Some(found);
+        }
+    }
     None
 }
 fn expand_sidebar_panel(root: &gtk::Box, name: &str, expanded: bool) {
-    if let Some(panel)=sidebar_widget(root,name).and_then(|w|w.downcast::<gtk::Expander>().ok()) {panel.set_expanded(expanded);}
+    if let Some(panel) = sidebar_widget(root, name).and_then(|w| w.downcast::<gtk::Expander>().ok())
+    {
+        panel.set_expanded(expanded);
+    }
 }
 pub fn fixture(
     root: &gtk::Box,
@@ -1059,15 +1167,28 @@ pub fn fixture(
     favorite: bool,
     open: bool,
 ) -> serde_json::Value {
-    if let Some(query)=query {
-        let mut child=root.first_child();
-        while let Some(w)=child {child=w.next_sibling();if let Some(search)=w.downcast_ref::<gtk::SearchEntry>() {search.set_text(query);}}
+    if let Some(query) = query {
+        let mut child = root.first_child();
+        while let Some(w) = child {
+            child = w.next_sibling();
+            if let Some(search) = w.downcast_ref::<gtk::SearchEntry>() {
+                search.set_text(query);
+            }
+        }
     }
-    if let Some(file)=file {
-        expand_sidebar_panel(root,"machines-import-panel",true);
-        if let Some(entry)=sidebar_widget(root,"machines-import-path").and_then(|w|w.downcast::<gtk::Entry>().ok()) {entry.set_text(&file.to_string_lossy());}
-        for name in ["machines-import-preview","machines-import-apply"] {
-            if let Some(button)=sidebar_widget(root,name).and_then(|w|w.downcast::<gtk::Button>().ok()) {button.emit_clicked();}
+    if let Some(file) = file {
+        expand_sidebar_panel(root, "machines-import-panel", true);
+        if let Some(entry) = sidebar_widget(root, "machines-import-path")
+            .and_then(|w| w.downcast::<gtk::Entry>().ok())
+        {
+            entry.set_text(&file.to_string_lossy());
+        }
+        for name in ["machines-import-preview", "machines-import-apply"] {
+            if let Some(button) =
+                sidebar_widget(root, name).and_then(|w| w.downcast::<gtk::Button>().ok())
+            {
+                button.emit_clicked();
+            }
         }
     }
     fn collect(w: &gtk::Widget, out: &mut Vec<(gtk::Button, gtk::Button)>) {
@@ -1313,21 +1434,67 @@ fn editor(button: &gtk::Button, store: Rc<RefCell<Store>>, id: Option<String>, s
             });
         });
     }
-    let identity_reference=gtk::Entry::builder().text(&original.preferences.identity_secret_reference).placeholder_text("Reference for this key's passphrase; leave empty for an unencrypted key").hexpand(true).build();
-    grid.attach(&gtk::Label::new(Some("SSH key passphrase reference")),0,23,1,1);grid.attach(&identity_reference,1,23,1,1);
-    let key_secret=gtk::PasswordEntry::builder().show_peek_icon(true).placeholder_text("Key passphrase — stored only in Secret Service").build();
-    key_secret.set_widget_name("ssh-key-passphrase");grid.attach(&key_secret,1,24,1,1);
-    let key_actions=gtk::Box::new(gtk::Orientation::Horizontal,4);grid.attach(&key_actions,1,25,1,1);
-    for (label,forget) in [("Set / replace key passphrase",false),("Forget key passphrase",true)] {
-        let button=gtk::Button::with_label(label);key_actions.append(&button);
-        let(entry,reference,info)=(key_secret.clone(),identity_reference.clone(),info.clone());
-        button.connect_clicked(move|button|{
-            let value=entry.text().to_string();entry.set_text("");let reference=reference.text().to_string();let(tx,rx)=std::sync::mpsc::sync_channel(1);button.set_sensitive(false);
-            std::thread::spawn(move||{let _=tx.send(if forget{crate::credentials::forget(&reference)}else{crate::credentials::set(&reference,value)});});
-            let(button,info)=(button.clone(),info.clone());gtk::glib::timeout_add_local(std::time::Duration::from_millis(25),move||match rx.try_recv(){
-                Ok(result)=>{button.set_sensitive(true);info.set_text(result.err().as_deref().unwrap_or("SSH key passphrase operation completed in Secret Service"));gtk::glib::ControlFlow::Break},
-                Err(std::sync::mpsc::TryRecvError::Empty)=>gtk::glib::ControlFlow::Continue,
-                Err(_)=>{button.set_sensitive(true);info.set_text("Secret Service worker unavailable");gtk::glib::ControlFlow::Break}
+    let identity_reference = gtk::Entry::builder()
+        .text(&original.preferences.identity_secret_reference)
+        .placeholder_text("Reference for this key's passphrase; leave empty for an unencrypted key")
+        .hexpand(true)
+        .build();
+    grid.attach(
+        &gtk::Label::new(Some("SSH key passphrase reference")),
+        0,
+        23,
+        1,
+        1,
+    );
+    grid.attach(&identity_reference, 1, 23, 1, 1);
+    let key_secret = gtk::PasswordEntry::builder()
+        .show_peek_icon(true)
+        .placeholder_text("Key passphrase — stored only in Secret Service")
+        .build();
+    key_secret.set_widget_name("ssh-key-passphrase");
+    grid.attach(&key_secret, 1, 24, 1, 1);
+    let key_actions = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+    grid.attach(&key_actions, 1, 25, 1, 1);
+    for (label, forget) in [
+        ("Set / replace key passphrase", false),
+        ("Forget key passphrase", true),
+    ] {
+        let button = gtk::Button::with_label(label);
+        key_actions.append(&button);
+        let (entry, reference, info) =
+            (key_secret.clone(), identity_reference.clone(), info.clone());
+        button.connect_clicked(move |button| {
+            let value = entry.text().to_string();
+            entry.set_text("");
+            let reference = reference.text().to_string();
+            let (tx, rx) = std::sync::mpsc::sync_channel(1);
+            button.set_sensitive(false);
+            std::thread::spawn(move || {
+                let _ = tx.send(if forget {
+                    crate::credentials::forget(&reference)
+                } else {
+                    crate::credentials::set(&reference, value)
+                });
+            });
+            let (button, info) = (button.clone(), info.clone());
+            gtk::glib::timeout_add_local(std::time::Duration::from_millis(25), move || {
+                match rx.try_recv() {
+                    Ok(result) => {
+                        button.set_sensitive(true);
+                        info.set_text(
+                            result.err().as_deref().unwrap_or(
+                                "SSH key passphrase operation completed in Secret Service",
+                            ),
+                        );
+                        gtk::glib::ControlFlow::Break
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Empty) => gtk::glib::ControlFlow::Continue,
+                    Err(_) => {
+                        button.set_sensitive(true);
+                        info.set_text("Secret Service worker unavailable");
+                        gtk::glib::ControlFlow::Break
+                    }
+                }
             });
         });
     }
@@ -1600,7 +1767,9 @@ pub fn fixture_editor(root: &gtk::Box, q: &serde_json::Value) -> serde_json::Val
         None
     }
     let action = q["operation"].as_str().unwrap_or("new");
-    if action=="group" {expand_sidebar_panel(root,"machines-tools-panel",true);}
+    if action == "group" {
+        expand_sidebar_panel(root, "machines-tools-panel", true);
+    }
     if action == "new" || action == "group" || action == "edit" {
         if let Some(b) = find(
             root.upcast_ref(),
@@ -1625,7 +1794,13 @@ pub fn fixture_editor(root: &gtk::Box, q: &serde_json::Value) -> serde_json::Val
                 continue;
             }
             fn update(w: &gtk::Widget, q: &serde_json::Value) {
-                if w.widget_name()=="ssh-key-passphrase" {if let Some(entry)=w.downcast_ref::<gtk::PasswordEntry>(){if let Some(secret)=q["key_passphrase"].as_str(){entry.set_text(secret);}}}
+                if w.widget_name() == "ssh-key-passphrase" {
+                    if let Some(entry) = w.downcast_ref::<gtk::PasswordEntry>() {
+                        if let Some(secret) = q["key_passphrase"].as_str() {
+                            entry.set_text(secret);
+                        }
+                    }
+                }
                 if let Some(grid) = w.downcast_ref::<gtk::Grid>() {
                     let mut c = grid.first_child();
                     while let Some(child) = c {
@@ -1650,7 +1825,11 @@ pub fn fixture_editor(root: &gtk::Box, q: &serde_json::Value) -> serde_json::Val
                 }
             }
             update(d.upcast_ref(), q);
-            if let Some(action)=q["credential_action"].as_str(){if let Some(button)=find(d.upcast_ref(),action){button.emit_clicked();}}
+            if let Some(action) = q["credential_action"].as_str() {
+                if let Some(button) = find(d.upcast_ref(), action) {
+                    button.emit_clicked();
+                }
+            }
             if title.starts_with("Network") {
                 let mut child = d.content_area().first_child();
                 let mut dropdown = 0;
@@ -1679,7 +1858,9 @@ pub fn fixture_editor(root: &gtk::Box, q: &serde_json::Value) -> serde_json::Val
                 "delete-machine" => gtk::ResponseType::Other(4),
                 _ => gtk::ResponseType::Accept,
             };
-            if q["response"]!="keep" {d.response(response);}
+            if q["response"] != "keep" {
+                d.response(response);
+            }
             applied = true;
         }
     }
@@ -1764,45 +1945,107 @@ mod workspace_tests {
 }
 
 /// Native library controls exercised only by the private fixture dispatcher.
-pub fn fixture_library(root: &gtk::Box, file: Option<&Path>, q: &serde_json::Value) -> serde_json::Value {
+pub fn fixture_library(
+    root: &gtk::Box,
+    file: Option<&Path>,
+    q: &serde_json::Value,
+) -> serde_json::Value {
     fn find(w: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
-        if w.widget_name()==name {return Some(w.clone());}
-        let mut child=w.first_child();
-        while let Some(c)=child {child=c.next_sibling();if let Some(w)=find(&c,name){return Some(w);}}
+        if w.widget_name() == name {
+            return Some(w.clone());
+        }
+        let mut child = w.first_child();
+        while let Some(c) = child {
+            child = c.next_sibling();
+            if let Some(w) = find(&c, name) {
+                return Some(w);
+            }
+        }
         None
     }
-    if let Some(file)=file {
-        expand_sidebar_panel(root,"machines-import-panel",true);
-        if let Some(entry)=find(root.upcast_ref(),"machines-import-path").and_then(|w|w.downcast::<gtk::Entry>().ok()) {entry.set_text(&file.to_string_lossy());}
-        if let Some(button)=find(root.upcast_ref(),"machines-import-preview").and_then(|w|w.downcast::<gtk::Button>().ok()) {button.emit_clicked();}
+    if let Some(file) = file {
+        expand_sidebar_panel(root, "machines-import-panel", true);
+        if let Some(entry) = find(root.upcast_ref(), "machines-import-path")
+            .and_then(|w| w.downcast::<gtk::Entry>().ok())
+        {
+            entry.set_text(&file.to_string_lossy());
+        }
+        if let Some(button) = find(root.upcast_ref(), "machines-import-preview")
+            .and_then(|w| w.downcast::<gtk::Button>().ok())
+        {
+            button.emit_clicked();
+        }
     }
-    if let Some(expanded)=q["import_expanded"].as_bool(){expand_sidebar_panel(root,"machines-import-panel",expanded);}
-    if let Some(expanded)=q["tools_expanded"].as_bool(){expand_sidebar_panel(root,"machines-tools-panel",expanded);}
-    if let Some(id)=q["target"].as_str() {
-        if let Some(w)=find(root.upcast_ref(),"machines-merge-target") {
-            let dropdown=w.downcast::<gtk::DropDown>().unwrap();
-            let model=dropdown.model().unwrap();
-            let selected=(1..model.n_items()).find(|i|model.item(*i).and_then(|o|o.downcast::<gtk::StringObject>().ok()).is_some_and(|o|o.string().ends_with(id)));
+    if let Some(expanded) = q["import_expanded"].as_bool() {
+        expand_sidebar_panel(root, "machines-import-panel", expanded);
+    }
+    if let Some(expanded) = q["tools_expanded"].as_bool() {
+        expand_sidebar_panel(root, "machines-tools-panel", expanded);
+    }
+    if let Some(id) = q["target"].as_str() {
+        if let Some(w) = find(root.upcast_ref(), "machines-merge-target") {
+            let dropdown = w.downcast::<gtk::DropDown>().unwrap();
+            let model = dropdown.model().unwrap();
+            let selected = (1..model.n_items()).find(|i| {
+                model
+                    .item(*i)
+                    .and_then(|o| o.downcast::<gtk::StringObject>().ok())
+                    .is_some_and(|o| o.string().ends_with(id))
+            });
             dropdown.set_selected(selected.unwrap_or(0));
         }
     }
-    let action=q["operation"].as_str().unwrap_or("inspect");
-    if action=="undo" {expand_sidebar_panel(root,"machines-tools-panel",true);}
-    let name=match action {"next"=>"machines-page-next","previous"=>"machines-page-previous","review"=>"machines-merge-review","undo"=>"machines-undo",_=>""};
-    if let Some(w)=find(root.upcast_ref(),name) {if let Some(b)=w.downcast_ref::<gtk::Button>() {if b.is_sensitive(){b.emit_clicked();}}}
-    let mut review_text=None;
-    for window in gtk::Window::list_toplevels() {
-        if window.widget_name()=="machines-merge-dialog" {
-            if let Ok(dialog)=window.downcast::<gtk::Dialog>() {
-                review_text=dialog.content_area().first_child().and_then(|w|w.downcast::<gtk::Label>().ok()).map(|l|l.text().to_string());
-                if action=="apply"||action=="cancel" {dialog.response(if action=="apply" {gtk::ResponseType::Accept}else{gtk::ResponseType::Cancel});}
+    let action = q["operation"].as_str().unwrap_or("inspect");
+    if action == "undo" {
+        expand_sidebar_panel(root, "machines-tools-panel", true);
+    }
+    let name = match action {
+        "next" => "machines-page-next",
+        "previous" => "machines-page-previous",
+        "review" => "machines-merge-review",
+        "undo" => "machines-undo",
+        _ => "",
+    };
+    if let Some(w) = find(root.upcast_ref(), name) {
+        if let Some(b) = w.downcast_ref::<gtk::Button>() {
+            if b.is_sensitive() {
+                b.emit_clicked();
             }
         }
     }
-    let text=|name|find(root.upcast_ref(),name).and_then(|w|w.downcast::<gtk::Label>().ok()).map(|l|l.text().to_string());
-    let sensitive=|name|find(root.upcast_ref(),name).is_some_and(|w|w.is_sensitive());
-    let panel=|name|find(root.upcast_ref(),name).and_then(|w|w.downcast::<gtk::Expander>().ok()).is_some_and(|w|w.is_expanded());
-    let list_height=find(root.upcast_ref(),"machines-list-scroll").map(|w|w.height()).unwrap_or(0);
+    let mut review_text = None;
+    for window in gtk::Window::list_toplevels() {
+        if window.widget_name() == "machines-merge-dialog" {
+            if let Ok(dialog) = window.downcast::<gtk::Dialog>() {
+                review_text = dialog
+                    .content_area()
+                    .first_child()
+                    .and_then(|w| w.downcast::<gtk::Label>().ok())
+                    .map(|l| l.text().to_string());
+                if action == "apply" || action == "cancel" {
+                    dialog.response(if action == "apply" {
+                        gtk::ResponseType::Accept
+                    } else {
+                        gtk::ResponseType::Cancel
+                    });
+                }
+            }
+        }
+    }
+    let text = |name| {
+        find(root.upcast_ref(), name)
+            .and_then(|w| w.downcast::<gtk::Label>().ok())
+            .map(|l| l.text().to_string())
+    };
+    let sensitive = |name| find(root.upcast_ref(), name).is_some_and(|w| w.is_sensitive());
+    let panel = |name| {
+        find(root.upcast_ref(), name)
+            .and_then(|w| w.downcast::<gtk::Expander>().ok())
+            .is_some_and(|w| w.is_expanded())
+    };
+    let list_height = find(root.upcast_ref(), "machines-list-scroll")
+        .map(|w| w.height())
+        .unwrap_or(0);
     json!({"import_expanded":panel("machines-import-panel"),"tools_expanded":panel("machines-tools-panel"),"list_height":list_height,"sidebar_height":root.height(),"page":text("machines-page-label"),"previous":sensitive("machines-page-previous"),"next":sensitive("machines-page-next"),"status":text("machines-status"),"review_text":review_text,"visible":fixture(root,None,None,false,false)})
 }
 #[cfg(test)]
@@ -1811,11 +2054,30 @@ mod merge_tests {
     #[test]
     fn import_merge_preserves_identity_secrets_and_local_policy() {
         let imported:Profile=serde_json::from_value(json!({"name":"Imported","group":"New/Group","protocol":"SSH","server":"host.example:22","username":"other","secret_reference":"IMPORTED-IGNORED","favorite":false,"last_used":0,"tags":["remote"]})).unwrap();
-        let mut current=imported.clone();current.identify();current.name="Old".into();current.machine_id="machine_original".into();current.secret_reference="existing-secret-ref".into();current.favorite=true;current.last_used=123;current.inherit=true;current.preferences.trust="existing-trust".into();current.preferences.identity_file="existing-key".into();
-        let merged=merge_metadata(&current,&imported).unwrap();
-        assert_eq!(merged.id,current.id);assert_eq!(merged.machine_id,current.machine_id);assert_eq!(merged.secret_reference,current.secret_reference);
-        assert_eq!(serde_json::to_value(&merged.preferences).unwrap(),serde_json::to_value(&current.preferences).unwrap());
-        assert!(merged.favorite&&merged.inherit);assert_eq!(merged.last_used,123);assert_eq!(merged.name,"Imported");
-        let mut bad=imported;bad.server="-bad".into();assert!(merge_metadata(&current,&bad).is_err());assert_eq!(current.name,"Old");
+        let mut current = imported.clone();
+        current.identify();
+        current.name = "Old".into();
+        current.machine_id = "machine_original".into();
+        current.secret_reference = "existing-secret-ref".into();
+        current.favorite = true;
+        current.last_used = 123;
+        current.inherit = true;
+        current.preferences.trust = "existing-trust".into();
+        current.preferences.identity_file = "existing-key".into();
+        let merged = merge_metadata(&current, &imported).unwrap();
+        assert_eq!(merged.id, current.id);
+        assert_eq!(merged.machine_id, current.machine_id);
+        assert_eq!(merged.secret_reference, current.secret_reference);
+        assert_eq!(
+            serde_json::to_value(&merged.preferences).unwrap(),
+            serde_json::to_value(&current.preferences).unwrap()
+        );
+        assert!(merged.favorite && merged.inherit);
+        assert_eq!(merged.last_used, 123);
+        assert_eq!(merged.name, "Imported");
+        let mut bad = imported;
+        bad.server = "-bad".into();
+        assert!(merge_metadata(&current, &bad).is_err());
+        assert_eq!(current.name, "Old");
     }
 }

@@ -197,7 +197,9 @@ impl FocusBroker {
             self.last_transfer = Some(completed);
         }
     }
-    pub fn active(&self) -> Option<&str> { self.active.as_deref() }
+    pub fn active(&self) -> Option<&str> {
+        self.active.as_deref()
+    }
     pub fn epoch(&self) -> u64 {
         self.epoch
     }
@@ -211,7 +213,8 @@ impl FocusBroker {
         self.epoch = self.epoch.saturating_add(1);
     }
     pub fn offer(&mut self, offer: RemoteOffer, policy: ClipPolicy) -> OfferDecision {
-        if self.desktop_disabled || policy == ClipPolicy::Disabled
+        if self.desktop_disabled
+            || policy == ClipPolicy::Disabled
             || offer.view.is_empty()
             || offer.view.len() > 128
             || offer.generation == 0
@@ -236,8 +239,10 @@ impl FocusBroker {
         } else if self.offers.len() >= 64 {
             return OfferDecision::Rejected;
         }
-        let eligible = matches!(policy, ClipPolicy::Bidirectional | ClipPolicy::RemoteToLocal)
-            && self.active.as_deref() == Some(offer.view.as_str())
+        let eligible = matches!(
+            policy,
+            ClipPolicy::Bidirectional | ClipPolicy::RemoteToLocal
+        ) && self.active.as_deref() == Some(offer.view.as_str())
             && offer.owner_focus_epoch == self.epoch;
         self.offers.insert(offer.view.clone(), offer);
         if eligible {
@@ -548,4 +553,34 @@ mod desktop_transfer_tests {
         assert!(!broker.transfer_valid(&second));
     }
 }
-#[cfg(test)]mod direction_policy_tests{use super::*;#[test]fn all_five_policies_and_disabled_desktop(){for(policy,decision)in [(ClipPolicy::Bidirectional,OfferDecision::Eligible),(ClipPolicy::RemoteToLocal,OfferDecision::Eligible),(ClipPolicy::LocalToRemote,OfferDecision::Cached),(ClipPolicy::Manual,OfferDecision::Cached),(ClipPolicy::Disabled,OfferDecision::Rejected)]{let mut b=FocusBroker::default();b.focus(Some("rdp"));let o=RemoteOffer{view:"rdp".into(),mime:"text/plain".into(),generation:1,owner_focus_epoch:b.epoch(),size:0,scope:ClipScope::Clipboard};assert_eq!(b.offer(o.clone(),policy),decision);b.set_desktop_disabled(true);assert_eq!(b.offer(RemoteOffer{generation:2,..o},policy),OfferDecision::Rejected);}}}
+#[cfg(test)]
+mod direction_policy_tests {
+    use super::*;
+    #[test]
+    fn all_five_policies_and_disabled_desktop() {
+        for (policy, decision) in [
+            (ClipPolicy::Bidirectional, OfferDecision::Eligible),
+            (ClipPolicy::RemoteToLocal, OfferDecision::Eligible),
+            (ClipPolicy::LocalToRemote, OfferDecision::Cached),
+            (ClipPolicy::Manual, OfferDecision::Cached),
+            (ClipPolicy::Disabled, OfferDecision::Rejected),
+        ] {
+            let mut b = FocusBroker::default();
+            b.focus(Some("rdp"));
+            let o = RemoteOffer {
+                view: "rdp".into(),
+                mime: "text/plain".into(),
+                generation: 1,
+                owner_focus_epoch: b.epoch(),
+                size: 0,
+                scope: ClipScope::Clipboard,
+            };
+            assert_eq!(b.offer(o.clone(), policy), decision);
+            b.set_desktop_disabled(true);
+            assert_eq!(
+                b.offer(RemoteOffer { generation: 2, ..o }, policy),
+                OfferDecision::Rejected
+            );
+        }
+    }
+}

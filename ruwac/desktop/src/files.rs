@@ -72,10 +72,15 @@ pub(super) fn connect(p: &Profile) -> Result<Session, String> {
         };
         let mut passphrase = match passphrase {
             Ok(value) => value,
-            Err(e) => { unsafe { key.as_bytes_mut().fill(0) }; return Err(e); }
+            Err(e) => {
+                unsafe { key.as_bytes_mut().fill(0) };
+                return Err(e);
+            }
         };
         let result = session.userauth_pubkey_memory(&p.username, None, &key, passphrase.as_deref());
-        if let Some(value) = &mut passphrase { unsafe { value.as_bytes_mut().fill(0) }; }
+        if let Some(value) = &mut passphrase {
+            unsafe { value.as_bytes_mut().fill(0) };
+        }
         unsafe { key.as_bytes_mut().fill(0) };
         result.map_err(|_| "SSH key authentication rejected; an encrypted key needs its Secret Service passphrase reference, or use the SSH agent")?;
     } else {
@@ -92,7 +97,11 @@ pub(super) fn connect(p: &Profile) -> Result<Session, String> {
     }
     Ok(session)
 }
-pub(super) fn remote_path(sftp: &ssh2::Sftp, path: &Path, allow_missing: bool) -> Result<PathBuf, String> {
+pub(super) fn remote_path(
+    sftp: &ssh2::Sftp,
+    path: &Path,
+    allow_missing: bool,
+) -> Result<PathBuf, String> {
     if path.as_os_str().len() > 4096
         || path.components().any(|c| matches!(c, Component::ParentDir))
         || path.to_string_lossy().contains('\0')
@@ -363,8 +372,14 @@ pub fn transfer(
         result
     }
 }
-fn pending_control(profile:Profile,busy:Rc<RefCell<Option<Arc<AtomicBool>>>>,status:gtk::Label,progress:gtk::ProgressBar)->gtk::Button {
-    let button=gtk::Button::with_label("Pending transfers…");button.set_widget_name("files-pending");
+fn pending_control(
+    profile: Profile,
+    busy: Rc<RefCell<Option<Arc<AtomicBool>>>>,
+    status: gtk::Label,
+    progress: gtk::ProgressBar,
+) -> gtk::Button {
+    let button = gtk::Button::with_label("Pending transfers…");
+    button.set_widget_name("files-pending");
     button.connect_clicked(move|button|{
         if busy.borrow().is_some(){status.set_text("A file operation is already running; pause it before opening pending transfers");return;}
         let dialog=gtk::Dialog::builder().title("Pending SFTP transfers").default_width(650).default_height(450).build();dialog.set_widget_name("files-pending-dialog");dialog.set_transient_for(button.root().and_then(|w|w.downcast::<gtk::Window>().ok()).as_ref());dialog.add_button("Close",gtk::ResponseType::Close);dialog.connect_response(|d,_|d.close());
@@ -389,7 +404,8 @@ fn pending_control(profile:Profile,busy:Rc<RefCell<Option<Arc<AtomicBool>>>>,sta
                 Ok(Err(e))=>{info.set_text(&e);gtk::glib::ControlFlow::Break},Err(std::sync::mpsc::TryRecvError::Empty)=>gtk::glib::ControlFlow::Continue,Err(_)=>{info.set_text("Transfer journal worker stopped");gtk::glib::ControlFlow::Break}
             }
         });
-    });button
+    });
+    button
 }
 pub fn panel(profile: Profile) -> gtk::Box {
     let root = gtk::Box::new(gtk::Orientation::Vertical, 6);
@@ -429,7 +445,13 @@ pub fn panel(profile: Profile) -> gtk::Box {
     progress.set_show_text(true);
     root.append(&progress);
     let busy = Rc::new(RefCell::new(None::<Arc<AtomicBool>>));
-    let pending=pending_control(profile.clone(),busy.clone(),status.clone(),progress.clone());root.append(&pending);
+    let pending = pending_control(
+        profile.clone(),
+        busy.clone(),
+        status.clone(),
+        progress.clone(),
+    );
+    root.append(&pending);
     let refresh = gtk::Button::with_label("Refresh");
     controls.append(&refresh);
     let up = gtk::Button::with_label("Up");
@@ -584,7 +606,10 @@ pub fn panel(profile: Profile) -> gtk::Box {
                 let (tx, rx) = std::sync::mpsc::sync_channel(1);
                 let count = bytes.clone();
                 std::thread::spawn(move || {
-                    let result=crate::files_resume::start(&p,&local,&remote,upload,overwrite,&cancel,&count).map(|r|r.sha256);
+                    let result = crate::files_resume::start(
+                        &p, &local, &remote, upload, overwrite, &cancel, &count,
+                    )
+                    .map(|r| r.sha256);
                     let _ = tx.send(result);
                 });
                 st.set_text("Preparing source, transferring and verifying…");
@@ -682,14 +707,63 @@ pub fn fixture(root: &gtk::Box, path: Option<&str>, refresh: bool) -> serde_json
     serde_json::json!({"labels":labels,"buttons":buttons.iter().map(|b|b.label().unwrap_or_default().to_string()).collect::<Vec<_>>()})
 }
 
-pub fn fixture_transfer(root:&gtk::Box,q:&serde_json::Value)->serde_json::Value {
-    fn visit(w:&gtk::Widget,q:&serde_json::Value,rows:&mut Vec<serde_json::Value>){
-        if w.widget_name()=="files-pending-row"{if let Some(title)=w.first_child().and_then(|w|w.downcast::<gtk::Label>().ok()){rows.push(serde_json::json!({"title":title.text().to_string()}));}}
-        if let Some(button)=w.downcast_ref::<gtk::Button>(){let action=q["operation"].as_str().unwrap_or("");let name=button.widget_name();let click=(action=="open"&&name=="files-pending")||((action=="resume"&&name=="files-resume-job"||action=="discard"&&name=="files-discard-job")&&button.tooltip_text().as_deref()==q["id"].as_str())||(action=="cancel"&&button.label().as_deref()==Some("Pause transfer"));if click&&button.is_sensitive(){button.emit_clicked();}}
-        let mut c=w.first_child();while let Some(child)=c{c=child.next_sibling();visit(&child,q,rows);}
+pub fn fixture_transfer(root: &gtk::Box, q: &serde_json::Value) -> serde_json::Value {
+    fn visit(w: &gtk::Widget, q: &serde_json::Value, rows: &mut Vec<serde_json::Value>) {
+        if w.widget_name() == "files-pending-row" {
+            if let Some(title) = w
+                .first_child()
+                .and_then(|w| w.downcast::<gtk::Label>().ok())
+            {
+                rows.push(serde_json::json!({"title":title.text().to_string()}));
+            }
+        }
+        if let Some(button) = w.downcast_ref::<gtk::Button>() {
+            let action = q["operation"].as_str().unwrap_or("");
+            let name = button.widget_name();
+            let click = (action == "open" && name == "files-pending")
+                || ((action == "resume" && name == "files-resume-job"
+                    || action == "discard" && name == "files-discard-job")
+                    && button.tooltip_text().as_deref() == q["id"].as_str())
+                || (action == "cancel" && button.label().as_deref() == Some("Pause transfer"));
+            if click && button.is_sensitive() {
+                button.emit_clicked();
+            }
+        }
+        let mut c = w.first_child();
+        while let Some(child) = c {
+            c = child.next_sibling();
+            visit(&child, q, rows);
+        }
     }
-    let mut rows=Vec::new();visit(root.upcast_ref(),q,&mut rows);let mut open=false;let mut status=None;
-    for w in gtk::Window::list_toplevels(){if w.widget_name()=="files-pending-dialog"&&w.is_visible(){open=true;visit(&w,q,&mut rows);fn text(w:&gtk::Widget)->Option<String>{if w.widget_name()=="files-pending-status"{return w.downcast_ref::<gtk::Label>().map(|w|w.text().to_string());}let mut c=w.first_child();while let Some(w)=c{c=w.next_sibling();if let Some(text)=text(&w){return Some(text);}}None}status=text(&w);if q["operation"]=="close"{if let Ok(w)=w.downcast::<gtk::Window>(){w.close();}}}}
+    let mut rows = Vec::new();
+    visit(root.upcast_ref(), q, &mut rows);
+    let mut open = false;
+    let mut status = None;
+    for w in gtk::Window::list_toplevels() {
+        if w.widget_name() == "files-pending-dialog" && w.is_visible() {
+            open = true;
+            visit(&w, q, &mut rows);
+            fn text(w: &gtk::Widget) -> Option<String> {
+                if w.widget_name() == "files-pending-status" {
+                    return w.downcast_ref::<gtk::Label>().map(|w| w.text().to_string());
+                }
+                let mut c = w.first_child();
+                while let Some(w) = c {
+                    c = w.next_sibling();
+                    if let Some(text) = text(&w) {
+                        return Some(text);
+                    }
+                }
+                None
+            }
+            status = text(&w);
+            if q["operation"] == "close" {
+                if let Ok(w) = w.downcast::<gtk::Window>() {
+                    w.close();
+                }
+            }
+        }
+    }
     serde_json::json!({"open":open,"rows":rows,"status":status})
 }
 

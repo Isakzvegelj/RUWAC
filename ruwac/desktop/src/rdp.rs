@@ -436,8 +436,7 @@ async fn run_session(
         pointer_software_rendering: result.pointer_software_rendering,
     }
     .build();
-    state.lock().unwrap().status =
-        Some("Connected · text and image clipboard sharing".into());
+    state.lock().unwrap().status = Some("Connected · text and image clipboard sharing".into());
     let (mut reader, mut writer) = ironrdp_tokio::split_tokio_framed(framed);
     loop {
         if state
@@ -659,12 +658,12 @@ pub struct RdpView {
     profile_metadata: RefCell<Option<crate::profiles::Profile>>,
 }
 fn quick_action(toolbar: &gtk::Box, name: &str, icon: &str, label: &str, target: &gtk::Button) {
-    let button=gtk::Button::from_icon_name(icon);
+    let button = gtk::Button::from_icon_name(icon);
     button.set_widget_name(name);
     button.set_tooltip_text(Some(label));
     button.update_property(&[gtk::accessible::Property::Label(label)]);
-    let target=target.clone();
-    button.connect_clicked(move |_|target.emit_clicked());
+    let target = target.clone();
+    button.connect_clicked(move |_| target.emit_clicked());
     toolbar.append(&button);
 }
 impl RdpView {
@@ -715,8 +714,20 @@ impl RdpView {
         toolbar.append(&title);
         toolbar.append(&menu);
         root.append(&toolbar);
-        quick_action(&toolbar, "reconnect", "view-refresh-symbolic", "Connect / reconnect", &connect);
-        quick_action(&toolbar, "disconnect", "network-offline-symbolic", "Disconnect", &disconnect);
+        quick_action(
+            &toolbar,
+            "reconnect",
+            "view-refresh-symbolic",
+            "Connect / reconnect",
+            &connect,
+        );
+        quick_action(
+            &toolbar,
+            "disconnect",
+            "network-offline-symbolic",
+            "Disconnect",
+            &disconnect,
+        );
         let status = gtk::Label::new(Some(
             "Choose a machine from the sidebar or open RDP controls to connect",
         ));
@@ -782,7 +793,9 @@ impl RdpView {
         let weak = Rc::downgrade(&v);
         connect.connect_clicked(move |_| {
             if let Some(v) = weak.upgrade() {
-                if let Err(error)=v.begin_connect(true){v.status.set_text(&error);}
+                if let Err(error) = v.begin_connect(true) {
+                    v.status.set_text(&error);
+                }
             }
         });
         let weak = Rc::downgrade(&v);
@@ -807,8 +820,17 @@ impl RdpView {
             let b = gtk::Button::with_label(name);
             tools.insert(&b, -1);
             if matches!(mode, Scale::Fit | Scale::Dynamic) {
-                quick_action(&toolbar, if mode==Scale::Fit {"fit"} else {"dynamic"},
-                    if mode==Scale::Fit {"zoom-fit-best-symbolic"} else {"view-restore-symbolic"}, name, &b);
+                quick_action(
+                    &toolbar,
+                    if mode == Scale::Fit { "fit" } else { "dynamic" },
+                    if mode == Scale::Fit {
+                        "zoom-fit-best-symbolic"
+                    } else {
+                        "view-restore-symbolic"
+                    },
+                    name,
+                    &b,
+                );
             }
             let w = Rc::downgrade(&v);
             b.connect_clicked(move |_| {
@@ -826,8 +848,21 @@ impl RdpView {
         for (label, multiplier) in [("Zoom −", 0.8), ("Zoom +", 1.25)] {
             let b = gtk::Button::with_label(label);
             tools.insert(&b, -1);
-            quick_action(&toolbar, if multiplier<1.0 {"zoom-out"} else {"zoom-in"},
-                if multiplier<1.0 {"zoom-out-symbolic"} else {"zoom-in-symbolic"}, label, &b);
+            quick_action(
+                &toolbar,
+                if multiplier < 1.0 {
+                    "zoom-out"
+                } else {
+                    "zoom-in"
+                },
+                if multiplier < 1.0 {
+                    "zoom-out-symbolic"
+                } else {
+                    "zoom-in-symbolic"
+                },
+                label,
+                &b,
+            );
             let weak = Rc::downgrade(&v);
             b.connect_clicked(move |_| {
                 if let Some(v) = weak.upgrade() {
@@ -848,7 +883,13 @@ impl RdpView {
         });
         let full = gtk::Button::with_label("Fullscreen");
         tools.insert(&full, -1);
-        quick_action(&toolbar, "fullscreen", "view-fullscreen-symbolic", "Fullscreen", &full);
+        quick_action(
+            &toolbar,
+            "fullscreen",
+            "view-fullscreen-symbolic",
+            "Fullscreen",
+            &full,
+        );
         let w = Rc::downgrade(&v);
         full.connect_clicked(move |_| {
             if let Some(v) = w.upgrade() {
@@ -1194,18 +1235,25 @@ impl RdpView {
         self.focus();
     }
     pub fn fixture_toolbar(&self, action: Option<&str>) -> serde_json::Value {
-        let Some(toolbar)=self.root.first_child().and_then(|w|w.downcast::<gtk::Box>().ok()) else {
+        let Some(toolbar) = self
+            .root
+            .first_child()
+            .and_then(|w| w.downcast::<gtk::Box>().ok())
+        else {
             return serde_json::json!({"error":"toolbar unavailable"});
         };
-        let mut controls=Vec::new();
-        let mut clicked=false;
-        let mut child=toolbar.first_child();
-        while let Some(w)=child {
-            child=w.next_sibling();
-            if let Some(b)=w.downcast_ref::<gtk::Button>() {
-                let name=b.widget_name().to_string();
+        let mut controls = Vec::new();
+        let mut clicked = false;
+        let mut child = toolbar.first_child();
+        while let Some(w) = child {
+            child = w.next_sibling();
+            if let Some(b) = w.downcast_ref::<gtk::Button>() {
+                let name = b.widget_name().to_string();
                 controls.push(serde_json::json!({"action":name,"icon":b.icon_name().map(|s|s.to_string()),"label":b.tooltip_text().map(|s|s.to_string()),"mapped":b.is_mapped()}));
-                if action==Some(name.as_str()) {b.emit_clicked();clicked=true;}
+                if action == Some(name.as_str()) {
+                    b.emit_clicked();
+                    clicked = true;
+                }
             }
         }
         serde_json::json!({"controls":controls,"clicked":clicked,"state":self.fixture_inspect()})
@@ -1341,22 +1389,54 @@ impl RdpView {
         self.fixture_policy(p.preferences.clipboard);
         self.canvas();
     }
-    fn begin_connect(&self, activate:bool)->Result<(),String> {
-        let address=self.entries[0].text();
-        let (host,port)=crate::profiles::endpoint(&address,3389)?;
-        let user=self.entries[1].text();let reference=self.entries[2].text();let ca=self.entries[3].text();
-        if user.is_empty()||reference.is_empty(){self.status.set_text("Host, user and secret reference are required");return Err("Configured user and credential reference required".into());}
+    fn begin_connect(&self, activate: bool) -> Result<(), String> {
+        let address = self.entries[0].text();
+        let (host, port) = crate::profiles::endpoint(&address, 3389)?;
+        let user = self.entries[1].text();
+        let reference = self.entries[2].text();
+        let ca = self.entries[3].text();
+        if user.is_empty() || reference.is_empty() {
+            self.status
+                .set_text("Host, user and secret reference are required");
+            return Err("Configured user and credential reference required".into());
+        }
         self.close();
-        let connection=Connection::start(Profile {host,port,user:user.into(),reference:reference.into(),reconnect:self.reconnect.get(),ca:if ca.is_empty(){None}else{Some(ca.into())}});
-        *self.bridge.borrow_mut()=connection.state.lock().unwrap().bridge.clone();
-        *self.connection.borrow_mut()=Some(connection);
-        if activate {self.focus();}
-        self.status.set_text("Connecting with certificate validation…");Ok(())
+        let connection = Connection::start(Profile {
+            host,
+            port,
+            user: user.into(),
+            reference: reference.into(),
+            reconnect: self.reconnect.get(),
+            ca: if ca.is_empty() { None } else { Some(ca.into()) },
+        });
+        *self.bridge.borrow_mut() = connection.state.lock().unwrap().bridge.clone();
+        *self.connection.borrow_mut() = Some(connection);
+        if activate {
+            self.focus();
+        }
+        self.status
+            .set_text("Connecting with certificate validation…");
+        Ok(())
     }
-    pub fn automation_reconnect(&self)->Result<(),String> {self.begin_connect(false)}
-    pub fn metadata(&self)->serde_json::Value {
-        let status=self.status.text();let connection=self.connection.borrow();
-        let phase=if connection.is_none(){"disconnected"}else if status.starts_with("Connected"){"connected"}else if status.starts_with("Connecting"){"connecting"}else if status.starts_with("Reconnecting"){"reconnecting"}else if status.starts_with("Display")||status.starts_with("Server reactivating"){"display_change"}else{"error"};
+    pub fn automation_reconnect(&self) -> Result<(), String> {
+        self.begin_connect(false)
+    }
+    pub fn metadata(&self) -> serde_json::Value {
+        let status = self.status.text();
+        let connection = self.connection.borrow();
+        let phase = if connection.is_none() {
+            "disconnected"
+        } else if status.starts_with("Connected") {
+            "connected"
+        } else if status.starts_with("Connecting") {
+            "connecting"
+        } else if status.starts_with("Reconnecting") {
+            "reconnecting"
+        } else if status.starts_with("Display") || status.starts_with("Server reactivating") {
+            "display_change"
+        } else {
+            "error"
+        };
         serde_json::json!({"id":self.root.widget_name().as_str(),"phase":phase,"size":self.size.get(),"transport_id":connection.as_ref().map(|c|c.id.as_str()),"decoded_updates":connection.as_ref().map(|c|c.state.lock().unwrap().frames).unwrap_or(0),"clipboard_owner":self.broker.borrow().active()==Some(self.id.as_str()),"profile":self.profile_metadata.borrow().as_ref().map(|p|p.id.clone())})
     }
     pub fn connect_profile(&self) {
@@ -1776,8 +1856,18 @@ impl RdpView {
         crate::tiles::contains(&self.area, widget)
     }
     pub fn activate_clipboard(&self) {
-        let foreground = self.area.root().and_then(|r|r.downcast::<gtk::Window>().ok()).is_some_and(|w|w.is_active());
-        if !foreground { self.inactive(); if self.broker.borrow().active()==Some(self.id.as_str()){self.broker.borrow_mut().focus(None);} return; }
+        let foreground = self
+            .area
+            .root()
+            .and_then(|r| r.downcast::<gtk::Window>().ok())
+            .is_some_and(|w| w.is_active());
+        if !foreground {
+            self.inactive();
+            if self.broker.borrow().active() == Some(self.id.as_str()) {
+                self.broker.borrow_mut().focus(None);
+            }
+            return;
+        }
 
         if self.broker.borrow().active() != Some(self.id.as_str()) {
             self.broker.borrow_mut().focus(Some(&self.id));

@@ -795,7 +795,11 @@ impl View {
                     }
                 }
             }
-            if method == "window.create" || method == "window.select" || method == "window.cycle" || method == "window.previous" {
+            if method == "window.create"
+                || method == "window.select"
+                || method == "window.cycle"
+                || method == "window.previous"
+            {
                 *self.expected_window.borrow_mut() = v["window"]
                     .as_str()
                     .or(v["selected"].as_str())
@@ -1121,9 +1125,9 @@ impl View {
         let ctrl = mods.contains(gdk::ModifierType::CONTROL_MASK);
         let ch = key.to_unicode();
         if self.prefix.replace(false) {
-            if self.binding(key,mods,"prefix","<Control>a") {
+            if self.binding(key, mods, "prefix", "<Control>a") {
                 if self.worker.state.lock().unwrap().supports_previous_window {
-                    self.navigate("window.previous",json!({"session":self.session}));
+                    self.navigate("window.previous", json!({"session":self.session}));
                 } else {
                     self.warn("Previous-window navigation requires a newer daemon; the active session is preserved");
                 }

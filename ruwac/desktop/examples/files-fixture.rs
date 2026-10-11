@@ -41,15 +41,45 @@ fn main() {
                 serde_json::json!({"entries":entries.iter().map(|e|&e.name).collect::<Vec<_>>()}),
             );
         }
-        if args[1]=="pending" {return serde_json::to_value(files_resume::list(&p)?).map_err(|e|e.to_string());}
-        if args[1]=="discard" {files_resume::discard(&p,&args[3],&AtomicBool::new(false))?;return Ok(serde_json::json!({"discarded":true}));}
-        if matches!(args[1].as_str(),"resume-upload"|"resume-download"|"resume") {
-            let cancel=Arc::new(AtomicBool::new(false));let progress=Arc::new(AtomicU64::new(0));
-            if let Some(threshold)=args.get(if args[1]=="resume"{4}else{6}).and_then(|s|s.parse::<u64>().ok()) {
-                let(c,b)=(cancel.clone(),progress.clone());std::thread::spawn(move||{while b.load(std::sync::atomic::Ordering::Relaxed)<threshold{std::thread::sleep(Duration::from_millis(1));}c.store(true,std::sync::atomic::Ordering::Relaxed);});
+        if args[1] == "pending" {
+            return serde_json::to_value(files_resume::list(&p)?).map_err(|e| e.to_string());
+        }
+        if args[1] == "discard" {
+            files_resume::discard(&p, &args[3], &AtomicBool::new(false))?;
+            return Ok(serde_json::json!({"discarded":true}));
+        }
+        if matches!(
+            args[1].as_str(),
+            "resume-upload" | "resume-download" | "resume"
+        ) {
+            let cancel = Arc::new(AtomicBool::new(false));
+            let progress = Arc::new(AtomicU64::new(0));
+            if let Some(threshold) = args
+                .get(if args[1] == "resume" { 4 } else { 6 })
+                .and_then(|s| s.parse::<u64>().ok())
+            {
+                let (c, b) = (cancel.clone(), progress.clone());
+                std::thread::spawn(move || {
+                    while b.load(std::sync::atomic::Ordering::Relaxed) < threshold {
+                        std::thread::sleep(Duration::from_millis(1));
+                    }
+                    c.store(true, std::sync::atomic::Ordering::Relaxed);
+                });
             }
-            let receipt=if args[1]=="resume"{files_resume::resume(&p,&args[3],&cancel,&progress)}else{files_resume::start(&p,Path::new(&args[3]),Path::new(&args[4]),args[1]=="resume-upload",args.get(5).map(String::as_str)==Some("overwrite"),&cancel,&progress)}?;
-            return serde_json::to_value(receipt).map_err(|e|e.to_string());
+            let receipt = if args[1] == "resume" {
+                files_resume::resume(&p, &args[3], &cancel, &progress)
+            } else {
+                files_resume::start(
+                    &p,
+                    Path::new(&args[3]),
+                    Path::new(&args[4]),
+                    args[1] == "resume-upload",
+                    args.get(5).map(String::as_str) == Some("overwrite"),
+                    &cancel,
+                    &progress,
+                )
+            }?;
+            return serde_json::to_value(receipt).map_err(|e| e.to_string());
         }
         let cancel = Arc::new(AtomicBool::new(false));
         if let Some(ms) = args.get(6).and_then(|s| s.parse::<u64>().ok()) {

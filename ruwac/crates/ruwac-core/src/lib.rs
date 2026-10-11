@@ -1,5 +1,5 @@
-mod layout;
 mod jobs;
+mod layout;
 mod recovery;
 use layout::{Layout, Rect};
 pub use recovery::Store;
@@ -54,14 +54,14 @@ struct Session {
     cols: u16,
     #[serde(skip)]
     buffer: String,
-    #[serde(default, skip_serializing_if="Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     previous: Option<String>,
 }
 impl Session {
-    fn select_window(&mut self, window:String) {
-        if self.active!=window {
-            self.previous=(!self.active.is_empty()).then(||self.active.clone());
-            self.active=window;
+    fn select_window(&mut self, window: String) {
+        if self.active != window {
+            self.previous = (!self.active.is_empty()).then(|| self.active.clone());
+            self.active = window;
         }
     }
 }
@@ -208,7 +208,9 @@ pub fn start_with_store(store: Option<Store>) -> std::io::Result<Handle> {
                             p.exit_code = p.pty.as_ref().and_then(Pty::exit_code);
                             p.term.reset_input_modes();
                         } else {
-                            if let Some(job)=p.job.as_mut(){job.output();}
+                            if let Some(job) = p.job.as_mut() {
+                                job.output();
+                            }
                             for reply in p.term.feed(&b) {
                                 if let Some(pty) = &p.pty {
                                     let _ = pty.send(reply.into_bytes());
@@ -232,7 +234,7 @@ pub fn start_with_store(store: Option<Store>) -> std::io::Result<Handle> {
                     }
                 }
                 Message::Disconnect(c) => {
-                    s.histories.retain(|_,pin|pin.owner!=c);
+                    s.histories.retain(|_, pin| pin.owner != c);
                     if let Some(c) = s.clients.remove(&c) {
                         s.layout(&c.session);
                         s.revision += 1;
@@ -306,7 +308,8 @@ impl State {
                     | "pane.history.release"
                     | "daemon.stop"
                     | "daemon.checkpoint"
-            ) || (r.method=="pane.history"&&r.params.get("snapshot").is_some()) {
+            ) || (r.method == "pane.history" && r.params.get("snapshot").is_some())
+            {
                 return Err(Error::new(
                     "INVALID_PARAMS",
                     "idempotency unsupported for connection-local operations",
@@ -358,7 +361,7 @@ impl State {
                 id: pid.clone(),
                 window: w.into(),
                 foreground: pty.foreground_group(),
-                job: Some(jobs::Job::new(&args[0],pty.pid)),
+                job: Some(jobs::Job::new(&args[0], pty.pid)),
                 pty: Some(pty),
                 exit_code: None,
                 term: Terminal::new(rows, cols),
@@ -456,7 +459,8 @@ impl State {
         }
     }
     fn expire_histories(&mut self) {
-        self.histories.retain(|_,pin|pin.read_at.elapsed()<std::time::Duration::from_secs(30));
+        self.histories
+            .retain(|_, pin| pin.read_at.elapsed() < std::time::Duration::from_secs(30));
     }
     fn dispatch(&mut self, m: &str, v: &Value, client: &str) -> Result<Value> {
         match m {
@@ -536,7 +540,7 @@ impl State {
                 Ok(json!({"client":client,"session":s}))
             }
             "session.detach" => {
-                self.histories.retain(|_,pin|pin.owner!=client);
+                self.histories.retain(|_, pin| pin.owner != client);
                 if let Some(c) = self.clients.remove(client) {
                     self.layout(&c.session);
                 }
@@ -571,17 +575,23 @@ impl State {
                     .windows
                     .get(&w)
                     .ok_or_else(|| Error::new("STALE_ID", "window does not exist"))?;
-                self.sessions.get_mut(&w.session).unwrap().select_window(w.id.clone());
+                self.sessions
+                    .get_mut(&w.session)
+                    .unwrap()
+                    .select_window(w.id.clone());
                 Ok(json!({"selected":w.id}))
             }
             "window.previous" => {
-                let s=target(v,"session","session")?;
-                let s=self.sessions.get_mut(&s).ok_or_else(||Error::new("STALE_ID","session does not exist"))?;
-                if let Some(previous)=s.previous.clone().filter(|id|s.windows.contains(id)) {
+                let s = target(v, "session", "session")?;
+                let s = self
+                    .sessions
+                    .get_mut(&s)
+                    .ok_or_else(|| Error::new("STALE_ID", "session does not exist"))?;
+                if let Some(previous) = s.previous.clone().filter(|id| s.windows.contains(id)) {
                     s.select_window(previous);
-                } else if s.windows.len()>1 {
-                    let index=s.windows.iter().position(|w|w==&s.active).unwrap_or(0);
-                    s.select_window(s.windows[(index+1)%s.windows.len()].clone());
+                } else if s.windows.len() > 1 {
+                    let index = s.windows.iter().position(|w| w == &s.active).unwrap_or(0);
+                    s.select_window(s.windows[(index + 1) % s.windows.len()].clone());
                 }
                 Ok(json!({"selected":s.active}))
             }
@@ -676,11 +686,13 @@ impl State {
                     self.windows.remove(&w);
                     let ss = self.sessions.get_mut(&session).unwrap();
                     ss.windows.retain(|x| x != &w);
-                    if ss.previous.as_deref()==Some(w.as_str()) {ss.previous=None;}
+                    if ss.previous.as_deref() == Some(w.as_str()) {
+                        ss.previous = None;
+                    }
                     if let Some(first) = ss.windows.first() {
                         if ss.active == w {
                             ss.select_window(first.clone());
-                            ss.previous=None;
+                            ss.previous = None;
                         }
                     } else {
                         self.sessions.remove(&session);
@@ -720,31 +732,77 @@ impl State {
             }
             "pane.history.freeze" => {
                 self.expire_histories();
-                if self.histories.values().filter(|pin|pin.owner!=client).count()>=8 {return Err(Error::new("LIMIT","eight simultaneous copy snapshots; retry after another copy finishes"));}
-                let p=self.pane(v)?;let pane=p.id.clone();let data=p.term.freeze_history();
-                if data.rows.is_empty(){return Err(Error::new("LIMIT","newest history row exceeds the bounded copy snapshot row cap"));}
-                self.histories.retain(|_,pin|pin.owner!=client);
-                let snapshot=id("history");let mut metadata=data.metadata();metadata["snapshot"]=json!(snapshot);
-                self.histories.insert(snapshot,HistoryPin {owner:client.into(),pane,read_at:std::time::Instant::now(),data});
+                if self
+                    .histories
+                    .values()
+                    .filter(|pin| pin.owner != client)
+                    .count()
+                    >= 8
+                {
+                    return Err(Error::new(
+                        "LIMIT",
+                        "eight simultaneous copy snapshots; retry after another copy finishes",
+                    ));
+                }
+                let p = self.pane(v)?;
+                let pane = p.id.clone();
+                let data = p.term.freeze_history();
+                if data.rows.is_empty() {
+                    return Err(Error::new(
+                        "LIMIT",
+                        "newest history row exceeds the bounded copy snapshot row cap",
+                    ));
+                }
+                self.histories.retain(|_, pin| pin.owner != client);
+                let snapshot = id("history");
+                let mut metadata = data.metadata();
+                metadata["snapshot"] = json!(snapshot);
+                self.histories.insert(
+                    snapshot,
+                    HistoryPin {
+                        owner: client.into(),
+                        pane,
+                        read_at: std::time::Instant::now(),
+                        data,
+                    },
+                );
                 Ok(metadata)
             }
             "pane.history.release" => {
-                let snapshot=target(v,"snapshot","history")?;
-                if !self.histories.get(&snapshot).is_some_and(|pin|pin.owner==client) {
-                    return Err(Error::new("STALE_SNAPSHOT","copy snapshot is not owned by this connection"));
+                let snapshot = target(v, "snapshot", "history")?;
+                if !self
+                    .histories
+                    .get(&snapshot)
+                    .is_some_and(|pin| pin.owner == client)
+                {
+                    return Err(Error::new(
+                        "STALE_SNAPSHOT",
+                        "copy snapshot is not owned by this connection",
+                    ));
                 }
-                self.histories.remove(&snapshot);Ok(json!({"released":true}))
+                self.histories.remove(&snapshot);
+                Ok(json!({"released":true}))
             }
             "pane.history" => {
                 if v.get("snapshot").is_some() {
-                    self.expire_histories();let snapshot=target(v,"snapshot","history")?;
-                    let pane=target(v,"pane","pane")?;
+                    self.expire_histories();
+                    let snapshot = target(v, "snapshot", "history")?;
+                    let pane = target(v, "pane", "pane")?;
                     let pin=self.histories.get_mut(&snapshot).filter(|pin|pin.owner==client&&pin.pane==pane)
                         .ok_or_else(||Error::new("STALE_SNAPSHOT","copy snapshot expired, released or belongs to another connection/pane"))?;
-                    pin.read_at=std::time::Instant::now();
-                    let offset=v.get("offset").map(|x|x.as_u64().ok_or_else(||Error::new("INVALID_PARAMS","offset must be an integer"))).transpose()?.unwrap_or(0).min(1000000)as usize;
-                    let lines=num(v,"lines",500,1,500)? as usize;
-                    return Ok(pin.data.page(offset,lines));
+                    pin.read_at = std::time::Instant::now();
+                    let offset = v
+                        .get("offset")
+                        .map(|x| {
+                            x.as_u64().ok_or_else(|| {
+                                Error::new("INVALID_PARAMS", "offset must be an integer")
+                            })
+                        })
+                        .transpose()?
+                        .unwrap_or(0)
+                        .min(1000000) as usize;
+                    let lines = num(v, "lines", 500, 1, 500)? as usize;
+                    return Ok(pin.data.page(offset, lines));
                 }
                 let p = self.pane(v)?;
                 if v.get("epoch")

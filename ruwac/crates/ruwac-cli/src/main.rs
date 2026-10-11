@@ -136,14 +136,48 @@ fn named_request(a: &[String]) -> io::Result<Request> {
     Ok(request(method, params))
 }
 
-fn job_request(args:&[String])->io::Result<Request> {
-    let bad=||io::Error::other("job list [--session ID] [--query TEXT] [--offset N] [--limit N] | job query --id pane_ID [--json]");
-    let verb=args.first().ok_or_else(bad)?;let mut params=json!({});let mut i=1;
-    while i<args.len(){if args[i]=="--json"&&i+1==args.len(){i+=1;continue;}if i+1>=args.len(){return Err(bad());}
-        let key=match (verb.as_str(),args[i].as_str()) {("list","--session")=>"session",("list","--query")=>"query",("list","--offset")=>"offset",("list","--limit")=>"limit",("query","--id")=>"pane",_=>return Err(bad())};
-        if params.get(key).is_some(){return Err(bad());}params[key]=if matches!(key,"offset"|"limit"){json!(args[i+1].parse::<u64>().map_err(|_|bad())?)}else{json!(args[i+1])};i+=2;
+fn job_request(args: &[String]) -> io::Result<Request> {
+    let bad = || {
+        io::Error::other(
+            "job list [--session ID] [--query TEXT] [--offset N] [--limit N] | job query --id pane_ID [--json]",
+        )
+    };
+    let verb = args.first().ok_or_else(bad)?;
+    let mut params = json!({});
+    let mut i = 1;
+    while i < args.len() {
+        if args[i] == "--json" && i + 1 == args.len() {
+            i += 1;
+            continue;
+        }
+        if i + 1 >= args.len() {
+            return Err(bad());
+        }
+        let key = match (verb.as_str(), args[i].as_str()) {
+            ("list", "--session") => "session",
+            ("list", "--query") => "query",
+            ("list", "--offset") => "offset",
+            ("list", "--limit") => "limit",
+            ("query", "--id") => "pane",
+            _ => return Err(bad()),
+        };
+        if params.get(key).is_some() {
+            return Err(bad());
+        }
+        params[key] = if matches!(key, "offset" | "limit") {
+            json!(args[i + 1].parse::<u64>().map_err(|_| bad())?)
+        } else {
+            json!(args[i + 1])
+        };
+        i += 2;
     }
-    if verb=="query"&&params.get("pane").is_none(){return Err(bad());}if !matches!(verb.as_str(),"list"|"query"){return Err(bad());}Ok(request(&format!("job.{verb}"),params))
+    if verb == "query" && params.get("pane").is_none() {
+        return Err(bad());
+    }
+    if !matches!(verb.as_str(), "list" | "query") {
+        return Err(bad());
+    }
+    Ok(request(&format!("job.{verb}"), params))
 }
 
 fn run() -> Result<(), Box<dyn std::error::Error>> {
@@ -198,13 +232,47 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     });
     if let Some(remote) = &remote {
         remote.validate()?;
-        match a.first().map(String::as_str){
-            Some("doctor")=>{doctor::options(&a[1..])?;if a[1..].iter().any(|s|s=="--repair"){return Err("remote terminal repair requires running doctor directly in its foreground TTY".into());}let v=remote.doctor(&a[1..])?;println!("{v}");if v["result"]["ok"]!=true{return Err("remote diagnostics failed".into());}return Ok(());},
-            Some("start")=>{if a.len()!=1{return Err("start takes no command options".into());}println!("{}",remote.start()?);return Ok(());},
-            Some("attach")=>{if a.len()!=3||a[1]!="--session"{return Err("attach --session session_ID".into());}remote.attach(&a[2])?;return Ok(());},
-            Some("workspace"|"rdp")=>{let req=workspace_api::parse(&a[0],&a[1..])?;let v=remote.gui(&req)?;println!("{v}");if v.get("error").is_some(){return Err("remote GUI operation failed".into());}return Ok(());},
-            Some("gui"|"serve"|"image-stage"|"gui-request")=>return Err("--host supports authenticated control; launch the GUI directly on its endpoint".into()),
-            _=>(),
+        match a.first().map(String::as_str) {
+            Some("doctor") => {
+                doctor::options(&a[1..])?;
+                if a[1..].iter().any(|s| s == "--repair") {
+                    return Err("remote terminal repair requires running doctor directly in its foreground TTY".into());
+                }
+                let v = remote.doctor(&a[1..])?;
+                println!("{v}");
+                if v["result"]["ok"] != true {
+                    return Err("remote diagnostics failed".into());
+                }
+                return Ok(());
+            }
+            Some("start") => {
+                if a.len() != 1 {
+                    return Err("start takes no command options".into());
+                }
+                println!("{}", remote.start()?);
+                return Ok(());
+            }
+            Some("attach") => {
+                if a.len() != 3 || a[1] != "--session" {
+                    return Err("attach --session session_ID".into());
+                }
+                remote.attach(&a[2])?;
+                return Ok(());
+            }
+            Some("workspace" | "rdp") => {
+                let req = workspace_api::parse(&a[0], &a[1..])?;
+                let v = remote.gui(&req)?;
+                println!("{v}");
+                if v.get("error").is_some() {
+                    return Err("remote GUI operation failed".into());
+                }
+                return Ok(());
+            }
+            Some("gui" | "serve" | "image-stage" | "gui-request") => return Err(
+                "--host supports authenticated control; launch the GUI directly on its endpoint"
+                    .into(),
+            ),
+            _ => (),
         }
     }
     let call = |request: &Request| match &remote {
@@ -221,7 +289,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         Some("--version") => println!("RUWAC {}", env!("CARGO_PKG_VERSION")),
         Some("session" | "window" | "pane") => println!("{}", call(&named_request(&a)?)?),
-        Some("job") => println!("{}",call(&job_request(&a[1..])?)?),
+        Some("job") => println!("{}", call(&job_request(&a[1..])?)?),
         Some("gui") => {
             use std::os::unix::process::CommandExt;
             let binary = std::env::current_exe()?;
@@ -260,18 +328,31 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 json!({"version":0,"result":{"ready":true,"start_requested":started}})
             );
         }
-        Some("workspace"|"rdp") => {
-            let req=workspace_api::parse(&a[0],&a[1..])?;
-            let v=workspace_api::exchange(&socket,&req)?;println!("{v}");
-            if v.get("error").is_some(){return Err("GUI operation failed".into());}
+        Some("workspace" | "rdp") => {
+            let req = workspace_api::parse(&a[0], &a[1..])?;
+            let v = workspace_api::exchange(&socket, &req)?;
+            println!("{v}");
+            if v.get("error").is_some() {
+                return Err("GUI operation failed".into());
+            }
         }
         Some("gui-request") => {
-            if a.len()!=1{return Err("gui-request takes one JSON stdin request and no options".into());}
-            let mut bytes=Vec::new();io::stdin().take(ruwac_protocol::MAX_FRAME as u64+1).read_to_end(&mut bytes)?;
-            if bytes.len()>ruwac_protocol::MAX_FRAME{return Err("GUI request exceeds frame cap".into());}
-            let req:Request=serde_json::from_slice(&bytes)?;
-            let v=workspace_api::exchange(&socket,&req)?;println!("{v}");
-            if v.get("error").is_some(){return Err("GUI operation failed".into());}
+            if a.len() != 1 {
+                return Err("gui-request takes one JSON stdin request and no options".into());
+            }
+            let mut bytes = Vec::new();
+            io::stdin()
+                .take(ruwac_protocol::MAX_FRAME as u64 + 1)
+                .read_to_end(&mut bytes)?;
+            if bytes.len() > ruwac_protocol::MAX_FRAME {
+                return Err("GUI request exceeds frame cap".into());
+            }
+            let req: Request = serde_json::from_slice(&bytes)?;
+            let v = workspace_api::exchange(&socket, &req)?;
+            println!("{v}");
+            if v.get("error").is_some() {
+                return Err("GUI operation failed".into());
+            }
         }
         Some("serve") => {
             if a.len() != 1 {

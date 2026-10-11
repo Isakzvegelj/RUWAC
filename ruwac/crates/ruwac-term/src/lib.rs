@@ -58,15 +58,32 @@ impl HistorySnapshot {
             "alternate_screen":self.alternate})
     }
     pub fn page(&self, offset: usize, lines: usize) -> Value {
-        let mut text=String::new();let mut rows=Vec::new();let mut wrapped=Vec::new();
-        for (row,wrap) in self.rows.iter().skip(offset.min(self.rows.len())).take(lines.min(500)) {
-            if text.len()+row.len()+1>128*1024 {break;}
-            text.push_str(row);if !wrap {text.push('\n');}
-            wrapped.push(*wrap);rows.push(json!({"text":row,"wrapped":wrap}));
+        let mut text = String::new();
+        let mut rows = Vec::new();
+        let mut wrapped = Vec::new();
+        for (row, wrap) in self
+            .rows
+            .iter()
+            .skip(offset.min(self.rows.len()))
+            .take(lines.min(500))
+        {
+            if text.len() + row.len() + 1 > 128 * 1024 {
+                break;
+            }
+            text.push_str(row);
+            if !wrap {
+                text.push('\n');
+            }
+            wrapped.push(*wrap);
+            rows.push(json!({"text":row,"wrapped":wrap}));
         }
-        let mut result=self.metadata();result["offset"]=json!(offset);
-        result["next_offset"]=json!(offset.saturating_add(rows.len()));
-        result["text"]=json!(text);result["rows"]=json!(rows);result["wrapped"]=json!(wrapped);result
+        let mut result = self.metadata();
+        result["offset"] = json!(offset);
+        result["next_offset"] = json!(offset.saturating_add(rows.len()));
+        result["text"] = json!(text);
+        result["rows"] = json!(rows);
+        result["wrapped"] = json!(wrapped);
+        result
     }
 }
 
@@ -156,7 +173,7 @@ impl Terminal {
                     .flags
                     .intersects(Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER)
                 {
-                    row.push(if cell.c=='\t' {' '} else {cell.c});
+                    row.push(if cell.c == '\t' { ' ' } else { cell.c });
                     if let Some(z) = cell.zerowidth() {
                         row.extend(z.iter());
                     }
@@ -183,35 +200,75 @@ impl Terminal {
         }
     }
     pub fn freeze_history(&self) -> HistorySnapshot {
-        if let Some(a)=&self.archived {
-            let cursor=a.history.len().saturating_sub(a.rows as usize)
-                +a.grid["cursor"]["row"].as_u64().unwrap_or(0) as usize;
-            return HistorySnapshot {rows:a.history.clone(),bytes:a.history.iter().map(|(s,_)|s.len()+1).sum(),cols:a.cols,epoch:self.history_epoch,
-                dropped:a.dropped_lines,cursor:(cursor,a.grid["cursor"]["col"].as_u64().unwrap_or(0)as usize),
-                alternate:a.grid["alternate_screen"]==true};
+        if let Some(a) = &self.archived {
+            let cursor = a.history.len().saturating_sub(a.rows as usize)
+                + a.grid["cursor"]["row"].as_u64().unwrap_or(0) as usize;
+            return HistorySnapshot {
+                rows: a.history.clone(),
+                bytes: a.history.iter().map(|(s, _)| s.len() + 1).sum(),
+                cols: a.cols,
+                epoch: self.history_epoch,
+                dropped: a.dropped_lines,
+                cursor: (
+                    cursor,
+                    a.grid["cursor"]["col"].as_u64().unwrap_or(0) as usize,
+                ),
+                alternate: a.grid["alternate_screen"] == true,
+            };
         }
-        let g=self.term.grid();let top=g.topmost_line().0;let bottom=g.bottommost_line().0;
-        let total=(bottom-top+1)as usize;let mut rows=Vec::new();let mut bytes=0;
+        let g = self.term.grid();
+        let top = g.topmost_line().0;
+        let bottom = g.bottommost_line().0;
+        let total = (bottom - top + 1) as usize;
+        let mut rows = Vec::new();
+        let mut bytes = 0;
         'history: for r in (top..=bottom).rev().take(50000) {
-            let mut row=String::new();
+            let mut row = String::new();
             for c in 0..self.cols as usize {
-                let cell=&g[Point::new(Line(r),Column(c))];
-                if !cell.flags.intersects(Flags::WIDE_CHAR_SPACER|Flags::LEADING_WIDE_CHAR_SPACER) {
-                    for ch in std::iter::once(if cell.c=='\t' {' '}else{cell.c}).chain(cell.zerowidth().into_iter().flat_map(|z|z.iter().copied())) {
-                        if row.len()+ch.len_utf8()> (8*1024*1024-bytes).min(128*1024)+self.cols as usize*4 {break 'history;}
+                let cell = &g[Point::new(Line(r), Column(c))];
+                if !cell
+                    .flags
+                    .intersects(Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER)
+                {
+                    for ch in std::iter::once(if cell.c == '\t' { ' ' } else { cell.c })
+                        .chain(cell.zerowidth().into_iter().flat_map(|z| z.iter().copied()))
+                    {
+                        if row.len() + ch.len_utf8()
+                            > (8 * 1024 * 1024 - bytes).min(128 * 1024) + self.cols as usize * 4
+                        {
+                            break 'history;
+                        }
                         row.push(ch);
                     }
                 }
             }
-            let wrap=g[Point::new(Line(r),Column(self.cols as usize-1))].flags.contains(Flags::WRAPLINE);
-            if !wrap {row.truncate(row.trim_end().len());}
-            if row.len()+1>128*1024 || bytes+row.len()+1>8*1024*1024 {break;}
-            row.shrink_to_fit();bytes+=row.len()+1;rows.push((row,wrap));
+            let wrap = g[Point::new(Line(r), Column(self.cols as usize - 1))]
+                .flags
+                .contains(Flags::WRAPLINE);
+            if !wrap {
+                row.truncate(row.trim_end().len());
+            }
+            if row.len() + 1 > 128 * 1024 || bytes + row.len() + 1 > 8 * 1024 * 1024 {
+                break;
+            }
+            row.shrink_to_fit();
+            bytes += row.len() + 1;
+            rows.push((row, wrap));
         }
-        rows.reverse();let dropped=total-rows.len();
-        HistorySnapshot {rows,bytes,cols:self.cols,epoch:self.history_epoch,dropped,
-            cursor:(((g.cursor.point.line.0-top).max(0)as usize).saturating_sub(dropped),g.cursor.point.column.0),
-            alternate:self.term.mode().contains(TermMode::ALT_SCREEN)}
+        rows.reverse();
+        let dropped = total - rows.len();
+        HistorySnapshot {
+            rows,
+            bytes,
+            cols: self.cols,
+            epoch: self.history_epoch,
+            dropped,
+            cursor: (
+                ((g.cursor.point.line.0 - top).max(0) as usize).saturating_sub(dropped),
+                g.cursor.point.column.0,
+            ),
+            alternate: self.term.mode().contains(TermMode::ALT_SCREEN),
+        }
     }
     pub fn restore(mut a: Archive) -> std::result::Result<Self, String> {
         if !(1..=100).contains(&a.rows)
@@ -220,7 +277,7 @@ impl Terminal {
             || a.history.iter().map(|(s, _)| s.len()).sum::<usize>() > 512 * 1024
             || a.history
                 .iter()
-                .any(|(s, _)| s.chars().any(|c|c.is_control() && c!='\t'))
+                .any(|(s, _)| s.chars().any(|c| c.is_control() && c != '\t'))
         {
             return Err("invalid terminal archive dimensions/history".into());
         }
@@ -238,7 +295,11 @@ impl Terminal {
                 if c.len() != 6
                     || !c[0].is_string()
                     || c[0].as_str().unwrap().len() > 4096
-                    || c[0].as_str().unwrap().chars().any(|c|c.is_control() && c!='\t')
+                    || c[0]
+                        .as_str()
+                        .unwrap()
+                        .chars()
+                        .any(|c| c.is_control() && c != '\t')
                     || ![1, 4, 5].iter().all(|i| c[*i].is_boolean())
                     || ![2, 3].iter().all(|i| valid_color(&c[*i]))
                 {
@@ -248,7 +309,9 @@ impl Terminal {
         }
         // Legacy checkpoints contain the tab placeholder plus already expanded cells.
         // One blank cell preserves displayed columns without expanding it twice.
-        for (row,_) in &mut a.history { *row=row.replace('\t'," "); }
+        for (row, _) in &mut a.history {
+            *row = row.replace('\t', " ");
+        }
         let mut term = Self::new(a.rows, a.cols);
         term.history_epoch = a.epoch.wrapping_add(1);
         term.archived = Some(a);
@@ -275,7 +338,7 @@ impl Terminal {
                     .flags
                     .intersects(Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER)
                 {
-                    row.push(if cell.c=='\t' {' '} else {cell.c});
+                    row.push(if cell.c == '\t' { ' ' } else { cell.c });
                     if let Some(z) = cell.zerowidth() {
                         row.extend(z.iter())
                     }
@@ -328,7 +391,7 @@ impl Terminal {
                     .flags
                     .intersects(Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER)
                 {
-                    row.push(if cell.c=='\t' {' '} else {cell.c});
+                    row.push(if cell.c == '\t' { ' ' } else { cell.c });
                     if let Some(z) = cell.zerowidth() {
                         row.extend(z.iter());
                     }
@@ -458,16 +521,16 @@ mod tests {
     }
     #[test]
     fn tabs_copy_at_canonical_columns() {
-        let mut t=Terminal::new(4,16);
+        let mut t = Terminal::new(4, 16);
         t.feed(b"A\tB\r\n");
-        assert_eq!(t.capture(4).lines().next(),Some("A       B"));
-        let page=t.history_page(0,500);
-        assert_eq!(page["rows"][0]["text"],"A       B");
-        assert_eq!(page["rows"][0]["wrapped"],false);
-        assert_eq!(t.snapshot()["cells"][0][1][0],"\t");
-        let restored=Terminal::restore(t.archive()).unwrap();
-        assert_eq!(restored.history_page(0,500)["rows"],page["rows"]);
-        assert_eq!(restored.capture(4),t.capture(4));
+        assert_eq!(t.capture(4).lines().next(), Some("A       B"));
+        let page = t.history_page(0, 500);
+        assert_eq!(page["rows"][0]["text"], "A       B");
+        assert_eq!(page["rows"][0]["wrapped"], false);
+        assert_eq!(t.snapshot()["cells"][0][1][0], "\t");
+        let restored = Terminal::restore(t.archive()).unwrap();
+        assert_eq!(restored.history_page(0, 500)["rows"], page["rows"]);
+        assert_eq!(restored.capture(4), t.capture(4));
     }
     #[test]
     fn paged_scrollback_and_wrapping() {
@@ -558,7 +621,12 @@ mod tests {
         assert_eq!(tail.metadata()["total_lines"], 50000);
         assert!(tail.metadata()["dropped_lines"].as_u64().unwrap() > 0);
         assert!(tail.metadata()["text_bytes"].as_u64().unwrap() <= 8 * 1024 * 1024);
-        assert!(tail.page(49500, 500)["text"].as_str().unwrap().contains("line-50999"));
+        assert!(
+            tail.page(49500, 500)["text"]
+                .as_str()
+                .unwrap()
+                .contains("line-50999")
+        );
     }
     #[test]
     fn replies_and_clipboard() {

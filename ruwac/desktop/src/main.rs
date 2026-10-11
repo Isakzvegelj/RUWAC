@@ -8,8 +8,8 @@ mod jobs;
 mod profiles;
 mod rdp;
 mod sessions;
-mod staging;
 mod shortcuts;
+mod staging;
 mod tiles;
 mod view;
 mod worker;
@@ -74,7 +74,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     Some("system") => adw::ColorScheme::Default,
                     _ => return Err("--theme requires dark, light or system".into()),
                 };
-            },
+            }
             "--version" => {
                 println!("RUWAC desktop {}", env!("CARGO_PKG_VERSION"));
                 return Ok(());
@@ -184,8 +184,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         .build();
     let views: Rc<RefCell<Vec<Rc<View>>>> = Rc::new(RefCell::new(Vec::new()));
     let all = views.clone();
-    let services:Rc<RefCell<Vec<(ipc::Server,glib::SourceId)>>>=Rc::new(RefCell::new(Vec::new()));
-    let active_services=services.clone();
+    let services: Rc<RefCell<Vec<(ipc::Server, glib::SourceId)>>> =
+        Rc::new(RefCell::new(Vec::new()));
+    let active_services = services.clone();
     app.connect_activate(move|app|{
   app.style_manager().set_color_scheme(theme);
   if let Some(window)=app.active_window(){window.present();return;}
@@ -396,7 +397,10 @@ v.fixture_display(q["mode"].as_str().unwrap_or("fit"),q["zoom"].as_f64().unwrap_
   });
  });
     app.run_with_args::<&str>(&[]);
-    for (server,source) in services.borrow_mut().drain(..) { source.remove(); drop(server); }
+    for (server, source) in services.borrow_mut().drain(..) {
+        source.remove();
+        drop(server);
+    }
     for view in views.borrow().iter() {
         view.close();
     }
