@@ -1,4 +1,6 @@
 //! Non-secret machine metadata and explicit, read-only Remmina preview.
+#[path = "inventory.rs"]
+mod inventory;
 use gtk::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -291,6 +293,8 @@ struct Store {
     error: Option<String>,
     groups: Vec<Group>,
     active: std::collections::HashMap<String, usize>,
+    database_revision: Cell<i64>,
+    mirror_hash: RefCell<String>,
 }
 impl Store {
     fn load() -> Self {
@@ -317,6 +321,7 @@ impl Store {
         let mut error = None;
         let mut groups = Vec::new();
         let mut migrate = false;
+        let mut source_hash = String::new();
         match std::fs::OpenOptions::new()
             .read(true)
             .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
@@ -333,6 +338,7 @@ impl Store {
                 if valid && f.take(1024 * 1024 + 1).read_to_end(&mut b).is_ok() {
                     match parse_library(&b) {
                         Ok(v) => {
+                            source_hash = inventory::hash(&b);
                             migrate = serde_json::from_slice::<serde_json::Value>(&b)
                                 .is_ok_and(|v| v.is_array());
                             items = v;
@@ -358,7 +364,50 @@ impl Store {
             error,
             groups,
             active: Default::default(),
+            database_revision: Cell::new(0),
+            mirror_hash: RefCell::new(String::new()),
         };
+        if store.error.is_none() {
+            let document = serde_json::to_vec_pretty(&Library {
+                schema: 1,
+                items: store.items.clone(),
+                groups: store.groups.clone(),
+            });
+            match document
+                .map_err(|_| "Invalid inventory".to_string())
+                .and_then(|doc| {
+                    inventory::load_legacy(
+                        &path.with_file_name("machines.sqlite3"),
+                        &path,
+                        &doc,
+                        &source_hash,
+                    )
+                }) {
+                Ok(snapshot) => match serde_json::from_slice::<Library>(&snapshot.document) {
+                    Ok(library) => {
+                        store.items = library.items;
+                        store.groups = library.groups;
+                        store.database_revision.set(snapshot.revision);
+                        *store.mirror_hash.borrow_mut() = snapshot.mirror_hash;
+                        migrate |= snapshot.pending;
+                    }
+                    Err(_) => {
+                        store.error = Some("Invalid SQLite library; database protected".into())
+                    }
+                },
+                Err(e) => store.error = Some(e),
+            }
+        }
+        if store.error.is_some() {
+            if let Ok(snapshot) = inventory::read(&path.with_file_name("machines.sqlite3")) {
+                if let Ok(library) = serde_json::from_slice::<Library>(&snapshot.document) {
+                    store.items = library.items;
+                    store.groups = library.groups;
+                    store.database_revision.set(snapshot.revision);
+                    *store.mirror_hash.borrow_mut() = snapshot.mirror_hash;
+                }
+            }
+        }
         if store.error.is_none() && migrate {
             if let Err(e) = store.save() {
                 store.error = Some(e);
@@ -402,6 +451,14 @@ impl Store {
             if bytes.len() > 1024 * 1024 {
                 return Err("Profile storage exceeds cap".into());
             }
+            let expected = self.mirror_hash.borrow().clone();
+            if inventory::legacy_hash(path)? != expected {
+                return Err("Legacy library changed; refresh before saving".into());
+            }
+            let database = path.with_file_name("machines.sqlite3");
+            let revision =
+                inventory::save(&database, &bytes, self.database_revision.get(), &expected)?;
+            self.database_revision.set(revision);
             f.write_all(&bytes).map_err(|e| e.to_string())?;
             f.sync_all().map_err(|e| e.to_string())?;
             if path.exists() {
@@ -429,10 +486,19 @@ impl Store {
                 std::fs::rename(&backup_tmp, backup)
                     .map_err(|_| "Cannot commit metadata backup")?;
             }
+            if inventory::legacy_hash(path)? != expected {
+                return Err(
+                    "Legacy library changed during publication; SQLite revision preserved".into(),
+                );
+            }
             std::fs::rename(&tmp, path).map_err(|e| e.to_string())?;
             std::fs::File::open(path.parent().unwrap())
                 .and_then(|d| d.sync_all())
-                .map_err(|_| "Cannot sync metadata directory".to_string())
+                .map_err(|_| "Cannot sync metadata directory".to_string())?;
+            let observed = inventory::hash(&bytes);
+            inventory::mirrored(&database, revision, &observed)?;
+            *self.mirror_hash.borrow_mut() = observed;
+            Ok(())
         })();
         if result.is_err() {
             let _ = std::fs::remove_file(tmp);
@@ -530,6 +596,9 @@ impl ConnectionLease {
             let mut cached = store.borrow_mut();
             cached.items = fresh.items;
             cached.groups = fresh.groups;
+            cached.database_revision.set(fresh.database_revision.get());
+            *cached.mirror_hash.borrow_mut() = fresh.mirror_hash.borrow().clone();
+            cached.error = None;
             Ok(())
         })
     }
@@ -716,13 +785,41 @@ pub fn sidebar(
             while let Some(c) = list.first_child() {
                 list.remove(&c);
             }
+            let ids = {
+                let s = store.borrow();
+                s.path
+                    .as_ref()
+                    .ok_or("Private library unavailable".to_string())
+                    .and_then(|path| {
+                        inventory::search(
+                            &path.with_file_name("machines.sqlite3"),
+                            &search.text(),
+                            filter.selected(),
+                            s.database_revision.get(),
+                        )
+                    })
+            };
+            let ids = match ids {
+                Ok(ids) => ids,
+                Err(e) => {
+                    status.set_text(&e);
+                    store
+                        .borrow()
+                        .items
+                        .iter()
+                        .filter(|p| p.matches(&search.text()))
+                        .map(|p| p.id.clone())
+                        .collect()
+                }
+            };
             let mut rows: Vec<_> = store
                 .borrow()
                 .items
                 .iter()
                 .enumerate()
                 .filter(|(_, p)| {
-                    p.matches(&search.text())
+                    ids.contains(&p.id)
+                        && p.matches(&search.text())
                         && match filter.selected() {
                             1 => p.favorite,
                             2 => p.last_used > 0,
@@ -1182,6 +1279,8 @@ pub fn sidebar(
                 let mut current = store.borrow_mut();
                 current.items = fresh.items;
                 current.groups = fresh.groups;
+                current.database_revision.set(fresh.database_revision.get());
+                *current.mirror_hash.borrow_mut() = fresh.mirror_hash.borrow().clone();
                 current.error = None;
                 drop(current);
                 refresh();

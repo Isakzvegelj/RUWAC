@@ -1,7 +1,7 @@
 [package]
 license = "Apache-2.0"
 name = "ruwac-desktop"
-version = "0.1.28"
+version = "0.1.29"
 edition = "2024"
 publish = false
 [workspace]
@@ -27,6 +27,7 @@ png = "=0.18.0"
 serde = { version = "=1.0.228", features = ["derive"] }
 futures-util = "=0.3.34"
 ssh2 = "=0.9.6"
+rusqlite = { version = "=0.39.0", default-features = false }
 [dev-dependencies]
 ironrdp-server = { version = "=0.13.0", default-features = false, features = ["helper"] }
 async-trait = "0.1"

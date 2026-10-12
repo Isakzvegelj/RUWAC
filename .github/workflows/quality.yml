@@ -21,7 +21,7 @@ jobs:
         run: |
           printf 'CARGO_HOME=%s/cargo\nCARGO_TARGET_DIR=%s/target\n' "$RUNNER_TEMP" "$RUNNER_TEMP" >> "$GITHUB_ENV"
       - name: Install Fedora test tools
-        run: dnf install -y git cargo rust rustfmt clippy gcc gcc-c++ pkgconf-pkg-config gtk4-devel libadwaita-devel openssl openssl-devel libssh2-devel python3 screen tmux fzf
+        run: dnf install -y git cargo rust rustfmt clippy gcc gcc-c++ pkgconf-pkg-config gtk4-devel libadwaita-devel openssl openssl-devel libssh2-devel sqlite-devel python3 screen tmux fzf
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           persist-credentials: false

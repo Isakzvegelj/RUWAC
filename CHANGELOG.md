@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## v0.1.29 — 2026-10-12 — Prerelease
+
+- Add a private transactional SQLite desktop machine inventory with revision guards, indexed metadata, legacy JSON compatibility and interrupted-publication recovery.
+- Preserve readable profiles while refusing writes to malformed or foreign storage; validate editor/recovery behavior with six native GTK acceptance groups and six SQL unit tests.
+- Declare Fedora SQLite desktop prerequisites and enforce SQLite-free headless dependencies.
+
 ## v0.1.28 — 2026-10-12 — Prerelease
 
 - Preserve canonical italic, dim, conceal, strike, five underline styles and underline colors across GTK/TUI rendering and schema-5 checkpoints with legacy compatibility.
