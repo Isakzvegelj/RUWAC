@@ -471,7 +471,7 @@ impl State {
                 json!({"name":"ruwac","implementation":"spike","package":env!("CARGO_PKG_VERSION"),"protocol":0}),
             ),
             "capabilities" => Ok(
-                json!({"job_metadata":true,"job_metadata_no_argv":true,"structured_agent_state":false,"recovery":self.store.is_some(),"history_checkpoints":"private canonical tail, 50000 lines or 512 KiB per pane; processes restore ended","desktop_clipboard":false,"primary":false,"graphics":false,"image_attachment":false,"ssh_transport":"authenticated OpenSSH through CLI --host","shared_focus":true,"split":"persistent horizontal/vertical tree, sixteen panes","capture_limit":2000,"history_page_limit":500,"scrollback_default":50000,"max_text_bytes":ruwac_protocol::MAX_TEXT}),
+                json!({"job_metadata":true,"job_metadata_no_argv":true,"structured_agent_state":false,"recovery":self.store.is_some(),"primary_buffer_history":true,"history_checkpoints":"private canonical active and hidden primary tail, 50000 lines or 512 KiB per pane; processes restore ended","desktop_clipboard":false,"primary":false,"graphics":false,"image_attachment":false,"ssh_transport":"authenticated OpenSSH through CLI --host","shared_focus":true,"split":"persistent horizontal/vertical tree, sixteen panes","capture_limit":2000,"history_page_limit":500,"scrollback_default":50000,"max_text_bytes":ruwac_protocol::MAX_TEXT}),
             ),
             "schema" => Ok(schema()),
             "describe" => Ok(
@@ -746,7 +746,16 @@ impl State {
                 }
                 let p = self.pane(v)?;
                 let pane = p.id.clone();
-                let data = p.term.freeze_history();
+                let data = if primary_buffer(v)? {
+                    p.term.freeze_primary_history().ok_or_else(|| {
+                        Error::new(
+                            "BUFFER_UNAVAILABLE",
+                            "Legacy alternate-screen checkpoint has no primary buffer",
+                        )
+                    })?
+                } else {
+                    p.term.freeze_history()
+                };
                 if data.rows.is_empty() {
                     return Err(Error::new(
                         "LIMIT",
@@ -790,6 +799,14 @@ impl State {
                     let pane = target(v, "pane", "pane")?;
                     let pin=self.histories.get_mut(&snapshot).filter(|pin|pin.owner==client&&pin.pane==pane)
                         .ok_or_else(||Error::new("STALE_SNAPSHOT","copy snapshot expired, released or belongs to another connection/pane"))?;
+                    if v.get("buffer").is_some()
+                        && primary_buffer(v)? != (pin.data.buffer == "primary")
+                    {
+                        return Err(Error::new(
+                            "INVALID_PARAMS",
+                            "Buffer selector differs from frozen snapshot",
+                        ));
+                    }
                     pin.read_at = std::time::Instant::now();
                     let offset = v
                         .get("offset")
@@ -820,18 +837,37 @@ impl State {
                     .unwrap_or(0)
                     .min(1000000) as usize;
                 let n = num(v, "lines", 500, 1, 500)? as usize;
-                Ok(p.term.history_page(offset, n))
+                if primary_buffer(v)? {
+                    p.term.primary_history_page(offset, n).ok_or_else(|| {
+                        Error::new(
+                            "BUFFER_UNAVAILABLE",
+                            "Legacy alternate-screen checkpoint has no primary buffer",
+                        )
+                    })
+                } else {
+                    Ok(p.term.history_page(offset, n))
+                }
             }
             "pane.capture" | "pane.wait" => {
                 let p = self.pane(v)?;
                 let n = num(v, "lines", 250, 1, 2000)?;
-                let t = p.term.capture(n as usize);
+                let primary = primary_buffer(v)?;
+                let t = if primary {
+                    p.term.capture_primary(n as usize).ok_or_else(|| {
+                        Error::new(
+                            "BUFFER_UNAVAILABLE",
+                            "Legacy alternate-screen checkpoint has no primary buffer",
+                        )
+                    })?
+                } else {
+                    p.term.capture(n as usize)
+                };
                 let matched = v
                     .get("contains")
                     .and_then(Value::as_str)
                     .map(|s| t.contains(s));
                 Ok(
-                    json!({"pane":p.id,"text":t,"lines":t.lines().count(),"matched":matched,"ended":p.ended}),
+                    json!({"pane":p.id,"text":t,"lines":t.lines().count(),"matched":matched,"ended":p.ended,"buffer":if primary {"primary"}else{"active"}}),
                 )
             }
             "pane.sendText" => {
@@ -1044,4 +1080,16 @@ impl State {
 }
 pub fn schema() -> Value {
     json!({"protocol":0,"framing":"u32 big-endian byte length + UTF-8 JSON","max_frame_bytes":ruwac_protocol::MAX_FRAME,"methods":["job.list","job.query","health","version","capabilities","schema","describe","session.create","session.list","session.attach","session.detach","window.create","window.list","window.rename","window.select","window.cycle","window.previous","pane.create","pane.layout","pane.history","pane.history.freeze","pane.history.release","pane.close","pane.list","pane.select","pane.sendText","pane.sendKey","pane.capture","pane.wait","buffer.set","buffer.get","buffer.paste","client.resize","client.render","client.input","events.subscribe","daemon.checkpoint","daemon.stop"],"targets":{"session":"session_ + 32 hex","window":"window_ + 32 hex","pane":"pane_ + 32 hex"},"request":{"version":0,"id":"JSON request correlation value","method":"method name","params":"object","idempotency_key":"optional 1..128 byte daemon-lifetime key"}})
+}
+
+fn primary_buffer(v: &Value) -> std::result::Result<bool, Error> {
+    match v.get("buffer") {
+        None => Ok(false),
+        Some(Value::String(value)) if value == "active" => Ok(false),
+        Some(Value::String(value)) if value == "primary" => Ok(true),
+        _ => Err(Error::new(
+            "INVALID_PARAMS",
+            "buffer must be active or primary",
+        )),
+    }
 }

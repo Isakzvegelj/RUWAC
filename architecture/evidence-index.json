@@ -6,5 +6,5 @@
     "architecture/benchmark-results.json",
     "architecture/dependency-licenses.json"
   ],
-  "private_capsule": "rdp-trust-r23: four certificate policy units, eight actual TLS/CredSSP/native trust dialog groups, stamped full functional regressions, independently SSH-verified EVF leaf with actual SAM rejection, Windows inspection without silent approval, controller source publication and installed hashes"
+  "private_capsule": "primary-history-r24: canonical primary/ALT units, real PTY SIGKILL/checkpoint and native history, cross-window metadata reload without search, stamped full regression and controller source publication"
 }

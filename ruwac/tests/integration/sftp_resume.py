@@ -143,7 +143,13 @@ try:
  assert passphrase not in key_path.read_text() and passphrase not in profile_path.read_text()
  results.append({'id':'SFTP-REAL-ENCRYPTED-KEY-SECRET-SERVICE','status':'PASS','actual_encrypted_RSA_authentication':True,'wrong_and_missing_secret_rejected':True,'no_secret_in_profile_or_argv':True})
  if a.gui and a.binary:
-  sock=root/'control.sock';daemon=subprocess.Popen([a.binary,'--socket',str(sock),'serve'],env=env,stdout=(root/'daemon.log').open('wb'),stderr=subprocess.STDOUT);eventually(lambda:sock.exists())
+  sock=root/'control.sock';daemon=subprocess.Popen([a.binary,'--socket',str(sock),'serve'],env=env,stdout=(root/'daemon.log').open('wb'),stderr=subprocess.STDOUT)
+  def daemon_ready():
+   if daemon.poll() is not None:raise RuntimeError('Owned fixture daemon exited during startup')
+   try:
+    with Client(sock) as c:return c.call('health')
+   except (ConnectionError,FileNotFoundError):return None
+  eventually(daemon_ready)
   with Client(sock) as c:session=c.call('session.create',{'name':'Files resume native','argv':['/bin/sh','-c','sleep 300']})
   gui=subprocess.Popen([a.gui,'--socket',str(sock),'--session',session['session'],'--fixture-dir',str(root)],env=env,stdout=(root/'gui.log').open('wb'),stderr=subprocess.STDOUT);seq=0
   def command(action,**kw):

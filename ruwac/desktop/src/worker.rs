@@ -77,7 +77,7 @@ impl Rpc {
 pub enum Command {
     Rpc(String, Value),
     Paste(String, String),
-    History(String),
+    History(String, bool),
     Close,
 }
 impl Command {
@@ -85,7 +85,7 @@ impl Command {
         match self {
             Self::Rpc(_, v) => v.to_string().len(),
             Self::Paste(_, s) => s.len(),
-            Self::History(s) => s.len(),
+            Self::History(s, _) => s.len(),
             Self::Close => 0,
         }
     }
@@ -122,7 +122,7 @@ impl Worker {
                 st.lock().unwrap().supports_previous_window = schema["methods"]
                     .as_array()
                     .is_some_and(|methods| methods.iter().any(|m| m == "window.previous"));
-                rpc.call("capabilities", json!({}))?;
+                let capabilities = rpc.call("capabilities", json!({}))?;
                 rpc.call(
                     "session.attach",
                     json!({"session":session,"rows":24,"cols":80}),
@@ -138,7 +138,7 @@ impl Worker {
                                 halt.store(true, Ordering::Relaxed);
                                 Ok(("close".into(), json!({})))
                             }
-                            Command::History(pane) => {
+                            Command::History(pane, primary) => {
                                 let mut text = String::new();
                                 let mut offset = 0;
                                 let mut total = 0;
@@ -146,11 +146,23 @@ impl Worker {
                                 let mut epoch = None;
                                 let mut pin = None;
                                 let mut result = (|| -> io::Result<()> {
+                                    if primary && capabilities["primary_buffer_history"] != true {
+                                        return Err(io::Error::other(
+                                            "This daemon does not expose primary history; update it before selecting that buffer",
+                                        ));
+                                    }
+
                                     if schema["methods"].as_array().is_some_and(|methods| {
                                         methods.iter().any(|m| m == "pane.history.freeze")
                                     }) {
-                                        let metadata =
-                                            rpc.call("pane.history.freeze", json!({"pane":pane}))?;
+                                        let metadata = rpc.call(
+                                            "pane.history.freeze",
+                                            if primary {
+                                                json!({"pane":pane,"buffer":"primary"})
+                                            } else {
+                                                json!({"pane":pane})
+                                            },
+                                        )?;
                                         pin = Some(
                                             metadata["snapshot"]
                                                 .as_str()
@@ -166,6 +178,9 @@ impl Worker {
                                         let mut params = json!({"pane":pane,"offset":offset,"lines":500,"epoch":epoch});
                                         if let Some(pin) = &pin {
                                             params["snapshot"] = json!(pin);
+                                        }
+                                        if primary {
+                                            params["buffer"] = json!("primary");
                                         }
                                         let page = rpc.call("pane.history", params)?;
                                         epoch = page["epoch"].as_u64();
@@ -196,7 +211,7 @@ impl Worker {
                                         result = release.map(|_| ());
                                     }
                                 }
-                                result.map(|()|("pane.history".into(),json!({"pane":pane,"text":text,"total_lines":total,"truncated":truncated})))
+                                result.map(|()|("pane.history".into(),json!({"pane":pane,"text":text,"total_lines":total,"truncated":truncated,"buffer":if primary {"primary"}else{"active"}})))
                             }
                             Command::Paste(pane, text) => {
                                 let mut rest = text.as_str();

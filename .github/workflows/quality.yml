@@ -56,7 +56,7 @@ jobs:
         run: |
           cargo build --locked --manifest-path ruwac/Cargo.toml
           mkdir -p "$RUNNER_TEMP/ruwac-evidence"
-          for test in spike desktop_state jobs jobs_capacity recovery screen_previous screen_copy history_snapshot mixed_nesting; do
+          for test in spike desktop_state jobs jobs_capacity recovery screen_previous screen_copy history_snapshot primary_history mixed_nesting; do
             python3 "ruwac/tests/integration/$test.py" --binary "$CARGO_TARGET_DIR/debug/ruwac" --evidence "$RUNNER_TEMP/ruwac-evidence"
           done
 

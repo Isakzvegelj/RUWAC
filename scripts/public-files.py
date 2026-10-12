@@ -4,6 +4,7 @@ from pathlib import Path
 import argparse,ast,json,sys
 ROOT_FILES={'.gitignore','README.md','CHANGELOG.md','RELEASE-NOTES.md','LICENSE','CONTRIBUTING.md','SECURITY.md','CODE_OF_CONDUCT.md'}
 ARCH_FILES={f'{n:02}-{name}.md' for n,name in enumerate(['RUWAC-DECISION','ARCHITECTURE','PROTOCOL-V0','ACCEPTANCE-MATRIX','BENCHMARKS','OPEN-ISSUES','IMPLEMENTATION-ROADMAP','COMPONENTS-LICENSES'])}|{'evidence-index.json','dependency-licenses.json','benchmark-results.json','acceptance-results.json'}
+VENDOR_FILES={'ruwac/vendor/alacritty_terminal/'+name for name in ['Cargo.toml.orig','README.md','LICENSE-APACHE','UPSTREAM.json','RUWAC-PATCH.md']}
 SCRIPT_FILES={'public-files.py','install-user.py','dependency-check.py'}
 GITHUB_FILES={'.github/workflows/release.yml','.github/workflows/quality.yml','.github/workflows/labels.yml','.github/CODEOWNERS','.github/PULL_REQUEST_TEMPLATE.md','.github/ISSUE_TEMPLATE/bug_report.yml','.github/ISSUE_TEMPLATE/feature_request.yml','.github/ISSUE_TEMPLATE/config.yml','.github/scripts/label-pr.py','.github/scripts/test-label-pr.py'}
 FORBIDDEN={'.agents','.codex','.claude','.kimi','.githooks','.vscode','.aws','AGENTS.md','CLAUDE.md','SKILL.md','FIRST-PROMPT.md','OWNER-SPIKE-SPEC.md'}
@@ -17,7 +18,8 @@ def files(root):
   if p.is_symlink():continue
   if not p.is_file():continue
   if any(x in FORBIDDEN or x in {'target','.git','__pycache__'} for x in r.parts):continue
-  if len(r.parts)==1 and r.name in ROOT_FILES:out.append(r)
+  if r.as_posix() in VENDOR_FILES:out.append(r)
+  elif len(r.parts)==1 and r.name in ROOT_FILES:out.append(r)
   elif r.parts[0]=='spec' and len(r.parts)==2 and r.suffix=='.md':out.append(r)
   elif r.parts[0]=='ruwac' and r.parts[1]=='desktop' and (r.name in {'Cargo.toml','Cargo.lock'} or r.suffix=='.rs'):out.append(r)
   elif r.parts[0]=='ruwac' and r.parts[1]=='gui' and r.suffix=='.py':out.append(r)

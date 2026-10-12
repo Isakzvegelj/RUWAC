@@ -1,9 +1,12 @@
 use alacritty_terminal::{
     Term,
     event::{Event, EventListener},
-    grid::Dimensions,
+    grid::{Dimensions, Grid},
     index::{Column, Line, Point},
-    term::{Config, TermMode, cell::Flags},
+    term::{
+        Config, TermMode,
+        cell::{Cell, Flags},
+    },
     vte::ansi::{Color, Processor},
 };
 use serde_json::{Value, json};
@@ -39,6 +42,43 @@ pub struct Archive {
     pub history: Vec<(String, bool)>,
     pub grid: Value,
     pub dropped_lines: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub primary: Option<PrimaryArchive>,
+}
+
+/// Flat hidden-primary archive: no recursively nested buffers are accepted.
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PrimaryArchive {
+    pub rows: u16,
+    pub cols: u16,
+    pub epoch: u64,
+    pub history: Vec<(String, bool)>,
+    pub grid: Value,
+    pub dropped_lines: usize,
+}
+impl PrimaryArchive {
+    fn from_archive(a: Archive) -> Self {
+        Self {
+            rows: a.rows,
+            cols: a.cols,
+            epoch: a.epoch,
+            history: a.history,
+            grid: a.grid,
+            dropped_lines: a.dropped_lines,
+        }
+    }
+    fn as_archive(&self) -> Archive {
+        Archive {
+            rows: self.rows,
+            cols: self.cols,
+            epoch: self.epoch,
+            history: self.history.clone(),
+            grid: self.grid.clone(),
+            dropped_lines: self.dropped_lines,
+            primary: None,
+        }
+    }
 }
 
 /// Immutable, bounded canonical copy view, independent of later output/resize.
@@ -50,12 +90,13 @@ pub struct HistorySnapshot {
     pub dropped: usize,
     pub cursor: (usize, usize),
     pub alternate: bool,
+    pub buffer: &'static str,
 }
 impl HistorySnapshot {
     pub fn metadata(&self) -> Value {
         json!({"epoch":self.epoch,"total_lines":self.rows.len(),"cols":self.cols,
             "text_bytes":self.bytes,"dropped_lines":self.dropped,"cursor_row":self.cursor.0,"cursor_col":self.cursor.1,
-            "alternate_screen":self.alternate})
+            "alternate_screen":self.alternate,"buffer":self.buffer})
     }
     pub fn page(&self, offset: usize, lines: usize) -> Value {
         let mut text = String::new();
@@ -160,7 +201,40 @@ impl Terminal {
             archive.epoch = self.history_epoch;
             return archive;
         }
-        let g = self.term.grid();
+        let alternate = self.term.mode().contains(TermMode::ALT_SCREEN);
+        let mut active = self.archive_grid(self.term.grid(), alternate, 512 * 1024);
+        if alternate {
+            // Read the actual hidden canonical grid; no buffer swap, parser replay
+            // or second live model. The text budget is shared by both buffers.
+            let used = active
+                .history
+                .iter()
+                .map(|(row, _)| row.len())
+                .sum::<usize>();
+            let primary = self.archive_grid(
+                self.term.primary_grid(),
+                false,
+                (512_usize * 1024).saturating_sub(used),
+            );
+            active.primary = Some(PrimaryArchive::from_archive(primary));
+        }
+        active
+    }
+    pub fn primary_available(&self) -> bool {
+        self.archived
+            .as_ref()
+            .is_none_or(|a| a.grid["alternate_screen"] != true || a.primary.is_some())
+    }
+    pub fn primary_archive(&self) -> Option<Archive> {
+        if let Some(a) = &self.archived {
+            if a.grid["alternate_screen"] == true {
+                return a.primary.as_ref().map(PrimaryArchive::as_archive);
+            }
+            return Some(a.clone());
+        }
+        Some(self.archive_grid(self.term.primary_grid(), false, 512 * 1024))
+    }
+    fn archive_grid(&self, g: &Grid<Cell>, alternate: bool, budget: usize) -> Archive {
         let top = g.topmost_line().0;
         let bottom = g.bottommost_line().0;
         let mut history = Vec::new();
@@ -183,7 +257,7 @@ impl Terminal {
                 .flags
                 .contains(Flags::WRAPLINE);
             let row = if wrap { row } else { row.trim_end().to_owned() };
-            if bytes + row.len() > 512 * 1024 {
+            if bytes + row.len() > budget {
                 break;
             }
             bytes += row.len();
@@ -196,14 +270,36 @@ impl Terminal {
             epoch: self.history_epoch,
             dropped_lines: (bottom - top + 1) as usize - history.len(),
             history,
-            grid: self.snapshot(),
+            grid: self.snapshot_grid(g, alternate),
+            primary: None,
         }
     }
     pub fn freeze_history(&self) -> HistorySnapshot {
-        if let Some(a) = &self.archived {
+        self.freeze_buffer(false).unwrap()
+    }
+    pub fn freeze_primary_history(&self) -> Option<HistorySnapshot> {
+        self.freeze_buffer(true)
+    }
+    fn freeze_buffer(&self, primary: bool) -> Option<HistorySnapshot> {
+        let selected;
+        let archived = if primary {
+            if let Some(a) = &self.archived {
+                selected = if a.grid["alternate_screen"] == true {
+                    a.primary.as_ref()?.as_archive()
+                } else {
+                    a.clone()
+                };
+                Some(&selected)
+            } else {
+                None
+            }
+        } else {
+            self.archived.as_ref()
+        };
+        if let Some(a) = archived {
             let cursor = a.history.len().saturating_sub(a.rows as usize)
                 + a.grid["cursor"]["row"].as_u64().unwrap_or(0) as usize;
-            return HistorySnapshot {
+            return Some(HistorySnapshot {
                 rows: a.history.clone(),
                 bytes: a.history.iter().map(|(s, _)| s.len() + 1).sum(),
                 cols: a.cols,
@@ -214,9 +310,14 @@ impl Terminal {
                     a.grid["cursor"]["col"].as_u64().unwrap_or(0) as usize,
                 ),
                 alternate: a.grid["alternate_screen"] == true,
-            };
+                buffer: if primary { "primary" } else { "active" },
+            });
         }
-        let g = self.term.grid();
+        let g = if primary {
+            self.term.primary_grid()
+        } else {
+            self.term.grid()
+        };
         let top = g.topmost_line().0;
         let bottom = g.bottommost_line().0;
         let total = (bottom - top + 1) as usize;
@@ -257,7 +358,7 @@ impl Terminal {
         }
         rows.reverse();
         let dropped = total - rows.len();
-        HistorySnapshot {
+        Some(HistorySnapshot {
             rows,
             bytes,
             cols: self.cols,
@@ -267,10 +368,25 @@ impl Terminal {
                 ((g.cursor.point.line.0 - top).max(0) as usize).saturating_sub(dropped),
                 g.cursor.point.column.0,
             ),
-            alternate: self.term.mode().contains(TermMode::ALT_SCREEN),
-        }
+            alternate: !primary && self.term.mode().contains(TermMode::ALT_SCREEN),
+            buffer: if primary { "primary" } else { "active" },
+        })
     }
     pub fn restore(mut a: Archive) -> std::result::Result<Self, String> {
+        if let Some(primary) = a.primary.as_mut() {
+            if a.grid["alternate_screen"] != true
+                || primary.grid["alternate_screen"] != false
+                || a.history.iter().map(|(s, _)| s.len()).sum::<usize>()
+                    + primary.history.iter().map(|(s, _)| s.len()).sum::<usize>()
+                    > 512 * 1024
+            {
+                return Err("invalid combined primary/alternate archive".into());
+            }
+            Self::restore(primary.as_archive())?;
+            for (row, _) in &mut primary.history {
+                *row = row.replace('\t', " ");
+            }
+        }
         if !(1..=100).contains(&a.rows)
             || !(1..=200).contains(&a.cols)
             || a.history.len() > 50000
@@ -318,15 +434,41 @@ impl Terminal {
         Ok(term)
     }
     pub fn capture(&self, lines: usize) -> String {
-        if let Some(a) = &self.archived {
-            return a
-                .history
-                .iter()
-                .skip(a.history.len().saturating_sub(lines))
-                .map(|(s, _)| format!("{}\n", s.trim_end()))
-                .collect();
+        self.capture_buffer(lines, false).unwrap()
+    }
+    pub fn capture_primary(&self, lines: usize) -> Option<String> {
+        self.capture_buffer(lines, true)
+    }
+    fn capture_buffer(&self, lines: usize, primary: bool) -> Option<String> {
+        let selected;
+        let archived = if primary {
+            if let Some(a) = &self.archived {
+                selected = if a.grid["alternate_screen"] == true {
+                    a.primary.as_ref()?.as_archive()
+                } else {
+                    a.clone()
+                };
+                Some(&selected)
+            } else {
+                None
+            }
+        } else {
+            self.archived.as_ref()
+        };
+        if let Some(a) = archived {
+            return Some(
+                a.history
+                    .iter()
+                    .skip(a.history.len().saturating_sub(lines))
+                    .map(|(s, _)| format!("{}\n", s.trim_end()))
+                    .collect(),
+            );
         }
-        let g = self.term.grid();
+        let g = if primary {
+            self.term.primary_grid()
+        } else {
+            self.term.grid()
+        };
         let bottom = g.bottommost_line().0;
         let start = (bottom + 1 - lines as i32).max(g.topmost_line().0);
         let mut out = String::new();
@@ -347,10 +489,31 @@ impl Terminal {
             out.push_str(row.trim_end());
             out.push('\n');
         }
-        out
+        Some(out)
     }
     pub fn history_page(&self, offset: usize, lines: usize) -> Value {
-        if let Some(a) = &self.archived {
+        self.history_buffer_page(offset, lines, false).unwrap()
+    }
+    pub fn primary_history_page(&self, offset: usize, lines: usize) -> Option<Value> {
+        self.history_buffer_page(offset, lines, true)
+    }
+    fn history_buffer_page(&self, offset: usize, lines: usize, primary: bool) -> Option<Value> {
+        let selected;
+        let archived = if primary {
+            if let Some(a) = &self.archived {
+                selected = if a.grid["alternate_screen"] == true {
+                    a.primary.as_ref()?.as_archive()
+                } else {
+                    a.clone()
+                };
+                Some(&selected)
+            } else {
+                None
+            }
+        } else {
+            self.archived.as_ref()
+        };
+        if let Some(a) = archived {
             let mut text = String::new();
             let mut wrapped = Vec::new();
             let mut rows = Vec::new();
@@ -370,9 +533,15 @@ impl Terminal {
                 wrapped.push(*wrap);
                 rows.push(json!({"text":row,"wrapped":wrap}));
             }
-            return json!({"text":text,"offset":offset,"next_offset":offset.saturating_add(wrapped.len()),"epoch":self.history_epoch,"total_lines":a.history.len(),"wrapped":wrapped,"rows":rows,"alternate_screen":a.grid["alternate_screen"] == true,"restored":true,"dropped_lines":a.dropped_lines});
+            return Some(
+                json!({"text":text,"offset":offset,"next_offset":offset.saturating_add(wrapped.len()),"epoch":self.history_epoch,"total_lines":a.history.len(),"wrapped":wrapped,"rows":rows,"alternate_screen":a.grid["alternate_screen"] == true,"restored":true,"dropped_lines":a.dropped_lines,"buffer":if primary {"primary"}else{"active"}}),
+            );
         }
-        let g = self.term.grid();
+        let g = if primary {
+            self.term.primary_grid()
+        } else {
+            self.term.grid()
+        };
         let start = g.topmost_line().0;
         let bottom = g.bottommost_line().0;
         let total = (bottom - start + 1) as usize;
@@ -412,7 +581,9 @@ impl Terminal {
             rows.push(json!({"text":row,"wrapped":wrap}));
             count += 1;
         }
-        json!({"text":text,"offset":offset,"next_offset":offset.saturating_add(count),"epoch":self.history_epoch,"total_lines":total,"wrapped":wrapped,"rows":rows,"alternate_screen":self.term.mode().contains(TermMode::ALT_SCREEN)})
+        Some(
+            json!({"text":text,"offset":offset,"next_offset":offset.saturating_add(count),"epoch":self.history_epoch,"total_lines":total,"wrapped":wrapped,"rows":rows,"alternate_screen":!primary && self.term.mode().contains(TermMode::ALT_SCREEN),"buffer":if primary {"primary"}else{"active"}}),
+        )
     }
     pub fn snapshot(&self) -> Value {
         if let Some(a) = &self.archived {
@@ -442,7 +613,12 @@ impl Terminal {
             grid["restored"] = json!(true);
             return grid;
         }
-        let g = self.term.grid();
+        self.snapshot_grid(
+            self.term.grid(),
+            self.term.mode().contains(TermMode::ALT_SCREEN),
+        )
+    }
+    fn snapshot_grid(&self, g: &Grid<Cell>, alternate: bool) -> Value {
         let mut rows = Vec::new();
         for r in 0..self.rows as usize {
             let mut cells = Vec::new();
@@ -464,7 +640,7 @@ impl Terminal {
             }
             rows.push(cells)
         }
-        json!({"rows":self.rows,"cols":self.cols,"cells":rows,"cursor":{"row":g.cursor.point.line.0,"col":g.cursor.point.column.0,"visible":self.term.mode().contains(TermMode::SHOW_CURSOR)},"mouse":self.mouse(),"mouse_drag":self.term.mode().contains(TermMode::MOUSE_DRAG),"mouse_motion":self.term.mode().contains(TermMode::MOUSE_MOTION),"mouse_sgr":self.term.mode().contains(TermMode::SGR_MOUSE),"alternate_screen":self.term.mode().contains(TermMode::ALT_SCREEN),"application_cursor":self.term.mode().contains(TermMode::APP_CURSOR),"bracketed_paste":self.paste()})
+        json!({"rows":self.rows,"cols":self.cols,"cells":rows,"cursor":{"row":g.cursor.point.line.0,"col":g.cursor.point.column.0,"visible":self.term.mode().contains(TermMode::SHOW_CURSOR)},"mouse":self.mouse(),"mouse_drag":self.term.mode().contains(TermMode::MOUSE_DRAG),"mouse_motion":self.term.mode().contains(TermMode::MOUSE_MOTION),"mouse_sgr":self.term.mode().contains(TermMode::SGR_MOUSE),"alternate_screen":alternate,"application_cursor":self.term.mode().contains(TermMode::APP_CURSOR),"bracketed_paste":self.paste()})
     }
 }
 fn valid_color(c: &Value) -> bool {
@@ -627,6 +803,111 @@ mod tests {
                 .unwrap()
                 .contains("line-50999")
         );
+    }
+    #[test]
+    fn canonical_primary_survives_alt_and_checkpoint_without_mutation() {
+        let mut t = Terminal::new(4, 24);
+        t.feed("PRIMARY Živjo 界e\u{301}\r\nline two\r\n".as_bytes());
+        t.feed(b"\x1b[?1049hALT application\x1b[38;2;1;2;3m");
+        let before = t.snapshot();
+        let a = t.archive();
+        assert_eq!(t.snapshot(), before);
+        assert!(
+            a.primary
+                .as_ref()
+                .unwrap()
+                .history
+                .iter()
+                .any(|(s, _)| s.contains("PRIMARY Živjo"))
+        );
+        assert!(!a.history.iter().any(|(s, _)| s.contains("PRIMARY")));
+        let restored = Terminal::restore(a).unwrap();
+        assert!(restored.capture(20).contains("ALT application"));
+        assert!(
+            restored
+                .capture_primary(20)
+                .unwrap()
+                .contains("PRIMARY Živjo 界e\u{301}")
+        );
+        assert_eq!(
+            restored.freeze_primary_history().unwrap().metadata()["alternate_screen"],
+            false
+        );
+        assert_eq!(
+            restored.freeze_primary_history().unwrap().metadata()["buffer"],
+            "primary"
+        );
+    }
+    #[test]
+    fn primary_uses_canonical_resize_and_alt_exit_state() {
+        let mut t = Terminal::new(4, 40);
+        t.feed(b"PRIMARY-resize-keeps-this-text\r\n");
+        for byte in b"\x1b[?1049hALT-only" {
+            t.feed(&[*byte]);
+        }
+        t.resize(6, 18);
+        let primary = t.primary_archive().unwrap();
+        assert_eq!(primary.cols, 18);
+        assert_eq!(primary.rows, 6);
+        let text = primary
+            .history
+            .iter()
+            .map(|(s, wrap)| format!("{s}{}", if *wrap { "" } else { "\n" }))
+            .collect::<String>();
+        assert!(text.contains("PRIMARY-resize-keeps-this-text"), "{text:?}");
+        let alt = t.capture(10);
+        t.archive();
+        assert_eq!(t.capture(10), alt);
+        t.feed(b"\x1b[?1049l");
+        assert!(
+            t.capture(20)
+                .replace('\n', "")
+                .contains("PRIMARY-resize-keeps-this-text")
+        );
+        assert!(t.archive().primary.is_none());
+    }
+    #[test]
+    fn dual_history_budget_and_legacy_missing_primary_are_explicit() {
+        let mut t = Terminal::new(4, 80);
+        for n in 0..10000 {
+            t.feed(format!("{n:05}-{}\r\n", "x".repeat(65)).as_bytes());
+        }
+        t.feed(b"\x1b[?1049hALT");
+        let mut a = t.archive();
+        let p = a.primary.as_ref().unwrap();
+        assert!(p.dropped_lines > 0);
+        let bytes = a
+            .history
+            .iter()
+            .chain(&p.history)
+            .map(|(s, _)| s.len())
+            .sum::<usize>();
+        assert!(bytes <= 512 * 1024);
+        let json = serde_json::to_value(&a).unwrap();
+        assert!(json["primary"].get("primary").is_none());
+        a.primary = None;
+        let legacy = Terminal::restore(a).unwrap();
+        assert!(!legacy.primary_available());
+        assert!(legacy.capture_primary(20).is_none());
+        assert!(legacy.capture(20).contains("ALT"));
+    }
+    #[test]
+    fn corrupt_hidden_primary_is_rejected_without_replaying_controls() {
+        let mut t = Terminal::new(4, 20);
+        t.feed(b"primary\x1b[?1049hALT");
+        let mut a = t.archive();
+        a.primary
+            .as_mut()
+            .unwrap()
+            .history
+            .push(("\x1b[2J".into(), false));
+        assert!(Terminal::restore(a).is_err());
+        let mut a = t.archive();
+        a.primary.as_mut().unwrap().grid["alternate_screen"] = json!(true);
+        assert!(Terminal::restore(a).is_err());
+        let mut json = serde_json::to_value(t.archive()).unwrap();
+        json["primary"]["primary"] = json!({});
+        assert!(serde_json::from_value::<Archive>(json).is_err());
     }
     #[test]
     fn replies_and_clipboard() {

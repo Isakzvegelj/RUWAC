@@ -1144,6 +1144,58 @@ pub fn sidebar(
         }
         acquire(&s, &st, id)
     });
+    // Atomic saves from another desktop window replace the inode. Reload only
+    // when the private metadata changes; keep active connection leases and the
+    // last valid list if a writer leaves unsafe or malformed metadata behind.
+    let weak_root = root.downgrade();
+    let weak_store = Rc::downgrade(&store);
+    let weak_refresh = Rc::downgrade(&refresh);
+    let metadata_stamp = |path: &Path| {
+        use std::os::unix::fs::MetadataExt;
+        std::fs::symlink_metadata(path).ok().map(|m| {
+            (
+                m.dev(),
+                m.ino(),
+                m.len(),
+                m.mtime(),
+                m.mtime_nsec(),
+                m.mode(),
+            )
+        })
+    };
+    let path = store.borrow().path.clone();
+    let mut stamp = path.as_deref().and_then(metadata_stamp);
+    let reload_status = status.clone();
+    gtk::glib::timeout_add_local(std::time::Duration::from_secs(1), move || {
+        let (Some(_root), Some(store), Some(refresh)) = (
+            weak_root.upgrade(),
+            weak_store.upgrade(),
+            weak_refresh.upgrade(),
+        ) else {
+            return gtk::glib::ControlFlow::Break;
+        };
+        let next = path.as_deref().and_then(metadata_stamp);
+        if next != stamp {
+            stamp = next;
+            let fresh = Store::load();
+            if fresh.path == path && fresh.error.is_none() {
+                let mut current = store.borrow_mut();
+                current.items = fresh.items;
+                current.groups = fresh.groups;
+                current.error = None;
+                drop(current);
+                refresh();
+                reload_status.set_text("Machine library refreshed");
+            } else {
+                let error = fresh.error.unwrap_or_else(|| {
+                    "Private profile storage unavailable; existing library protected".into()
+                });
+                store.borrow_mut().error = Some(error.clone());
+                reload_status.set_text(&error);
+            }
+        }
+        gtk::glib::ControlFlow::Continue
+    });
     refresh();
     (root, search, restore, remote)
 }

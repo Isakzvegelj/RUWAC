@@ -1,10 +1,11 @@
 [workspace]
 resolver = "2"
 members = ["crates/*"]
+exclude = ["vendor/alacritty_terminal"]
 
 [workspace.package]
 license = "Apache-2.0"
-version = "0.1.25"
+version = "0.1.26"
 edition = "2024"
 publish = false
 
@@ -25,3 +26,6 @@ unicode-width = "=0.2.2"
 debug = 0
 [profile.release]
 strip = true
+
+[patch.crates-io]
+alacritty_terminal = { path = "vendor/alacritty_terminal" }

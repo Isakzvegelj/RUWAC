@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## v0.1.26 — 2026-10-12 — Prerelease
+
+- Reload machine profiles saved from another window without typing in search; retain the last valid list on invalid metadata and recover automatically.
+- Preserve canonical primary and alternate terminal buffers in bounded checkpoints and expose primary history in native copy controls and the authenticated CLI/API.
+
 ## v0.1.25 — 2026-10-12 — Prerelease
 
 - Add native endpoint-bound RDP certificate review, volatile tab approval and saved SHA-256 leaf trust with expiry, changed-certificate confirmation and stale-profile guards. Retain system CA validation by default and keep credential transfer behind the validated peer.

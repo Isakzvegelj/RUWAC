@@ -22,8 +22,20 @@ def inspect(name,manifest):
   if name=='headless' and p['name'].startswith(BANNED):raise ValueError('Graphical/embedded remote dependency in headless graph: '+p['name'])
   rows.append({'name':p['name'],'version':p['version'],'declared_license':license_text,'license_file_sha256':file_hash,'registry_checksum':entry.get('checksum')})
  return {'packages':sorted(rows,key=lambda p:(p['name'],p['version'])),'package_count':len(rows),'lock_sha256':hashlib.sha256(manifest.with_name('Cargo.lock').read_bytes()).hexdigest()}
+def verify_vendor():
+ base=ROOT/'ruwac/vendor/alacritty_terminal';d=json.loads((base/'UPSTREAM.json').read_text())
+ if d['crate']!='alacritty_terminal' or d['version']!='0.26.0' or d['registry_archive_sha256']!='bda177466b9524d59f1b12f0dd30b68696788e9992a7e959021c4a0ed96fcf59':raise ValueError('Unexpected terminal library provenance')
+ expected=d['upstream_library_files_sha256']|d['patched_files_sha256']
+ actual={str(p.relative_to(base))for p in base.rglob('*')if p.is_file()and (p.suffix=='.rs' or p.name in ['Cargo.toml','Cargo.toml.orig','README.md','LICENSE-APACHE'])}
+ if set(expected)!=actual:raise ValueError('Terminal library file inventory changed')
+ for name,digest in expected.items():
+  raw=base/name
+  if raw.is_symlink():raise ValueError('Terminal library symlink: '+name)
+  path=raw.resolve()
+  if not path.is_relative_to(base.resolve()) or path.is_symlink() or hashlib.sha256(path.read_bytes()).hexdigest()!=digest:raise ValueError('Terminal library checksum changed: '+name)
+ return {'crate':d['crate'],'version':d['version'],'registry_archive_sha256':d['registry_archive_sha256'],'verified_library_files':len(expected),'patch':'Read-only canonical primary_grid accessor; no parser/mutation replacement'}
 def main():
  p=argparse.ArgumentParser();p.add_argument('--output',type=Path,required=True);a=p.parse_args()
- result={'headless':inspect('headless',ROOT/'ruwac/Cargo.toml'),'desktop':inspect('desktop',ROOT/'ruwac/desktop/Cargo.toml'),'scope':'Locked declaration/checksum and graphical-dependency exclusion checks; not legal approval, binary notice clearance or a vulnerability scan'}
+ result={'terminal_library_source':verify_vendor(),'headless':inspect('headless',ROOT/'ruwac/Cargo.toml'),'desktop':inspect('desktop',ROOT/'ruwac/desktop/Cargo.toml'),'scope':'Locked declaration/checksum and graphical-dependency exclusion checks; not legal approval, binary notice clearance or a vulnerability scan'}
  a.output.parent.mkdir(parents=True,exist_ok=True);a.output.write_text(json.dumps(result,indent=2)+'\n');print('Dependency declarations and headless graph PASS',flush=True)
 if __name__=='__main__':main()

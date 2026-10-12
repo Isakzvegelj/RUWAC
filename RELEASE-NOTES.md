@@ -1,5 +1,9 @@
 # RUWAC source release
 
+Machine rows now reload after metadata is saved in another window without entering a search query. Invalid metadata preserves the previous valid list. Existing native Save/Edit/Delete refresh remains covered. Older running windows retain their compiled behavior; open the current installed application for this fix.
+
+Canonical primary and alternate terminal histories now survive daemon crash recovery together. Native copy mode offers both histories, and CLI capture supports `--buffer primary`. The maintained terminal-library accessor and exact source provenance are documented in the shipped library subset. Six real PTY/native history groups and six native machine-list groups pass; physical input and real external RDP acceptance remain separate.
+
 This increment adds the native first-connection certificate approval needed for self-signed RDP endpoints. System CA/hostname validation remains the default. The review dialog shows endpoint, validity and full SHA-256 fingerprint, then offers temporary trust for this tab or saved trust for its profile. Exact certificate and host/port binding is checked before authentication; expired, changed and stale approvals fail closed. Changed certificates require explicit typed confirmation. Temporary trust is not saved or checkpointed. There is no generic accept-all TLS option.
 
 Four policy units and eight actual TLS/CredSSP/native dialog groups pass, including authenticated loopback framebuffer, saved and temporary trust, restart, metadata preservation and changed/stale rejection. Existing headless, terminal, clipboard, native profile/workspace, SFTP and SSH regressions repeat on the stamped build. The engine and CLI remain independent of GTK and RDP dependencies.

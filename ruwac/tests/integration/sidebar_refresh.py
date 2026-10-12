@@ -61,6 +61,26 @@ try:
     start([a.gui, '--socket', str(sock), '--session', session['session'], '--fixture-dir', str(root)], 'desktop')
     eventually(lambda: command('inspect'), 15)
     assert inspect()['rows'] == 0
+    # Another process/window saves metadata with the same atomic rename as the
+    # editor. Exercise the actual native reload with an untouched search field.
+    def replace_library(value):
+        temp = store.with_suffix('.candidate')
+        temp.write_text(json.dumps(value))
+        temp.chmod(0o600)
+        temp.replace(store)
+    replace_library({'schema': 1, 'items': [
+        {'id': 'external-one', 'machine_id': 'external-one', 'name': 'Other window EVF', 'server': 'localhost', 'protocol': 'RDP', 'username': 'fixture', 'secret_reference': '', 'group': '', 'tags': [], 'favorite': False, 'last_used': 0},
+        {'id': 'external-two', 'machine_id': 'external-two', 'name': 'Other window Windows', 'server': 'localhost', 'protocol': 'RDP', 'username': 'fixture', 'secret_reference': '', 'group': '', 'tags': [], 'favorite': False, 'last_used': 0}
+    ], 'groups': []})
+    eventually(lambda: inspect()['rows'] == 2, 10)
+    results.append({'id': 'SIDEBAR-OTHER-WINDOW-WITHOUT-SEARCH', 'status': 'PASS'})
+    replace_library({'schema': 999, 'items': []})
+    time.sleep(1.5)
+    assert inspect()['rows'] == 2
+    results.append({'id': 'SIDEBAR-INVALID-RELOAD-PRESERVES-LIST', 'status': 'PASS'})
+    replace_library({'schema': 1, 'items': [], 'groups': []})
+    eventually(lambda: inspect()['rows'] == 0, 10)
+    results.append({'id': 'SIDEBAR-RELOAD-RECOVERS-WITHOUT-SEARCH', 'status': 'PASS'})
     saved = command('profile-editor', operation='new', fields={'0': 'Saved without searching', '1': 'Disposable fixture', '3': 'localhost'})
     assert not saved['error'], saved
     rows = inspect()
@@ -90,4 +110,4 @@ finally:
     receipt = {'results': results, 'sha256': {name: hashlib.sha256(Path(path).read_bytes()).hexdigest() for name, path in [('ruwac', a.binary), ('ruwac-desktop', a.gui)]}, 'scope': 'Real native GTK callbacks, synthetic actions on an owned display; no owner configuration, credentials, clipboard or physical-input claim'}
     (root / 'receipt.json').write_text(json.dumps(receipt, indent=2) + '\n')
     print(json.dumps(receipt, indent=2))
-assert len(results) == 3
+assert len(results) == 6

@@ -92,6 +92,14 @@ impl View {
             }
         });
         let copybox = gtk::Box::new(gtk::Orientation::Vertical, 4);
+        let choices = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+        let active_history = gtk::Button::with_label("Active screen history");
+        active_history.set_widget_name("history-active-buffer");
+        let primary_history = gtk::Button::with_label("Primary screen history");
+        primary_history.set_widget_name("history-primary-buffer");
+        choices.append(&active_history);
+        choices.append(&primary_history);
+        copybox.append(&choices);
         copybox.append(&search);
         copybox.append(&scroll);
         stack.add_named(&copybox, Some("copy"));
@@ -132,6 +140,18 @@ impl View {
                 .and_then(|s| serde_json::from_str(&s).ok())
                 .unwrap_or_default(),
             stack,
+        });
+        let weak = Rc::downgrade(&v);
+        active_history.connect_clicked(move |_| {
+            if let Some(v) = weak.upgrade() {
+                v.open_history();
+            }
+        });
+        let weak = Rc::downgrade(&v);
+        primary_history.connect_clicked(move |_| {
+            if let Some(v) = weak.upgrade() {
+                v.open_primary_history();
+            }
         });
         let w = Rc::downgrade(&v);
         v.area.set_draw_func(move |area, cr, width, height| {
@@ -328,14 +348,52 @@ impl View {
         self.area.grab_focus();
     }
     pub fn open_history(&self) {
+        self.open_history_buffer(false);
+    }
+    pub fn fixture_history_buffer(&self, primary: bool) -> bool {
+        fn find(w: &gtk::Widget, name: &str) -> Option<gtk::Button> {
+            if w.widget_name() == name {
+                return w.clone().downcast::<gtk::Button>().ok();
+            }
+            let mut c = w.first_child();
+            while let Some(w) = c {
+                c = w.next_sibling();
+                if let Some(b) = find(&w, name) {
+                    return Some(b);
+                }
+            }
+            None
+        }
+        let Some(root) = self.stack.child_by_name("copy") else {
+            return false;
+        };
+        let name = if primary {
+            "history-primary-buffer"
+        } else {
+            "history-active-buffer"
+        };
+        if let Some(button) = find(&root, name) {
+            button.emit_clicked();
+            true
+        } else {
+            false
+        }
+    }
+    pub fn open_primary_history(&self) {
+        self.open_history_buffer(true);
+    }
+    fn open_history_buffer(&self, primary: bool) {
         if let Err(e) = self
             .worker
-            .send(Command::History(self.target.borrow().clone()))
+            .send(Command::History(self.target.borrow().clone(), primary))
         {
             self.warn(&e);
         }
-        self.status
-            .set_text("Loading bounded canonical scrollback…");
+        self.status.set_text(if primary {
+            "Loading canonical primary-screen history…"
+        } else {
+            "Loading bounded canonical scrollback…"
+        });
     }
     fn navigate(&self, method: &str, params: Value) {
         self.release_mouse();
