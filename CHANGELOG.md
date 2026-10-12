@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v0.2.7 — 2026-10-13 — Stable source release
+
+- Add explicit local Codex PNG draft attachment through the authenticated terminal protocol, with foreground/process guards and observed attachment receipts; never submit the user’s draft automatically.
+
 ## v0.2.6 — 2026-10-12 — Stable source release
 
 - Add opt-in native GNOME user selection and sign-in using separate saved credentials, fail-closed screen recognition and focus guards; preserve dynamic resolution across the authenticated desktop handover.

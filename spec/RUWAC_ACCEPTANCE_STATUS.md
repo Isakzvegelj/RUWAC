@@ -1,5 +1,11 @@
 # RUWAC acceptance status
 
+## Codex image attachment — candidate implementation
+
+The CLI now supports `ruwac --socket PRIVATE_SOCKET image-attach pane_ID PNG PRIVATE_DIRECTORY`. It stages a validated PNG as an owned 0600 file in an owned 0700 directory, then invokes the installed Codex terminal’s documented image-path paste behavior. The authenticated daemon binds delivery to the explicit selected pane and foreground process group, requires a live same-user Codex executable, an observed supported model-ready footer and bracketed paste, and refuses stale targets, ordinary processes, unsafe paths, symlinks, hard links and public staging permissions. It sends no Enter and does not submit a turn. The CLI distinguishes queuing from observation of a new image marker; neither is reported as model consumption. Keep the staged file until the user submits or discards the draft.
+
+Real local Codex 0.162.1 accepted the attachment and correctly read a generated image after a separate explicit test submission. Seven owned-PTY refusal cases pass, including a forged Codex title on an ordinary process. This is local CLI acceptance; the native clipboard button still only stages PNG, and separate-host SSH consumption remains open. The existing persistent daemon is preserved; the new operation requires a daemon exposing `pane.attachImage` and does not restart an older daemon automatically.
+
 ## Automatic GNOME sign-in — compiled package 0.2.6
 
 Machines → Edit → GNOME Remote Login → GNOME User Login now offers **Sign in automatically to the saved Linux account**. This optional endpoint setting preserves existing profiles and defaults off. RDP Service Login still authenticates the transport; the independently stored Linux username/password belongs only to GDM. Windows and Desktop Sharing retain their existing single-stage flow.

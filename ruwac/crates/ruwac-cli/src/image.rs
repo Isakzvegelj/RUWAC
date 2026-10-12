@@ -1,0 +1,66 @@
+use ruwac_protocol::{Request, request};
+use serde_json::{Value, json};
+use std::{
+    io,
+    path::Path,
+    time::{Duration, Instant},
+};
+
+fn highest_image(text: &str) -> u64 {
+    text.split("[Image #")
+        .skip(1)
+        .filter_map(|s| s.split_once(']').and_then(|(n, _)| n.parse::<u64>().ok()))
+        .max()
+        .unwrap_or(0)
+}
+pub fn attach(
+    pane: &str,
+    input: &str,
+    directory: &str,
+    call: &impl Fn(&Request) -> io::Result<Value>,
+) -> io::Result<Value> {
+    let job = call(&request("job.query", json!({"pane":pane})))?;
+    let pid = job["result"]["foreground"]["pid"]
+        .as_u64()
+        .ok_or_else(|| io::Error::other("live explicit foreground required"))?;
+    let screen = call(&request("pane.capture", json!({"pane":pane,"lines":100})))?;
+    let before = highest_image(screen["result"]["text"].as_str().unwrap_or(""));
+    let staged = ruwac_clipboard::stage_png(Path::new(input), Path::new(directory))
+        .map_err(io::Error::other)?;
+    let queued = call(&request(
+        "pane.attachImage",
+        json!({"pane":pane,"path":staged.path,"foreground_pid":pid}),
+    ));
+    if let Err(error) = queued {
+        let _ = std::fs::remove_file(&staged.path);
+        return Err(error);
+    }
+    let end = Instant::now() + Duration::from_secs(3);
+    let mut observed = false;
+    while Instant::now() < end {
+        let current = call(&request("job.query", json!({"pane":pane})))?;
+        if current["result"]["foreground"]["pid"].as_u64() != Some(pid) {
+            break;
+        }
+        let screen = call(&request("pane.capture", json!({"pane":pane,"lines":100})))?;
+        if highest_image(screen["result"]["text"].as_str().unwrap_or("")) > before {
+            observed = true;
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(40));
+    }
+    // Keep the staged file: Codex reads it when the user explicitly submits their draft.
+    Ok(
+        json!({"pane":pane,"path":staged.path,"sha256":staged.sha256,"bytes":staged.bytes,"queued":true,"draft_attachment_observed":observed,"consumed":false,"submitted":false,"adapter":"codex"}),
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn image_markers_require_complete_numeric_tokens() {
+        assert_eq!(highest_image("[Image #3] [Image #1]"), 3);
+        assert_eq!(highest_image("[Image #4 [Image #x]"), 0);
+    }
+}
