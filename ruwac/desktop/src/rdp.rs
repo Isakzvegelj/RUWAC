@@ -82,6 +82,7 @@ impl ironrdp::dvc::DvcProcessor for DisplayControlAdapter {
 struct DisplayFragmentGuard {
     svc: crate::cliprdr::FragmentGuard,
     data: Vec<u8>,
+    gfx_channel: Option<u32>,
 }
 impl DisplayFragmentGuard {
     fn check(&mut self, payload: &[u8]) -> Result<(), String> {
@@ -90,7 +91,7 @@ impl DisplayFragmentGuard {
         let mut cursor = ironrdp_core::ReadCursor::new(payload);
         let header: ChannelPduHeader =
             ironrdp_core::decode_cursor(&mut cursor).map_err(|_| "Invalid display fragment")?;
-        if header.length > 65536 {
+        if header.length > 16 * 1024 * 1024 {
             return Err("Display SVC reassembly exceeds cap".into());
         }
         self.svc
@@ -104,10 +105,31 @@ impl DisplayFragmentGuard {
             let message = ironrdp_core::decode::<DrdynvcServerPdu>(&self.data)
                 .map_err(|_| "Invalid display DVC message")?;
             let oversize = match message {
-                DrdynvcServerPdu::Data(DrdynvcDataPdu::DataFirst(p)) => {
-                    p.length() > 20 || p.data().len() > 20
+                DrdynvcServerPdu::Create(p) => {
+                    if p.channel_name() == ironrdp_egfx::CHANNEL_NAME {
+                        self.gfx_channel = Some(p.channel_id());
+                    }
+                    false
                 }
-                DrdynvcServerPdu::Data(DrdynvcDataPdu::Data(p)) => p.data().len() > 20,
+                DrdynvcServerPdu::Close(p) => {
+                    if self.gfx_channel == Some(p.channel_id()) {
+                        self.gfx_channel = None;
+                    }
+                    false
+                }
+                DrdynvcServerPdu::Data(ref p) => {
+                    let limit = if self.gfx_channel == Some(p.channel_id()) {
+                        crate::gfx::MAX_WIRE
+                    } else {
+                        20
+                    };
+                    match p {
+                        DrdynvcDataPdu::DataFirst(p) => {
+                            p.length() as usize > limit || p.data().len() > limit
+                        }
+                        DrdynvcDataPdu::Data(p) => p.data().len() > limit,
+                    }
+                }
                 _ => false,
             };
             self.data.clear();
@@ -142,6 +164,17 @@ struct Profile {
     reference: String,
     ca: Option<String>,
     reconnect: bool,
+    graphics: bool,
+    handover: Option<Arc<crate::handover::Plan>>,
+}
+impl Profile {
+    fn next_attempt(&mut self) -> Self {
+        let mut connection = self.clone();
+        // A server-issued handover credential is consumed by one connection only.
+        // Any ordinary retry starts again with the saved service login.
+        connection.handover = self.handover.take();
+        connection
+    }
 }
 /// Observe only protocol boundaries, never packet contents or credentials.
 struct ProgressTls<S> {
@@ -197,6 +230,7 @@ struct Frame {
 }
 #[derive(Default)]
 struct State {
+    handover: Option<Arc<crate::handover::Plan>>,
     generation: u64,
     connection_stage: String,
     phase: String,
@@ -274,7 +308,7 @@ impl Drop for Connection {
     }
 }
 async fn run(
-    p: Profile,
+    mut p: Profile,
     password: String,
     mut input: tokio::sync::mpsc::Receiver<Command>,
     halt: Arc<AtomicBool>,
@@ -316,13 +350,20 @@ async fn run(
             }
         }
         let result = run_session(
-            p.clone(),
+            p.next_attempt(),
             password.clone(),
             &mut input,
             halt.clone(),
             state.clone(),
         )
         .await;
+        if let Some(plan) = state.lock().unwrap().handover.take() {
+            if attempt == 3 {
+                return Err("GNOME handover limit reached".into());
+            }
+            p.handover = Some(plan);
+            continue;
+        }
         let retry = result.as_ref().err().is_some_and(|e| {
             matches!(
                 e.as_str(),
@@ -366,6 +407,9 @@ fn encode_resize(
 }
 fn connector_config(username: String, password: String) -> connector::Config {
     connector::Config {
+        support_dyn_vc_gfx_protocol: false,
+        enable_rdstls: false,
+        redirected_session_id: None,
         credentials: connector::Credentials::UsernamePassword { username, password },
         domain: None,
         enable_tls: false,
@@ -468,6 +512,7 @@ async fn run_session(
     halt: Arc<AtomicBool>,
     state: Arc<Mutex<State>>,
 ) -> Result<(), String> {
+    let gfx: crate::gfx::Shared = Arc::new(Mutex::new(crate::gfx::Pending::default()));
     let session = async {
         let tcp = tokio::net::TcpStream::connect((p.host.as_str(), p.port))
             .await
@@ -475,19 +520,49 @@ async fn run_session(
         let addr = tcp
             .local_addr()
             .map_err(|_| "RDP socket address unavailable".to_string())?;
-        let config = connector_config(p.user.clone(), password);
+        let mut config = connector_config(
+            p.user.clone(),
+            if p.handover.is_some() {
+                String::new()
+            } else {
+                password
+            },
+        );
+        if let Some(plan) = p.handover.as_ref() {
+            config.enable_rdstls = true;
+            config.enable_credssp = false;
+            config.redirected_session_id = Some(plan.session);
+            config.request_data = Some(ironrdp::pdu::nego::NegoRequestData::routing_token(
+                plan.routing_token()?,
+            ));
+            config.credentials = connector::Credentials::UsernamePassword {
+                username: plan.username()?,
+                password: String::new(),
+            };
+        }
+        if p.graphics {
+            config.support_dyn_vc_gfx_protocol = true;
+            config.bitmap = Some(connector::BitmapConfig {
+                color_depth: 32,
+                lossy_compression: false,
+                codecs: Default::default(),
+            });
+        }
         let bridge = state.lock().unwrap().bridge.clone();
         let cap_state = state.clone();
+        let mut dynamic =
+            ironrdp::dvc::DrdynvcClient::new().with_dynamic_channel(DisplayControlAdapter(
+                ironrdp::displaycontrol::client::DisplayControlClient::new(move |caps| {
+                    cap_state.lock().unwrap().display_cap = Some(caps.max_monitor_area());
+                    Ok(Vec::new())
+                }),
+            ));
+        if p.graphics {
+            dynamic = dynamic.with_dynamic_channel(crate::gfx::Channel::new(gfx.clone()));
+        }
         let mut connector = connector::ClientConnector::new(config, addr)
             .with_static_channel(CliprdrClient::new(Box::new(Backend::new(bridge))))
-            .with_static_channel(ironrdp::dvc::DrdynvcClient::new().with_dynamic_channel(
-                DisplayControlAdapter(ironrdp::displaycontrol::client::DisplayControlClient::new(
-                    move |caps| {
-                        cap_state.lock().unwrap().display_cap = Some(caps.max_monitor_area());
-                        Ok(Vec::new())
-                    },
-                )),
-            ));
+            .with_static_channel(dynamic);
         let mut framed = ironrdp_tokio::TokioFramed::new(tcp);
         state.lock().unwrap().status = Some("RDP security negotiation…".into());
         let upgrade = ironrdp_tokio::connect_begin(&mut framed, &mut connector)
@@ -503,7 +578,7 @@ async fn run_session(
                 .build()
                 .map_err(|_| "TLS initialization failed".to_string())?,
         );
-        let tls = match tls.connect(&p.host, stream).await {
+        let mut tls = match tls.connect(&p.host, stream).await {
             Ok(tls) => tls,
             Err(_) => {
                 if !trust.is_pinned() {
@@ -529,6 +604,16 @@ async fn run_session(
             return Err(error);
         }
 
+        if p.handover.is_some() {
+            let fingerprint = Review::from_der(&der, &p.host, p.port, &trust)?.fingerprint();
+            if state.lock().unwrap().verified_tls_sha256.as_deref() != Some(fingerprint.as_str()) {
+                return Err("GNOME handover changed the authenticated endpoint certificate".into());
+            }
+        }
+        if let Some(plan) = p.handover.as_ref() {
+            state.lock().unwrap().connection_stage = "GNOME RDSTLS handover".into();
+            crate::handover::authenticate(&mut tls, plan).await?;
+        }
         let cert = x509_cert::Certificate::from_der(&der)
             .map_err(|_| "Peer certificate decoding failed".to_string())?;
         state.lock().unwrap().verified_tls_sha256 =
@@ -596,6 +681,7 @@ async fn run_session(
         result.desktop_size.width,
         result.desktop_size.height,
     );
+    let io_channel = result.io_channel_id;
     let clip_channel = result
         .static_channels
         .get_channel_id_by_type::<CliprdrClient>();
@@ -615,7 +701,7 @@ async fn run_session(
         pointer_software_rendering: result.pointer_software_rendering,
     }
     .build();
-    state.lock().unwrap().status = Some("Connected · text and image clipboard sharing".into());
+    state.lock().unwrap().status = Some("Connected".into());
     let (mut reader, mut writer) = ironrdp_tokio::split_tokio_framed(framed);
     loop {
         if state
@@ -652,8 +738,12 @@ async fn run_session(
             .await;
             return Ok(());
         }
-        let outputs = tokio::select! {
-         pdu=reader.read_pdu()=>{let(action,bytes)=pdu.map_err(|_|"RDP stream disconnected".to_string())?;if action==ironrdp::pdu::Action::X224{if let Ok(ctx)=ironrdp::pdu::mcs::decode_send_data_indication(&bytes){if Some(ctx.channel_id)==clip_channel{fragments.check(ctx.user_data)?;}if Some(ctx.channel_id)==dvc_channel{display_fragments.check(ctx.user_data)?;}}}active.process(&mut image,action,&bytes).map_err(|_|"RDP decode failed".to_string())?},
+        let mut outputs = tokio::select! {
+         pdu=reader.read_pdu()=>{let(action,bytes)=pdu.map_err(|_|"RDP stream disconnected".to_string())?;if action==ironrdp::pdu::Action::X224{if let Ok(ctx)=ironrdp::pdu::mcs::decode_send_data_indication(&bytes){if p.graphics && ctx.channel_id==io_channel {
+                if let Some(plan)=crate::handover::parse(ctx.user_data)? {
+                    state.lock().unwrap().handover=Some(Arc::new(plan));return Ok(());
+                }
+            }if Some(ctx.channel_id)==clip_channel{fragments.check(ctx.user_data)?;}if Some(ctx.channel_id)==dvc_channel{display_fragments.check(ctx.user_data)?;}}}active.process(&mut image,action,&bytes).map_err(|e|crate::gfx::decoder_location(&e))?},
          command=input.recv()=>{let Some(command)=command else{return Ok(());};match command {
             Command::Resize(w,h,scale)=>{
                 let ready=active.get_dvc::<DisplayControlAdapter>().and_then(|d|d.channel_processor_downcast_ref::<DisplayControlAdapter>()).is_some_and(|d|d.0.ready());
@@ -677,6 +767,23 @@ async fn run_session(
          }},
          _=tokio::time::sleep(Duration::from_millis(50))=>continue,
         };
+        let (gfx_reset, gfx_changed) = crate::gfx::apply(&gfx, &mut image)?;
+        if gfx_reset {
+            let mut st = state.lock().unwrap();
+            st.generation += 1;
+            st.reactivating = true;
+            st.frame = None;
+        }
+        if gfx_changed {
+            outputs.push(ActiveStageOutput::GraphicsUpdate(
+                ironrdp::pdu::geometry::InclusiveRectangle {
+                    left: 0,
+                    top: 0,
+                    right: image.width() - 1,
+                    bottom: image.height() - 1,
+                },
+            ));
+        }
         for output in outputs {
             match output {
                 ActiveStageOutput::ResponseFrame(bytes) => {
@@ -1492,6 +1599,8 @@ impl RdpView {
                 user: "fixture".into(),
                 reference: String::new(),
                 reconnect: true,
+                graphics: false,
+                handover: None,
                 ca: Some(ca.to_string_lossy().into_owned()),
             },
             Some("generated-local-only".into()),
@@ -1843,6 +1952,12 @@ impl RdpView {
             user: user.into(),
             reference: reference.into(),
             reconnect: self.reconnect.get(),
+            handover: None,
+            graphics: self
+                .profile_metadata
+                .borrow()
+                .as_ref()
+                .is_some_and(|p| p.preferences.rdp_mode.starts_with("gnome-")),
             ca: if ca.is_empty() { None } else { Some(ca.into()) },
         });
         *self.bridge.borrow_mut() = connection.state.lock().unwrap().bridge.clone();
@@ -2621,6 +2736,45 @@ impl RdpView {
 mod tests {
     use super::*;
     #[test]
+    fn handover_is_consumed_once_and_service_identity_survives_retry() {
+        let mut packet = vec![0, 4, 0, 0];
+        packet.extend_from_slice(&42u32.to_le_bytes());
+        packet.extend_from_slice(&(0x2u32 | 0x4 | 0x10 | 0x4000 | 0x8000).to_le_bytes());
+        for value in [
+            b"12345".to_vec(),
+            vec![b'u', 0, 0, 0],
+            vec![0xa5; 128],
+            vec![b'g', 0, 0, 0],
+        ] {
+            packet.extend_from_slice(&(value.len() as u32).to_le_bytes());
+            packet.extend(value);
+        }
+        let length = packet.len() as u16;
+        packet[2..4].copy_from_slice(&length.to_le_bytes());
+        let mut data = ((packet.len() + 8) as u16).to_le_bytes().to_vec();
+        data.extend_from_slice(&[0x1a, 0, 0, 0, 0, 0]);
+        data.extend(packet);
+        let plan = Arc::new(crate::handover::parse(&data).unwrap().unwrap());
+        let mut profile = Profile {
+            host: "fixture.invalid".into(),
+            port: 3389,
+            user: "service-user".into(),
+            reference: "service-reference".into(),
+            ca: None,
+            reconnect: true,
+            graphics: true,
+            handover: Some(plan.clone()),
+        };
+        let redirected = profile.next_attempt();
+        assert!(Arc::ptr_eq(redirected.handover.as_ref().unwrap(), &plan));
+        let retry = profile.next_attempt();
+        assert!(retry.handover.is_none());
+        assert_eq!(retry.user, "service-user");
+        assert_eq!(retry.reference, "service-reference");
+        assert_eq!((retry.host.as_str(), retry.port), ("fixture.invalid", 3389));
+        assert!(retry.graphics && retry.reconnect);
+    }
+    #[test]
     fn real_loopback_tls_validation() {
         use std::{
             fs,
@@ -2689,6 +2843,8 @@ mod tests {
                     user: "synthetic-fixture".into(),
                     reference: String::new(),
                     reconnect: true,
+                    graphics: false,
+                    handover: None,
                     ca: if trusted {
                         Some(cert.to_string_lossy().into_owned())
                     } else {

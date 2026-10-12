@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## v0.2.2 — 2026-10-12 — Stable source release
+
+- Integrate the upstream non-AVC Graphics Pipeline compositor for GNOME RDP modes, preserving the standard Windows renderer and existing clipboard channels.
+- Support bounded same-endpoint GNOME RDSTLS handover under verified TLS; validate real Fedora GDM rendering, resolution changes and fresh-transport reconnects.
+
 ## v0.2.1 — 2026-10-12 — Stable source release
 
 - Add Fedora 44 GitHub source updates, automatic desktop update checks, explicit local build/install and verified rollback while preserving active sessions.

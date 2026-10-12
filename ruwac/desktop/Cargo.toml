@@ -1,7 +1,7 @@
 [package]
 license = "Apache-2.0"
 name = "ruwac-desktop"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2024"
 publish = false
 [workspace]
@@ -22,6 +22,7 @@ tokio-native-tls = "=0.3.1"
 x509-cert = "=0.2.5"
 ironrdp-cliprdr = "=0.7.0"
 ironrdp-core = "=0.2.0"
+ironrdp-egfx = "=0.3.0"
 ironrdp-cliprdr-format = "=0.2.0"
 png = "=0.18.0"
 serde = { version = "=1.0.228", features = ["derive"] }
@@ -40,3 +41,6 @@ strip = true
 
 [patch.crates-io]
 ironrdp-connector = { path = "vendor/ironrdp-connector" }
+ironrdp-egfx = { path = "vendor/ironrdp-egfx" }
+ironrdp-graphics = { path = "vendor/ironrdp-graphics" }
+ironrdp-session = { path = "vendor/ironrdp-session" }

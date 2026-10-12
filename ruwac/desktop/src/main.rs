@@ -3,6 +3,8 @@ mod cliprdr;
 mod credentials;
 mod files;
 mod files_resume;
+mod gfx;
+mod handover;
 mod ipc;
 mod jobs;
 mod profiles;

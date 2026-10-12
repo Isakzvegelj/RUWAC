@@ -1,0 +1,23 @@
+[package]
+name="ironrdp-egfx"
+version="0.3.0"
+edition="2024"
+license="MIT OR Apache-2.0"
+[lib]
+doctest=false
+[dependencies]
+bit_field="0.10"
+bitflags="2.11"
+ironrdp-core="=0.2.0"
+ironrdp-pdu={version="=0.9.0",features=["std"]}
+ironrdp-dvc="=0.8.0"
+ironrdp-graphics="=0.9.0"
+tracing={version="0.1",features=["log"]}
+arbitrary={version="1",features=["derive"],optional=true}
+openh264={version="0.9",default-features=false,optional=true}
+yuv={version="0.8",default-features=false,optional=true}
+[features]
+arbitrary=["dep:arbitrary","bitflags/arbitrary","ironrdp-pdu/arbitrary"]
+openh264=["dep:openh264","dep:yuv"]
+openh264-bundled=["openh264","openh264/source"]
+openh264-libloading=["openh264","openh264/libloading"]

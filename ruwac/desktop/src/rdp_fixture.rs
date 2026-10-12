@@ -129,6 +129,8 @@ fn authenticated_loopback_framebuffer_and_cliprdr() {
             let (tx, rx) = tokio::sync::mpsc::channel(4);
             let mut task = tokio::task::spawn_local(run(
                 Profile {
+                    graphics: false,
+                    handover: None,
                     host: "127.0.0.1".into(),
                     port,
                     user: "fixture".into(),

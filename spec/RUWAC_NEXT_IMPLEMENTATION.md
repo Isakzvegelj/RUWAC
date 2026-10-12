@@ -1,5 +1,15 @@
 # RUWAC remaining product defects
 
+## GNOME graphics and same-endpoint handover — latest implementation
+
+GNOME modes now use the pinned upstream non-AVC EGFX client/compositor and ClearCodec, Planar and RemoteFX Progressive decoding. Standard/Windows connections preserve the existing rendering path. GFX output is applied to the canonical pointer-aware framebuffer. Graphics reset invalidates stale assisted-input generations. The headless daemon retains no graphical dependencies.
+
+The initial service login uses the existing saved username/password and CredSSP. Enhanced GNOME redirection is parsed with bounded fields; only encrypted, same-endpoint handover is accepted. The next connection negotiates RDSTLS using opaque server-issued credentials, with both original endpoint trust and the previously authenticated TLS leaf required. Supplied destinations/certificates are never adopted. Routing tokens, encrypted credentials and reconnect cookies are excluded from diagnostics/persistence. This internal service handover is independent of the Linux user credential at GDM.
+
+Actual authorized Fedora 44 integration renders GDM after service authentication and handover. Twelve real resolution changes and three new-transport reconnects pass, with synthetic local GTK controls on an isolated compositor. No Linux password or keyboard input was sent; the probe disabled clipboard. Linux desktop sign-in, external GNOME text/image clipboard, physical input and automatic second-stage login remain unverified. Existing assisted field delivery still requires explicit selected-tab/endpoint/login-screen/focus confirmation. Remote GNOME/GDM configuration was unchanged.
+
+Upstream origin: IronRDP commit `e4143f26306a6639a889d80c1c484ca69c365a8f` for EGFX/graphics, registry session 0.11.0 and connector 0.10.0 at `11a0810cfbbabd8b8023875a05e3041216d4b01b`; MIT OR Apache-2.0, with retained notices and per-file provenance. Compatibility adapters preserve the existing core/PDU APIs. AVC420/444 are disabled; no H.264 capability is advertised. Existing RSA advisory remains visible and unfixed. Qualified Fedora RPM/signing and physical-desktop acceptance remain open.
+
 ## GNOME credentials, desktop windows and shell startup — 2026-10-12
 
 Package 0.2.0: existing stage-one username/Secret Service reference remains unchanged. Optional metadata stores RDP mode, Linux username and a separate GNOME credential reference. Old JSON and schema-one SQLite metadata remain readable; endpoint identities, credential separation and read-only Remmina previews are preserved. Each password has independent Set/Replace/Forget controls. References cannot cross authentication stages, even across endpoints. Passwords remain outside metadata, logs, command arguments, clipboard and production automation responses.

@@ -6,6 +6,32 @@ ROOT_FILES={'.gitignore','README.md','CHANGELOG.md','RELEASE-NOTES.md','LICENSE'
 ARCH_FILES={f'{n:02}-{name}.md' for n,name in enumerate(['RUWAC-DECISION','ARCHITECTURE','PROTOCOL-V0','ACCEPTANCE-MATRIX','BENCHMARKS','OPEN-ISSUES','IMPLEMENTATION-ROADMAP','COMPONENTS-LICENSES'])}|{'evidence-index.json','dependency-licenses.json','benchmark-results.json','acceptance-results.json'}
 VENDOR_FILES={f'ruwac/desktop/vendor/ironrdp-connector/{name}' for name in ['README.md','LICENSE-APACHE','UPSTREAM.json','RUWAC-PATCH.md']}|{'ruwac/vendor/alacritty_terminal/'+name for name in ['Cargo.toml.orig','README.md','LICENSE-APACHE','UPSTREAM.json','RUWAC-PATCH.md']}
 SCRIPT_FILES={'public-files.py','install-user.py','dependency-check.py','update-user.py'}
+VENDOR_FILES |= {f'ruwac/desktop/vendor/ironrdp-{crate}/{name}' for crate in ['egfx','graphics','session'] for name in ['README.md','LICENSE-APACHE','LICENSE-MIT','UPSTREAM.json']}
+# Pinned upstream codec test vectors are source fixtures, not compiled artifacts.
+VENDOR_FILES |= {
+    'ruwac/desktop/vendor/ironrdp-graphics/src/rdp6/test_assets/32x64_rgb_raw.bin',
+    'ruwac/desktop/vendor/ironrdp-graphics/src/rdp6/test_assets/32x64_rgb_raw.bmp',
+    'ruwac/desktop/vendor/ironrdp-graphics/src/rdp6/test_assets/64x24_argb_rle.bin',
+    'ruwac/desktop/vendor/ironrdp-graphics/src/rdp6/test_assets/64x24_argb_rle.bmp',
+    'ruwac/desktop/vendor/ironrdp-graphics/src/rdp6/test_assets/64x35_ycocg_rle_ss.bin',
+    'ruwac/desktop/vendor/ironrdp-graphics/src/rdp6/test_assets/64x35_ycocg_rle_ss.bmp',
+    'ruwac/desktop/vendor/ironrdp-graphics/src/rdp6/test_assets/64x64_aycocg_rle.bin',
+    'ruwac/desktop/vendor/ironrdp-graphics/src/rdp6/test_assets/64x64_aycocg_rle.bmp',
+    'ruwac/desktop/vendor/ironrdp-graphics/src/rdp6/test_assets/64x64_ycocg_raw_ss.bin',
+    'ruwac/desktop/vendor/ironrdp-graphics/src/rdp6/test_assets/64x64_ycocg_raw_ss.bmp',
+    'ruwac/desktop/vendor/ironrdp-graphics/src/rdp6/test_assets/64x64_ycocg_rle_ss.bin',
+    'ruwac/desktop/vendor/ironrdp-graphics/src/rdp6/test_assets/64x64_ycocg_rle_ss.bmp',
+    'ruwac/desktop/vendor/ironrdp-graphics/src/zgfx/test_assets/decoded.0.bin',
+    'ruwac/desktop/vendor/ironrdp-graphics/src/zgfx/test_assets/decoded.1.bin',
+    'ruwac/desktop/vendor/ironrdp-graphics/src/zgfx/test_assets/decoded.2.bin',
+    'ruwac/desktop/vendor/ironrdp-graphics/src/zgfx/test_assets/decoded.3.bin',
+    'ruwac/desktop/vendor/ironrdp-graphics/src/zgfx/test_assets/decoded.4.bin',
+    'ruwac/desktop/vendor/ironrdp-graphics/src/zgfx/test_assets/encoded.0.bin',
+    'ruwac/desktop/vendor/ironrdp-graphics/src/zgfx/test_assets/encoded.1.bin',
+    'ruwac/desktop/vendor/ironrdp-graphics/src/zgfx/test_assets/encoded.2.bin',
+    'ruwac/desktop/vendor/ironrdp-graphics/src/zgfx/test_assets/encoded.3.bin',
+    'ruwac/desktop/vendor/ironrdp-graphics/src/zgfx/test_assets/encoded.4.bin',
+}
 GITHUB_FILES={'.github/workflows/release.yml','.github/workflows/quality.yml','.github/workflows/labels.yml','.github/CODEOWNERS','.github/PULL_REQUEST_TEMPLATE.md','.github/ISSUE_TEMPLATE/bug_report.yml','.github/ISSUE_TEMPLATE/feature_request.yml','.github/ISSUE_TEMPLATE/config.yml','.github/scripts/label-pr.py','.github/scripts/test-label-pr.py'}
 FORBIDDEN={'.agents','.codex','.claude','.kimi','.githooks','.vscode','.aws','AGENTS.md','CLAUDE.md','SKILL.md','FIRST-PROMPT.md','OWNER-SPIKE-SPEC.md'}
 def files(root):

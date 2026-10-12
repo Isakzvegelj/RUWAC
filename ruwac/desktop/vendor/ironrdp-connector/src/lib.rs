@@ -136,6 +136,11 @@ impl Credentials {
 
 #[derive(Debug, Clone)]
 pub struct Config {
+    /// Advertise EGFX only when the client registers a compatible graphics channel.
+    pub support_dyn_vc_gfx_protocol: bool,
+    /// RDSTLS is completed by the transport caller after verified TLS and before MCS.
+    pub enable_rdstls: bool,
+    pub redirected_session_id: Option<u32>,
     /// The initial desktop size to request
     pub desktop_size: DesktopSize,
     /// The initial desktop scale factor to request.

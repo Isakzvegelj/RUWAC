@@ -20207,5 +20207,119 @@
       }
     ],
     "delivery": "HTTPS source build and per-user immutable installation; no binary/RPM qualification"
+  },
+  "gnome_gfx_handover": {
+    "package": "0.2.2",
+    "sha256": {
+      "ruwac": "1a9ce98aae0b7ed61d28689520c287b59be977e999775135991b2c46374a8760",
+      "ruwac-desktop": "94e72787d17f8abe2bb62f3ad4056073ca37f869fc37a12bbb88bdb54cac7175"
+    },
+    "regression_checks": [
+      {
+        "check": "upstream-codecs",
+        "status": "PASS",
+        "evidence": "Previously executed on identical frozen artifacts; retained after private harness wait fix",
+        "origin_log_sha256": "7617af34f898c38c8389bf810d456d7baa718e7c9e72b4f55316bc7324be554b"
+      },
+      {
+        "check": "updater-guards",
+        "status": "PASS",
+        "evidence": "Previously executed on identical frozen artifacts; retained after private harness wait fix",
+        "origin_log_sha256": "7617af34f898c38c8389bf810d456d7baa718e7c9e72b4f55316bc7324be554b"
+      },
+      {
+        "check": "format-core",
+        "status": "PASS",
+        "evidence": "Previously executed on identical frozen artifacts; retained after private harness wait fix",
+        "origin_log_sha256": "7617af34f898c38c8389bf810d456d7baa718e7c9e72b4f55316bc7324be554b"
+      },
+      {
+        "check": "format-desktop",
+        "status": "PASS",
+        "evidence": "Previously executed on identical frozen artifacts; retained after private harness wait fix",
+        "origin_log_sha256": "7617af34f898c38c8389bf810d456d7baa718e7c9e72b4f55316bc7324be554b"
+      },
+      {
+        "check": "lint-core",
+        "status": "PASS",
+        "evidence": "Previously executed on identical frozen artifacts; retained after private harness wait fix",
+        "origin_log_sha256": "7617af34f898c38c8389bf810d456d7baa718e7c9e72b4f55316bc7324be554b"
+      },
+      {
+        "check": "lint-desktop",
+        "status": "PASS",
+        "evidence": "Previously executed on identical frozen artifacts; retained after private harness wait fix",
+        "origin_log_sha256": "7617af34f898c38c8389bf810d456d7baa718e7c9e72b4f55316bc7324be554b"
+      },
+      {
+        "check": "workflow-syntax",
+        "status": "PASS",
+        "evidence": "Previously executed on identical frozen artifacts; retained after private harness wait fix",
+        "origin_log_sha256": "7617af34f898c38c8389bf810d456d7baa718e7c9e72b4f55316bc7324be554b"
+      },
+      {
+        "check": "headless-boundary",
+        "status": "PASS",
+        "evidence": "Previously executed on identical frozen artifacts; retained after private harness wait fix",
+        "origin_log_sha256": "7617af34f898c38c8389bf810d456d7baa718e7c9e72b4f55316bc7324be554b"
+      },
+      {
+        "check": "native-updates.py",
+        "status": "PASS",
+        "evidence": "Previously executed on identical frozen artifacts; retained after private harness wait fix",
+        "origin_log_sha256": "7617af34f898c38c8389bf810d456d7baa718e7c9e72b4f55316bc7324be554b"
+      },
+      {
+        "check": "run-desktop.py",
+        "status": "PASS",
+        "evidence": "Previously executed on identical frozen artifacts; retained after private harness wait fix",
+        "origin_log_sha256": "7617af34f898c38c8389bf810d456d7baa718e7c9e72b4f55316bc7324be554b"
+      },
+      {
+        "check": "run-rdp-r5.py",
+        "status": "PASS",
+        "evidence": "Previously executed on identical frozen artifacts; retained after private harness wait fix",
+        "origin_log_sha256": "7617af34f898c38c8389bf810d456d7baa718e7c9e72b4f55316bc7324be554b"
+      },
+      {
+        "check": "run-files.py",
+        "status": "PASS",
+        "evidence": "Previously executed on identical frozen artifacts; retained after private harness wait fix",
+        "origin_log_sha256": "7617af34f898c38c8389bf810d456d7baa718e7c9e72b4f55316bc7324be554b"
+      },
+      {
+        "check": "run-dual.py",
+        "status": "PASS",
+        "evidence": "Previously executed on identical frozen artifacts; retained after private harness wait fix",
+        "origin_log_sha256": "7617af34f898c38c8389bf810d456d7baa718e7c9e72b4f55316bc7324be554b"
+      },
+      {
+        "check": "test-external-lifecycle.py",
+        "status": "PASS",
+        "evidence": "Previously executed on identical frozen artifacts; retained after private harness wait fix",
+        "origin_log_sha256": "7617af34f898c38c8389bf810d456d7baa718e7c9e72b4f55316bc7324be554b"
+      },
+      {
+        "check": "test-external-recovery.py",
+        "status": "PASS",
+        "evidence": "Previously executed on identical frozen artifacts; retained after private harness wait fix",
+        "origin_log_sha256": "7617af34f898c38c8389bf810d456d7baa718e7c9e72b4f55316bc7324be554b"
+      },
+      {
+        "check": "probe-external.py",
+        "status": "PASS"
+      }
+    ],
+    "desktop_units": 59,
+    "real_external_framebuffers": [
+      "Windows 11",
+      "Fedora 44 GNOME GDM"
+    ],
+    "Fedora_resize_groups": 12,
+    "Fedora_reconnect_groups": 3,
+    "Linux_credentials_submitted": false,
+    "external_clipboard_disabled": true,
+    "physical_input": false,
+    "scope": "Real authenticated external transport/framebuffer; synthetic local native controls; no Linux desktop sign-in or distribution qualification"
   }
 }

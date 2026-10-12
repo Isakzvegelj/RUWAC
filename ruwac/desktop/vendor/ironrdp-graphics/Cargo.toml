@@ -1,0 +1,22 @@
+[package]
+name="ironrdp-graphics"
+version="0.9.0"
+edition="2024"
+license="MIT OR Apache-2.0"
+[lib]
+doctest=false
+[dependencies]
+bit_field="0.10"
+bitflags="2.11"
+ironrdp-core="=0.2.0"
+ironrdp-pdu={version="=0.9.0",features=["std"]}
+bitvec="1.0"
+byteorder="1.5"
+num-derive="0.4"
+num-traits="0.2"
+yuv={version="0.8",features=["rdp"]}
+wide="0.7"
+[dev-dependencies]
+bmp="0.5"
+bytemuck="1.24"
+expect-test="1"

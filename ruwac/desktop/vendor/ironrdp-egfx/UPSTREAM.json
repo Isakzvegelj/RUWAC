@@ -1,0 +1,43 @@
+{
+  "crate": "ironrdp-egfx",
+  "version": "0.3.0",
+  "repository": "https://github.com/Devolutions/IronRDP",
+  "commit": "e4143f26306a6639a889d80c1c484ca69c365a8f",
+  "source": "Pinned upstream checkout",
+  "files": {
+    "Cargo.toml": "4324dc009b2a92e8c5fdceeb149c16d25bc8f90941bd160f87d0320f2bc06745",
+    "LICENSE-APACHE": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+    "LICENSE-MIT": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+    "README.md": "a28be62d8fe55754231d1f6914fb698001f2873262ff8a1af9d971b7cabff1bc",
+    "src/client.rs": "a232b07efd7d49da42065895ed375f2131b9bda26d3aa49867d4c0033957b125",
+    "src/compositor.rs": "74d7e31ccbd785debf57e46a88f0e3ededc90076cecb58e13be60ce7545aeeb8",
+    "src/decode.rs": "50b2b5a59862867074f5145a1b235cdb1498357daef9577acd55baf67cf62d66",
+    "src/encode.rs": "e86a8b6ffb315636943a957f073e220db2a01536d55d032203d454c37f8881cc",
+    "src/lib.rs": "a33f9a3ed2dd44c7c24f5b4bd9e89b3f33821837eb37a6aee5ecfa3c4624f27a",
+    "src/pdu/avc.rs": "156655481af2397df0a2035a44cb805b4c0dacbea9d66a1946a124f396b195be",
+    "src/pdu/cmd.rs": "7e6e1a249ceb751438d5abd6c317ea347df0e7e9ef64046e42bd7d6b0533c07c",
+    "src/pdu/common.rs": "8f1d56c7b4e6901ced97dd28511baf61315dcc12a58df30ae1ee2b9eb9dc4109",
+    "src/pdu/mod.rs": "8d4b1b2f11cf627110d6b1e436ee0777280bf53dd951885150b76540f90c0e3c",
+    "src/server.rs": "38dfdecd7069210221208871af35fffa7f9be3604f0048a3dd214db049dd1326"
+  },
+  "patch": "Standalone manifest and old core diagnostic API adaptation; unchanged validation and codec behavior",
+  "upstream_files_sha256": {
+    "Cargo.toml": "307ff362411d08ca4499192360bbb8fe49683c65e204194c10b8f61ae0fa9cde",
+    "README.md": "a28be62d8fe55754231d1f6914fb698001f2873262ff8a1af9d971b7cabff1bc",
+    "src/client.rs": "a232b07efd7d49da42065895ed375f2131b9bda26d3aa49867d4c0033957b125",
+    "src/compositor.rs": "74d7e31ccbd785debf57e46a88f0e3ededc90076cecb58e13be60ce7545aeeb8",
+    "src/decode.rs": "50b2b5a59862867074f5145a1b235cdb1498357daef9577acd55baf67cf62d66",
+    "src/encode.rs": "e86a8b6ffb315636943a957f073e220db2a01536d55d032203d454c37f8881cc",
+    "src/lib.rs": "a33f9a3ed2dd44c7c24f5b4bd9e89b3f33821837eb37a6aee5ecfa3c4624f27a",
+    "src/server.rs": "38dfdecd7069210221208871af35fffa7f9be3604f0048a3dd214db049dd1326",
+    "src/pdu/avc.rs": "cce0ca4dcd254476a69a7a2a67e99ff27b7e21c1e42a908cbf19f66616bd63ec",
+    "src/pdu/cmd.rs": "0a31b88d488660cf1fee9b36630c07963a42043f4645e1fc73d71f9170484e09",
+    "src/pdu/common.rs": "8f1d56c7b4e6901ced97dd28511baf61315dcc12a58df30ae1ee2b9eb9dc4109",
+    "src/pdu/mod.rs": "8d4b1b2f11cf627110d6b1e436ee0777280bf53dd951885150b76540f90c0e3c"
+  },
+  "modified_files": [
+    "Cargo.toml",
+    "src/pdu/avc.rs",
+    "src/pdu/cmd.rs"
+  ]
+}

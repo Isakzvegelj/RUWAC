@@ -336,6 +336,8 @@ impl Sequence for ClientConnector {
                         .insert(nego::SecurityProtocol::HYBRID | nego::SecurityProtocol::HYBRID_EX);
                 }
 
+                if self.config.enable_rdstls {security_protocol=nego::SecurityProtocol::RDSTLS;}
+
                 if security_protocol.is_standard_rdp_security() {
                     return Err(reason_err!(
                         "Initiation",
@@ -354,7 +356,7 @@ impl Sequence for ClientConnector {
                     protocol: security_protocol,
                 };
 
-                debug!(message = ?connection_request, "Send");
+                debug!("Send RDP negotiation request");
 
                 let written = ironrdp_core::encode_buf(&X224(connection_request), output)
                     .map_err(ConnectorError::encode)?;
@@ -557,7 +559,7 @@ impl Sequence for ClientConnector {
 
                 let client_info = create_client_info_pdu(&self.config, &self.client_addr);
 
-                debug!(message = ?client_info, "Send");
+                debug!("Send RDP client info");
 
                 let written =
                     encode_send_data_request(user_channel_id, io_channel_id, &client_info, output)?;
@@ -956,6 +958,9 @@ fn create_gcc_blocks<'a>(
                     if max_color_depth == 32 {
                         early_capability_flags |= ClientEarlyCapabilityFlags::WANT_32_BPP_SESSION;
                     }
+                    if config.support_dyn_vc_gfx_protocol && max_color_depth == 32 {
+                        early_capability_flags |= ClientEarlyCapabilityFlags::SUPPORT_DYN_VC_GFX_PROTOCOL;
+                    }
 
                     Some(early_capability_flags)
                 },
@@ -989,7 +994,11 @@ fn create_gcc_blocks<'a>(
             Some(ClientNetworkData { channels })
         },
         // TODO(#139): support for Some(ClientClusterData { flags: RedirectionFlags::REDIRECTION_SUPPORTED, redirection_version: RedirectionVersion::V4, redirected_session_id: 0, }),
-        cluster: None,
+        cluster: config.redirected_session_id.map(|id|gcc::ClientClusterData {
+            flags:gcc::RedirectionFlags::REDIRECTION_SUPPORTED|gcc::RedirectionFlags::REDIRECTED_SESSION_FIELD_VALID,
+            redirection_version:gcc::RedirectionVersion::V6,
+            redirected_session_id:id,
+        }),
         monitor: None,
         // Request the MCS message channel, which carries network auto-detect
         // ([MS-RDPBCGR] 2.2.14) and the multitransport / heartbeat PDUs. The
