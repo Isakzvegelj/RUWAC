@@ -1,0 +1,26 @@
+{
+  "crate": "ironrdp-connector",
+  "version": "0.10.0",
+  "source": "https://crates.io/crates/ironrdp-connector/0.10.0",
+  "repository": "https://github.com/Devolutions/IronRDP",
+  "commit": "11a0810cfbbabd8b8023875a05e3041216d4b01b",
+  "crate_sha256": "d5898b3f1fcaca0f9b923b1463e158aeb64dfdec4ac361b7c086492466ff341c",
+  "license": "MIT OR Apache-2.0",
+  "modified_files": [
+    "src/connection.rs"
+  ],
+  "files": {
+    "Cargo.toml": "e967dcd07eeedf2ead9abfd345c581b0ac63b0d5a675187b8a0cb52dbf146580",
+    "LICENSE-APACHE": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+    "README.md": "e7708a2b586be3fda1c2afb79ec3f37eceaf43c5a48d56ede5e274e0f3e7415c",
+    "src/channel_connection.rs": "8ddf602adfcfcc61788f1ed8394ce6053ec6b02c9611c328c5fa675db665586e",
+    "src/connection.rs": "a321255d5e906ac7e23cf3103fb499a6aa227a0f467c09377944a9fde26ed8ec",
+    "src/connection_activation.rs": "bf78b48e03cbac0f2ae7317486780ece0fc5f2b47fd837277ee9fb1d44083c06",
+    "src/connection_finalization.rs": "6723c67ee163b4904c0fa22a93da6e0d9ef2cec62aecbc53e6fcc113f0f5a8f7",
+    "src/credssp.rs": "18fa602cd29c98ce53d245c39377ddb5f21aef77ad113cb863138113e3072e11",
+    "src/lib.rs": "4ed989f572d06ea9926de397703950b377dfedd1d25ef864638a528168efce5e",
+    "src/license_exchange.rs": "f8aee6d84c4f2ba8d9b16a6cc1a771c499c4351ca9e4fa7503a9bb26cc536536",
+    "src/macros.rs": "c49c7e1970d185bb9b12e9a09ccf00a1af294aa0fd6772d6650479194143d848",
+    "src/server_name.rs": "3b3eac5928f003ef6490ba608917dea4ebeb2e13f673206d464d41698a21987a"
+  }
+}

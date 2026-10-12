@@ -175,8 +175,7 @@ fn replace(
     tx.execute_batch("DELETE FROM tags; DELETE FROM endpoints;")
         .map_err(|_| "Cannot replace inventory rows")?;
     for (position, p) in library.items.iter().enumerate() {
-        let search =
-            format!("{} {} {} {}", p.name, p.group, p.server, p.tags.join(" ")).to_lowercase();
+        let search = p.search_text();
         let payload = serde_json::to_vec(p).map_err(|_| "Invalid endpoint")?;
         tx.execute(
             "INSERT INTO endpoints VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9)",
@@ -261,6 +260,23 @@ pub fn load(path: &Path, incoming: &[u8], observed_hash: &str) -> Result<Snapsho
     }
     let s = snapshot(&c)?.ok_or("SQLite inventory missing")?;
     super::parse_library(&s.document)?;
+    let library: super::Library =
+        serde_json::from_slice(&s.document).map_err(|_| "Invalid inventory document")?;
+    let tx = c
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(|_| "Inventory search refresh busy")?;
+    if snapshot(&tx)?.is_none_or(|v| v.revision != s.revision) {
+        return Err("Inventory changed during search refresh".into());
+    }
+    for p in library.items {
+        tx.execute(
+            "UPDATE endpoints SET search_text=?1 WHERE id=?2 AND search_text!=?1",
+            params![p.search_text(), p.id],
+        )
+        .map_err(|_| "Inventory search refresh failed")?;
+    }
+    tx.commit()
+        .map_err(|_| "Inventory search refresh commit failed")?;
     Ok(s)
 }
 pub fn read(path: &Path) -> Result<Snapshot, String> {
@@ -396,6 +412,36 @@ mod tests {
                 .unwrap()
                 .document,
             newer
+        );
+    }
+    #[test]
+    fn legacy_search_index_refreshes_alias_and_network_without_changing_revision() {
+        let f = Fixture::new();
+        let mut value: serde_json::Value = serde_json::from_slice(&doc("Host")).unwrap();
+        value["items"][0]["preferences"] = json!({"label":"WínAlias","network":"ČIFRA"});
+        let bytes = serde_json::to_vec(&value).unwrap();
+        let original = load(&f.db(), &bytes, "legacy").unwrap();
+        let c = open(&f.db()).unwrap();
+        c.execute("UPDATE endpoints SET search_text='host localhost'", [])
+            .unwrap();
+        drop(c);
+        assert!(
+            search(&f.db(), "wínalias", 0, original.revision)
+                .unwrap()
+                .is_empty()
+        );
+        let refreshed = load(&f.db(), &bytes, "legacy").unwrap();
+        assert_eq!(refreshed.revision, original.revision);
+        assert_eq!(refreshed.document, bytes);
+        assert!(
+            search(&f.db(), "WÍNALIAS", 0, refreshed.revision)
+                .unwrap()
+                .contains("endpoint_fixture")
+        );
+        assert!(
+            search(&f.db(), "čifra", 0, refreshed.revision)
+                .unwrap()
+                .contains("endpoint_fixture")
         );
     }
     #[test]

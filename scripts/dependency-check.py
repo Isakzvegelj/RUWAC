@@ -36,6 +36,13 @@ def verify_vendor():
  return {'crate':d['crate'],'version':d['version'],'registry_archive_sha256':d['registry_archive_sha256'],'verified_library_files':len(expected),'patch':'Read-only canonical primary_grid accessor; no parser/mutation replacement'}
 def main():
  p=argparse.ArgumentParser();p.add_argument('--output',type=Path,required=True);a=p.parse_args()
- result={'terminal_library_source':verify_vendor(),'headless':inspect('headless',ROOT/'ruwac/Cargo.toml'),'desktop':inspect('desktop',ROOT/'ruwac/desktop/Cargo.toml'),'scope':'Locked declaration/checksum and graphical-dependency exclusion checks; not legal approval, binary notice clearance or a vulnerability scan'}
+ result={'connector_source':verify_connector(),'terminal_library_source':verify_vendor(),'headless':inspect('headless',ROOT/'ruwac/Cargo.toml'),'desktop':inspect('desktop',ROOT/'ruwac/desktop/Cargo.toml'),'scope':'Locked declaration/checksum and graphical-dependency exclusion checks; not legal approval, binary notice clearance or a vulnerability scan'}
  a.output.parent.mkdir(parents=True,exist_ok=True);a.output.write_text(json.dumps(result,indent=2)+'\n');print('Dependency declarations and headless graph PASS',flush=True)
+def verify_connector():
+ base=ROOT/'ruwac/desktop/vendor/ironrdp-connector';d=json.loads((base/'UPSTREAM.json').read_text())
+ if d['crate']!='ironrdp-connector' or d['version']!='0.10.0' or d['modified_files']!=['src/connection.rs']:raise ValueError('Unexpected connector patch provenance')
+ for name,digest in d['files'].items():
+  path=base/name
+  if not path.resolve().is_relative_to(base.resolve()) or path.is_symlink() or hashlib.sha256(path.read_bytes()).hexdigest()!=digest:raise ValueError('Connector source checksum changed: '+name)
+ return {'crate':d['crate'],'version':d['version'],'registry_archive_sha256':d['crate_sha256'],'verified_files':len(d['files']),'modified_files':d['modified_files'],'scope':'Connect-time bandwidth reply only; authentication and crypto unchanged'}
 if __name__=='__main__':main()

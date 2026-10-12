@@ -21,6 +21,10 @@ pub struct Profile {
     pub preferences: Preferences,
     #[serde(default)]
     pub inherit: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub inherit_credential: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub inherit_connection: bool,
     pub name: String,
     pub group: String,
     pub protocol: String,
@@ -35,6 +39,12 @@ pub struct Profile {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Preferences {
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub rdp_mode: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub gnome_username: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub gnome_secret_reference: String,
     pub label: String,
     pub network: String,
     pub gateway: String,
@@ -52,6 +62,9 @@ pub struct Preferences {
 impl Default for Preferences {
     fn default() -> Self {
         Self {
+            rdp_mode: String::new(),
+            gnome_username: String::new(),
+            gnome_secret_reference: String::new(),
             label: String::new(),
             network: String::new(),
             gateway: String::new(),
@@ -81,6 +94,10 @@ struct Group {
     id: String,
     path: String,
     defaults: Preferences,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    username: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    credential_profile: String,
 }
 impl Profile {
     fn identify(&mut self) {
@@ -152,15 +169,20 @@ pub fn ssh_argv(p: &Profile) -> Result<Vec<String>, String> {
 }
 impl Profile {
     pub fn matches(&self, s: &str) -> bool {
+        self.search_text().contains(&s.to_lowercase())
+    }
+    pub(crate) fn search_text(&self) -> String {
         format!(
-            "{} {} {} {}",
+            "{} {} {} {} {} {} {}",
             self.name,
             self.group,
             self.server,
+            self.preferences.label,
+            self.preferences.network,
+            self.protocol,
             self.tags.join(" ")
         )
         .to_lowercase()
-        .contains(&s.to_lowercase())
     }
     pub(crate) fn validate(&self) -> Result<(), String> {
         if self.name.is_empty()
@@ -181,7 +203,17 @@ impl Profile {
             return Err("Invalid profile metadata".into());
         }
         endpoint(&self.server, if self.protocol == "SSH" { 22 } else { 3389 })?;
-        if self.preferences.clipboard > 4
+        if ![
+            "",
+            "standard",
+            "gnome-remote-login",
+            "gnome-desktop-sharing",
+        ]
+        .contains(&self.preferences.rdp_mode.as_str())
+            || (!self.preferences.gnome_secret_reference.is_empty()
+                && self.preferences.gnome_secret_reference == self.secret_reference)
+            || (self.inherit_credential && !self.inherit_connection)
+            || self.preferences.clipboard > 4
             || !["fit", "native", "stretch", "dynamic"].contains(&self.preferences.display.as_str())
             || !self.preferences.zoom.is_finite()
             || !(0.25..=4.0).contains(&self.preferences.zoom)
@@ -190,6 +222,8 @@ impl Profile {
                 .iter()
                 .any(|s| s.len() > 1024 || s.chars().any(char::is_control))
             || [
+                &self.preferences.gnome_username,
+                &self.preferences.gnome_secret_reference,
                 &self.preferences.label,
                 &self.preferences.network,
                 &self.preferences.gateway,
@@ -269,6 +303,8 @@ pub fn preview(path: &Path) -> Result<Profile, String> {
         machine_id: String::new(),
         preferences: Preferences::default(),
         inherit: false,
+        inherit_credential: false,
+        inherit_connection: false,
         name: field("name"),
         group: field("group"),
         protocol: field("protocol"),
@@ -520,6 +556,19 @@ fn parse_library(b: &[u8]) -> Result<Vec<Profile>, String> {
                     || g.path.is_empty()
                     || g.path.len() > 1024
                     || g.path.chars().any(char::is_control)
+                    || [
+                        &g.id,
+                        &g.username,
+                        &g.credential_profile,
+                        &g.defaults.network,
+                        &g.defaults.gateway,
+                        &g.defaults.identity_file,
+                        &g.defaults.identity_secret_reference,
+                        &g.defaults.known_hosts,
+                        &g.defaults.trust,
+                    ]
+                    .iter()
+                    .any(|v| v.len() > 1024 || v.chars().any(char::is_control))
                     || g.defaults.clipboard > 4
                     || !["fit", "native", "stretch", "dynamic"]
                         .contains(&g.defaults.display.as_str())
@@ -557,8 +606,95 @@ fn parse_library(b: &[u8]) -> Result<Vec<Profile>, String> {
             return Err("Conflicting endpoint identities".into());
         }
     }
+    let first: std::collections::HashSet<_> =
+        items.iter().map(|p| p.secret_reference.as_str()).collect();
+    if items.iter().any(|p| {
+        !p.preferences.gnome_secret_reference.is_empty()
+            && first.contains(p.preferences.gnome_secret_reference.as_str())
+    }) {
+        return Err(
+            "GNOME and RDP service credential references must be separate across the library"
+                .into(),
+        );
+    }
     Ok(items)
 }
+fn resolve(profile: &Profile, groups: &[Group], accounts: &[Profile]) -> Result<Profile, String> {
+    let mut p = profile.clone();
+    {
+        let mut chain: Vec<_> = groups
+            .iter()
+            .filter(|g| p.group == g.path || p.group.starts_with(&(g.path.clone() + "/")))
+            .collect();
+        chain.sort_by_key(|g| g.path.len());
+        if let Some(g) = chain.last().filter(|_| p.inherit) {
+            p.preferences.display = g.defaults.display.clone();
+            p.preferences.clipboard = g.defaults.clipboard;
+        }
+        if p.inherit_connection {
+            let nearest = |field: fn(&Group) -> &String| {
+                chain
+                    .iter()
+                    .rev()
+                    .map(|g| field(g))
+                    .find(|v| !v.is_empty())
+                    .cloned()
+            };
+            if p.username.is_empty() {
+                p.username = nearest(|g| &g.username).unwrap_or_default();
+            }
+            if p.preferences.network.is_empty() {
+                p.preferences.network = nearest(|g| &g.defaults.network).unwrap_or_default();
+            }
+            if p.preferences.gateway.is_empty() {
+                p.preferences.gateway = nearest(|g| &g.defaults.gateway).unwrap_or_default();
+            }
+            if p.preferences.known_hosts.is_empty() {
+                p.preferences.known_hosts =
+                    nearest(|g| &g.defaults.known_hosts).unwrap_or_default();
+            }
+            if p.preferences.trust.is_empty() {
+                p.preferences.trust = nearest(|g| &g.defaults.trust).unwrap_or_default();
+            }
+            if p.preferences.identity_file.is_empty() {
+                if let Some(g) = chain
+                    .iter()
+                    .rev()
+                    .find(|g| !g.defaults.identity_file.is_empty())
+                {
+                    p.preferences.identity_file = g.defaults.identity_file.clone();
+                    p.preferences.identity_secret_reference =
+                        g.defaults.identity_secret_reference.clone();
+                }
+            }
+            if p.inherit_credential {
+                let account = nearest(|g| &g.credential_profile)
+                    .ok_or("Select a group credential profile before connecting")?;
+                let account = accounts
+                    .iter()
+                    .find(|a| a.id == account)
+                    .ok_or("Group credential profile was removed; select another account")?;
+                if account.secret_reference.is_empty() {
+                    return Err("Group credential profile has no credential reference".into());
+                }
+                p.secret_reference = account.secret_reference.clone();
+                if p.username.is_empty() {
+                    p.username = account.username.clone();
+                }
+            }
+        } else if p.inherit_credential {
+            return Err("Group credentials require connection inheritance".into());
+        }
+    }
+    if p.protocol == "SSH" && p.username.is_empty() {
+        p.username = gtk::glib::user_name()
+            .into_string()
+            .map_err(|_| "Local account name is not UTF-8")?;
+    }
+    p.validate()?;
+    Ok(p)
+}
+
 pub struct ConnectionLease {
     store: Rc<RefCell<Store>>,
     id: String,
@@ -580,12 +716,20 @@ impl ConnectionLease {
                     "Profile storage changed or is unavailable; trust was not saved".into(),
                 );
             }
+            let effective = fresh
+                .items
+                .iter()
+                .find(|p| p.id == id)
+                .ok_or("Endpoint removed; certificate trust was not saved")?;
+            let previous_effective = resolve(effective, &fresh.groups, &fresh.items)?
+                .preferences
+                .trust;
             let p = fresh
                 .items
                 .iter_mut()
                 .find(|p| p.id == id)
                 .ok_or("Endpoint removed; certificate trust was not saved")?;
-            if p.protocol != "RDP" || p.server != server || p.preferences.trust != previous {
+            if p.protocol != "RDP" || p.server != server || previous_effective != previous {
                 return Err(
                     "Endpoint or certificate trust changed; reopen the profile before saving trust"
                         .into(),
@@ -659,18 +803,13 @@ fn acquire(
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
-    let mut p = s.items[i].clone();
-    if p.inherit {
-        if let Some(g) = s
-            .groups
-            .iter()
-            .filter(|g| p.group == g.path || p.group.starts_with(&(g.path.clone() + "/")))
-            .max_by_key(|g| g.path.len())
-        {
-            p.preferences.display = g.defaults.display.clone();
-            p.preferences.clipboard = g.defaults.clipboard;
+    let p = match resolve(&s.items[i], &s.groups, &s.items) {
+        Ok(p) => p,
+        Err(e) => {
+            st.set_text(&e);
+            return None;
         }
-    }
+    };
     *s.active.entry(p.id.clone()).or_default() += 1;
     if let Err(e) = s.save() {
         st.set_text(&e);
@@ -709,7 +848,7 @@ pub fn sidebar(
     open: impl Fn(Profile, PreferenceSink, ConnectionLease) + 'static,
 ) -> (gtk::Box, gtk::SearchEntry, ProfileRestorer, ProfileRestorer) {
     let root = gtk::Box::new(gtk::Orientation::Vertical, 6);
-    root.set_width_request(260);
+    root.set_width_request(180);
     root.add_css_class("background");
     root.set_margin_start(8);
     root.set_margin_end(8);
@@ -722,6 +861,7 @@ pub fn sidebar(
     root.append(&heading);
     let search = gtk::SearchEntry::new();
     search.set_placeholder_text(Some("Machines, groups, tags (Ctrl+K)"));
+    search.set_width_chars(12);
     root.append(&search);
     let filter = gtk::DropDown::from_strings(&["All machines", "Favorites", "Recent"]);
     root.append(&filter);
@@ -967,6 +1107,9 @@ pub fn sidebar(
     let (s, st) = (store.clone(), status.clone());
     groups.connect_clicked(move |b| group_editor(b, s.clone(), st.clone()));
     let add = gtk::Button::with_label("New machine / endpoint…");
+    if let Some(label) = add.child().and_then(|w| w.downcast::<gtk::Label>().ok()) {
+        label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+    }
     root.append(&add);
     let (s, st) = (store.clone(), status.clone());
     add.connect_clicked(move |b| editor(b, s.clone(), None, st.clone()));
@@ -1443,6 +1586,8 @@ fn editor(button: &gtk::Button, store: Rc<RefCell<Store>>, id: Option<String>, s
         machine_id: String::new(),
         preferences: Preferences::default(),
         inherit: false,
+        inherit_credential: false,
+        inherit_connection: false,
         name: String::new(),
         group: String::new(),
         protocol: "RDP".into(),
@@ -1566,10 +1711,26 @@ fn editor(button: &gtk::Button, store: Rc<RefCell<Store>>, id: Option<String>, s
     );
     inherit.set_active(original.inherit);
     grid.attach(&inherit, 0, 22, 2, 1);
+    let inherit_connection =
+        gtk::CheckButton::with_label("Fill empty connection fields from network groups");
+    inherit_connection.set_active(original.inherit_connection);
+    grid.attach(&inherit_connection, 0, 24, 2, 1);
+    let inherit_credential = gtk::CheckButton::with_label("Use group's saved credential profile");
+    inherit_credential.set_active(original.inherit_credential);
+    inherit_credential.set_sensitive(original.inherit_connection);
+    grid.attach(&inherit_credential, 0, 25, 2, 1);
+    let ic = inherit_credential.clone();
+    inherit_connection.connect_toggled(move |c| {
+        ic.set_sensitive(c.is_active());
+        if !c.is_active() {
+            ic.set_active(false);
+        }
+    });
     let secret = gtk::PasswordEntry::builder()
         .show_peek_icon(true)
         .placeholder_text("Set / replace credential in Secret Service")
         .build();
+    secret.set_widget_name("rdp-password");
     grid.attach(&secret, 1, 19, 1, 1);
     let actions = gtk::Box::new(gtk::Orientation::Horizontal, 4);
     grid.attach(&actions, 1, 20, 1, 1);
@@ -1577,18 +1738,175 @@ fn editor(button: &gtk::Button, store: Rc<RefCell<Store>>, id: Option<String>, s
         "Endpoint ID is stable. Share a machine identity to add another endpoint. SSH verifies host keys; unknown keys prompt in the terminal. Gateway routing is not yet implemented.",
     ));
     info.set_wrap(true);
+    info.set_widget_name("profile-credential-status");
     grid.attach(&info, 0, 21, 2, 1);
+    let rdp_mode = gtk::DropDown::from_strings(&[
+        "Standard / Windows RDP",
+        "GNOME Remote Login",
+        "GNOME Desktop Sharing",
+    ]);
+    rdp_mode.set_widget_name("rdp-connection-mode");
+    rdp_mode.set_sensitive(original.protocol == "RDP");
+    rdp_mode.set_selected(match original.preferences.rdp_mode.as_str() {
+        "gnome-remote-login" => 1,
+        "gnome-desktop-sharing" => 2,
+        _ => 0,
+    });
+    grid.attach(&gtk::Label::new(Some("RDP connection mode")), 0, 26, 1, 1);
+    grid.attach(&rdp_mode, 1, 26, 1, 1);
+    let service_heading = gtk::Label::new(Some("RDP Service Login"));
+    grid.attach(&service_heading, 0, 27, 2, 1);
+    let gnome = gtk::Box::new(gtk::Orientation::Vertical, 6);
+    gnome.append(&gtk::Label::new(Some(
+        "GNOME User Login — separate GDM credentials",
+    )));
+    let gnome_user = gtk::Entry::builder()
+        .text(&original.preferences.gnome_username)
+        .placeholder_text("Linux username at GDM")
+        .build();
+    gnome_user.set_widget_name("gnome-username");
+    let gnome_ref = gtk::Entry::builder()
+        .text(if original.preferences.gnome_secret_reference.is_empty() {
+            format!("{}.gnome", original.id)
+        } else {
+            original.preferences.gnome_secret_reference.clone()
+        })
+        .placeholder_text("Separate Secret Service reference")
+        .build();
+    gnome_ref.set_widget_name("gnome-secret-reference");
+    let gnome_password = gtk::PasswordEntry::builder()
+        .show_peek_icon(true)
+        .placeholder_text("GNOME user password; stored only in Secret Service")
+        .build();
+    gnome_password.set_widget_name("gnome-password");
+    gnome.append(&gnome_user);
+    gnome.append(&gnome_ref);
+    gnome.append(&gnome_password);
+    let gnome_actions = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+    gnome.append(&gnome_actions);
+    for (label, forget) in [
+        ("Set / replace GNOME password", false),
+        ("Forget GNOME password", true),
+    ] {
+        let b = gtk::Button::with_label(label);
+        gnome_actions.append(&b);
+        let credentials_store = store.clone();
+        let (entry, reference, stage_one, info) = (
+            gnome_password.clone(),
+            gnome_ref.clone(),
+            fields[9].clone(),
+            info.clone(),
+        );
+        b.connect_clicked(move |b| {
+            let reference = reference.text().to_string();
+            if reference.is_empty()
+                || reference == stage_one.text()
+                || credentials_store
+                    .borrow()
+                    .items
+                    .iter()
+                    .any(|p| p.secret_reference == reference)
+            {
+                info.set_text("GNOME and RDP service credential references must be separate");
+                entry.set_text("");
+                return;
+            }
+            let value = if forget {
+                String::new()
+            } else {
+                entry.text().to_string()
+            };
+            entry.set_text("");
+            let (tx, rx) = std::sync::mpsc::sync_channel(1);
+            b.set_sensitive(false);
+            std::thread::spawn(move || {
+                let _ = tx.send(if forget {
+                    crate::credentials::forget(&reference)
+                } else {
+                    crate::credentials::set(&reference, value)
+                });
+            });
+            let (b, info) = (b.clone(), info.clone());
+            gtk::glib::timeout_add_local(std::time::Duration::from_millis(25), move || {
+                match rx.try_recv() {
+                    Ok(r) => {
+                        b.set_sensitive(true);
+                        info.set_text(
+                            r.err().as_deref().unwrap_or(
+                                "GNOME credential operation completed in Secret Service",
+                            ),
+                        );
+                        gtk::glib::ControlFlow::Break
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Empty) => gtk::glib::ControlFlow::Continue,
+                    Err(_) => {
+                        b.set_sensitive(true);
+                        info.set_text("Secret Service worker unavailable");
+                        gtk::glib::ControlFlow::Break
+                    }
+                }
+            });
+        });
+    }
+    grid.attach(&gnome, 0, 28, 2, 1);
+    gnome.set_visible(protocol.selected() == 0 && rdp_mode.selected() == 1);
+    service_heading.set_visible(true);
+    let (section, heading, proto) = (gnome.clone(), service_heading.clone(), protocol.clone());
+    rdp_mode.connect_selected_notify(move |mode| {
+        let enabled = proto.selected() == 0 && mode.selected() == 1;
+        section.set_visible(enabled);
+        heading.set_text(if proto.selected() == 1 {
+            "SSH Login"
+        } else if mode.selected() == 1 {
+            "RDP Service Login"
+        } else {
+            "RDP Login"
+        });
+    });
+    let (section, heading, mode) = (gnome.clone(), service_heading.clone(), rdp_mode.clone());
+    protocol.connect_selected_notify(move |proto| {
+        let enabled = proto.selected() == 0 && mode.selected() == 1;
+        section.set_visible(enabled);
+        heading.set_text(if proto.selected() == 1 {
+            "SSH Login"
+        } else if mode.selected() == 1 {
+            "RDP Service Login"
+        } else {
+            "RDP Login"
+        });
+        mode.set_sensitive(proto.selected() == 0);
+    });
     for (label, forget) in [
         ("Set / replace credential", false),
         ("Forget credential", true),
     ] {
         let b = gtk::Button::with_label(label);
         actions.append(&b);
-        let (entry, reference, info) = (secret.clone(), fields[9].clone(), info.clone());
+        let credentials_store = store.clone();
+        let (entry, reference, other, info) = (
+            secret.clone(),
+            fields[9].clone(),
+            gnome_ref.clone(),
+            info.clone(),
+        );
         b.connect_clicked(move |b| {
-            let value = entry.text().to_string();
+            let value = if forget {
+                String::new()
+            } else {
+                entry.text().to_string()
+            };
             entry.set_text("");
             let reference = reference.text().to_string();
+            if reference == other.text()
+                || credentials_store
+                    .borrow()
+                    .items
+                    .iter()
+                    .any(|p| p.preferences.gnome_secret_reference == reference)
+            {
+                info.set_text("GNOME and RDP service credential references must be separate");
+                return;
+            }
             let (tx, rx) = std::sync::mpsc::sync_channel(1);
             b.set_sensitive(false);
             std::thread::spawn(move || {
@@ -1620,6 +1938,35 @@ fn editor(button: &gtk::Button, store: Rc<RefCell<Store>>, id: Option<String>, s
             });
         });
     }
+    // Keep the two authentication stages in separate visible native sections.
+    let mut child = grid.first_child();
+    while let Some(w) = child {
+        child = w.next_sibling();
+        let (column, row, _, _) = grid.query_child(&w);
+        if column == 0 && matches!(row, 4 | 9) {
+            w.set_visible(false);
+        }
+    }
+    for widget in [
+        fields[4].upcast_ref::<gtk::Widget>(),
+        fields[9].upcast_ref(),
+        secret.upcast_ref(),
+        actions.upcast_ref(),
+        service_heading.upcast_ref(),
+    ] {
+        grid.remove(widget);
+    }
+    fields[4].set_widget_name("endpoint-username");
+    fields[9].set_widget_name("endpoint-secret-reference");
+    let service = gtk::Box::new(gtk::Orientation::Vertical, 6);
+    service.append(&service_heading);
+    service.append(&gtk::Label::new(Some("Username")));
+    service.append(&fields[4]);
+    service.append(&gtk::Label::new(Some("Saved Secret Service reference")));
+    service.append(&fields[9]);
+    service.append(&secret);
+    service.append(&actions);
+    grid.attach(&service, 0, 27, 2, 1);
     let identity_reference = gtk::Entry::builder()
         .text(&original.preferences.identity_secret_reference)
         .placeholder_text("Reference for this key's passphrase; leave empty for an unencrypted key")
@@ -1650,7 +1997,11 @@ fn editor(button: &gtk::Button, store: Rc<RefCell<Store>>, id: Option<String>, s
         let (entry, reference, info) =
             (key_secret.clone(), identity_reference.clone(), info.clone());
         button.connect_clicked(move |button| {
-            let value = entry.text().to_string();
+            let value = if forget {
+                String::new()
+            } else {
+                entry.text().to_string()
+            };
             entry.set_text("");
             let reference = reference.text().to_string();
             let (tx, rx) = std::sync::mpsc::sync_channel(1);
@@ -1691,13 +2042,13 @@ fn editor(button: &gtk::Button, store: Rc<RefCell<Store>>, id: Option<String>, s
             let(s,id,machine_id,st,parent)=(store.clone(),original.id.clone(),original.machine_id.clone(),status.clone(),d.clone());confirm.connect_response(move|c,r|{if r==gtk::ResponseType::Accept {let mut s=s.borrow_mut();let old=s.items.clone();s.items.retain(|p|p.id!=id&&(!machine||p.machine_id!=machine_id));if let Err(e)=s.save(){s.items=old;st.set_text(&e);}else{drop(s);st.set_text("Metadata deleted; previous library retained for Undo");refresh_widgets(parent.transient_for().as_ref());parent.close();}}c.close();});confirm.present();return;
         }
         if response!=gtk::ResponseType::Accept && response!=gtk::ResponseType::Other(1) && response!=gtk::ResponseType::Other(3){d.close();return;}
-        let mut p=original.clone();p.name=fields[0].text().into();p.group=fields[1].text().into();p.machine_id=fields[2].text().into();p.server=fields[3].text().into();p.username=fields[4].text().into();p.preferences.label=fields[5].text().into();p.preferences.network=fields[6].text().into();p.preferences.gateway=fields[7].text().into();p.tags=fields[8].text().split(',').map(str::trim).filter(|s|!s.is_empty()).map(str::to_owned).collect();p.secret_reference=fields[9].text().into();p.preferences.trust=fields[10].text().into();p.preferences.identity_file=fields[11].text().into();p.preferences.identity_secret_reference=identity_reference.text().into();p.preferences.known_hosts=fields[12].text().into();p.protocol=if protocol.selected()==1{"SSH"}else{"RDP"}.into();p.preferences.display=["fit","native","stretch","dynamic"][display.selected() as usize].into();p.preferences.clipboard=clipboard.selected();p.preferences.zoom=zoom.value();p.preferences.fullscreen=full.is_active();p.preferences.reconnect=retry.is_active();p.inherit=inherit.is_active();
-        if response==gtk::ResponseType::Other(1){p.id=ruwac_protocol::id("endpoint");p.machine_id=ruwac_protocol::id("machine");p.secret_reference=p.id.clone();p.name.push_str(" (copy)");}
-        if response==gtk::ResponseType::Other(3){p.name=original.name.clone();p.group=original.group.clone();p.id=ruwac_protocol::id("endpoint");p.secret_reference=p.id.clone();}
+        let mut p=original.clone();p.name=fields[0].text().into();p.group=fields[1].text().into();p.machine_id=fields[2].text().into();p.server=fields[3].text().into();p.username=fields[4].text().into();p.preferences.label=fields[5].text().into();p.preferences.network=fields[6].text().into();p.preferences.gateway=fields[7].text().into();p.tags=fields[8].text().split(',').map(str::trim).filter(|s|!s.is_empty()).map(str::to_owned).collect();p.secret_reference=fields[9].text().into();p.preferences.trust=fields[10].text().into();p.preferences.identity_file=fields[11].text().into();p.preferences.identity_secret_reference=identity_reference.text().into();p.preferences.known_hosts=fields[12].text().into();p.protocol=if protocol.selected()==1{"SSH"}else{"RDP"}.into();p.preferences.display=["fit","native","stretch","dynamic"][display.selected() as usize].into();p.preferences.clipboard=clipboard.selected();p.preferences.zoom=zoom.value();p.preferences.fullscreen=full.is_active();p.preferences.reconnect=retry.is_active();p.inherit=inherit.is_active();p.inherit_connection=inherit_connection.is_active();p.inherit_credential=inherit_credential.is_active();p.preferences.rdp_mode=["","gnome-remote-login","gnome-desktop-sharing"][rdp_mode.selected() as usize].into();p.preferences.gnome_username=gnome_user.text().into();p.preferences.gnome_secret_reference=if p.preferences.rdp_mode=="gnome-remote-login"||!original.preferences.gnome_secret_reference.is_empty(){gnome_ref.text().into()}else{String::new()};
+        if response==gtk::ResponseType::Other(1){p.id=ruwac_protocol::id("endpoint");p.machine_id=ruwac_protocol::id("machine");p.secret_reference=p.id.clone();if !p.preferences.gnome_secret_reference.is_empty(){p.preferences.gnome_secret_reference=format!("{}.gnome",p.id);}p.name.push_str(" (copy)");}
+        if response==gtk::ResponseType::Other(3){p.name=original.name.clone();p.group=original.group.clone();p.id=ruwac_protocol::id("endpoint");p.secret_reference=p.id.clone();if !p.preferences.gnome_secret_reference.is_empty(){p.preferences.gnome_secret_reference=format!("{}.gnome",p.id);}}
         if let Err(e)=p.validate(){info.set_text(&e);return;}
         let mut s=store.borrow_mut();let old=s.items.clone();
         if let Some(i)=s.items.iter().position(|x|x.id==p.id){for item in &mut s.items{if item.machine_id==p.machine_id{item.name=p.name.clone();item.group=p.group.clone();item.tags=p.tags.clone();}}s.items[i]=p;}else{if s.items.len()>=1000{info.set_text("Profile limit reached");return;}let new_machine=p.machine_id.clone();s.items.push(p);
-            if response==gtk::ResponseType::Other(1){for endpoint in old.iter().filter(|x|x.machine_id==original.machine_id&&x.id!=original.id){if s.items.len()>=1000{s.items=old.clone();info.set_text("Profile limit reached");return;}let mut copy=endpoint.clone();copy.id=ruwac_protocol::id("endpoint");copy.secret_reference=copy.id.clone();copy.machine_id=new_machine.clone();copy.name.push_str(" (copy)");s.items.push(copy);}}
+            if response==gtk::ResponseType::Other(1){for endpoint in old.iter().filter(|x|x.machine_id==original.machine_id&&x.id!=original.id){if s.items.len()>=1000{s.items=old.clone();info.set_text("Profile limit reached");return;}let mut copy=endpoint.clone();copy.id=ruwac_protocol::id("endpoint");copy.secret_reference=copy.id.clone();if !copy.preferences.gnome_secret_reference.is_empty(){copy.preferences.gnome_secret_reference=format!("{}.gnome",copy.id);}copy.machine_id=new_machine.clone();copy.name.push_str(" (copy)");s.items.push(copy);}}
         }
         if let Err(e)=s.save(){s.items=old;info.set_text(&e);return;}
         status.set_text("Machine metadata saved; existing tabs retain their connection settings");drop(s);refresh_widgets(parent.as_ref().map(|w|w.upcast_ref::<gtk::Widget>()));d.close();
@@ -1752,16 +2103,25 @@ fn group_editor(button: &gtk::Button, store: Rc<RefCell<Store>>, status: gtk::La
             .map(String::as_str)
             .collect::<Vec<_>>(),
     );
-    dialog.content_area().append(&choose);
+    let content = gtk::Box::new(gtk::Orientation::Vertical, 6);
+    let scroll = gtk::ScrolledWindow::builder()
+        .propagate_natural_height(true)
+        .max_content_height(500)
+        .min_content_height(200)
+        .child(&content)
+        .build();
+    dialog.content_area().append(&scroll);
+    choose.set_widget_name("group-choice");
+    content.append(&choose);
     let path = gtk::Entry::builder()
         .placeholder_text("Full group path e.g. BASING/CIFRA/AHACIC")
         .build();
-    dialog.content_area().append(&path);
+    path.set_widget_name("group-path");
+    content.append(&path);
     let mode = gtk::DropDown::from_strings(&["fit", "native", "stretch", "dynamic"]);
-    dialog
-        .content_area()
-        .append(&gtk::Label::new(Some("Inherited RDP display mode")));
-    dialog.content_area().append(&mode);
+    mode.set_widget_name("group-display");
+    content.append(&gtk::Label::new(Some("Inherited RDP display mode")));
+    content.append(&mode);
     let clip = gtk::DropDown::from_strings(&[
         "Bidirectional",
         "Local → remote",
@@ -1769,16 +2129,54 @@ fn group_editor(button: &gtk::Button, store: Rc<RefCell<Store>>, status: gtk::La
         "Manual",
         "Disabled",
     ]);
-    dialog
-        .content_area()
-        .append(&gtk::Label::new(Some("Inherited clipboard policy")));
-    dialog.content_area().append(&clip);
+    content.append(&gtk::Label::new(Some("Inherited clipboard policy")));
+    content.append(&clip);
+    let names = [
+        ("username", "Default username"),
+        ("network", "Network label"),
+        ("gateway", "Gateway (metadata only)"),
+        ("identity_file", "SSH key file"),
+        ("identity_secret_reference", "SSH key passphrase reference"),
+        ("known_hosts", "SSH known-hosts file"),
+        ("trust", "RDP CA file"),
+    ];
+    let mut connection_fields = Vec::new();
+    for (name, label) in names {
+        content.append(&gtk::Label::new(Some(label)));
+        let entry = gtk::Entry::new();
+        entry.set_widget_name(&format!("group-{name}"));
+        content.append(&entry);
+        connection_fields.push(entry);
+    }
+    let account_ids: Vec<_> = store.borrow().items.iter().map(|p| p.id.clone()).collect();
+    let account_names: Vec<_> = std::iter::once("No shared credential profile".to_string())
+        .chain(
+            store
+                .borrow()
+                .items
+                .iter()
+                .map(|p| format!("{} · {} · {}", p.name, p.username, p.id)),
+        )
+        .collect();
+    let account =
+        gtk::DropDown::from_strings(&account_names.iter().map(String::as_str).collect::<Vec<_>>());
+    account.set_widget_name("group-credential-profile");
+    content.append(&gtk::Label::new(Some(
+        "Credential profile (existing Secret Service reference)",
+    )));
+    content.append(&account);
+    clip.set_widget_name("group-clipboard");
     let info = gtk::Label::new(Some(
         "Rename/move updates group paths and keeps machine, endpoint and group identities. Explicit endpoint overrides remain unchanged.",
     ));
     info.set_wrap(true);
-    dialog.content_area().append(&info);
+    content.append(&info);
     let (s, p, m, c) = (store.clone(), path.clone(), mode.clone(), clip.clone());
+    let (cf, ac, ids) = (
+        connection_fields.clone(),
+        account.clone(),
+        account_ids.clone(),
+    );
     choose.connect_selected_notify(move |dropdown| {
         if let Some(g) = s
             .borrow()
@@ -1794,8 +2192,29 @@ fn group_editor(button: &gtk::Button, store: Rc<RefCell<Store>>, status: gtk::La
                     .unwrap_or(0) as u32,
             );
             c.set_selected(g.defaults.clipboard);
+            for (entry, value) in cf.iter().zip([
+                &g.username,
+                &g.defaults.network,
+                &g.defaults.gateway,
+                &g.defaults.identity_file,
+                &g.defaults.identity_secret_reference,
+                &g.defaults.known_hosts,
+                &g.defaults.trust,
+            ]) {
+                entry.set_text(value);
+            }
+            ac.set_selected(
+                ids.iter()
+                    .position(|id| id == &g.credential_profile)
+                    .map(|i| i + 1)
+                    .unwrap_or(0) as u32,
+            );
         } else {
             p.set_text("");
+            for entry in &cf {
+                entry.set_text("");
+            }
+            ac.set_selected(0);
         }
     });
     dialog.connect_response(move |d, r| {
@@ -1880,8 +2299,20 @@ fn group_editor(button: &gtk::Button, store: Rc<RefCell<Store>>, status: gtk::La
         let defaults = Preferences {
             display: ["fit", "native", "stretch", "dynamic"][mode.selected() as usize].into(),
             clipboard: clip.selected(),
+            network: connection_fields[1].text().into(),
+            gateway: connection_fields[2].text().into(),
+            identity_file: connection_fields[3].text().into(),
+            identity_secret_reference: connection_fields[4].text().into(),
+            known_hosts: connection_fields[5].text().into(),
+            trust: connection_fields[6].text().into(),
             ..Preferences::default()
         };
+        let username = connection_fields[0].text().to_string();
+        let credential_profile = account_ids
+            .get(account.selected().saturating_sub(1) as usize)
+            .filter(|_| account.selected() > 0)
+            .cloned()
+            .unwrap_or_default();
         if r == gtk::ResponseType::Other(3) && index > 0 {
             let original = s.groups[(index - 1) as usize].path.clone();
             if path == original {
@@ -1915,6 +2346,8 @@ fn group_editor(button: &gtk::Button, store: Rc<RefCell<Store>>, status: gtk::La
                 id: ruwac_protocol::id("group"),
                 path,
                 defaults,
+                username,
+                credential_profile,
             });
         } else {
             let prior = s.groups[(index - 1) as usize].path.clone();
@@ -1929,6 +2362,8 @@ fn group_editor(button: &gtk::Button, store: Rc<RefCell<Store>>, status: gtk::La
                 }
             }
             s.groups[(index - 1) as usize].defaults = defaults;
+            s.groups[(index - 1) as usize].username = username;
+            s.groups[(index - 1) as usize].credential_profile = credential_profile;
         }
         if let Err(e) = s.save() {
             s.groups = old;
@@ -1983,12 +2418,33 @@ pub fn fixture_editor(root: &gtk::Box, q: &serde_json::Value) -> serde_json::Val
         "Machine / connection properties"
     };
     let mut applied = false;
+    let mut credential_status = None;
     for w in gtk::Window::list_toplevels() {
         if let Ok(d) = w.downcast::<gtk::Dialog>() {
             if d.title().as_deref() != Some(title) {
                 continue;
             }
             fn update(w: &gtk::Widget, q: &serde_json::Value) {
+                if let Some(e) = w.downcast_ref::<gtk::Entry>() {
+                    let row = match w.widget_name().as_str() {
+                        "endpoint-username" => Some("4"),
+                        "endpoint-secret-reference" => Some("9"),
+                        _ => None,
+                    };
+                    if let Some(value) = row.and_then(|r| q["fields"][r].as_str()) {
+                        e.set_text(value);
+                    }
+                }
+                if let Some(e) = w.downcast_ref::<gtk::Entry>() {
+                    if let Some(v) = q["named"][w.widget_name().as_str()].as_str() {
+                        e.set_text(v);
+                    }
+                }
+                if let Some(e) = w.downcast_ref::<gtk::PasswordEntry>() {
+                    if let Some(v) = q["named"][w.widget_name().as_str()].as_str() {
+                        e.set_text(v);
+                    }
+                }
                 if w.widget_name() == "ssh-key-passphrase" {
                     if let Some(entry) = w.downcast_ref::<gtk::PasswordEntry>() {
                         if let Some(secret) = q["key_passphrase"].as_str() {
@@ -2006,6 +2462,11 @@ pub fn fixture_editor(root: &gtk::Box, q: &serde_json::Value) -> serde_json::Val
                                 e.set_text(value);
                             }
                         }
+                        if let Some(c) = child.downcast_ref::<gtk::CheckButton>() {
+                            if let Some(value) = q["fields"][row.to_string()].as_bool() {
+                                c.set_active(value);
+                            }
+                        }
                         if let Some(d) = child.downcast_ref::<gtk::DropDown>() {
                             if let Some(value) = q["fields"][row.to_string()].as_u64() {
                                 d.set_selected(value as u32);
@@ -2020,30 +2481,85 @@ pub fn fixture_editor(root: &gtk::Box, q: &serde_json::Value) -> serde_json::Val
                 }
             }
             update(d.upcast_ref(), q);
+            fn status(w: &gtk::Widget) -> Option<String> {
+                if w.widget_name() == "profile-credential-status" {
+                    return w.downcast_ref::<gtk::Label>().map(|l| l.text().to_string());
+                }
+                let mut child = w.first_child();
+                while let Some(c) = child {
+                    child = c.next_sibling();
+                    if let Some(s) = status(&c) {
+                        return Some(s);
+                    }
+                }
+                None
+            }
+            credential_status = status(d.upcast_ref());
             if let Some(action) = q["credential_action"].as_str() {
                 if let Some(button) = find(d.upcast_ref(), action) {
                     button.emit_clicked();
                 }
             }
             if title.starts_with("Network") {
-                let mut child = d.content_area().first_child();
-                let mut dropdown = 0;
-                while let Some(w) = child {
-                    child = w.next_sibling();
+                fn group_fields(w: &gtk::Widget, q: &serde_json::Value) {
+                    let name = w.widget_name();
                     if let Some(e) = w.downcast_ref::<gtk::Entry>() {
-                        if let Some(value) = q["path"].as_str() {
+                        let value = if name == "group-path" {
+                            q["path"].as_str()
+                        } else {
+                            q["defaults"][name.strip_prefix("group-").unwrap_or("")].as_str()
+                        };
+                        if let Some(value) = value {
                             e.set_text(value);
                         }
                     }
                     if let Some(d) = w.downcast_ref::<gtk::DropDown>() {
-                        if dropdown == 0 {
-                            if let Some(index) = q["index"].as_u64() {
-                                d.set_selected(index as u32);
+                        if name == "group-choice" {
+                            if let Some(i) = q["index"].as_u64() {
+                                d.set_selected(i as u32);
                             }
                         }
-                        dropdown += 1;
+                        if name == "group-clipboard" {
+                            if let Some(i) = q["defaults"]["clipboard"].as_u64() {
+                                d.set_selected(i as u32);
+                            }
+                        }
+                        if name == "group-display" {
+                            if let Some(mode) = q["defaults"]["display"].as_str() {
+                                if let Some(i) = ["fit", "native", "stretch", "dynamic"]
+                                    .iter()
+                                    .position(|v| *v == mode)
+                                {
+                                    d.set_selected(i as u32);
+                                }
+                            }
+                        }
+                        if name == "group-credential-profile" {
+                            if let Some(id) = q["credential_profile"].as_str() {
+                                if let Some(model) = d.model() {
+                                    for i in 0..model.n_items() {
+                                        if model
+                                            .item(i)
+                                            .and_then(|o| o.downcast::<gtk::StringObject>().ok())
+                                            .is_some_and(|o| {
+                                                o.string().ends_with(&format!(" · {id}"))
+                                            })
+                                        {
+                                            d.set_selected(i);
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    let mut child = w.first_child();
+                    while let Some(c) = child {
+                        child = c.next_sibling();
+                        group_fields(&c, q);
                     }
                 }
+                group_fields(d.content_area().upcast_ref(), q);
             }
             let response = match q["response"].as_str().unwrap_or("save") {
                 "cancel" => gtk::ResponseType::Cancel,
@@ -2069,7 +2585,11 @@ pub fn fixture_editor(root: &gtk::Box, q: &serde_json::Value) -> serde_json::Val
         }
     }
     let s = Store::load();
-    serde_json::json!({"applied":applied,"items":s.items,"groups":s.groups,"error":s.error})
+    let effective = q["effective"]
+        .as_str()
+        .and_then(|id| s.items.iter().find(|p| p.id == id))
+        .map(|p| resolve(p, &s.groups, &s.items));
+    serde_json::json!({"applied":applied,"credential_status":credential_status,"items":s.items,"groups":s.groups,"error":s.error,"effective":effective})
 }
 #[cfg(test)]
 mod workspace_tests {
@@ -2117,6 +2637,8 @@ mod workspace_tests {
             machine_id: String::new(),
             preferences: Preferences::default(),
             inherit: false,
+            inherit_credential: false,
+            inherit_connection: false,
             name: "server".into(),
             group: "network".into(),
             protocol: "RDP".into(),
@@ -2274,5 +2796,238 @@ mod merge_tests {
         bad.server = "-bad".into();
         assert!(merge_metadata(&current, &bad).is_err());
         assert_eq!(current.name, "Old");
+    }
+}
+
+#[cfg(test)]
+mod inherited_tests {
+    use super::*;
+    fn profile() -> Profile {
+        serde_json::from_value(json!({"id":"endpoint_target","machine_id":"machine_target","name":"Target","group":"Network/Child","protocol":"SSH","server":"localhost","username":"endpoint-user","secret_reference":"endpoint-secret-reference","favorite":false,"last_used":0,"tags":[]})).unwrap()
+    }
+    fn group(path: &str) -> Group {
+        Group {
+            id: format!("group_{}", path.replace('/', "_")),
+            path: path.into(),
+            defaults: Preferences::default(),
+            username: String::new(),
+            credential_profile: String::new(),
+        }
+    }
+    #[test]
+    fn ancestors_fill_empty_fields_with_nearest_values_and_path_boundaries() {
+        let mut p = profile();
+        p.inherit = true;
+        p.inherit_connection = true;
+        p.username.clear();
+        let mut parent = group("Network");
+        parent.username = "parent-user".into();
+        parent.defaults.network = "parent-network".into();
+        let mut child = group("Network/Child");
+        child.username = "child-user".into();
+        child.defaults.display = "stretch".into();
+        child.defaults.clipboard = 3;
+        let mut neighbor = group("Network/Child-other");
+        neighbor.username = "wrong-user".into();
+        let result = resolve(&p, &[neighbor, child, parent], &[]).unwrap();
+        assert_eq!(result.username, "child-user");
+        assert_eq!(result.preferences.network, "parent-network");
+        assert_eq!(result.preferences.display, "stretch");
+        assert_eq!(result.preferences.clipboard, 3);
+    }
+    #[test]
+    fn endpoint_overrides_and_key_passphrase_pairs_are_preserved() {
+        let mut p = profile();
+        p.inherit_connection = true;
+        p.preferences.identity_file = "endpoint-key".into();
+        p.preferences.known_hosts = "endpoint-known".into();
+        p.preferences.trust = "endpoint-ca".into();
+        p.preferences.network = "endpoint-network".into();
+        let original = serde_json::to_value(&p).unwrap();
+        let mut g = group("Network");
+        g.username = "group-user".into();
+        g.defaults.identity_file = "group-key".into();
+        g.defaults.identity_secret_reference = "group-passphrase-reference".into();
+        g.defaults.known_hosts = "group-known".into();
+        g.defaults.trust = "group-ca".into();
+        g.defaults.network = "group-network".into();
+        let result = resolve(&p, &[g], &[]).unwrap();
+        assert_eq!(result.username, p.username);
+        assert_eq!(result.preferences.identity_file, "endpoint-key");
+        assert!(result.preferences.identity_secret_reference.is_empty());
+        assert_eq!(result.preferences.known_hosts, "endpoint-known");
+        assert_eq!(result.preferences.trust, "endpoint-ca");
+        assert_eq!(result.preferences.network, "endpoint-network");
+        assert_eq!(serde_json::to_value(&p).unwrap(), original);
+    }
+    #[test]
+    fn inherited_ssh_key_and_reference_are_selected_as_one_pair() {
+        let mut p = profile();
+        p.inherit_connection = true;
+        let mut parent = group("Network");
+        parent.defaults.identity_file = "parent-key".into();
+        parent.defaults.identity_secret_reference = "parent-reference".into();
+        let mut child = group("Network/Child");
+        child.defaults.identity_file = "child-key".into();
+        let result = resolve(&p, &[parent, child], &[]).unwrap();
+        assert_eq!(result.preferences.identity_file, "child-key");
+        assert!(result.preferences.identity_secret_reference.is_empty());
+    }
+    #[test]
+    fn shared_account_uses_only_existing_reference_without_mutating_metadata() {
+        let mut p = profile();
+        p.username.clear();
+        p.inherit_connection = true;
+        p.inherit_credential = true;
+        let original = serde_json::to_value(&p).unwrap();
+        let mut account = profile();
+        account.id = "endpoint_account".into();
+        account.username = "account-user".into();
+        account.secret_reference = "generated-shared-reference".into();
+        let mut g = group("Network");
+        g.credential_profile = account.id.clone();
+        let result = resolve(&p, &[g], &[account]).unwrap();
+        assert_eq!(result.username, "account-user");
+        assert_eq!(result.secret_reference, "generated-shared-reference");
+        assert_eq!(serde_json::to_value(&p).unwrap(), original);
+    }
+    #[test]
+    fn missing_account_and_disabled_inheritance_refuse_credential_fallback() {
+        let mut p = profile();
+        p.inherit_connection = true;
+        p.inherit_credential = true;
+        let mut g = group("Network");
+        g.credential_profile = "removed-account".into();
+        assert!(resolve(&p, &[g], &[]).is_err());
+        p.inherit_connection = false;
+        assert!(resolve(&p, &[], &[]).is_err());
+    }
+    #[test]
+    fn disabled_inheritance_keeps_existing_connection_settings() {
+        let p = profile();
+        let mut g = group("Network");
+        g.username = "group-user".into();
+        g.defaults.trust = "group-ca".into();
+        g.defaults.display = "native".into();
+        assert_eq!(
+            serde_json::to_value(resolve(&p, &[g], &[]).unwrap()).unwrap(),
+            serde_json::to_value(p).unwrap()
+        );
+    }
+    #[test]
+    fn alias_network_and_protocol_search_use_unicode_lowercase() {
+        let mut p = profile();
+        p.preferences.label = "WínAlias".into();
+        p.preferences.network = "BASING/Živjo".into();
+        assert!(p.matches("WÍNALIAS"));
+        assert!(p.matches("živjo"));
+        assert!(p.matches("ssh"));
+        assert!(!p.matches("%"));
+    }
+}
+
+/// Revalidate a saved endpoint before an explicit sensitive input operation.
+pub(crate) fn assist_profile_current(expected: &Profile) -> bool {
+    let store = Store::load();
+    store
+        .items
+        .iter()
+        .find(|p| p.id == expected.id)
+        .and_then(|p| resolve(p, &store.groups, &store.items).ok())
+        .is_some_and(|p| {
+            p.server == expected.server
+                && p.username == expected.username
+                && p.secret_reference == expected.secret_reference
+                && p.preferences.rdp_mode == expected.preferences.rdp_mode
+                && p.preferences.gnome_username == expected.preferences.gnome_username
+                && p.preferences.gnome_secret_reference
+                    == expected.preferences.gnome_secret_reference
+                && p.preferences.trust == expected.preferences.trust
+        })
+}
+
+#[cfg(test)]
+mod dual_login_tests {
+    use super::*;
+    fn legacy() -> Profile {
+        serde_json::from_value(json!({"id":"endpoint_dual","machine_id":"machine_dual","name":"Fedora","group":"","protocol":"RDP","server":"localhost:3389","username":"denis","secret_reference":"service-ref","favorite":false,"last_used":0,"tags":[]})).unwrap()
+    }
+    #[test]
+    fn legacy_windows_roundtrip_has_no_second_credential() {
+        let p = legacy();
+        p.validate().unwrap();
+        let v = serde_json::to_value(p).unwrap();
+        assert!(v["preferences"].get("rdp_mode").is_none());
+        assert!(v["preferences"].get("gnome_secret_reference").is_none());
+    }
+    #[test]
+    fn independent_gnome_credentials_roundtrip() {
+        let mut p = legacy();
+        p.preferences.rdp_mode = "gnome-remote-login".into();
+        p.preferences.gnome_username = "oclaw".into();
+        p.preferences.gnome_secret_reference = "endpoint_dual.gnome".into();
+        p.validate().unwrap();
+        let copy: Profile = serde_json::from_str(&serde_json::to_string(&p).unwrap()).unwrap();
+        assert_eq!(copy.username, "denis");
+        assert_eq!(copy.secret_reference, "service-ref");
+        assert_eq!(copy.preferences.gnome_username, "oclaw");
+        assert_eq!(
+            copy.preferences.gnome_secret_reference,
+            "endpoint_dual.gnome"
+        );
+        assert_eq!(copy.id, p.id);
+    }
+    #[test]
+    fn collisions_invalid_modes_and_control_characters_rejected() {
+        let mut p = legacy();
+        p.preferences.rdp_mode = "autologin".into();
+        assert!(p.validate().is_err());
+        p.preferences.rdp_mode = "gnome-remote-login".into();
+        p.preferences.gnome_secret_reference = p.secret_reference.clone();
+        assert!(p.validate().is_err());
+        p.preferences.gnome_secret_reference = "endpoint_dual.gnome".into();
+        p.preferences.gnome_username = "user\npassword".into();
+        assert!(p.validate().is_err());
+    }
+    #[test]
+    fn remmina_merge_keeps_second_stage_and_identity() {
+        let mut p = legacy();
+        p.preferences.rdp_mode = "gnome-remote-login".into();
+        p.preferences.gnome_username = "oclaw".into();
+        p.preferences.gnome_secret_reference = "endpoint_dual.gnome".into();
+        let mut imported = legacy();
+        imported.username = "different-service".into();
+        let merged = merge_metadata(&p, &imported).unwrap();
+        assert_eq!(merged.preferences.gnome_username, "oclaw");
+        assert_eq!(
+            merged.preferences.gnome_secret_reference,
+            p.preferences.gnome_secret_reference
+        );
+        assert_eq!(merged.secret_reference, p.secret_reference);
+        assert_eq!(merged.id, p.id);
+    }
+}
+
+#[cfg(test)]
+mod cross_stage_library_tests {
+    use super::*;
+    #[test]
+    fn second_stage_cannot_alias_another_endpoints_service() {
+        let first:Profile=serde_json::from_value(json!({"id":"endpoint_one","machine_id":"machine_one","name":"one","group":"","protocol":"RDP","server":"localhost","username":"service","secret_reference":"shared-service","favorite":false,"last_used":0,"tags":[]})).unwrap();
+        let mut second = first.clone();
+        second.id = "endpoint_two".into();
+        second.secret_reference = "other-service".into();
+        second.preferences.gnome_secret_reference = "shared-service".into();
+        assert!(
+            parse_library(
+                &serde_json::to_vec(&Library {
+                    schema: 1,
+                    items: vec![first, second],
+                    groups: vec![]
+                })
+                .unwrap()
+            )
+            .is_err()
+        );
     }
 }

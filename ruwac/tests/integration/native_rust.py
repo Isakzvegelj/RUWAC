@@ -108,7 +108,13 @@ try:
   out=root/'native-vim.txt';w=launch([vim,'-u','NONE','-i','NONE','-n',str(out)]);time.sleep(.3)
   command('gui','switch',view=0,pane=w['pane'],text='iNative Vim ž界')
   command('gui','key',key='Escape');command('gui','switch',view=0,pane=w['pane'],text=':wq');command('gui','key',key='Return');spike.eventually(lambda:out.exists() and out.read_text()=='Native Vim ž界\n');details['vim']='Exact Unicode file written through native handlers'
-  file=root/'native-less.txt';file.write_text(''.join(f'NATIVE_LESS_{n:05}\n' for n in range(5000)));w=launch([less,'-R',str(file)]);time.sleep(.3);command('gui','key',key='G');spike.eventually(lambda:'NATIVE_LESS_04999' in rpc('pane.capture',{'pane':w['pane']})['text']);command('gui','key',key='q');details['less']='Native G scroll and q exit'
+  file=root/'native-less.txt';file.write_text(''.join(f'NATIVE_LESS_{n:05}\n' for n in range(5000)));w=launch([less,'-R',str(file)])
+  spike.eventually(lambda:'NATIVE_LESS_00000' in rpc('pane.capture',{'pane':w['pane']})['text'],10)
+  command('gui','key',key='G')
+  try:spike.eventually(lambda:'NATIVE_LESS_04999' in rpc('pane.capture',{'pane':w['pane']})['text'],10)
+  except AssertionError:
+   (root/'less-input-diagnostic.json').write_text(json.dumps({'frame':rpc('pane.capture',{'pane':w['pane']}),'gui':command('gui','inspect')},indent=2));command('gui','command',text='select 0');raise
+  command('gui','key',key='q');details['less']='Native G scroll and q exit after actual first-frame readiness'
   w=launch([htop]);time.sleep(.5);assert rpc('pane.capture',{'pane':w['pane']})['text'].strip();command('gui','key',key='q');spike.eventually(lambda:next(p['ended'] for p in rpc('pane.list',{'session':one['session']}) if p['id']==w['pane']));details['htop']='Native q exited daemon-owned process'
   command('gui','command',text='select 0');spike.eventually(lambda:command('gui','inspect')['target'] in targets[:2]);command('gui','switch',view=0,pane=targets[0]);return {'apps':details,'input':'compiled GTK callbacks; physical typing untested'}
  case('GUI-native-applications',native_applications)

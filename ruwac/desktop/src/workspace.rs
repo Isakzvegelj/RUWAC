@@ -8,6 +8,15 @@ use std::{
     path::{Path, PathBuf},
 };
 
+static WINDOW: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+pub fn configure_window(id: &str) -> io::Result<()> {
+    if !id.is_empty() && !ruwac_protocol::valid_id(id, "window") {
+        return Err(io::Error::other("invalid window identity"));
+    }
+    WINDOW
+        .set(id.into())
+        .map_err(|_| io::Error::other("window identity already configured"))
+}
 #[derive(Default, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Workspace {
@@ -233,6 +242,19 @@ fn directory() -> io::Result<PathBuf> {
     let m = fs::symlink_metadata(&p)?;
     if !m.is_dir() || m.uid() != unsafe { libc::geteuid() } || m.mode() & 0o777 != 0o700 {
         return Err(io::Error::other("unsafe workspace directory"));
+    }
+    if let Some(id) = WINDOW.get().filter(|id| !id.is_empty()) {
+        let windows = p.join("windows");
+        for child in [&windows, &windows.join(id)] {
+            if !child.exists() {
+                fs::DirBuilder::new().mode(0o700).create(child)?;
+            }
+            let m = fs::symlink_metadata(child)?;
+            if !m.is_dir() || m.uid() != unsafe { libc::geteuid() } || m.mode() & 0o777 != 0o700 {
+                return Err(io::Error::other("unsafe window workspace directory"));
+            }
+        }
+        return Ok(windows.join(id));
     }
     Ok(p)
 }

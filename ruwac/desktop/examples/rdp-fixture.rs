@@ -16,6 +16,21 @@ use std::{
     sync::Arc,
     time::Duration,
 };
+/// Receipt for generated loopback input only; never stores typed text.
+struct InputReceipt {
+    path: PathBuf,
+    units: Vec<u16>,
+}
+impl RdpServerInputHandler for InputReceipt {
+    fn keyboard(&mut self, event: KeyboardEvent) {
+        if let KeyboardEvent::UnicodePressed(u) = event {
+            self.units.push(u);
+            let bytes: Vec<u8> = self.units.iter().flat_map(|v| v.to_le_bytes()).collect();
+            let _=std::fs::write(&self.path,serde_json::to_vec(&json!({"units":self.units.len(),"sha256":format!("{:x}",Sha256::digest(&bytes))})).unwrap());
+        }
+    }
+    fn mouse(&mut self, _: MouseEvent) {}
+}
 struct Display {
     size: Arc<std::sync::Mutex<DesktopSize>>,
     tx: tokio::sync::mpsc::Sender<DesktopSize>,
@@ -138,7 +153,10 @@ async fn run(dir: PathBuf) -> anyhow::Result<()> {
         let mut server = RdpServer::builder()
             .with_addr(([127, 0, 0, 1], port))
             .with_hybrid(acceptor, identity.pub_key)
-            .with_no_input()
+            .with_input_handler(InputReceipt {
+                path: dir.join(format!("input-{port}.json")),
+                units: Vec::new(),
+            })
             .with_display_handler(Display::new())
             .with_bitmap_codecs(ironrdp::pdu::rdp::capability_sets::BitmapCodecs(Vec::new()))
             .with_cliprdr_factory(Some(Box::new(Factory(bridge.clone()))))

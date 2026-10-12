@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## v0.2.0 — 2026-10-12 — Stable source release
+
+- Add separate GNOME Remote Login credentials and explicitly confirmed GDM field input, preserving Windows authentication and Secret Service separation.
+- Add independent desktop windows, a hideable overlay sidebar with persisted width/pinning, and RDP resize jitter suppression.
+- Load the user login shell for new terminals, including when using an older persistent daemon; preserve explicit commands and active sessions.
+- Add connection-stage diagnostics and repeat isolated GTK, Secret Service, authenticated RDP and headless regressions; real GNOME GDM and distribution/security qualification remain open.
+
 ## v0.1.29 — 2026-10-12 — Prerelease
 
 - Add a private transactional SQLite desktop machine inventory with revision guards, indexed metadata, legacy JSON compatibility and interrupted-publication recovery.

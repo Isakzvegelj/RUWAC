@@ -260,11 +260,7 @@ fn num(v: &Value, k: &str, default: u64, min: u64, max: u64) -> Result<u16> {
 }
 fn argv(v: &Value) -> Result<Vec<String>> {
     match v.get("argv") {
-        None => Ok(vec![
-            "/bin/bash".into(),
-            "--noprofile".into(),
-            "--norc".into(),
-        ]),
+        None => ruwac_pty::shell::default_argv().map_err(|e| Error::new("INVALID_SHELL", e)),
         Some(Value::Array(a)) if !a.is_empty() && a.len() <= 64 => a
             .iter()
             .map(|x| {

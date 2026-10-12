@@ -58,7 +58,7 @@ try:
     eventually(lambda: sock.exists())
     with Client(sock) as c:
         session = c.call('session.create', {'name': 'Sidebar regression', 'argv': ['/bin/sh', '-c', 'sleep 120']})
-    start([a.gui, '--socket', str(sock), '--session', session['session'], '--fixture-dir', str(root)], 'desktop')
+    start([a.gui, '--show-machines', '--socket', str(sock), '--session', session['session'], '--fixture-dir', str(root)], 'desktop')
     eventually(lambda: command('inspect'), 15)
     db = folder / 'machines.sqlite3'
     assert inspect()['rows'] == 0
@@ -80,7 +80,7 @@ try:
     def restart():
         gui = children.pop()
         gui[0].terminate(); gui[0].wait(timeout=6); gui[1].close()
-        start([a.gui,'--socket',str(sock),'--session',session['session'],'--fixture-dir',str(root)], 'desktop-restart')
+        start([a.gui,'--show-machines','--socket',str(sock),'--session',session['session'],'--fixture-dir',str(root)], 'desktop-restart')
         eventually(lambda: command('inspect'),15)
     # Malformed legacy data must retain the canonical inventory visibly, while
     # actual native editor callbacks refuse writes and preserve both files.
@@ -116,7 +116,7 @@ try:
     db.unlink()
     with sqlite3.connect(db) as c: c.execute('CREATE TABLE foreign_data(value TEXT)'); c.execute("INSERT INTO foreign_data VALUES('preserve')")
     db.chmod(0o600); before = db.read_bytes(); legacy = store.read_bytes()
-    start([a.gui,'--socket',str(sock),'--session',session['session'],'--fixture-dir',str(root)],'desktop-foreign')
+    start([a.gui,'--show-machines','--socket',str(sock),'--session',session['session'],'--fixture-dir',str(root)],'desktop-foreign')
     eventually(lambda: command('inspect'),15)
     assert inspect()['rows'] == 1
     changed = command('profile-editor',operation='edit',fields={'0':'Must not overwrite'})

@@ -30,7 +30,7 @@ def reviewed(target):preview(target);r=control(operation='review');assert r['rev
 try:
  daemon=subprocess.Popen([a.binary,'--socket',str(sock),'serve'],env=env,stdout=(root/'daemon.log').open('wb'),stderr=subprocess.STDOUT);eventually(lambda:sock.exists())
  with Client(sock)as c:session=c.call('session.create',{'name':'Library acceptance','argv':['/bin/sh','-c','sleep 300']})
- gui=subprocess.Popen([a.gui,'--socket',str(sock),'--session',session['session'],'--fixture-dir',str(root)],env=env,stdout=(root/'gui.log').open('wb'),stderr=subprocess.STDOUT)
+ gui=subprocess.Popen([a.gui,'--show-machines','--socket',str(sock),'--session',session['session'],'--fixture-dir',str(root)],env=env,stdout=(root/'gui.log').open('wb'),stderr=subprocess.STDOUT)
  eventually(lambda:command('inspect'),15)
  state=eventually(lambda:(r if (r:=control())['list_height']>0 else None),10)
  assert not state['import_expanded']and not state['tools_expanded'],state
@@ -66,7 +66,7 @@ try:
  preview(target2);command('profiles',search='Load038',open=True);r=control(operation='review');assert r['review_text']is None and 'active connection'in r['status'];active=store.read_bytes();assert active
  results.append({'id':'LIBRARY-MERGE-ACTIVE-ENDPOINT','status':'PASS','open_connection_profile_protected':True,'no_external_login_claim':True})
  command('workspace-close');gui.wait(timeout=10)
- gui=subprocess.Popen([a.gui,'--socket',str(sock),'--session',session['session'],'--fixture-dir',str(root)],env=env,stdout=(root/'restarted.log').open('wb'),stderr=subprocess.STDOUT)
+ gui=subprocess.Popen([a.gui,'--show-machines','--socket',str(sock),'--session',session['session'],'--fixture-dir',str(root)],env=env,stdout=(root/'restarted.log').open('wb'),stderr=subprocess.STDOUT)
  eventually(lambda:command('inspect'),15);assert snapshot()[target]['server']=='localhost:2222'
  results.append({'id':'LIBRARY-MERGE-RESTART','status':'PASS','persisted_imported_endpoint':True})
 finally:

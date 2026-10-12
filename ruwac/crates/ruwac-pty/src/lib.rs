@@ -1,3 +1,4 @@
+pub mod shell;
 use portable_pty::{Child, CommandBuilder, MasterPty, PtySize};
 use std::{
     io::{Read, Write},

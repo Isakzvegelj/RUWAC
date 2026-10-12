@@ -1,9 +1,11 @@
 # RUWAC product completion audit
 
-The full product is not yet complete. A runnable source prerelease and isolated fixture passes are evidence of implementation, not proof of Windows/Fedora interoperability or production desktop acceptance. This audit retains the full scope: persistent terminal, native mixed workspace, remote desktops, unified clipboard, SSH/files, agent cockpit, automation and Fedora distribution.
+The full product is not yet complete. The stable source lane contains operational compiled code and exact regression evidence; it does not qualify the entire product or a Fedora binary distribution. Authorized Windows authentication/framebuffer decoding passes; Fedora GNOME requires an unimplemented RDP Graphics Pipeline. Physical input, dependency security and the remaining terminal, files, agents, automation and distribution scope remain open.
 
 | Requirement | Current evidence | Status / remaining work |
 |---|---|---|
+| D-00 independent windows | Actual GTK/shared-daemon window close and independent private layouts | PASS bounded native fixture; first window owns default GUI automation endpoint; RDP transport transfer between processes remains |
+| RDP-06 GNOME dual login | Separate service/GDM metadata and Secret Service operations; 14 native groups | Storage and confirmed authenticated loopback field input PASS; real GDM, wrong GDM password and unattended second-stage login BLOCKED by missing Graphics Pipeline |
 | T-01 Screen commands | Nine real-PTY copy/chooser/prompt/configuration and 2–5 RUWAC nesting groups | PARTIAL: implemented bounded headless interaction; mixed GNU Screen/tmux 2–5 layers pass in scoped configurations; Screen arbitrary-control paste and physical input qualification remain |
 | T-02 startup input | 100 adversarial probes in headless suite | PASS fixture |
 | T-03 multiple PTYs and load | Independent PTYs, layout suite, actual 128-pane process/wire/native paging fixture | PASS bounded capacity; maximum-load terminal/checkpoint performance remains separate |
@@ -21,16 +23,16 @@ The full product is not yet complete. A runnable source prerelease and isolated 
 | A-05 capture/wait/events | Bounded capture, event subscription, revision and wait tests | PASS |
 | A-06 socket/backpressure | Owned daemon socket, malformed frames, concurrency limits | PARTIAL: same-UID peer verification and byte-bounded process metadata/all-page native guards validated; broader response bounds and fuzz/soak remain |
 | A-07 GUI control | Explicit unavailable response and independent headless graph | PARTIAL: independent permission-scoped focus/RDP lifecycle over actual SSH validated; GUI events and remote input remain |
-| R-01 Windows | Authenticated loopback is implemented | BLOCKED: authorized Windows endpoint identified; credential/trust qualification pending |
-| R-02 Fedora GNOME | Authenticated loopback is implemented | BLOCKED: authorized GNOME endpoint identified; credential/certificate identity pending |
+| R-01 Windows | Authorized Windows 11 authentication and real 1280×720 framebuffer decoding | PASS bounded real-host login/frame; external clipboard, display/input and broader interoperability remain |
+| R-02 Fedora GNOME | SSH-attested TLS and patched connect-time bandwidth exchange reach capabilities | BLOCKED: real GNOME server requires unnegotiated RDP Graphics Pipeline; no GDM frame/login |
 | R-03 independent tabs | Three authenticated loopback tabs; 200 switches/450 inactive offers | PARTIAL: external-host qualification |
 | R-04 display modes | Actual Display Control/reactivation, viewport transforms and resize storm | PARTIAL: external server and physical pointer acceptance |
 | R-05 remote keys | Scancode mapping and send-key menu | PARTIAL: actual Windows/GNOME layouts, AltGr/IME/compositor restrictions |
 | R-06 pointer/touchpad | Synthetic routing, held-input release and reconnect | PARTIAL: physical input and external hosts |
 | R-07 HiDPI | Fractional transforms and actual 3K lossless bitmap frames | PARTIAL: real monitor moves/scales and external codec |
 | R-08 responsiveness | Frame timings, cadence and process samples in loopback | PARTIAL: matched authorized Remmina/FreeRDP comparison |
-| C-01/C-02 text interoperability | 60 bidirectional loopback transfers | BLOCKED: authorized endpoints identified; RDP credentials/certificate identity pending |
-| C-03/C-04 PNG interoperability | 18 loopback PNG/DIBV5 transfers | BLOCKED: authorized endpoints identified; RDP credentials/certificate identity pending |
+| C-01/C-02 text interoperability | 60 bidirectional loopback transfers | BLOCKED: trust/credential profiles configured; external text/image acceptance remains open, Fedora requires Graphics Pipeline |
+| C-03/C-04 PNG interoperability | 18 loopback PNG/DIBV5 transfers | BLOCKED: trust/credential profiles configured; external text/image acceptance remains open, Fedora requires Graphics Pipeline |
 | C-05 ownership | Real GDK peer and three loopback RDP tabs; Files isolation | PASS owned compositor |
 | C-06 PRIMARY/internal separation | Independent internal/CLIPBOARD tests | PARTIAL: PRIMARY protocol and physical middle-click acceptance |
 | C-07 application paste | Real GDK peer, native applications, 10 KiB/1 MiB payloads | PASS owned compositor |
@@ -51,7 +53,7 @@ The full product is not yet complete. A runnable source prerelease and isolated 
 | Native accessibility and diagnostics | GTK controls, configurable keys and accessible visible RDP toolbar | PARTIAL: global Alt-number navigation and safe targeted doctor implemented; physical keyboard/accessibility matrix open |
 | Distribution/governance | Locked dependency license inventory and source release receipts | PARTIAL: Apache-2.0 and contributor/security/conduct/CODEOWNERS/templates implemented; pinned Fedora format/Clippy/unit/real headless/declaration checks and guarded labels added. BLOCKED desktop RSA advisory; hosted/live-label/branch-rule, broader nightly/fuzz/hardware CI and qualified package/signing/provenance remain |
 
-Native endpoint-bound certificate review/pinning, volatile tab trust, restart/persistence and changed/stale guards are implemented with four policy units and eight authenticated local native groups. Actual EVF TLS identity is independently verified; its configured GNOME Remote Login account is rejected by the server SAM, and Racun7 awaits certificate approval. Native endpoint-bound certificate review/pinning, volatile tab trust, restart/persistence and changed/stale guards are implemented with four policy units and eight authenticated local native groups. Actual EVF TLS identity is independently verified; its configured GNOME Remote Login account is rejected by the server SAM, and Racun7 awaits certificate approval. External-host and physical-seat gates remain separate from implementation. No owner clipboard/keyring/session may be used as an acceptance fixture. Optional browser/structured agent adapters and later macOS builds remain staged scope; no protocol or scheduler replacement is justified by those features.
+Native endpoint-bound certificate review/pinning and changed/stale guards have four policy units and eight authenticated local native groups. Real Windows authentication/framebuffer decoding passes with an existing approved leaf; the Fedora SSH-attested leaf is verified but GNOME rejects the unnegotiated Graphics Pipeline. Owner clipboard/keyring/session data are never synthetic fixtures; authorized external credential lookup is read-only. Optional browser/agent adapters and later macOS builds remain staged scope.
 
 
 Authorized Fedora SSH headless/real remote-PTY acceptance passed on 2026-10-11. Mixed terminal/RDP/Files checkpoint restoration and normal application activation are implemented; detailed remaining view-management gates apply. Every remaining full-product gate above continues to apply.

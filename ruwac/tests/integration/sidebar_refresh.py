@@ -58,7 +58,7 @@ try:
     eventually(lambda: sock.exists())
     with Client(sock) as c:
         session = c.call('session.create', {'name': 'Sidebar regression', 'argv': ['/bin/sh', '-c', 'sleep 120']})
-    start([a.gui, '--socket', str(sock), '--session', session['session'], '--fixture-dir', str(root)], 'desktop')
+    start([a.gui, '--show-machines', '--socket', str(sock), '--session', session['session'], '--fixture-dir', str(root)], 'desktop')
     eventually(lambda: command('inspect'), 15)
     assert inspect()['rows'] == 0
     # Another process/window saves metadata with the same atomic rename as the
