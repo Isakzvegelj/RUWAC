@@ -499,6 +499,40 @@ pub struct ConnectionLease {
     released: Cell<bool>,
 }
 impl ConnectionLease {
+    pub fn trust_sink(&self) -> TrustSink {
+        let (store, id) = (self.store.clone(), self.id.clone());
+        Rc::new(move |server, previous, pin| {
+            let (host, port) = endpoint(server, 3389)?;
+            if !crate::rdp_trust::Trust::parse(Some(pin), &host, port)?.is_pinned() {
+                return Err("Certificate approval requires an endpoint-bound fingerprint".into());
+            }
+            // Merge only this trust field into fresh disk metadata, preserving
+            // changes made by another visible owner window since the tab opened.
+            let mut fresh = Store::load();
+            if fresh.error.is_some() || fresh.path != store.borrow().path {
+                return Err(
+                    "Profile storage changed or is unavailable; trust was not saved".into(),
+                );
+            }
+            let p = fresh
+                .items
+                .iter_mut()
+                .find(|p| p.id == id)
+                .ok_or("Endpoint removed; certificate trust was not saved")?;
+            if p.protocol != "RDP" || p.server != server || p.preferences.trust != previous {
+                return Err(
+                    "Endpoint or certificate trust changed; reopen the profile before saving trust"
+                        .into(),
+                );
+            }
+            p.preferences.trust = pin.into();
+            fresh.save()?;
+            let mut cached = store.borrow_mut();
+            cached.items = fresh.items;
+            cached.groups = fresh.groups;
+            Ok(())
+        })
+    }
     pub fn fork(&self) -> Self {
         *self
             .store
@@ -541,6 +575,7 @@ impl Drop for ConnectionLease {
         self.release();
     }
 }
+pub type TrustSink = Rc<dyn Fn(&str, &str, &str) -> Result<(), String>>;
 pub type PreferenceSink = Rc<dyn Fn(&str, f64, bool, u32)>;
 pub type ProfileRestorer = Rc<dyn Fn(&str) -> Option<(Profile, PreferenceSink, ConnectionLease)>>;
 fn acquire(
@@ -1315,7 +1350,7 @@ fn editor(button: &gtk::Button, store: Rc<RefCell<Store>>, id: Option<String>, s
         ("Tags (comma separated)", original.tags.join(",")),
         ("Credential reference", original.secret_reference.clone()),
         (
-            "RDP CA PEM trust reference",
+            "RDP CA file or approved certificate fingerprint",
             original.preferences.trust.clone(),
         ),
         (

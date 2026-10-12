@@ -1,6 +1,7 @@
 //! Native IronRDP transport and GTK framebuffer, independent of the PTY daemon.
 //! No competitor source is copied; IronRDP is MIT OR Apache-2.0.
 use crate::cliprdr::{Backend, Bridge, Event, Format};
+use crate::rdp_trust::{Review, Trust};
 use adw::prelude::*;
 use gtk::{gdk, glib};
 use ironrdp::{
@@ -147,6 +148,9 @@ struct State {
     cadence: std::collections::VecDeque<std::time::Instant>,
     bridge: Bridge,
     status: Option<String>,
+    certificate: Option<Review>,
+    verified_tls_sha256: Option<String>,
+    authentication_error: Option<String>,
 }
 struct Connection {
     id: String,
@@ -279,6 +283,103 @@ fn encode_resize(
         >::new(messages)),
     )
 }
+fn connector_config(username: String, password: String) -> connector::Config {
+    connector::Config {
+        credentials: connector::Credentials::UsernamePassword { username, password },
+        domain: None,
+        enable_tls: false,
+        enable_credssp: true,
+        keyboard_type: KeyboardType::IbmEnhanced,
+        keyboard_subtype: 0,
+        keyboard_layout: 0x0409,
+        keyboard_functional_keys_count: 12,
+        ime_file_name: String::new(),
+        dig_product_id: String::new(),
+        desktop_size: connector::DesktopSize {
+            width: 1280,
+            height: 720,
+        },
+        bitmap: None,
+        client_build: 0,
+        client_name: "RUWAC".into(),
+        client_dir: String::new(),
+        platform: MajorPlatformType::UNIX,
+        enable_server_pointer: true,
+        request_data: Some(ironrdp::pdu::nego::NegoRequestData::cookie("RUWAC".into())),
+        autologon: false,
+        enable_audio_playback: false,
+        compression_type: None,
+        pointer_software_rendering: true,
+        multitransport_flags: None,
+        performance_flags: PerformanceFlags::default(),
+        desktop_scale_factor: 0,
+        hardware_id: None,
+        license_cache: None,
+        timezone_info: TimezoneInfo::default(),
+        alternate_shell: String::new(),
+        work_dir: String::new(),
+    }
+}
+fn tls_builder(trust: &Trust) -> Result<native_tls::TlsConnectorBuilder, String> {
+    let mut tls = native_tls::TlsConnector::builder();
+    match trust {
+        Trust::System => {}
+        Trust::CaFile(path) => {
+            let pem = crate::credentials::bounded_file(std::path::Path::new(path), 1024 * 1024)?;
+            tls.add_root_certificate(
+                native_tls::Certificate::from_pem(&pem).map_err(|_| "CA certificate invalid")?,
+            );
+        }
+        Trust::Leaf(_) => {
+            // This is provisional encrypted TLS, not authorization. An exact
+            // endpoint-bound leaf match and validity check precede CredSSP.
+            tls.danger_accept_invalid_certs(true)
+                .danger_accept_invalid_hostnames(true);
+        }
+    }
+    Ok(tls)
+}
+async fn inspect_certificate(p: &Profile, previous: &Trust) -> Result<Review, String> {
+    let tcp = tokio::net::TcpStream::connect((p.host.as_str(), p.port))
+        .await
+        .map_err(|_| "Certificate inspection TCP connection failed")?;
+    let addr = tcp
+        .local_addr()
+        .map_err(|_| "Certificate inspection address unavailable")?;
+    // Only X.224 security negotiation and TLS run. Empty credentials, no
+    // connect_finalize, no static channels, no authentication or framebuffer.
+    let mut connector =
+        connector::ClientConnector::new(connector_config(String::new(), String::new()), addr);
+    let mut framed = ironrdp_tokio::TokioFramed::new(tcp);
+    ironrdp_tokio::connect_begin(&mut framed, &mut connector)
+        .await
+        .map_err(|_| "Certificate inspection security negotiation failed")?;
+    let (stream, remaining) = framed.into_inner();
+    if !remaining.is_empty() {
+        return Err("Unexpected certificate inspection pre-TLS payload".into());
+    }
+    let mut builder = native_tls::TlsConnector::builder();
+    builder
+        .danger_accept_invalid_certs(true)
+        .danger_accept_invalid_hostnames(true);
+    let tls = tokio_native_tls::TlsConnector::from(
+        builder
+            .build()
+            .map_err(|_| "Certificate inspection TLS unavailable")?,
+    );
+    let stream = tls
+        .connect(&p.host, stream)
+        .await
+        .map_err(|_| "Certificate inspection TLS failed")?;
+    let der = stream
+        .get_ref()
+        .peer_certificate()
+        .map_err(|_| "Certificate inspection peer unavailable")?
+        .ok_or("Certificate inspection peer missing")?
+        .to_der()
+        .map_err(|_| "Certificate inspection DER invalid")?;
+    Review::from_der(&der, &p.host, p.port, previous)
+}
 async fn run_session(
     p: Profile,
     password: String,
@@ -293,44 +394,7 @@ async fn run_session(
         let addr = tcp
             .local_addr()
             .map_err(|_| "RDP socket address unavailable".to_string())?;
-        let config = connector::Config {
-            credentials: connector::Credentials::UsernamePassword {
-                username: p.user,
-                password,
-            },
-            domain: None,
-            enable_tls: false,
-            enable_credssp: true,
-            keyboard_type: KeyboardType::IbmEnhanced,
-            keyboard_subtype: 0,
-            keyboard_layout: 0x0409,
-            keyboard_functional_keys_count: 12,
-            ime_file_name: String::new(),
-            dig_product_id: String::new(),
-            desktop_size: connector::DesktopSize {
-                width: 1280,
-                height: 720,
-            },
-            bitmap: None,
-            client_build: 0,
-            client_name: "RUWAC".into(),
-            client_dir: String::new(),
-            platform: MajorPlatformType::UNIX,
-            enable_server_pointer: true,
-            request_data: None,
-            autologon: false,
-            enable_audio_playback: false,
-            compression_type: None,
-            pointer_software_rendering: true,
-            multitransport_flags: None,
-            performance_flags: PerformanceFlags::default(),
-            desktop_scale_factor: 0,
-            hardware_id: None,
-            license_cache: None,
-            timezone_info: TimezoneInfo::default(),
-            alternate_shell: String::new(),
-            work_dir: String::new(),
-        };
+        let config = connector_config(p.user.clone(), password);
         let bridge = state.lock().unwrap().bridge.clone();
         let cap_state = state.clone();
         let mut connector = connector::ClientConnector::new(config, addr)
@@ -351,26 +415,24 @@ async fn run_session(
         if !leftover.is_empty() {
             return Err("Unexpected pre-TLS payload".into());
         }
-        let mut tls = native_tls::TlsConnector::builder();
-        if let Some(path) = p.ca.as_ref() {
-            let pem = crate::credentials::bounded_file(std::path::Path::new(path), 1024 * 1024)?;
-            if pem.len() > 1024 * 1024 {
-                return Err("CA certificate oversized".into());
-            }
-            tls.add_root_certificate(
-                native_tls::Certificate::from_pem(&pem)
-                    .map_err(|_| "CA certificate invalid".to_string())?,
-            );
-        }
-        // System roots and hostname validation stay enabled. No insecure TLS switch.
+        let trust = Trust::parse(p.ca.as_deref(), &p.host, p.port)?;
         let tls = tokio_native_tls::TlsConnector::from(
-            tls.build()
+            tls_builder(&trust)?
+                .build()
                 .map_err(|_| "TLS initialization failed".to_string())?,
         );
-        let tls = tls
-            .connect(&p.host, stream)
-            .await
-            .map_err(|_| "TLS certificate/hostname validation failed".to_string())?;
+        let tls = match tls.connect(&p.host, stream).await {
+            Ok(tls) => tls,
+            Err(_) => {
+                if !trust.is_pinned() {
+                    if let Ok(review) = inspect_certificate(&p, &trust).await {
+                        state.lock().unwrap().certificate = Some(review);
+                        return Err("RDP certificate needs approval; review its fingerprint before connecting".into());
+                    }
+                }
+                return Err("TLS certificate/hostname validation failed".into());
+            }
+        };
         let der = tls
             .get_ref()
             .peer_certificate()
@@ -378,8 +440,17 @@ async fn run_session(
             .ok_or("Peer certificate missing")?
             .to_der()
             .map_err(|_| "Peer certificate invalid".to_string())?;
+        if let Err(error) = trust.verify_leaf(&der, &p.host, p.port) {
+            if let Ok(review) = Review::from_der(&der, &p.host, p.port, &trust) {
+                state.lock().unwrap().certificate = Some(review);
+            }
+            return Err(error);
+        }
+
         let cert = x509_cert::Certificate::from_der(&der)
             .map_err(|_| "Peer certificate decoding failed".to_string())?;
+        state.lock().unwrap().verified_tls_sha256 =
+            Some(Review::from_der(&der, &p.host, p.port, &trust)?.fingerprint());
         let key = cert
             .tbs_certificate
             .subject_public_key_info
@@ -400,7 +471,20 @@ async fn run_session(
             None,
         )
         .await
-        .map_err(|_| "RDP authentication/session setup failed".to_string())?;
+        .map_err(|error| {
+            let code = match error.kind() {
+                connector::ConnectorErrorKind::Credssp(sspi) => {
+                    format!("credssp:{:?}", sspi.error_type)
+                }
+                connector::ConnectorErrorKind::AccessDenied => "access_denied".into(),
+                connector::ConnectorErrorKind::Negotiation(_) => "negotiation".into(),
+                connector::ConnectorErrorKind::Encode(_) => "encode".into(),
+                connector::ConnectorErrorKind::Decode(_) => "decode".into(),
+                _ => "session_protocol".into(),
+            };
+            state.lock().unwrap().authentication_error = Some(code);
+            "RDP authentication/session setup failed".to_string()
+        })?;
         if result.desktop_size.width == 0
             || result.desktop_size.height == 0
             || result.desktop_size.width > 4096
@@ -630,6 +714,10 @@ pub struct RdpView {
     display_info: gtk::Label,
     pan: Cell<bool>,
     preferences: RefCell<Option<crate::profiles::PreferenceSink>>,
+    trust_sink: RefCell<Option<crate::profiles::TrustSink>>,
+    certificate: RefCell<Option<Review>>,
+    review_certificate: gtk::Button,
+    transient_pin: RefCell<Option<String>>,
     preferences_due: Cell<Option<std::time::Instant>>,
     mode: Cell<Scale>,
     scroll: gtk::ScrolledWindow,
@@ -736,6 +824,11 @@ impl RdpView {
         status.add_css_class("dim-label");
         status.set_max_width_chars(80);
         root.append(&status);
+        let review_certificate = gtk::Button::with_label("Review RDP certificate…");
+        review_certificate.set_widget_name("rdp-review-certificate");
+        review_certificate.set_halign(gtk::Align::Start);
+        review_certificate.set_visible(false);
+        root.append(&review_certificate);
         let area = gtk::DrawingArea::builder()
             .hexpand(true)
             .vexpand(true)
@@ -763,6 +856,10 @@ impl RdpView {
             display_info,
             pan: Cell::new(false),
             preferences: RefCell::new(None),
+            trust_sink: RefCell::new(None),
+            certificate: RefCell::new(None),
+            review_certificate: review_certificate.clone(),
+            transient_pin: RefCell::new(None),
             preferences_due: Cell::new(None),
             mode: Cell::new(Scale::Fit),
             scroll,
@@ -789,6 +886,20 @@ impl RdpView {
             provider: RefCell::new(None),
             entries: [host.clone(), user.clone(), secret.clone(), ca.clone()],
             profile_metadata: RefCell::new(None),
+        });
+        for entry in [&host, &ca] {
+            let weak = Rc::downgrade(&v);
+            entry.connect_changed(move |_| {
+                if let Some(v) = weak.upgrade() {
+                    v.transient_pin.borrow_mut().take();
+                }
+            });
+        }
+        let weak = Rc::downgrade(&v);
+        review_certificate.connect_clicked(move |_| {
+            if let Some(v) = weak.upgrade() {
+                v.review_peer_certificate();
+            }
         });
         let weak = Rc::downgrade(&v);
         connect.connect_clicked(move |_| {
@@ -1319,6 +1430,165 @@ impl RdpView {
         self.area.set_content_width((rw as f64 * sx).ceil() as i32);
         self.area.set_content_height((rh as f64 * sy).ceil() as i32);
     }
+    fn review_peer_certificate(self: &Rc<Self>) {
+        let Some(review) = self.certificate.borrow().clone() else {
+            return;
+        };
+        let Some(connection_id) = self.connection.borrow().as_ref().map(|c| c.id.clone()) else {
+            return;
+        };
+        let snapshot: Vec<String> = self.entries.iter().map(|e| e.text().into()).collect();
+        let parent = self
+            .root
+            .root()
+            .and_then(|w| w.downcast::<gtk::Window>().ok());
+        let dialog = gtk::Dialog::builder()
+            .title(if review.changed {
+                "RDP certificate changed"
+            } else {
+                "Verify RDP certificate"
+            })
+            .modal(true)
+            .default_width(580)
+            .build();
+        dialog.set_widget_name(&format!("rdp-certificate-dialog-{}", self.id));
+        dialog.set_transient_for(parent.as_ref());
+        dialog.add_button("Cancel", gtk::ResponseType::Cancel);
+        let once = dialog.add_button("Trust for this tab", gtk::ResponseType::Other(1));
+        let saved = if self.trust_sink.borrow().is_some() {
+            Some(dialog.add_button("Save trust for this profile", gtk::ResponseType::Accept))
+        } else {
+            None
+        };
+        dialog.set_default_response(gtk::ResponseType::Cancel);
+        let box_ = dialog.content_area();
+        box_.set_spacing(8);
+        box_.set_margin_start(12);
+        box_.set_margin_end(12);
+        box_.set_margin_top(12);
+        box_.set_margin_bottom(12);
+        let message = gtk::Label::new(Some(if review.changed {
+            "The saved certificate does not match. Verify the new fingerprint with the machine administrator before replacing trust."
+        } else {
+            "The certificate could not be verified by your trusted CAs. Check its fingerprint through a trusted channel before approving this endpoint."
+        }));
+        message.set_wrap(true);
+        box_.append(&message);
+        let details = gtk::Label::new(Some(&format!(
+            "Endpoint: {}:{}\nSubject: {}\nIssuer: {}\nValid from: {}\nValid until: {}\nSHA-256: {}{}",
+            review.host,
+            review.port,
+            review.subject,
+            review.issuer,
+            review.valid_from,
+            review.valid_until,
+            review.fingerprint(),
+            review
+                .previous
+                .as_ref()
+                .map(|p| format!("\nPrevious SHA-256: {p}"))
+                .unwrap_or_default()
+        )));
+        details.set_widget_name("rdp-certificate-details");
+        details.set_wrap(true);
+        details.set_selectable(true);
+        details.set_xalign(0.0);
+        box_.append(&details);
+        let confirmation = gtk::Entry::new();
+        confirmation.set_widget_name("rdp-certificate-confirmation");
+        if review.changed {
+            confirmation
+                .set_placeholder_text(Some("Type TRUST after verifying the changed fingerprint"));
+            box_.append(&confirmation);
+        }
+        let error = gtk::Label::new(None);
+        error.set_wrap(true);
+        box_.append(&error);
+        if !review.valid_now {
+            error.set_text("This certificate is expired or not yet valid. Renew it on the server before connecting.");
+        }
+        once.set_sensitive(review.valid_now && !review.changed);
+        if let Some(saved) = saved.as_ref() {
+            saved.set_sensitive(review.valid_now && !review.changed);
+        }
+        if review.changed {
+            let (once, saved, valid) = (once.clone(), saved.clone(), review.valid_now);
+            confirmation.connect_changed(move |entry| {
+                let allowed = valid && entry.text() == "TRUST";
+                once.set_sensitive(allowed);
+                if let Some(saved) = saved.as_ref() {
+                    saved.set_sensitive(allowed);
+                }
+            });
+        }
+        let weak = Rc::downgrade(self);
+        dialog.connect_response(move |dialog,response| {
+            if !matches!(response, gtk::ResponseType::Accept | gtk::ResponseType::Other(1)) { dialog.close();return; }
+            let Some(v)=weak.upgrade() else {dialog.close();return;};
+            if !review.valid_now || (review.changed && confirmation.text()!="TRUST") { return; }
+            let unchanged=v.root.root().is_some() && v.entries.iter().zip(&snapshot).all(|(e,value)|e.text().as_str()==value)
+                && v.connection.borrow().as_ref().is_some_and(|c|c.id==connection_id);
+            if !unchanged {error.set_text("Connection settings changed while reviewing; cancel and review the current endpoint again.");return;}
+            let pin=review.token();
+            if response==gtk::ResponseType::Accept {
+                let result=v.trust_sink.borrow().as_ref().ok_or_else(||"This tab has no saved profile".to_string())
+                    .and_then(|save|save(&snapshot[0],&snapshot[3],&pin));
+                if let Err(reason)=result {error.set_text(&reason);return;}
+                v.entries[3].set_text(&pin);
+                if let Some(p)=v.profile_metadata.borrow_mut().as_mut(){p.preferences.trust=pin;}
+            } else { *v.transient_pin.borrow_mut()=Some(pin); }
+            dialog.close();
+            if let Err(reason)=v.begin_connect(false){v.status.set_text(&reason);}
+        });
+        dialog.present();
+    }
+    pub fn fixture_trust(self: &Rc<Self>, q: &serde_json::Value) -> serde_json::Value {
+        // Test-only dialog driver cannot approve real-host or owner credentials.
+        let address = self.entries[0].text();
+        if !crate::profiles::endpoint(&address, 3389).is_ok_and(|(host, _)| {
+            host.parse::<std::net::IpAddr>()
+                .is_ok_and(|ip| ip.is_loopback())
+        }) {
+            return serde_json::json!({"error":"Certificate fixture requires a loopback endpoint"});
+        }
+        if q["operation"] == "review" {
+            self.review_certificate.emit_clicked();
+        }
+        let mut open = false;
+        for window in gtk::Window::list_toplevels() {
+            if window.widget_name().as_str() != format!("rdp-certificate-dialog-{}", self.id) {
+                continue;
+            }
+            if let Ok(dialog) = window.downcast::<gtk::Dialog>() {
+                open = true;
+                if let Some(value) = q["confirmation"].as_str() {
+                    fn update(w: &gtk::Widget, value: &str) {
+                        if w.widget_name() == "rdp-certificate-confirmation" {
+                            if let Some(e) = w.downcast_ref::<gtk::Entry>() {
+                                e.set_text(value);
+                            }
+                        }
+                        let mut c = w.first_child();
+                        while let Some(w) = c {
+                            c = w.next_sibling();
+                            update(&w, value);
+                        }
+                    }
+                    update(dialog.upcast_ref(), value);
+                }
+                match q["response"].as_str() {
+                    Some("cancel") => dialog.response(gtk::ResponseType::Cancel),
+                    Some("once") => dialog.response(gtk::ResponseType::Other(1)),
+                    Some("save") => dialog.response(gtk::ResponseType::Accept),
+                    _ => (),
+                }
+            }
+        }
+        serde_json::json!({"dialog_open":open,"pending":self.certificate.borrow().is_some(),"review_available":self.review_certificate.is_visible(),"saved_pin":self.entries[3].text().starts_with("pin-sha256:"),"tab_pin":self.transient_pin.borrow().is_some(),"certificate":self.certificate.borrow().as_ref().map(|r|serde_json::json!({"sha256":r.fingerprint(),"token":r.token(),"changed":r.changed,"valid_now":r.valid_now}))})
+    }
+    pub fn set_trust_sink(&self, sink: crate::profiles::TrustSink) {
+        *self.trust_sink.borrow_mut() = Some(sink);
+    }
     pub fn set_preferences_sink(&self, sink: crate::profiles::PreferenceSink) {
         *self.preferences.borrow_mut() = Some(sink);
     }
@@ -1394,13 +1664,19 @@ impl RdpView {
         let (host, port) = crate::profiles::endpoint(&address, 3389)?;
         let user = self.entries[1].text();
         let reference = self.entries[2].text();
-        let ca = self.entries[3].text();
+        let ca = self
+            .transient_pin
+            .borrow()
+            .clone()
+            .unwrap_or_else(|| self.entries[3].text().into());
         if user.is_empty() || reference.is_empty() {
             self.status
                 .set_text("Host, user and secret reference are required");
             return Err("Configured user and credential reference required".into());
         }
         self.close();
+        self.certificate.borrow_mut().take();
+        self.review_certificate.set_visible(false);
         let connection = Connection::start(Profile {
             host,
             port,
@@ -1437,7 +1713,7 @@ impl RdpView {
         } else {
             "error"
         };
-        serde_json::json!({"id":self.root.widget_name().as_str(),"phase":phase,"size":self.size.get(),"transport_id":connection.as_ref().map(|c|c.id.as_str()),"decoded_updates":connection.as_ref().map(|c|c.state.lock().unwrap().frames).unwrap_or(0),"clipboard_owner":self.broker.borrow().active()==Some(self.id.as_str()),"profile":self.profile_metadata.borrow().as_ref().map(|p|p.id.clone())})
+        serde_json::json!({"id":self.root.widget_name().as_str(),"phase":phase,"size":self.size.get(),"transport_id":connection.as_ref().map(|c|c.id.as_str()),"decoded_updates":connection.as_ref().map(|c|c.state.lock().unwrap().frames).unwrap_or(0),"clipboard_owner":self.broker.borrow().active()==Some(self.id.as_str()),"verified_tls_sha256":connection.as_ref().and_then(|c|c.state.lock().unwrap().verified_tls_sha256.clone()),"authentication_error":connection.as_ref().and_then(|c|c.state.lock().unwrap().authentication_error.clone()),"certificate_review":self.certificate.borrow().as_ref().map(|r|serde_json::json!({"sha256":r.fingerprint(),"changed":r.changed,"valid_now":r.valid_now})),"profile":self.profile_metadata.borrow().as_ref().map(|p|p.id.clone())})
     }
     pub fn connect_profile(&self) {
         fn find(w: &gtk::Widget) -> Option<gtk::Button> {
@@ -1994,6 +2270,10 @@ impl RdpView {
                 return;
             };
             let mut s = c.state.lock().unwrap();
+            if let Some(review) = s.certificate.take() {
+                *self.certificate.borrow_mut() = Some(review);
+                self.review_certificate.set_visible(true);
+            }
             if let Some(status) = s.status.take() {
                 self.status.set_text(&status);
             }

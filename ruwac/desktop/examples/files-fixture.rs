@@ -7,6 +7,8 @@ mod files;
 mod files_resume;
 #[path = "../src/profiles.rs"]
 mod profiles;
+#[path = "../src/rdp_trust.rs"]
+mod rdp_trust;
 use std::{
     path::Path,
     sync::{

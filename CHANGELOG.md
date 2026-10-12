@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## v0.1.25 — 2026-10-12 — Prerelease
+
+- Add native endpoint-bound RDP certificate review, volatile tab approval and saved SHA-256 leaf trust with expiry, changed-certificate confirmation and stale-profile guards. Retain system CA validation by default and keep credential transfer behind the validated peer.
+- Add safe certificate/authentication stage metadata and an explicit separate desktop-instance option, preserving older windows and the normal activation behavior.
+
 ## v0.1.24 — 2026-10-12 — Prerelease
 
 - Refresh machine rows immediately after Save, Edit and Delete when Tools is collapsed, without typing in search or resetting pagination. Show the compiled version in the window title so older running windows are identifiable.
