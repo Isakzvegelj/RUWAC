@@ -298,6 +298,35 @@ fn draw(v: &Value, size: (u16, u16), status: &str) -> io::Result<()> {
                             if cell[4] == true { 1 } else { 22 },
                             if cell[5] == true { 7 } else { 27 }
                         );
+                        let mut st = st;
+                        let extra = &cell[6];
+                        if extra["italic"] == true {
+                            st.push_str(";3");
+                        }
+                        if extra["dim"] == true {
+                            st.push_str(";2");
+                        }
+                        if extra["hidden"] == true {
+                            st.push_str(";8");
+                        }
+                        if extra["strike"] == true {
+                            st.push_str(";9");
+                        }
+                        match extra["underline"].as_str() {
+                            Some("single") => st.push_str(";4"),
+                            Some("double") => st.push_str(";4:2"),
+                            Some("curly") => st.push_str(";4:3"),
+                            Some("dotted") => st.push_str(";4:4"),
+                            Some("dashed") => st.push_str(";4:5"),
+                            _ => (),
+                        }
+                        if let Some(rgb) = extra["underline_color"].as_array() {
+                            st.push_str(&format!(";58;2;{};{};{}", rgb[0], rgb[1], rgb[2]));
+                        } else if let Some(index) =
+                            extra["underline_color"].as_u64().filter(|i| *i <= 255)
+                        {
+                            st.push_str(&format!(";58;5;{index}"));
+                        }
                         if st != style {
                             out.push_str(&format!("\x1b[{st}m"));
                             style = st;

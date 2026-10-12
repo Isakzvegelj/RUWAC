@@ -9,7 +9,7 @@ The full product is not yet complete. A runnable source prerelease and isolated 
 | T-03 multiple PTYs and load | Independent PTYs, layout suite, actual 128-pane process/wire/native paging fixture | PASS bounded capacity; maximum-load terminal/checkpoint performance remains separate |
 | T-04 detach and reattach | Native crash/reattach and workspace same-PID tests | PASS daemon lifetime; no process resurrection claim |
 | T-05 stable IDs | Targeted routes, stale-ID negatives, concurrent clients | PASS |
-| T-06 VT/Unicode/applications | Native Vim/less/htop, Unicode, alternate-screen and input tests | PARTIAL: complete fzf/combining/extended-input matrix |
+| T-06 VT/Unicode/applications | Native Vim/less/htop and actual fullscreen fzf Unicode/Alt navigation, canonical extended SGR/plain+palette recovery and native/Cairo output | PARTIAL: complete VT/application/Kitty/AltGr/IME and physical-input matrix |
 | T-07 mouse recovery | Native routing and disposable Bash raw-child exit | PARTIAL: physical touchpad gate blocked |
 | T-08 history/internal buffer | Canonical history, paged capture, independent internal/system clipboard tests | PASS bounded fixture |
 | T-09 SSH/nested terminals | Real authorized SSH remote-PTY detach/reattach and Unicode | PARTIAL: actual 2–5 mixed GNU Screen/tmux/RUWAC layers pass with both prefix modes; Screen arbitrary-control paste remains an upstream limitation |

@@ -1,5 +1,7 @@
 # RUWAC source release
 
+Extended terminal styles now render and survive recovery: italic, dim, conceal, strike, five underline styles and underline colors. Real fullscreen fzf Unicode/Alt navigation passes; unchanged frames avoid redundant redraws. Tests retain the distinction between owned-compositor results and physical/external acceptance.
+
 Machine rows now reload after metadata is saved in another window without entering a search query. Invalid metadata preserves the previous valid list. Existing native Save/Edit/Delete refresh remains covered. Older running windows retain their compiled behavior; open the current installed application for this fix.
 
 Canonical primary and alternate terminal histories now survive daemon crash recovery together. Native copy mode offers both histories, and CLI capture supports `--buffer primary`. The maintained terminal-library accessor and exact source provenance are documented in the shipped library subset. Six real PTY/native history groups and six native machine-list groups pass; physical input and real external RDP acceptance remain separate.

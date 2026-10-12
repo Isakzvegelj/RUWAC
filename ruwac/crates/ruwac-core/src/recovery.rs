@@ -188,7 +188,7 @@ impl State {
         // Clipboard registers, requests, input, argv, client identities and
         // authentication are intentionally absent from this schema.
         Checkpoint {
-            schema: 4,
+            schema: 5,
             revision: self.revision,
             sessions: self
                 .sessions
@@ -239,7 +239,7 @@ impl State {
             return Ok(());
         };
         let invalid = || io::Error::other("checkpoint resource graph rejected; original preserved");
-        if !matches!(saved.schema, 1 | 2 | 3 | 4)
+        if !matches!(saved.schema, 1 | 2 | 3 | 4 | 5)
             || saved.sessions.len() > 64
             || saved.windows.len() > 128
             || saved.panes.len() > 128

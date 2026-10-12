@@ -833,6 +833,7 @@ impl View {
                     *self.expected_window.borrow_mut() = None;
                 }
             }
+            let changed = self.frame.borrow().as_ref() != Some(&frame);
             *self.frame.borrow_mut() = Some(frame);
             if !self.navigation.get() && !self.target.borrow().is_empty() {
                 let pending = std::mem::take(&mut *self.early.borrow_mut());
@@ -840,7 +841,9 @@ impl View {
                     self.input(&text);
                 }
             }
-            self.area.queue_draw();
+            if changed {
+                self.area.queue_draw();
+            }
         }
         if let Some((method, v)) = s.reply.pop_front() {
             if method == "pane.create" {
@@ -1319,6 +1322,8 @@ impl View {
         let layout = area.create_pango_layout(None);
         let normal = gtk::pango::FontDescription::from_string("Monospace 11");
         let bold = gtk::pango::FontDescription::from_string("Monospace Bold 11");
+        let italic = gtk::pango::FontDescription::from_string("Monospace Italic 11");
+        let bold_italic = gtk::pango::FontDescription::from_string("Monospace Bold Italic 11");
         for p in panes {
             let _ = cr.save();
             cr.translate(
@@ -1356,21 +1361,42 @@ impl View {
                             let _ = cr.fill();
                         }
                         for (c, cell) in cells.iter().enumerate() {
-                            if cell[1] != true {
-                                let fg = if cell[5] == true {
+                            if cell[1] != true && cell[6]["hidden"] != true {
+                                let mut fg = if cell[5] == true {
                                     color(&cell[3], false)
                                 } else {
                                     color(&cell[2], true)
                                 };
-                                layout.set_font_description(Some(if cell[4] == true {
-                                    &bold
-                                } else {
-                                    &normal
-                                }));
+                                if cell[6]["dim"] == true {
+                                    fg = (fg.0 * 0.65, fg.1 * 0.65, fg.2 * 0.65);
+                                }
+                                layout.set_font_description(Some(
+                                    match (cell[4] == true, cell[6]["italic"] == true) {
+                                        (true, true) => &bold_italic,
+                                        (true, false) => &bold,
+                                        (false, true) => &italic,
+                                        _ => &normal,
+                                    },
+                                ));
                                 layout.set_text(cell[0].as_str().unwrap_or(""));
                                 cr.set_source_rgb(fg.0, fg.1, fg.2);
                                 cr.move_to(c as f64 * CW, y + r as f64 * CH);
                                 pangocairo::functions::show_layout(cr, &layout);
+                                let ul = if cell[6]["underline_color"].is_null() {
+                                    fg
+                                } else {
+                                    color(&cell[6]["underline_color"], true)
+                                };
+                                crate::terminal_style::decoration(
+                                    cr,
+                                    &cell[6],
+                                    c as f64 * CW,
+                                    y + r as f64 * CH,
+                                    CW * cell[6]["width"].as_f64().unwrap_or(1.0),
+                                    CH,
+                                    fg,
+                                    ul,
+                                );
                             }
                         }
                     }

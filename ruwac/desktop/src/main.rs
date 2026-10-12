@@ -11,6 +11,7 @@ mod rdp_trust;
 mod sessions;
 mod shortcuts;
 mod staging;
+mod terminal_style;
 mod tiles;
 mod view;
 mod worker;
@@ -393,7 +394,7 @@ v.fixture_display(q["mode"].as_str().unwrap_or("fit"),q["zoom"].as_f64().unwrap_
     "policy"=>{v.broker.borrow_mut().set_desktop_disabled(q["disabled"]==true);reply(json!({"disabled":q["disabled"]==true}));},
     "grid-copy"=>{v.select_grid_fixture();v.copy_clipboard(false);reply(json!({"offered":true}));},
     "cancel"=>{v.broker.borrow_mut().local_copy();reply(json!({"epoch":v.broker.borrow().epoch()}));},
-    "snapshot"=>{let paint=gtk::WidgetPaintable::new(Some(&window));let snap=gtk::Snapshot::new();paint.snapshot(&snap,window.width()as f64,window.height()as f64);if let(Some(node),Some(renderer))=(snap.to_node(),window.renderer()){let texture=renderer.render_texture(&node,None);let _=texture.save_to_png(dir.join("native-rust.png"));}reply(json!({"image":"native-rust.png"}));},
+    "snapshot"=>{if let Some(clock)=window.frame_clock(){let paint=gtk::WidgetPaintable::new(Some(&window));let window=window.clone();let dir=dir.clone();let slot=Rc::new(RefCell::new(None));let owned=slot.clone();let attempts=Rc::new(Cell::new(0u8));window.queue_draw();let id=clock.connect_after_paint(move|clock|{attempts.set(attempts.get()+1);let snap=gtk::Snapshot::new();paint.snapshot(&snap,window.width()as f64,window.height()as f64);let node=snap.to_node();let renderer=window.renderer();let mut saved=false;if let(Some(node),Some(renderer))=(&node,&renderer){let texture=renderer.render_texture(node,None);saved=texture.save_to_png(dir.join("native-rust.png")).is_ok();}if saved||attempts.get()>=5{if let Some(id)=owned.borrow_mut().take(){clock.disconnect(id);}reply(json!({"image":"native-rust.png","saved":saved,"mapped":window.is_mapped(),"width":window.width(),"height":window.height(),"node":node.is_some(),"renderer":renderer.is_some(),"after_paint":true}));}else{window.queue_draw();}});*slot.borrow_mut()=Some(id);}else{reply(json!({"saved":false,"error":"Frame clock unavailable"}));}},
     "inspect"=>reply(json!({"display":v.area.display().type_().name(),"active":window.is_active(),"tabs":tabs.n_pages(),"selected_tab":tabs.selected_page().map(|p|tabs.page_position(&p)),"dark":app.style_manager().is_dark(),"focused_view":tiles::focused_id(&tabs,&focus_memory),"clipboard_owner":broker.borrow().active(),"layout":v.frame.borrow().as_ref().map(|f|f["layout"].clone()),"zoom":v.frame.borrow().as_ref().map(|f|f["zoom"].clone()),"target":*v.target.borrow(),"drawn":vv.borrow().iter().map(|v|v.drawn.get()).collect::<Vec<_>>(),"panes":vv.borrow().iter().map(|v|v.frame.borrow().as_ref().and_then(|f|f["panes"].as_array()).map(|a|a.len()).unwrap_or(0)).collect::<Vec<_>>(),"ticks":tick.get(),"max_tick_gap_ms":max_gap.get(),"acknowledgements":v.worker.state.lock().unwrap().acknowledgements,"status":v.status.text().to_string()})),
     "quit"=>{for v in vv.borrow().iter(){v.close();}for path in owned.borrow_mut().drain(..){let _=std::fs::remove_file(path);}reply(json!({"detached":true}));app.quit();return glib::ControlFlow::Break;},
     _=>reply(json!({"error":"unknown fixture action"}))

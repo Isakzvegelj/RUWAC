@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## v0.1.28 — 2026-10-12 — Prerelease
+
+- Preserve canonical italic, dim, conceal, strike, five underline styles and underline colors across GTK/TUI rendering and schema-5 checkpoints with legacy compatibility.
+- Avoid redundant terminal paints for unchanged frames and capture private fixture snapshots after paint; validate real fullscreen fzf Unicode and Alt navigation.
+
 ## v0.1.27 — 2026-10-12 — Prerelease
 
 - Compact repeated terminal cells in bounded schema-4 checkpoints while retaining plain fallback, legacy recovery and unchanged canonical rendering; validate 128 dense dual-buffer PTYs under a verified memory cap.

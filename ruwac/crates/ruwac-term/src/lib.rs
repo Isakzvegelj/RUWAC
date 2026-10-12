@@ -660,6 +660,7 @@ impl Terminal {
                     packed_color(cell.fg),
                     packed_color(cell.bg),
                     cell.flags.bits(),
+                    cell.underline_color().map(packed_color),
                 );
                 if compact {
                     if let Some(index) = keys.get(&key) {
@@ -667,7 +668,7 @@ impl Terminal {
                         continue;
                     }
                 }
-                let value = json!([
+                let mut value = json!([
                     s,
                     cell.flags
                         .intersects(Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER),
@@ -676,6 +677,35 @@ impl Terminal {
                     cell.flags.contains(Flags::BOLD),
                     cell.flags.contains(Flags::INVERSE)
                 ]);
+                let extended = cell.flags.intersects(
+                    Flags::ITALIC
+                        | Flags::DIM
+                        | Flags::HIDDEN
+                        | Flags::STRIKEOUT
+                        | Flags::ALL_UNDERLINES
+                        | Flags::WIDE_CHAR,
+                ) || cell.underline_color().is_some();
+                if extended {
+                    let underline = if cell.flags.contains(Flags::UNDERCURL) {
+                        "curly"
+                    } else if cell.flags.contains(Flags::DOUBLE_UNDERLINE) {
+                        "double"
+                    } else if cell.flags.contains(Flags::DOTTED_UNDERLINE) {
+                        "dotted"
+                    } else if cell.flags.contains(Flags::DASHED_UNDERLINE) {
+                        "dashed"
+                    } else if cell.flags.contains(Flags::UNDERLINE) {
+                        "single"
+                    } else {
+                        "none"
+                    };
+                    value.as_array_mut().unwrap().push(json!({
+                        "italic":cell.flags.contains(Flags::ITALIC),"dim":cell.flags.contains(Flags::DIM),
+                        "hidden":cell.flags.contains(Flags::HIDDEN),"strike":cell.flags.contains(Flags::STRIKEOUT),
+                        "width":if cell.flags.contains(Flags::WIDE_CHAR) {2} else {1},
+                        "underline":underline,"underline_color":cell.underline_color().map(color)
+                    }));
+                }
                 if compact {
                     let index = palette.len();
                     keys.insert(key, index);
@@ -715,12 +745,28 @@ fn valid_cell(cell: &Value) -> bool {
     let Some(c) = cell.as_array() else {
         return false;
     };
-    c.len() == 6
+    (c.len() == 6 || c.len() == 7 && valid_extended_style(&c[6]))
         && c[0]
             .as_str()
             .is_some_and(|s| s.len() <= 4096 && !s.chars().any(|c| c.is_control() && c != '\t'))
         && [1, 4, 5].iter().all(|i| c[*i].is_boolean())
         && [2, 3].iter().all(|i| valid_color(&c[*i]))
+}
+fn valid_extended_style(style: &Value) -> bool {
+    let Some(s) = style.as_object() else {
+        return false;
+    };
+    s.len() == 7
+        && s.contains_key("underline_color")
+        && ["italic", "dim", "hidden", "strike"]
+            .iter()
+            .all(|key| style[*key].is_boolean())
+        && matches!(style["width"].as_u64(), Some(1 | 2))
+        && matches!(
+            style["underline"].as_str(),
+            Some("none" | "single" | "double" | "curly" | "dotted" | "dashed")
+        )
+        && (style["underline_color"].is_null() || valid_color(&style["underline_color"]))
 }
 fn validate_grid(grid: &Value, rows: u16, cols: u16) -> std::result::Result<(), String> {
     if grid["rows"] != rows || grid["cols"] != cols {
@@ -1147,5 +1193,71 @@ mod tests {
         assert!(Terminal::restore(value).is_err());
         t.feed(b"\x1b[2J\x1b[HRECOVERED");
         assert!(t.checkpoint_archive().validate().is_ok());
+    }
+    #[test]
+    fn extended_sgr_styles_survive_both_archive_encodings() {
+        for (code, name) in [
+            ("4", "single"),
+            ("4:2", "double"),
+            ("4:3", "curly"),
+            ("4:4", "dotted"),
+            ("4:5", "dashed"),
+        ] {
+            let mut t = Terminal::new(4, 20);
+            t.feed(format!("\x1b[2;3;8;9;{code};58:2::7:8:9me\u{301}").as_bytes());
+            let snapshot = t.snapshot();
+            let style = &snapshot["cells"][0][0][6];
+            for field in ["italic", "dim", "hidden", "strike"] {
+                assert_eq!(style[field], true);
+            }
+            assert_eq!(style["underline"], name);
+            assert_eq!(style["underline_color"], json!([7, 8, 9]));
+            for archive in [t.archive(), t.checkpoint_archive()] {
+                assert_eq!(
+                    Terminal::restore(archive).unwrap().snapshot()["cells"],
+                    snapshot["cells"]
+                );
+            }
+            t.feed(b"\x1b[0mA");
+            assert_eq!(t.snapshot()["cells"][0][1].as_array().unwrap().len(), 6);
+        }
+    }
+    #[test]
+    fn underline_color_participates_in_palette_identity() {
+        let mut t = Terminal::new(4, 20);
+        t.feed(b"\x1b[4;58;2;1;2;3mX\x1b[58;2;4;5;6mX");
+        let expected = t.snapshot();
+        assert_ne!(expected["cells"][0][0][6], expected["cells"][0][1][6]);
+        assert_eq!(
+            Terminal::restore(t.checkpoint_archive())
+                .unwrap()
+                .snapshot()["cells"],
+            expected["cells"]
+        );
+    }
+    #[test]
+    fn invalid_extended_styles_are_rejected() {
+        let mut t = Terminal::new(4, 20);
+        t.feed(b"\x1b[3mX");
+        let good = t.archive();
+        for field in [
+            "italic",
+            "dim",
+            "hidden",
+            "strike",
+            "width",
+            "underline",
+            "underline_color",
+            "unexpected",
+        ] {
+            let mut bad = good.clone();
+            bad.grid["cells"][0][0][6][field] = json!([999]);
+            assert!(Terminal::restore(bad).is_err(), "{field}");
+        }
+        let mut bad = good.clone();
+        let style = bad.grid["cells"][0][0][6].as_object_mut().unwrap();
+        style.remove("underline_color");
+        style.insert("unexpected".into(), json!(null));
+        assert!(Terminal::restore(bad).is_err());
     }
 }

@@ -67,7 +67,7 @@ try:
   assert command('history-buffer',buffer='primary')['clicked'];expected=hashlib.sha256(page('primary').encode()).hexdigest();eventually(lambda:r if(r:=command('copy-state'))['text_sha256']==expected else None,15)
   assert command('history-buffer',buffer='active')['clicked'];expected=hashlib.sha256(page().encode()).hexdigest();eventually(lambda:r if(r:=command('copy-state'))['text_sha256']==expected else None,15)
   command('workspace-close');gui.wait(timeout=10);gui=None;record('PRIMARY-NATIVE-BUFFER-BUTTONS',actual_GTK_callbacks=True,no_clipboard_offer=True,physical_input=False)
- active=page();primary=page('primary');checkpoint=rpc('daemon.checkpoint');saved=state.read_bytes();d=json.loads(saved);assert d['schema']==4 and d['panes'][0]['terminal']['primary']['grid']['alternate_screen'] is False
+ active=page();primary=page('primary');checkpoint=rpc('daemon.checkpoint');saved=state.read_bytes();d=json.loads(saved);assert d['schema']==5 and d['panes'][0]['terminal']['primary']['grid']['alternate_screen'] is False
  server.kill();server.wait(timeout=10);server=None
  start('restored');assert page()==active and page('primary')==primary
  rows=rpc('pane.list',{'session':session['session']});assert rows[0]['ended']and rows[0]['restored']and rows[0]['pid']is None
@@ -77,7 +77,13 @@ try:
   for p in value['panes']:
    for grid in [p['terminal']['grid'],p['terminal']['primary']['grid']]:
     if grid.get('cell_encoding')=='palette-v1':
-     palette=grid.pop('cell_palette');grid['cells']=[[palette[i]for i in row]for row in grid.pop('cell_indices')];grid.pop('cell_encoding')
+     palette=grid.pop('cell_palette');grid['cells']=[[palette[i][:6]for i in row]for row in grid.pop('cell_indices')];grid.pop('cell_encoding')
+ legacy4=json.loads(saved);legacy4['schema']=4
+ for p in legacy4['panes']:
+  for grid in [p['terminal']['grid'],p['terminal']['primary']['grid']]:
+   if grid.get('cell_encoding')=='palette-v1':grid['cell_palette']=[cell[:6]for cell in grid['cell_palette']]
+ old4=root/'legacy4.json';old4.write_text(json.dumps(legacy4));old4.chmod(0o600);start('legacy4',old4)
+ assert page()==active and page('primary')==primary;stop();record('PRIMARY-LEGACY-PALETTE-DUAL-RECOVERY',both_buffers_exact=True,schema4=True)
  legacy3=json.loads(saved);legacy3['schema']=3;plain_grids(legacy3);old3=root/'legacy3.json';old3.write_text(json.dumps(legacy3));old3.chmod(0o600);start('legacy3',old3)
  assert page()==active and page('primary')==primary;stop();record('PRIMARY-LEGACY-PLAIN-DUAL-RECOVERY',both_buffers_exact=True,schema3=True)
  legacy=json.loads(saved);plain_grids(legacy);legacy['schema']=2;legacy['panes'][0]['terminal'].pop('primary');old=root/'legacy.json';old.write_text(json.dumps(legacy));old.chmod(0o600);start('legacy',old)
@@ -98,4 +104,4 @@ finally:
  for f in logs:f.close()
  receipt={'cases':results,'sha256':{'ruwac':hashlib.sha256(Path(a.binary).read_bytes()).hexdigest(),**({'ruwac-desktop':hashlib.sha256(Path(a.gui).read_bytes()).hexdigest()}if a.gui else{})},'scope':'Real owned PTY/daemon SIGKILL and canonical buffers; native actions on owned display only; no owner sessions/configuration/clipboard','evidence':str(root)}
  (root/'receipt.json').write_text(json.dumps(receipt,indent=2)+'\n');(a.evidence/'primary-history-acceptance.json').write_text(json.dumps(receipt,indent=2)+'\n');print('Evidence',root,flush=True)
-assert len(results)==(7 if a.gui else 6)
+assert len(results)==(8 if a.gui else 7)

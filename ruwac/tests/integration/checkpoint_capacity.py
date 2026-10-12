@@ -60,7 +60,7 @@ try:
  tick=time.monotonic();saved=rpc('daemon.checkpoint');metrics['explicit_checkpoint_ms']=(time.monotonic()-tick)*1000
  metrics['file_bytes']=state.stat().st_size;metrics['memory_peak_bytes']=property('MemoryPeak');metrics['memory_current_bytes']=property('MemoryCurrent')
  assert metrics['file_bytes']<128*1024*1024
- stored=json.loads(state.read_bytes());assert stored['schema']==4 and len(stored['panes'])==a.panes
+ stored=json.loads(state.read_bytes());assert stored['schema']==5 and len(stored['panes'])==a.panes
  assert all(p['terminal']['grid']['cell_encoding']=='palette-v1' and p['terminal']['primary']['grid']['cell_encoding']=='palette-v1'for p in stored['panes'])
  assert all(isinstance(c[2],list) and len(c[2])==3 and isinstance(c[3],list) and len(c[3])==3 for p in stored['panes']for g in [p['terminal']['grid'],p['terminal']['primary']['grid']]for c in g['cell_palette'])
  def images(value):
