@@ -231,6 +231,22 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     if remote_binary.is_some() && host.is_none() {
         return Err("--remote-binary requires --host".into());
     }
+    if a.first().is_some_and(|command| command == "update") {
+        if host.is_some() || explicit_socket.is_some() {
+            return Err("run updates locally on each machine, without --host or --socket".into());
+        }
+        let status = std::process::Command::new("python3")
+            .arg("-c")
+            .arg(include_str!("../../../../scripts/update-user.py"))
+            .arg("--current")
+            .arg(env!("CARGO_PKG_VERSION"))
+            .args(&a[1..])
+            .status()?;
+        if !status.success() {
+            return Err("update failed; see the diagnostics above".into());
+        }
+        return Ok(());
+    }
     let remote = host.map(|host| remote::Remote {
         host,
         binary: remote_binary.unwrap_or_else(|| "ruwac".into()),
@@ -432,6 +448,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             println!("{}", call(&request(&a[0], json!({})))?);
         }
         Some("--help" | "help") | None => {
+            println!(
+                "Updates (Fedora 44): ruwac update --check | --install | --rollback | --auto-check on|off|status.\nSource builds require development dependencies; --headless retains a CLI-only installation. No running processes are restarted."
+            );
             println!(
                 "RUWAC\n  ruwac job list [--session session_ID] [--query TEXT] --json\n  ruwac job query --id pane_ID --json\n  ruwac workspace describe|list [--json]\n  ruwac rdp list --json\n  ruwac rdp query|reconnect|disconnect --id view_ID --json\n  ruwac rdp open --profile endpoint_ID [--activate] --json\n  ruwac workspace activate --id tab_ID --json\n  ruwac workspace focus --id view_ID --json\n  ruwac doctor [--desktop] [--terminal [--repair]] [--json]\n  ruwac --version\n  ruwac start  # starts/reuses a private persistent daemon\n  ruwac gui [--session session_ID]\n  ruwac session create --name NAME --detach --json\n  ruwac session list --json\n  ruwac pane list --session session_ID --json\n  ruwac pane send-text --id pane_ID --text TEXT --json\n  ruwac pane send-text --id pane_ID --file UTF8_FILE --json\n  ruwac pane send-key --id pane_ID --key Enter --json\n  ruwac pane capture --id pane_ID --lines 250 [--buffer active|primary] --json\n  ruwac pane wait --id pane_ID --contains TEXT --timeout-ms 5000 --json\n  ruwac --socket PATH serve\n  ruwac --socket PATH rpc METHOD --params JSON [--idempotency KEY]\n  ruwac --socket PATH request < request.json\n  ruwac --socket PATH attach --session session_ID\n  ruwac image-stage PNG PRIVATE_DIRECTORY\n  ruwac --socket PATH health|version|capabilities|schema|describe\nRemote: ruwac --host SSH_HOST [--remote-binary PATH] [--socket REMOTE_PATH] COMMAND.\n  ruwac --host SSH_HOST describe\n  ruwac --host SSH_HOST pane send-text --id pane_ID --file LOCAL_UTF8_FILE\n  ruwac --host SSH_HOST attach --session session_ID\nWorkspace/RDP commands address an already-running remote GUI with its explicit permissions. Uses existing SSH keys/config and verified host keys; no credential or agent forwarding. Without explicit --socket, the remote CLI selects its own private default.\nNo desktop clipboard, image attachment, recovery after daemon loss or full Screen compatibility claim."
             );

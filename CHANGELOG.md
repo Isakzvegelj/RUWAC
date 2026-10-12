@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v0.2.1 — 2026-10-12 — Stable source release
+
+- Add Fedora 44 GitHub source updates, automatic desktop update checks, explicit local build/install and verified rollback while preserving active sessions.
+
 ## v0.2.0 — 2026-10-12 — Stable source release
 
 - Add separate GNOME Remote Login credentials and explicitly confirmed GDM field input, preserving Windows authentication and Secret Service separation.

@@ -162,3 +162,5 @@ Contribution and repository checks: see [CONTRIBUTING.md](CONTRIBUTING.md), [SEC
 
 
 Native windows, the overlay sidebar and GNOME dual-credential storage are documented in [GNOME login and desktop windows](spec/RUWAC_GNOME_LOGIN.md). The tested Fedora GNOME server requires an unimplemented RDP Graphics Pipeline; storing a second credential does not establish a GNOME session.
+
+Fedora 44 updates: use the header's update icon or `ruwac update --check` and `ruwac update --install`. Automatic checks announce newer stable GitHub releases; explicit installation builds published source locally and retains active sessions and the previous version. See [prerequisites, bootstrap and rollback](spec/RUWAC_UPDATES.md). Prebuilt RPM delivery remains open.

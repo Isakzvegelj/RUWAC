@@ -16,6 +16,7 @@ mod sidebar_shell;
 mod staging;
 mod terminal_style;
 mod tiles;
+mod updates;
 mod view;
 mod worker;
 mod workspace;
@@ -212,6 +213,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
   if let Some(window)=app.active_window(){window.present();return;}
   let window=adw::ApplicationWindow::builder().application(app).title(format!("RUWAC {}", env!("CARGO_PKG_VERSION"))).default_width(1040).default_height(780).build();
   let box_=gtk::Box::new(gtk::Orientation::Vertical,0);let header=adw::HeaderBar::new();box_.append(&header);let tabs=adw::TabView::new();let focus_memory:tiles::FocusMemory=Rc::new(RefCell::new(std::collections::HashMap::new()));tabs.set_vexpand(true);let bar=adw::TabBar::builder().view(&tabs).autohide(false).build();box_.append(&bar);let tools=gtk::Box::new(gtk::Orientation::Horizontal,6);tools.set_margin_start(6);tools.set_margin_end(6);tools.set_margin_top(4);tools.set_margin_bottom(4);box_.append(&tools);
+  updates::attach(&header,&window,fixture.is_none());
   if let Some(message)=workspace_warning.as_ref(){box_.append(&gtk::Label::new(Some(message)));}
   let new_window=gtk::Button::from_icon_name("window-new-symbolic");new_window.set_widget_name("new-workspace-window");new_window.set_tooltip_text(Some("New RUWAC window — independent tabs, same persistent daemon"));header.pack_start(&new_window);
   let window_socket=socket.clone();let window_theme=theme;new_window.connect_clicked(move|button|{
@@ -366,10 +368,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     "inspect"=>reply(json!({"display":gtk::prelude::WidgetExt::display(&window).type_().name(),"active":window.is_active(),"tabs":tabs.n_pages(),"selected_tab":tabs.selected_page().map(|p|tabs.page_position(&p)),"dark":app.style_manager().is_dark(),"focused_view":tiles::focused_id(&tabs,&focus_memory),"clipboard_owner":broker.borrow().active(),"terminal_views":0,"rdp_views":rdp_views.borrow().len(),"panes":[],"ticks":tick.get()})),
     "new-terminal"=>reply(json!({"clicked":sessions::fixture(&window,"New terminal")})),
     "workspace-close"=>{reply(json!({"closing":true}));window.close();},
+    "updates"=>reply(updates::fixture(&window,&q)),
     _=>reply(json!({"error":"This terminal fixture action requires an open terminal view"})),
    }}else if let Some(v)=view{match q["action"].as_str().unwrap_or(""){
     "new-terminal"=>reply(json!({"clicked":sessions::fixture(&window,"New terminal")})),
     "sessions-open"=>{let label=q["session"].as_str().unwrap_or("Sessions…");let mut clicked=sessions::fixture(&window,label);if !clicked{for widget in gtk::Window::list_toplevels(){if let Ok(w)=widget.downcast::<gtk::Window>(){if w.title().as_deref()==Some("Persistent terminal sessions"){clicked=sessions::fixture(&w,label);}}}}reply(json!({"clicked":clicked}));},
+    "updates"=>reply(updates::fixture(&window,&q)),
     "close-rdp"=>{let r=rdp_views.borrow().get(q["rdp"].as_u64().unwrap_or(0)as usize).cloned();if let Some(r)=r{if let Some(page)=tiles::page(&tabs,&r.root){tabs.close_page(&page);}}reply(json!({"rdp_views":rdp_views.borrow().len()}));},
     "close-tab"=>{let i=q["tab"].as_i64().unwrap_or(0)as i32;if i>=0&&i<tabs.n_pages(){let page=tabs.nth_page(i);tabs.close_page(&page);}reply(json!({"tabs":tabs.n_pages(),"selected_tab":tabs.selected_page().map(|p|tabs.page_position(&p)),"dark":app.style_manager().is_dark(),"focused_view":tiles::focused_id(&tabs,&focus_memory),"clipboard_owner":broker.borrow().active(),"terminal_views":vv.borrow().len()}));},
     "tab-select"=>{let i=q["tab"].as_i64().unwrap_or(0)as i32;if i>=0&&i<tabs.n_pages(){tabs.set_selected_page(&tabs.nth_page(i));}reply(json!({"tabs":tabs.n_pages()}));},

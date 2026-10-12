@@ -20127,5 +20127,85 @@
     "automatic_second_stage_login": "NOT EXPOSED; not verified",
     "physical_input": "NOT QUALIFIED",
     "release_lane": "controller-managed stable source; qualified packages remain open"
+  },
+  "github_source_updates": {
+    "package": "0.2.1",
+    "sha256": {
+      "ruwac": "673028160442e8ce15c0b803aa56d828650d98400793fa50f56101e41c5812ce",
+      "ruwac-desktop": "1adba8ab4ed88c1282eed09e8ee229c17cced1104cd7e0b317356c2620ef0e52"
+    },
+    "guard_tests": 13,
+    "native_groups": [
+      "fixture-startup-does-not-check-network",
+      "actual-native-check-dialog-enables-explicit-install",
+      "native-automatic-check-persistence",
+      "native-install-worker-keeps-gtk-and-real-pty-responsive",
+      "dialog-close-keeps-application-session"
+    ],
+    "native_scope": "Real GTK widgets on isolated Wayland with synthetic callbacks and generated helper responses; not a GitHub installation or physical input pass",
+    "real_bootstrap": {
+      "tag": "v0.2.0",
+      "commit": "450a21203bdd33bd9a423e414d202b7387baa8bd",
+      "components": [
+        "headless",
+        "desktop"
+      ],
+      "clean_source": true,
+      "artifact_sha256": {
+        "ruwac": "9c71c36ffad7e7370aafd6b465aef77ee7d17b642575c24e108b4b483bca3c0a",
+        "ruwac-desktop": "70d14cbcc70f817b346b6bbdf3d1f5fb652a0bdcba5189615235d06c1118338f"
+      }
+    },
+    "regression_checks": [
+      {
+        "check": "updater-guards",
+        "status": "PASS"
+      },
+      {
+        "check": "format-core",
+        "status": "PASS"
+      },
+      {
+        "check": "format-desktop",
+        "status": "PASS"
+      },
+      {
+        "check": "lint-core",
+        "status": "PASS"
+      },
+      {
+        "check": "lint-desktop",
+        "status": "PASS"
+      },
+      {
+        "check": "workflow-syntax",
+        "status": "PASS"
+      },
+      {
+        "check": "headless-boundary",
+        "status": "PASS"
+      },
+      {
+        "check": "native-updates.py",
+        "status": "PASS"
+      },
+      {
+        "check": "run-desktop.py",
+        "status": "PASS"
+      },
+      {
+        "check": "run-rdp-r5.py",
+        "status": "PASS"
+      },
+      {
+        "check": "run-files.py",
+        "status": "PASS"
+      },
+      {
+        "check": "run-dual.py",
+        "status": "PASS"
+      }
+    ],
+    "delivery": "HTTPS source build and per-user immutable installation; no binary/RPM qualification"
   }
 }

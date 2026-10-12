@@ -38,6 +38,8 @@ jobs:
         run: python3 scripts/public-files.py --tracked
       - name: Contribution label guards
         run: python3 .github/scripts/test-label-pr.py
+      - name: GitHub updater and reversible installation guards
+        run: python3 ruwac/tests/integration/test_updates.py
       - name: Rust formatting
         run: |
           cargo fmt --all --check --manifest-path ruwac/Cargo.toml
