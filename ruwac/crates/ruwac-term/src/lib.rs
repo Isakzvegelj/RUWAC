@@ -46,6 +46,44 @@ pub struct Archive {
     pub primary: Option<PrimaryArchive>,
 }
 
+impl Archive {
+    /// The writer and reader apply the same bounds. Invalid live output must
+    /// never replace the last readable durable checkpoint.
+    pub fn validate(&self) -> std::result::Result<(), String> {
+        validate_terminal_data(self.rows, self.cols, &self.history, &self.grid)?;
+        if let Some(primary) = &self.primary {
+            if self.grid["alternate_screen"] != true
+                || primary.grid["alternate_screen"] != false
+                || self.history.iter().map(|(s, _)| s.len()).sum::<usize>()
+                    + primary.history.iter().map(|(s, _)| s.len()).sum::<usize>()
+                    > 512 * 1024
+            {
+                return Err("invalid combined primary/alternate archive".into());
+            }
+            validate_terminal_data(primary.rows, primary.cols, &primary.history, &primary.grid)?;
+        }
+        Ok(())
+    }
+}
+fn validate_terminal_data(
+    rows: u16,
+    cols: u16,
+    history: &[(String, bool)],
+    grid: &Value,
+) -> std::result::Result<(), String> {
+    if !(1..=100).contains(&rows)
+        || !(1..=200).contains(&cols)
+        || history.len() > 50000
+        || history.iter().map(|(s, _)| s.len()).sum::<usize>() > 512 * 1024
+        || history
+            .iter()
+            .any(|(s, _)| s.chars().any(|c| c.is_control() && c != '\t'))
+    {
+        return Err("invalid terminal archive dimensions/history".into());
+    }
+    validate_grid(grid, rows, cols)
+}
+
 /// Flat hidden-primary archive: no recursively nested buffers are accepted.
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -196,13 +234,27 @@ impl Terminal {
     /// Persist canonical cells/text, never raw terminal escape sequences or input.
     /// Each pane gets a bounded tail; truncation is explicit on restored history.
     pub fn archive(&self) -> Archive {
+        self.archive_encoded(false)
+    }
+    /// Compact durable grids; canonical state and the public render format stay unchanged.
+    pub fn checkpoint_archive(&self) -> Archive {
+        self.archive_encoded(true)
+    }
+    fn archive_encoded(&self, compact: bool) -> Archive {
         if let Some(a) = &self.archived {
             let mut archive = a.clone();
             archive.epoch = self.history_epoch;
+            if !compact {
+                expand_grid(&mut archive.grid);
+                if let Some(primary) = archive.primary.as_mut() {
+                    expand_grid(&mut primary.grid);
+                }
+            }
             return archive;
         }
         let alternate = self.term.mode().contains(TermMode::ALT_SCREEN);
-        let mut active = self.archive_grid(self.term.grid(), alternate, 512 * 1024);
+        let mut active =
+            self.archive_grid_encoded(self.term.grid(), alternate, 512 * 1024, compact);
         if alternate {
             // Read the actual hidden canonical grid; no buffer swap, parser replay
             // or second live model. The text budget is shared by both buffers.
@@ -211,10 +263,11 @@ impl Terminal {
                 .iter()
                 .map(|(row, _)| row.len())
                 .sum::<usize>();
-            let primary = self.archive_grid(
+            let primary = self.archive_grid_encoded(
                 self.term.primary_grid(),
                 false,
                 (512_usize * 1024).saturating_sub(used),
+                compact,
             );
             active.primary = Some(PrimaryArchive::from_archive(primary));
         }
@@ -227,14 +280,26 @@ impl Terminal {
     }
     pub fn primary_archive(&self) -> Option<Archive> {
         if let Some(a) = &self.archived {
-            if a.grid["alternate_screen"] == true {
-                return a.primary.as_ref().map(PrimaryArchive::as_archive);
-            }
-            return Some(a.clone());
+            let mut value = if a.grid["alternate_screen"] == true {
+                a.primary.as_ref()?.as_archive()
+            } else {
+                a.clone()
+            };
+            expand_grid(&mut value.grid);
+            return Some(value);
         }
         Some(self.archive_grid(self.term.primary_grid(), false, 512 * 1024))
     }
     fn archive_grid(&self, g: &Grid<Cell>, alternate: bool, budget: usize) -> Archive {
+        self.archive_grid_encoded(g, alternate, budget, false)
+    }
+    fn archive_grid_encoded(
+        &self,
+        g: &Grid<Cell>,
+        alternate: bool,
+        budget: usize,
+        compact: bool,
+    ) -> Archive {
         let top = g.topmost_line().0;
         let bottom = g.bottommost_line().0;
         let mut history = Vec::new();
@@ -270,7 +335,7 @@ impl Terminal {
             epoch: self.history_epoch,
             dropped_lines: (bottom - top + 1) as usize - history.len(),
             history,
-            grid: self.snapshot_grid(g, alternate),
+            grid: self.grid_encoded(g, alternate, compact),
             primary: None,
         }
     }
@@ -373,54 +438,10 @@ impl Terminal {
         })
     }
     pub fn restore(mut a: Archive) -> std::result::Result<Self, String> {
+        a.validate()?;
         if let Some(primary) = a.primary.as_mut() {
-            if a.grid["alternate_screen"] != true
-                || primary.grid["alternate_screen"] != false
-                || a.history.iter().map(|(s, _)| s.len()).sum::<usize>()
-                    + primary.history.iter().map(|(s, _)| s.len()).sum::<usize>()
-                    > 512 * 1024
-            {
-                return Err("invalid combined primary/alternate archive".into());
-            }
-            Self::restore(primary.as_archive())?;
             for (row, _) in &mut primary.history {
                 *row = row.replace('\t', " ");
-            }
-        }
-        if !(1..=100).contains(&a.rows)
-            || !(1..=200).contains(&a.cols)
-            || a.history.len() > 50000
-            || a.history.iter().map(|(s, _)| s.len()).sum::<usize>() > 512 * 1024
-            || a.history
-                .iter()
-                .any(|(s, _)| s.chars().any(|c| c.is_control() && c != '\t'))
-        {
-            return Err("invalid terminal archive dimensions/history".into());
-        }
-        let rows = a.grid["cells"].as_array().ok_or("invalid cells")?;
-        if a.grid["rows"] != a.rows || a.grid["cols"] != a.cols || rows.len() != a.rows as usize {
-            return Err("invalid terminal archive grid".into());
-        }
-        for row in rows {
-            let cells = row.as_array().ok_or("invalid row")?;
-            if cells.len() != a.cols as usize {
-                return Err("invalid column count".into());
-            }
-            for cell in cells {
-                let c = cell.as_array().ok_or("invalid cell")?;
-                if c.len() != 6
-                    || !c[0].is_string()
-                    || c[0].as_str().unwrap().len() > 4096
-                    || c[0]
-                        .as_str()
-                        .unwrap()
-                        .chars()
-                        .any(|c| c.is_control() && c != '\t')
-                    || ![1, 4, 5].iter().all(|i| c[*i].is_boolean())
-                    || ![2, 3].iter().all(|i| valid_color(&c[*i]))
-                {
-                    return Err("invalid cell value".into());
-                }
             }
         }
         // Legacy checkpoints contain the tab placeholder plus already expanded cells.
@@ -588,6 +609,7 @@ impl Terminal {
     pub fn snapshot(&self) -> Value {
         if let Some(a) = &self.archived {
             let mut grid = a.grid.clone();
+            expand_grid(&mut grid);
             let blank = json!([" ", false, 256, 257, false, false]);
             let cells = grid["cells"].as_array_mut().unwrap();
             cells.truncate(self.rows as usize);
@@ -619,6 +641,11 @@ impl Terminal {
         )
     }
     fn snapshot_grid(&self, g: &Grid<Cell>, alternate: bool) -> Value {
+        self.grid_encoded(g, alternate, false)
+    }
+    fn grid_encoded(&self, g: &Grid<Cell>, alternate: bool, compact: bool) -> Value {
+        let mut palette = Vec::new();
+        let mut keys = std::collections::HashMap::new();
         let mut rows = Vec::new();
         for r in 0..self.rows as usize {
             let mut cells = Vec::new();
@@ -628,7 +655,19 @@ impl Terminal {
                 if let Some(z) = cell.zerowidth() {
                     s.extend(z.iter())
                 }
-                cells.push(json!([
+                let key = (
+                    s.clone(),
+                    packed_color(cell.fg),
+                    packed_color(cell.bg),
+                    cell.flags.bits(),
+                );
+                if compact {
+                    if let Some(index) = keys.get(&key) {
+                        cells.push(json!(*index));
+                        continue;
+                    }
+                }
+                let value = json!([
                     s,
                     cell.flags
                         .intersects(Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER),
@@ -636,12 +675,122 @@ impl Terminal {
                     color(cell.bg),
                     cell.flags.contains(Flags::BOLD),
                     cell.flags.contains(Flags::INVERSE)
-                ]));
+                ]);
+                if compact {
+                    let index = palette.len();
+                    keys.insert(key, index);
+                    palette.push(value);
+                    cells.push(json!(index));
+                } else {
+                    cells.push(value);
+                }
             }
             rows.push(cells)
         }
-        json!({"rows":self.rows,"cols":self.cols,"cells":rows,"cursor":{"row":g.cursor.point.line.0,"col":g.cursor.point.column.0,"visible":self.term.mode().contains(TermMode::SHOW_CURSOR)},"mouse":self.mouse(),"mouse_drag":self.term.mode().contains(TermMode::MOUSE_DRAG),"mouse_motion":self.term.mode().contains(TermMode::MOUSE_MOTION),"mouse_sgr":self.term.mode().contains(TermMode::SGR_MOUSE),"alternate_screen":alternate,"application_cursor":self.term.mode().contains(TermMode::APP_CURSOR),"bracketed_paste":self.paste()})
+        let mut value = json!({"rows":self.rows,"cols":self.cols,"cells":rows,"cursor":{"row":g.cursor.point.line.0,"col":g.cursor.point.column.0,"visible":self.term.mode().contains(TermMode::SHOW_CURSOR)},"mouse":self.mouse(),"mouse_drag":self.term.mode().contains(TermMode::MOUSE_DRAG),"mouse_motion":self.term.mode().contains(TermMode::MOUSE_MOTION),"mouse_sgr":self.term.mode().contains(TermMode::SGR_MOUSE),"alternate_screen":alternate,"application_cursor":self.term.mode().contains(TermMode::APP_CURSOR),"bracketed_paste":self.paste()});
+        if compact {
+            let indices = value.as_object_mut().unwrap().remove("cells").unwrap();
+            value["cell_encoding"] = json!("palette-v1");
+            value["cell_palette"] = json!(palette);
+            value["cell_indices"] = indices;
+            // Dictionaries are counterproductive for mostly unique cells.
+            // Preserve the prior plain encoding in that case.
+            if palette.len() > self.rows as usize * self.cols as usize / 2 {
+                expand_grid(&mut value);
+            }
+        }
+        value
     }
+}
+fn packed_color(c: Color) -> u32 {
+    match c {
+        Color::Spec(rgb) => {
+            0x1000000 | ((rgb.r as u32) << 16) | ((rgb.g as u32) << 8) | rgb.b as u32
+        }
+        Color::Indexed(i) => i as u32,
+        Color::Named(n) => n as u32,
+    }
+}
+fn valid_cell(cell: &Value) -> bool {
+    let Some(c) = cell.as_array() else {
+        return false;
+    };
+    c.len() == 6
+        && c[0]
+            .as_str()
+            .is_some_and(|s| s.len() <= 4096 && !s.chars().any(|c| c.is_control() && c != '\t'))
+        && [1, 4, 5].iter().all(|i| c[*i].is_boolean())
+        && [2, 3].iter().all(|i| valid_color(&c[*i]))
+}
+fn validate_grid(grid: &Value, rows: u16, cols: u16) -> std::result::Result<(), String> {
+    if grid["rows"] != rows || grid["cols"] != cols {
+        return Err("invalid terminal archive grid".into());
+    }
+    if grid.get("cell_encoding").is_some() {
+        if grid["cell_encoding"] != "palette-v1" || grid.get("cells").is_some() {
+            return Err("invalid cell encoding".into());
+        }
+        let palette = grid["cell_palette"].as_array().ok_or("invalid palette")?;
+        if palette.is_empty()
+            || palette.len() > rows as usize * cols as usize
+            || !palette.iter().all(valid_cell)
+        {
+            return Err("invalid palette cells".into());
+        }
+        let indices = grid["cell_indices"]
+            .as_array()
+            .ok_or("invalid palette rows")?;
+        if indices.len() != rows as usize
+            || !indices.iter().all(|row| {
+                row.as_array().is_some_and(|r| {
+                    r.len() == cols as usize
+                        && r.iter()
+                            .all(|i| i.as_u64().is_some_and(|i| i < palette.len() as u64))
+                })
+            })
+        {
+            return Err("invalid palette indices".into());
+        }
+    } else {
+        if grid.get("cell_palette").is_some() || grid.get("cell_indices").is_some() {
+            return Err("ambiguous cell encoding".into());
+        }
+        let matrix = grid["cells"].as_array().ok_or("invalid cells")?;
+        if matrix.len() != rows as usize
+            || !matrix.iter().all(|row| {
+                row.as_array()
+                    .is_some_and(|r| r.len() == cols as usize && r.iter().all(valid_cell))
+            })
+        {
+            return Err("invalid terminal archive cells".into());
+        }
+    }
+    Ok(())
+}
+/// Used only after the bounded palette was validated, when a renderer requests
+/// its existing canonical six-field cell tuples. History reads avoid expansion.
+fn expand_grid(grid: &mut Value) {
+    if grid["cell_encoding"] != "palette-v1" {
+        return;
+    }
+    let palette = grid["cell_palette"].as_array().unwrap();
+    let rows: Vec<Vec<Value>> = grid["cell_indices"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|row| {
+            row.as_array()
+                .unwrap()
+                .iter()
+                .map(|i| palette[i.as_u64().unwrap() as usize].clone())
+                .collect()
+        })
+        .collect();
+    let object = grid.as_object_mut().unwrap();
+    object.remove("cell_encoding");
+    object.remove("cell_palette");
+    object.remove("cell_indices");
+    object.insert("cells".into(), json!(rows));
 }
 fn valid_color(c: &Value) -> bool {
     c.as_u64().is_some_and(|i| i <= 268)
@@ -914,5 +1063,89 @@ mod tests {
         let mut t = Terminal::new(4, 20);
         assert!(!t.feed(b"\x1b[6n").is_empty());
         assert!(t.feed(b"\x1b]52;c;QUJD\x07").is_empty());
+    }
+    #[test]
+    fn compact_dual_grid_preserves_canonical_cells_and_history() {
+        let mut t = Terminal::new(100, 200);
+        let line = "Že\u{301}界".repeat(40);
+        for r in 1..=100 {
+            t.feed(format!("\x1b[{r};1H\x1b[38;2;1;2;3m\x1b[48;2;4;5;6m{line}").as_bytes());
+        }
+        t.feed(b"\x1b[?1049h\x1b[1;7m");
+        for r in 1..=100 {
+            t.feed(format!("\x1b[{r};1H{line}").as_bytes());
+        }
+        let plain = t.archive();
+        let compact = t.checkpoint_archive();
+        assert_eq!(compact.grid["cell_encoding"], "palette-v1");
+        let plain_bytes = serde_json::to_vec(&plain).unwrap().len();
+        let compact_bytes = serde_json::to_vec(&compact).unwrap().len();
+        assert!(
+            compact_bytes * 8 < plain_bytes,
+            "{compact_bytes} / {plain_bytes}"
+        );
+        let restored = Terminal::restore(compact).unwrap();
+        assert_eq!(restored.snapshot()["cells"], t.snapshot()["cells"]);
+        assert_eq!(restored.capture(2000), t.capture(2000));
+        assert_eq!(restored.capture_primary(2000), t.capture_primary(2000));
+        assert_eq!(
+            restored.primary_archive().unwrap().grid["cells"],
+            plain.primary.as_ref().unwrap().grid["cells"]
+        );
+        assert_eq!(restored.archive().grid["cells"], plain.grid["cells"]);
+        assert_eq!(
+            restored.archive().primary.unwrap().grid["cells"],
+            plain.primary.unwrap().grid["cells"]
+        );
+    }
+    #[test]
+    fn compact_unique_cells_keep_plain_encoding() {
+        let mut t = Terminal::new(4, 20);
+        for r in 1..=4 {
+            for c in 1..=20 {
+                t.feed(format!("\x1b[{r};{c}H\x1b[38;2;{r};{c};42mX").as_bytes());
+            }
+        }
+        let archive = t.checkpoint_archive();
+        assert!(archive.grid.get("cell_encoding").is_none());
+        let restored = Terminal::restore(archive).unwrap();
+        assert_eq!(restored.snapshot()["cells"], t.snapshot()["cells"]);
+    }
+    #[test]
+    fn compact_corrupt_or_ambiguous_grids_fail_closed() {
+        let t = Terminal::new(4, 20);
+        let a = t.checkpoint_archive();
+        assert_eq!(a.grid["cell_encoding"], "palette-v1");
+        for variant in 0..8 {
+            let mut bad = a.clone();
+            match variant {
+                0 => bad.grid["cell_indices"][0][0] = json!(-1),
+                1 => bad.grid["cell_indices"][0][0] = json!(u64::MAX),
+                2 => bad.grid["cell_palette"][0][0] = json!("\x1b[2J"),
+                3 => bad.grid["cell_encoding"] = json!("unknown"),
+                4 => bad.grid["cells"] = json!([]),
+                5 => {
+                    bad.grid.as_object_mut().unwrap().remove("cell_palette");
+                }
+                6 => {
+                    bad.grid["cell_indices"][0].as_array_mut().unwrap().pop();
+                }
+                _ => {
+                    bad.grid["cell_palette"] =
+                        json!(vec![json!(["x", false, 0, 0, false, false]); 81])
+                }
+            }
+            assert!(Terminal::restore(bad).is_err(), "variant {variant}");
+        }
+    }
+    #[test]
+    fn unreadable_live_glyph_is_rejected_before_checkpoint_replacement() {
+        let mut t = Terminal::new(4, 20);
+        t.feed(("e".to_owned() + &"\u{301}".repeat(3000)).as_bytes());
+        let value = t.checkpoint_archive();
+        assert!(value.validate().is_err());
+        assert!(Terminal::restore(value).is_err());
+        t.feed(b"\x1b[2J\x1b[HRECOVERED");
+        assert!(t.checkpoint_archive().validate().is_ok());
     }
 }

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## v0.1.27 — 2026-10-12 — Prerelease
+
+- Compact repeated terminal cells in bounded schema-4 checkpoints while retaining plain fallback, legacy recovery and unchanged canonical rendering; validate 128 dense dual-buffer PTYs under a verified memory cap.
+- Apply the reader's validation before checkpoint replacement so oversized live glyphs preserve the last readable file and report a recoverable error.
+- Strengthen 30-trial CLI benchmark idle qualification with per-operation unrelated CPU accounting, preserving contaminated measurements as unqualified evidence.
+
 ## v0.1.26 — 2026-10-12 — Prerelease
 
 - Reload machine profiles saved from another window without typing in search; retain the last valid list on invalid metadata and recover automatically.

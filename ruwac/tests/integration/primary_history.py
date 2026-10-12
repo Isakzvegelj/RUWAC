@@ -67,12 +67,20 @@ try:
   assert command('history-buffer',buffer='primary')['clicked'];expected=hashlib.sha256(page('primary').encode()).hexdigest();eventually(lambda:r if(r:=command('copy-state'))['text_sha256']==expected else None,15)
   assert command('history-buffer',buffer='active')['clicked'];expected=hashlib.sha256(page().encode()).hexdigest();eventually(lambda:r if(r:=command('copy-state'))['text_sha256']==expected else None,15)
   command('workspace-close');gui.wait(timeout=10);gui=None;record('PRIMARY-NATIVE-BUFFER-BUTTONS',actual_GTK_callbacks=True,no_clipboard_offer=True,physical_input=False)
- active=page();primary=page('primary');checkpoint=rpc('daemon.checkpoint');saved=state.read_bytes();d=json.loads(saved);assert d['schema']==3 and d['panes'][0]['terminal']['primary']['grid']['alternate_screen'] is False
+ active=page();primary=page('primary');checkpoint=rpc('daemon.checkpoint');saved=state.read_bytes();d=json.loads(saved);assert d['schema']==4 and d['panes'][0]['terminal']['primary']['grid']['alternate_screen'] is False
  server.kill();server.wait(timeout=10);server=None
  start('restored');assert page()==active and page('primary')==primary
  rows=rpc('pane.list',{'session':session['session']});assert rows[0]['ended']and rows[0]['restored']and rows[0]['pid']is None
  rpc('pane.sendText',{'pane':pane,'text':'not delivered'},error='PANE_EXITED');record('PRIMARY-ACTUAL-SIGKILL-RECOVERY',both_buffers_exact=True,ended_without_resurrection=True)
- stop();legacy=json.loads(saved);legacy['schema']=2;legacy['panes'][0]['terminal'].pop('primary');old=root/'legacy.json';old.write_text(json.dumps(legacy));old.chmod(0o600);start('legacy',old)
+ stop()
+ def plain_grids(value):
+  for p in value['panes']:
+   for grid in [p['terminal']['grid'],p['terminal']['primary']['grid']]:
+    if grid.get('cell_encoding')=='palette-v1':
+     palette=grid.pop('cell_palette');grid['cells']=[[palette[i]for i in row]for row in grid.pop('cell_indices')];grid.pop('cell_encoding')
+ legacy3=json.loads(saved);legacy3['schema']=3;plain_grids(legacy3);old3=root/'legacy3.json';old3.write_text(json.dumps(legacy3));old3.chmod(0o600);start('legacy3',old3)
+ assert page()==active and page('primary')==primary;stop();record('PRIMARY-LEGACY-PLAIN-DUAL-RECOVERY',both_buffers_exact=True,schema3=True)
+ legacy=json.loads(saved);plain_grids(legacy);legacy['schema']=2;legacy['panes'][0]['terminal'].pop('primary');old=root/'legacy.json';old.write_text(json.dumps(legacy));old.chmod(0o600);start('legacy',old)
  assert page()==active;rpc('pane.history',{'pane':pane,'buffer':'primary'},error='BUFFER_UNAVAILABLE');stop();record('PRIMARY-LEGACY-ALT-EXPLICIT-UNAVAILABLE',active_history_preserved=True)
  bad=json.loads(saved);bad['panes'][0]['terminal']['primary']['history'].append(['\u001b[2J',False]);path=root/'bad-primary.json';path.write_text(json.dumps(bad));path.chmod(0o600);before=path.read_bytes()
  f=(root/'rejected.log').open('wb');logs.append(f);proc=subprocess.Popen([a.binary,'--socket',str(root/'rejected.sock'),'serve'],env={**env,'RUWAC_STATE_FILE':str(path)},stdout=f,stderr=f);assert proc.wait(timeout=10)!=0 and path.read_bytes()==before
@@ -90,4 +98,4 @@ finally:
  for f in logs:f.close()
  receipt={'cases':results,'sha256':{'ruwac':hashlib.sha256(Path(a.binary).read_bytes()).hexdigest(),**({'ruwac-desktop':hashlib.sha256(Path(a.gui).read_bytes()).hexdigest()}if a.gui else{})},'scope':'Real owned PTY/daemon SIGKILL and canonical buffers; native actions on owned display only; no owner sessions/configuration/clipboard','evidence':str(root)}
  (root/'receipt.json').write_text(json.dumps(receipt,indent=2)+'\n');(a.evidence/'primary-history-acceptance.json').write_text(json.dumps(receipt,indent=2)+'\n');print('Evidence',root,flush=True)
-assert len(results)==(6 if a.gui else 5)
+assert len(results)==(7 if a.gui else 6)

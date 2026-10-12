@@ -34,13 +34,13 @@ try:
  assert before['previous_window']==after['previous_window']==third['window']
  assert rpc('window.previous',{'session':session})['selected']==third['window']
  rpc('pane.close',{'pane':first['pane']});assert rpc('session.list')[0]['previous_window'] is None
- stop();saved=json.loads(archive.read_text());assert saved['schema']==3
+ stop();saved=json.loads(archive.read_text());assert saved['schema']==4
  saved['schema']=1
  for item in saved['sessions']:item.pop('previous',None)
  archive.write_text(json.dumps(saved));archive.chmod(0o600);start()
  assert rpc('session.list')[0]['previous_window'] is None
  expected=second['window'];assert rpc('window.previous',{'session':session})['selected']==expected
- rpc('daemon.checkpoint');assert json.loads(archive.read_text())['schema']==3
+ rpc('daemon.checkpoint');assert json.loads(archive.read_text())['schema']==4
  results.append({'id':'SCREEN-PREVIOUS-RECOVERY','status':'PASS','previous_persisted':True,'closed_previous_removed':True,'schema1_migration':True,'missing_previous_cycles_next':True})
 finally:
  if tui:tui.finish('term')

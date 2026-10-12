@@ -127,6 +127,11 @@ impl Store {
         if written.is_some_and(|r| r >= checkpoint.revision) {
             return Ok(());
         }
+        for pane in &checkpoint.panes {
+            pane.terminal
+                .validate()
+                .map_err(|e| format!("checkpoint validation failed: {e}"))?;
+        }
         let parent = self.path.parent().unwrap();
         let temp = parent.join(format!(".{}.tmp", id("checkpoint")));
         let result = (|| -> io::Result<()> {
@@ -183,7 +188,7 @@ impl State {
         // Clipboard registers, requests, input, argv, client identities and
         // authentication are intentionally absent from this schema.
         Checkpoint {
-            schema: 3,
+            schema: 4,
             revision: self.revision,
             sessions: self
                 .sessions
@@ -218,7 +223,7 @@ impl State {
                 .map(|p| SavedPane {
                     id: p.id.clone(),
                     window: p.window.clone(),
-                    terminal: p.term.archive(),
+                    terminal: p.term.checkpoint_archive(),
                     exit_code: p
                         .exit_code
                         .or_else(|| p.pty.as_ref().and_then(Pty::exit_code)),
@@ -234,7 +239,7 @@ impl State {
             return Ok(());
         };
         let invalid = || io::Error::other("checkpoint resource graph rejected; original preserved");
-        if !matches!(saved.schema, 1 | 2 | 3)
+        if !matches!(saved.schema, 1 | 2 | 3 | 4)
             || saved.sessions.len() > 64
             || saved.windows.len() > 128
             || saved.panes.len() > 128

@@ -140,7 +140,10 @@ try:
  valid=state.read_bytes()
  bad=root/'bad.json';bad.write_bytes(b'{invalid');bad.chmod(0o600);reject('corrupt',bad)
  forged=json.loads(valid);forged['sessions'][0]['active']='window_'+'0'*32;bad.write_text(json.dumps(forged));reject('invalid-graph',bad)
- forged=json.loads(valid);forged['panes'][0]['terminal']['grid']['cells'][0][0]=['\u001b',False,0,0,False,False];bad.write_text(json.dumps(forged));reject('unsafe-canonical-cell',bad)
+ forged=json.loads(valid);grid=forged['panes'][0]['terminal']['grid']
+ if grid.get('cell_encoding')=='palette-v1':grid['cell_palette'][0]=['\u001b',False,0,0,False,False]
+ else:grid['cells'][0][0]=['\u001b',False,0,0,False,False]
+ bad.write_text(json.dumps(forged));reject('unsafe-canonical-cell',bad)
  forged=json.loads(valid);forged['schema']=99;bad.write_text(json.dumps(forged));reject('unknown-schema',bad)
  bad.write_bytes(valid);bad.chmod(0o644);reject('unsafe-mode',bad);bad.chmod(0o600)
  linked=root/'linked.json';linked.symlink_to(bad);reject('symlink',linked)
