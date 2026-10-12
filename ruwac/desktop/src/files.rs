@@ -411,7 +411,7 @@ pub fn panel(profile: Profile) -> gtk::Box {
     let root = gtk::Box::new(gtk::Orientation::Vertical, 6);
     root.set_tooltip_text(Some(&format!("{} · Files", profile.name)));
     let title = gtk::Label::new(Some(&format!(
-        "Remote SFTP · {} / {} · verified SSH host keys",
+        "Remote files · {} / {} · verified SSH host keys",
         profile.group, profile.name
     )));
     root.append(&title);
@@ -524,6 +524,8 @@ pub fn panel(profile: Profile) -> gtk::Box {
                             ));
                             let (e, d, r) = (e.clone(), d.clone(), r.clone());
                             button.set_sensitive(!item.symlink);
+                            let selected_name = item.name.clone();
+                            let selected_destination = d.clone();
                             button.connect_clicked(move |_| {
                                 if item.directory {
                                     let path = PathBuf::from(e.text().as_str()).join(&item.name);
@@ -533,7 +535,18 @@ pub fn panel(profile: Profile) -> gtk::Box {
                                     d.set_text(&item.name);
                                 }
                             });
-                            l.append(&button);
+                            let row = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+                            button.set_hexpand(true);
+                            row.append(&button);
+                            let choose = gtk::Button::with_label("Select");
+                            choose.set_sensitive(!item.symlink);
+                            choose.set_tooltip_text(Some(
+                                "Select this item for SFTP or rsync without changing directories",
+                            ));
+                            let (destination, name) = (selected_destination, selected_name);
+                            choose.connect_clicked(move |_| destination.set_text(&name));
+                            row.append(&choose);
+                            l.append(&row);
                         }
                         st.set_text("Remote directory ready");
                     }
@@ -647,7 +660,19 @@ pub fn panel(profile: Profile) -> gtk::Box {
             }
         });
     }
+    append_rsync_controls(
+        &root,
+        &profile,
+        &remote,
+        &destination,
+        &status,
+        &progress,
+        &busy,
+    );
     let cancel = gtk::Button::with_label("Pause transfer");
+    cancel.set_tooltip_text(Some(
+        "SFTP pauses with a retained journal; rsync cancels and removes only its staging copy",
+    ));
     controls.append(&cancel);
     let b = busy.clone();
     cancel.connect_clicked(move |_| {
@@ -669,6 +694,212 @@ pub fn panel(profile: Profile) -> gtk::Box {
     root
 }
 
+type Busy = Rc<RefCell<Option<Arc<AtomicBool>>>>;
+fn start_rsync(
+    profile: Profile,
+    local: PathBuf,
+    remote: PathBuf,
+    upload: bool,
+    overwrite: bool,
+    busy: Busy,
+    status: gtk::Label,
+    progress: gtk::ProgressBar,
+) {
+    if busy.borrow().is_some() {
+        status.set_text("A file operation is already running");
+        return;
+    }
+    let cancel = Arc::new(AtomicBool::new(false));
+    let count = Arc::new(AtomicU64::new(0));
+    *busy.borrow_mut() = Some(cancel.clone());
+    let (tx, rx) = std::sync::mpsc::sync_channel(1);
+    let bytes = count.clone();
+    std::thread::spawn(move || {
+        let result = crate::files_rsync::transfer(
+            &profile, &local, &remote, upload, overwrite, &cancel, bytes,
+        );
+        let _ = tx.send(result);
+    });
+    status.set_text("Checking SSH/rsync, preparing files, transferring and verifying…");
+    gtk::glib::timeout_add_local(Duration::from_millis(50), move || {
+        progress.pulse();
+        progress.set_text(Some(&format!(
+            "{} bytes transferred",
+            count.load(Ordering::Relaxed)
+        )));
+        match rx.try_recv() {
+            Ok(result) => {
+                busy.borrow_mut().take();
+                progress.set_fraction(if result.is_ok() { 1.0 } else { 0.0 });
+                status.set_text(&match result {
+                    Ok(r) => format!(
+                        "Rsync verified · {} files · {} directories · {} bytes · SHA-256 {}",
+                        r.files, r.directories, r.bytes, r.sha256
+                    ),
+                    Err(e) => e,
+                });
+                gtk::glib::ControlFlow::Break
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => gtk::glib::ControlFlow::Continue,
+            Err(_) => {
+                busy.borrow_mut().take();
+                status.set_text("Rsync worker stopped; inspect owned staging before retrying");
+                gtk::glib::ControlFlow::Break
+            }
+        }
+    });
+}
+fn append_rsync_controls(
+    root: &gtk::Box,
+    profile: &Profile,
+    remote: &gtk::Entry,
+    destination: &gtk::Entry,
+    status: &gtk::Label,
+    progress: &gtk::ProgressBar,
+    busy: &Busy,
+) {
+    let label = gtk::Label::new(Some(
+        "Rsync copies files or folders with a verified SSH key/agent. Password-only connections use SFTP.",
+    ));
+    label.set_wrap(true);
+    root.append(&label);
+    let replace = gtk::CheckButton::with_label(
+        "Rsync: replace the entire destination, including files absent from the source",
+    );
+    replace.set_widget_name("files-rsync-replace");
+    root.append(&replace);
+    let controls = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    root.append(&controls);
+    for (label, upload, folder) in [
+        ("Rsync upload file…", true, false),
+        ("Rsync upload folder…", true, true),
+        ("Rsync download…", false, false),
+    ] {
+        let button = gtk::Button::with_label(label);
+        controls.append(&button);
+        let (profile, remote, destination, status, progress, busy, replace) = (
+            profile.clone(),
+            remote.clone(),
+            destination.clone(),
+            status.clone(),
+            progress.clone(),
+            busy.clone(),
+            replace.clone(),
+        );
+        let action = gtk::gio::SimpleAction::new("transfer", Some(gtk::glib::VariantTy::STRING));
+        let group = gtk::gio::SimpleActionGroup::new();
+        group.add_action(&action);
+        button.insert_action_group("rsync", Some(&group));
+        button.set_widget_name(if upload {
+            if folder {
+                "files-rsync-folder"
+            } else {
+                "files-rsync-upload"
+            }
+        } else {
+            "files-rsync-download"
+        });
+        let (p, e, d, st, prog, b, ow) = (
+            profile.clone(),
+            remote.clone(),
+            destination.clone(),
+            status.clone(),
+            progress.clone(),
+            busy.clone(),
+            replace.clone(),
+        );
+        action.connect_activate(move |_, parameter| {
+            let Some(local) = parameter.and_then(|v| v.str()).map(PathBuf::from) else {
+                return;
+            };
+            let name = d.text();
+            if name.is_empty() || name.contains('/') || name == "." || name == ".." {
+                st.set_text("Select or enter one remote item name");
+                return;
+            }
+            let local = if upload {
+                local
+            } else {
+                local.join(name.as_str())
+            };
+            let target = PathBuf::from(e.text().as_str()).join(name.as_str());
+            start_rsync(
+                p.clone(),
+                local,
+                target,
+                upload,
+                ow.is_active(),
+                b.clone(),
+                st.clone(),
+                prog.clone(),
+            );
+        });
+        button.connect_clicked(move |button| {
+            if busy.borrow().is_some() {
+                status.set_text("A file operation is already running");
+                return;
+            }
+            let parent = button.root().and_then(|w| w.downcast::<gtk::Window>().ok());
+            let dialog = gtk::FileDialog::new();
+            dialog.set_title(if upload {
+                if folder {
+                    "Choose local source folder"
+                } else {
+                    "Choose local source file"
+                }
+            } else {
+                "Choose local destination folder"
+            });
+            let button = button.downgrade();
+            let done = move |result: Result<gtk::gio::File, gtk::glib::Error>| {
+                if let (Ok(file), Some(button)) = (result, button.upgrade()) {
+                    if let Some(path) = file.path().and_then(|p| p.to_str().map(str::to_owned)) {
+                        let _ = button.activate_action("rsync.transfer", Some(&path.to_variant()));
+                    }
+                }
+            };
+            if folder || !upload {
+                dialog.select_folder(parent.as_ref(), None::<&gtk::gio::Cancellable>, done);
+            } else {
+                dialog.open(parent.as_ref(), None::<&gtk::gio::Cancellable>, done);
+            }
+        });
+    }
+}
+/// The private loopback fixture invokes the same action used by the native chooser.
+pub fn fixture_rsync(root: &gtk::Box, q: &serde_json::Value) -> serde_json::Value {
+    fn walk(w: &gtk::Widget, q: &serde_json::Value) -> bool {
+        if let Some(entry) = w.downcast_ref::<gtk::Entry>() {
+            if entry.placeholder_text().as_deref()
+                == Some("Remote file name (select a row or enter a name)")
+            {
+                if let Some(name) = q["name"].as_str() {
+                    entry.set_text(name);
+                }
+            }
+        }
+        if w.widget_name() == "files-rsync-replace" {
+            if let Some(button) = w.downcast_ref::<gtk::CheckButton>() {
+                button.set_active(q["overwrite"] == true);
+            }
+        }
+        let mut child = w.first_child();
+        let mut invoked = false;
+        while let Some(w) = child {
+            child = w.next_sibling();
+            invoked |= walk(&w, q);
+        }
+        if w.widget_name() == q["control"].as_str().unwrap_or("") {
+            if let Some(path) = q["local"].as_str() {
+                invoked |= w
+                    .activate_action("rsync.transfer", Some(&path.to_variant()))
+                    .is_ok();
+            }
+        }
+        invoked
+    }
+    serde_json::json!({"invoked":walk(root.upcast_ref(),q)})
+}
 pub fn fixture(root: &gtk::Box, path: Option<&str>, refresh: bool) -> serde_json::Value {
     fn walk(
         w: &gtk::Widget,

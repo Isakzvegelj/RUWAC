@@ -20321,5 +20321,164 @@
     "external_clipboard_disabled": true,
     "physical_input": false,
     "scope": "Real authenticated external transport/framebuffer; synthetic local native controls; no Linux desktop sign-in or distribution qualification"
+  },
+  "native_rsync_files": {
+    "package": "0.2.3",
+    "sha256": {
+      "ruwac": "ee297bff9980d5220afaa24c760d464dd7c30dc5b218f6f676e3681f322f9f25",
+      "ruwac-desktop": "8959118374a73fc82f0373f45a990c6e912f5bc32408018b2aee868fbecf0e57"
+    },
+    "native_groups": [
+      {
+        "name": "RSYNC-TREE-INTEGRITY-PERMISSIONS-REPLACEMENT",
+        "status": "PASS",
+        "elapsed_ms": 3315.1,
+        "detail": {
+          "literal_metacharacters": true,
+          "empty_and_readonly_directories": true,
+          "POSIX_modes": true,
+          "SHA256_tree": "ea906640d6441165062c2cc98ac90b4d591687460fc85cc431a6ba0b6f28ddc9",
+          "explicit_replacement": true,
+          "files": 3
+        }
+      },
+      {
+        "name": "RSYNC-SINGLE-FILE",
+        "status": "PASS",
+        "elapsed_ms": 1349.2,
+        "detail": {
+          "rename_and_bidirectional_single_file": true
+        }
+      },
+      {
+        "name": "RSYNC-PATH-HOST-AND-BUDGET-GUARDS",
+        "status": "PASS",
+        "elapsed_ms": 1511.4,
+        "detail": {
+          "source_and_ancestor_symlinks_refused": true,
+          "oversize_refused": true,
+          "unknown_changed_host_keys_refused": true
+        }
+      },
+      {
+        "name": "RSYNC-CANCEL-PRESERVES-DESTINATION",
+        "status": "PASS",
+        "elapsed_ms": 4071.4,
+        "detail": {
+          "actual_running_transfer_cancelled": true,
+          "original_destination_preserved": true,
+          "owned_staging_removed": true
+        }
+      },
+      {
+        "name": "RSYNC-REMOTE-CAPABILITY-GATE",
+        "status": "PASS",
+        "elapsed_ms": 279.5,
+        "detail": {
+          "real_SSH_capability_probe": true,
+          "unsupported_remote_version_refused_before_staging": true,
+          "fixture_scope": "Actual SSH with fixed generated forced-command capability response; not a real legacy rsync executable"
+        }
+      },
+      {
+        "name": "RSYNC-NATIVE-FILES-PANEL",
+        "status": "PASS",
+        "elapsed_ms": 3382.0,
+        "detail": {
+          "real_native_transport_cancelled": true,
+          "original_destination_preserved": true,
+          "real_in_window_rsync": true,
+          "actual_native_async_callback": true,
+          "terminal_PID_preserved": true,
+          "physical_input": false,
+          "native_file_chooser": "Compiled; selected-path callback exercised synthetically"
+        }
+      }
+    ],
+    "external_groups": [
+      {
+        "id": "RSYNC-REAL-EVF-TREE-UPLOAD",
+        "status": "PASS",
+        "bytes": 8388655,
+        "files": 3,
+        "sha256_manifest": "462d6c202f565ad44ec69c0b3109310f5e9b51f81ce990498d6d29ff04af5727",
+        "remote_SHA256_independently_checked": true
+      },
+      {
+        "id": "RSYNC-REAL-EVF-TREE-DOWNLOAD",
+        "status": "PASS",
+        "bytes": 8388655,
+        "sha256_manifest": "462d6c202f565ad44ec69c0b3109310f5e9b51f81ce990498d6d29ff04af5727",
+        "empty_directory_preserved": true
+      },
+      {
+        "id": "RSYNC-REAL-EVF-EXPLICIT-REPLACEMENT",
+        "status": "PASS",
+        "default_refused_existing_destination": true
+      }
+    ],
+    "checks": [
+      {
+        "check": "updater-guards",
+        "status": "PASS"
+      },
+      {
+        "check": "format-core",
+        "status": "PASS"
+      },
+      {
+        "check": "format-desktop",
+        "status": "PASS"
+      },
+      {
+        "check": "lint-core",
+        "status": "PASS"
+      },
+      {
+        "check": "lint-desktop",
+        "status": "PASS"
+      },
+      {
+        "check": "workflow-syntax",
+        "status": "PASS"
+      },
+      {
+        "check": "headless-boundary",
+        "status": "PASS"
+      },
+      {
+        "check": "native-updates.py",
+        "status": "PASS"
+      },
+      {
+        "check": "run-desktop.py",
+        "status": "PASS"
+      },
+      {
+        "check": "run-rdp-r5.py",
+        "status": "PASS"
+      },
+      {
+        "check": "run-files.py",
+        "status": "PASS"
+      },
+      {
+        "check": "run-dual.py",
+        "status": "PASS"
+      },
+      {
+        "check": "run-rsync-native.py",
+        "status": "PASS"
+      },
+      {
+        "check": "test-evf-rsync.py",
+        "status": "PASS"
+      },
+      {
+        "check": "probe-external.py",
+        "status": "PASS"
+      }
+    ],
+    "scope": "Real owned SSH/rsync and actual authorized external transfers; synthetic GTK controls, no physical/RPM/crash qualification"
   }
 }

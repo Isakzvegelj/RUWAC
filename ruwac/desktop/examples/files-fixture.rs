@@ -5,6 +5,8 @@ mod credentials;
 mod files;
 #[path = "../src/files_resume.rs"]
 mod files_resume;
+#[path = "../src/files_rsync.rs"]
+mod files_rsync;
 #[path = "../src/profiles.rs"]
 mod profiles;
 #[path = "../src/rdp_trust.rs"]
@@ -37,6 +39,29 @@ fn main() {
                 .map_err(|_| "cannot read fixture profile")?,
         )
         .map_err(|_| "invalid fixture profile")?;
+        if matches!(args[1].as_str(), "rsync-upload" | "rsync-download") {
+            let cancel = Arc::new(AtomicBool::new(false));
+            let progress = Arc::new(AtomicU64::new(0));
+            if let Some(threshold) = args.get(6).and_then(|s| s.parse::<u64>().ok()) {
+                let (c, b) = (cancel.clone(), progress.clone());
+                std::thread::spawn(move || {
+                    while b.load(std::sync::atomic::Ordering::Relaxed) < threshold {
+                        std::thread::sleep(Duration::from_millis(1));
+                    }
+                    c.store(true, std::sync::atomic::Ordering::Relaxed);
+                });
+            }
+            return serde_json::to_value(files_rsync::transfer(
+                &p,
+                Path::new(&args[3]),
+                Path::new(&args[4]),
+                args[1] == "rsync-upload",
+                args.get(5).map(String::as_str) == Some("overwrite"),
+                &cancel,
+                progress,
+            )?)
+            .map_err(|_| "Cannot encode fixture receipt".into());
+        }
         if args[1] == "list" {
             let entries = files::list(&p, Path::new(&args[3]))?;
             return Ok(

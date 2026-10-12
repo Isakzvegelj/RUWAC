@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v0.2.3 — 2026-10-12 — Stable source release
+
+- Add native rsync-over-SSH file and folder transfers with literal file lists, verified staging, permissions/timestamps, progress, cancellation and explicit whole-destination replacement.
+
 ## v0.2.2 — 2026-10-12 — Stable source release
 
 - Integrate the upstream non-AVC Graphics Pipeline compositor for GNOME RDP modes, preserving the standard Windows renderer and existing clipboard channels.
