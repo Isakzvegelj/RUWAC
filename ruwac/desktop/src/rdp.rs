@@ -140,6 +140,12 @@ impl DisplayFragmentGuard {
         Ok(())
     }
 }
+struct SensitiveUnits(Vec<u16>);
+impl Drop for SensitiveUnits {
+    fn drop(&mut self) {
+        self.0.fill(0);
+    }
+}
 struct SensitiveText(String);
 impl Drop for SensitiveText {
     fn drop(&mut self) {
@@ -149,7 +155,7 @@ impl Drop for SensitiveText {
     }
 }
 enum Command {
-    Assisted(SensitiveText, Arc<AtomicU64>, u64, u64),
+    Assisted(SensitiveText, Arc<AtomicU64>, u64, u64, bool),
     Input(Vec<FastPathInputEvent>),
     Resize(u16, u16, u32),
     Copy(Vec<ClipboardFormat>),
@@ -231,6 +237,7 @@ struct Frame {
 #[derive(Default)]
 struct State {
     handover: Option<Arc<crate::handover::Plan>>,
+    handovers: u32,
     generation: u64,
     connection_stage: String,
     phase: String,
@@ -742,7 +749,7 @@ async fn run_session(
         let mut outputs = tokio::select! {
          pdu=reader.read_pdu()=>{let(action,bytes)=pdu.map_err(|_|"RDP stream disconnected".to_string())?;if action==ironrdp::pdu::Action::X224{if let Ok(ctx)=ironrdp::pdu::mcs::decode_send_data_indication(&bytes){if p.graphics && ctx.channel_id==io_channel {
                 if let Some(plan)=crate::handover::parse(ctx.user_data)? {
-                    state.lock().unwrap().handover=Some(Arc::new(plan));return Ok(());
+                    {let mut st=state.lock().unwrap();st.handovers+=1;st.handover=Some(Arc::new(plan));}return Ok(());
                 }
             }if Some(ctx.channel_id)==clip_channel{fragments.check(ctx.user_data)?;}if Some(ctx.channel_id)==dvc_channel{display_fragments.check(ctx.user_data)?;}}}active.process(&mut image,action,&bytes).map_err(|e|crate::gfx::decoder_location(&e))?},
          command=input.recv()=>{let Some(command)=command else{return Ok(());};match command {
@@ -750,15 +757,21 @@ async fn run_session(
                 let ready=active.get_dvc::<DisplayControlAdapter>().and_then(|d|d.channel_processor_downcast_ref::<DisplayControlAdapter>()).is_some_and(|d|d.0.ready());
                 if image.width()==w&&image.height()==h{state.lock().unwrap().status=Some(format!("Connected · remote {w}×{h}"));vec![]}else if ready && state.lock().unwrap().display_cap.is_some_and(|max|w as u64*h as u64<=max) {match encode_resize(&mut active,w,h,scale){Some(Ok(bytes))=>{{let mut st=state.lock().unwrap();st.display_request=Some((w,h));st.status=Some(format!("Display Control request {w}×{h}; awaiting framebuffer"));}vec![ActiveStageOutput::ResponseFrame(bytes)]},_=>{state.lock().unwrap().status=Some("Display Control rejected; local fit remains available".into());vec![]}}}else{state.lock().unwrap().status=Some("Display Control unsupported or not ready · local fit fallback".into());vec![]}
             },
-            Command::Assisted(text, epoch, expected, generation)=>{
-                let mut units:Vec<u16>=text.0.encode_utf16().collect();
-                for chunk in units.chunks(32) {
-                    if halt.load(Ordering::Acquire) || epoch.load(Ordering::Acquire)!=expected || state.lock().unwrap().generation!=generation || state.lock().unwrap().reactivating { break; }
+            Command::Assisted(text, epoch, expected, generation, submit)=>{
+                let mut completed=true;
+                let mut units=SensitiveUnits(text.0.encode_utf16().collect());
+                for chunk in units.0.chunks(32) {
+                    if halt.load(Ordering::Acquire) || epoch.load(Ordering::Acquire)!=expected || state.lock().unwrap().generation!=generation || state.lock().unwrap().reactivating { completed=false;break; }
                     let events:Vec<_>=chunk.iter().flat_map(|u|[FastPathInputEvent::UnicodeKeyboardEvent(KeyboardFlags::empty(),*u),FastPathInputEvent::UnicodeKeyboardEvent(KeyboardFlags::RELEASE,*u)]).collect();
                     let outputs=active.process_fastpath_input(&mut image,&events).map_err(|_|"Assisted input encoding failed".to_string())?;
                     for output in outputs { if let ActiveStageOutput::ResponseFrame(bytes)=output { tokio::time::timeout(Duration::from_secs(2),writer.write_all(&bytes)).await.map_err(|_|"Assisted input write timeout")?.map_err(|_|"Assisted input write failed")?; } }
                 }
-                units.fill(0);
+                units.0.fill(0);
+                if submit && completed && !halt.load(Ordering::Acquire) && epoch.load(Ordering::Acquire)==expected && state.lock().unwrap().generation==generation && !state.lock().unwrap().reactivating {
+                    let events=[FastPathInputEvent::KeyboardEvent(KeyboardFlags::empty(),0x1c),FastPathInputEvent::KeyboardEvent(KeyboardFlags::RELEASE,0x1c)];
+                    let outputs=active.process_fastpath_input(&mut image,&events).map_err(|_|"GNOME submit encoding failed".to_string())?;
+                    for output in outputs {if let ActiveStageOutput::ResponseFrame(bytes)=output {tokio::time::timeout(Duration::from_secs(2),writer.write_all(&bytes)).await.map_err(|_|"GNOME submit write timeout")?.map_err(|_|"GNOME submit write failed")?;}}
+                }
                 vec![]
             },
             Command::Input(events)=>active.process_fastpath_input(&mut image,&events).map_err(|_|"RDP input encoding failed".to_string())?,
@@ -938,6 +951,46 @@ fn stable_resize(raw: (u16, u16), previous: (u16, u16)) -> (u16, u16) {
     };
     (axis(raw.0, previous.0), axis(raw.1, previous.1))
 }
+struct AutoGdm {
+    armed: bool,
+    sequence: crate::gdm::Sequence,
+    began: std::time::Instant,
+    scan_at: std::time::Instant,
+    tick_at: std::time::Instant,
+    binding: Option<(String, u64, u64)>,
+    pending: Option<std::sync::mpsc::Receiver<Result<crate::gdm::Observation, String>>>,
+    scan_binding: Option<(String, u64, u64)>,
+    image: Option<(u16, u16, u64, Vec<u8>)>,
+    fetching: bool,
+    submitted_handovers: u32,
+    password_queued: bool,
+}
+impl Default for AutoGdm {
+    fn default() -> Self {
+        Self {
+            armed: false,
+            sequence: Default::default(),
+            began: std::time::Instant::now(),
+            scan_at: std::time::Instant::now(),
+            tick_at: std::time::Instant::now(),
+            binding: None,
+            pending: None,
+            scan_binding: None,
+            image: None,
+            fetching: false,
+            submitted_handovers: 0,
+            password_queued: false,
+        }
+    }
+}
+impl AutoGdm {
+    fn authenticated_desktop_handover(&self, handovers: u32) -> bool {
+        self.sequence.step == crate::gdm::Step::Submitted
+            && self.password_queued
+            && !self.fetching
+            && handovers > self.submitted_handovers
+    }
+}
 pub struct RdpView {
     pub root: gtk::Box,
     area: gtk::DrawingArea,
@@ -984,6 +1037,7 @@ pub struct RdpView {
     entries: [gtk::Entry; 4],
     assist_button: gtk::Button,
     assist_epoch: Arc<AtomicU64>,
+    auto_gdm: RefCell<AutoGdm>,
     selected: RefCell<Option<Rc<dyn Fn() -> bool>>>,
     profile_metadata: RefCell<Option<crate::profiles::Profile>>,
 }
@@ -1006,7 +1060,7 @@ fn quick_action(toolbar: &gtk::Box, name: &str, icon: &str, label: &str, target:
 impl RdpView {
     pub fn new(broker: crate::clipboard::Broker) -> Rc<Self> {
         let root = gtk::Box::new(gtk::Orientation::Vertical, 4);
-        root.set_tooltip_text(Some("Remote desktop"));
+        root.set_tooltip_text(None);
         let controls = gtk::Grid::builder()
             .column_spacing(4)
             .row_spacing(4)
@@ -1149,6 +1203,7 @@ impl RdpView {
             entries: [host.clone(), user.clone(), secret.clone(), ca.clone()],
             assist_button: assist.clone(),
             assist_epoch: Arc::new(AtomicU64::new(1)),
+            auto_gdm: RefCell::new(AutoGdm::default()),
             selected: RefCell::new(None),
             profile_metadata: RefCell::new(None),
         });
@@ -1515,6 +1570,7 @@ impl RdpView {
                 return glib::ControlFlow::Break;
             };
             v.update();
+            v.auto_gdm_tick();
             v.canvas();
             if v.preferences_due
                 .get()
@@ -1671,7 +1727,7 @@ impl RdpView {
                 .collect();
             serde_json::json!({"decoded_updates":s.frames,"update_intervals_ms":times})
         });
-        serde_json::json!({"transport_id":self.connection.borrow().as_ref().map(|c|c.id.as_str()),"requested_size":self.requested.get(),"metrics":metrics,"last_pixel":self.last_pixel.get(),"status":self.status.text().as_str(),"size":self.size.get(),"zoom":self.zoom.get(),"pan":[self.scroll.hadjustment().value(),self.scroll.vadjustment().value()],"viewport":[self.area.width(),self.area.height()],"window_width":self.root.root().and_then(|r|r.downcast::<gtk::Window>().ok()).map(|w|w.width()),"active":self.broker.borrow().active()==Some(self.id.as_str()),"epoch":self.broker.borrow().epoch(),"pending":self.pending.borrow().is_some(),"received_generation":self.received_generation.get(),"offers":self.offers_seen.get(),"policy":format!("{:?}",self.policy.get())})
+        serde_json::json!({"transport_id":self.connection.borrow().as_ref().map(|c|c.id.as_str()),"requested_size":self.requested.get(),"metrics":metrics,"gnome_auto":{"armed":self.auto_gdm.borrow().armed,"step":format!("{:?}",self.auto_gdm.borrow().sequence.step),"input_epoch":self.assist_epoch.load(Ordering::Acquire),"guards":{"canvas_focus":self.area.has_focus(),"window_active":self.root.root().and_downcast::<gtk::Window>().is_some_and(|w|w.is_active()),"selected":self.selected.borrow().as_ref().is_some_and(|f|f()),"profile_current":self.profile_metadata.borrow().as_ref().is_some_and(crate::profiles::assist_profile_current),"rendered_generation":self.rendered_generation.get(),"surface_generation":self.surface_generation.get()},"generation":self.connection.borrow().as_ref().map(|c|c.state.lock().unwrap().generation),"handovers":self.connection.borrow().as_ref().map(|c|c.state.lock().unwrap().handovers)},"last_pixel":self.last_pixel.get(),"status":self.status.text().as_str(),"size":self.size.get(),"zoom":self.zoom.get(),"pan":[self.scroll.hadjustment().value(),self.scroll.vadjustment().value()],"viewport":[self.area.width(),self.area.height()],"window_width":self.root.root().and_then(|r|r.downcast::<gtk::Window>().ok()).map(|w|w.width()),"active":self.broker.borrow().active()==Some(self.id.as_str()),"epoch":self.broker.borrow().epoch(),"pending":self.pending.borrow().is_some(),"received_generation":self.received_generation.get(),"offers":self.offers_seen.get(),"policy":format!("{:?}",self.policy.get())})
     }
     pub fn fixture_policy(&self, index: u32) {
         fn find(w: &gtk::Widget) -> Option<gtk::DropDown> {
@@ -1934,8 +1990,7 @@ impl RdpView {
         self.assist_epoch.fetch_add(1, Ordering::AcqRel);
         self.assist_button
             .set_visible(p.preferences.rdp_mode == "gnome-remote-login");
-        self.root
-            .set_tooltip_text(Some(&format!("{} · RDP", p.name)));
+        self.root.set_tooltip_text(None);
         *self.profile_metadata.borrow_mut() = Some(p.clone());
         self.set_profile(
             &p.server,
@@ -1993,6 +2048,14 @@ impl RdpView {
         });
         *self.bridge.borrow_mut() = connection.state.lock().unwrap().bridge.clone();
         *self.connection.borrow_mut() = Some(connection);
+        let mut automatic = AutoGdm::default();
+        automatic.armed = self.profile_metadata.borrow().as_ref().is_some_and(|p| {
+            p.preferences.gnome_auto_login
+                && p.preferences.rdp_mode == "gnome-remote-login"
+                && !p.preferences.gnome_username.is_empty()
+                && !p.preferences.gnome_secret_reference.is_empty()
+        });
+        *self.auto_gdm.borrow_mut() = automatic;
         if activate {
             self.focus();
         }
@@ -2539,6 +2602,314 @@ impl RdpView {
                     && s.authentication_error.is_none()
             })
     }
+    fn auto_gdm_stop(&self, reason: &str) {
+        let mut a = self.auto_gdm.borrow_mut();
+        a.sequence.stop();
+        a.armed = false;
+        a.pending = None;
+        a.image = None;
+        a.fetching = false;
+        self.assist_epoch.fetch_add(1, Ordering::AcqRel);
+        self.status.set_text(reason);
+    }
+    fn auto_gdm_tick(self: &Rc<Self>) {
+        use crate::gdm::{Action, Step};
+        if !self.auto_gdm.borrow().armed {
+            return;
+        }
+        {
+            let mut a = self.auto_gdm.borrow_mut();
+            if a.tick_at.elapsed() < Duration::from_millis(100) {
+                return;
+            }
+            a.tick_at = std::time::Instant::now();
+        }
+        let Some(p) = self.profile_metadata.borrow().clone() else {
+            self.auto_gdm_stop("Automatic sign-in stopped: profile unavailable");
+            return;
+        };
+        let Some((transport, generation, handovers, phase, frames)) =
+            self.connection.borrow().as_ref().map(|c| {
+                let st = c.state.lock().unwrap();
+                (
+                    c.id.clone(),
+                    st.generation,
+                    st.handovers,
+                    st.phase.clone(),
+                    st.frames,
+                )
+            })
+        else {
+            return;
+        };
+        if phase == "error" || phase == "disconnected" {
+            let service_auth_failed = handovers == 0
+                && self
+                    .connection
+                    .borrow()
+                    .as_ref()
+                    .is_some_and(|c| c.state.lock().unwrap().authentication_error.is_some());
+            self.auto_gdm_stop(if service_auth_failed {
+                "RDP service authentication failed; verify RDP Service Login, separate from GNOME User Login"
+            } else {
+                "Automatic sign-in stopped: connection failed"
+            });
+            return;
+        }
+        if self.auto_gdm.borrow().began.elapsed() > Duration::from_secs(90) {
+            self.auto_gdm_stop(
+                "Automatic sign-in stopped: supported GDM form or desktop not verified",
+            );
+            return;
+        }
+        // A second authenticated server handover after password submission must
+        // also produce a new decoded/rendered desktop before reporting completion.
+        if self.auto_gdm.borrow().sequence.step == Step::Submitted {
+            let target_ok = self
+                .auto_gdm
+                .borrow()
+                .binding
+                .as_ref()
+                .is_some_and(|(t, _, e)| {
+                    t == &transport && *e == self.assist_epoch.load(Ordering::Acquire)
+                })
+                && self
+                    .selected
+                    .borrow()
+                    .as_ref()
+                    .is_some_and(|selected| selected())
+                && self.area.has_focus()
+                && self
+                    .root
+                    .root()
+                    .and_downcast::<gtk::Window>()
+                    .is_some_and(|w| w.is_active())
+                && crate::profiles::assist_profile_current(&p);
+            if !target_ok {
+                self.auto_gdm_stop(
+                    "Automatic sign-in stopped: submitted credential target changed",
+                );
+                return;
+            }
+            let complete = {
+                let a = self.auto_gdm.borrow();
+                a.authenticated_desktop_handover(handovers)
+                    && frames > 0
+                    && phase == "connected"
+                    && self.rendered_generation.get() == generation
+                    && self.size.get() != (0, 0)
+            };
+            if complete {
+                let mut a = self.auto_gdm.borrow_mut();
+                a.sequence.authenticated_handover();
+                a.armed = false;
+                a.image = None;
+                a.pending = None;
+                self.status.set_text("GNOME sign-in completed");
+            }
+            return;
+        }
+        // The verified GNOME Remote Login path first redirects the service
+        // connection to its greeter. Desktop Sharing must never trigger login
+        // input merely because its desktop resembles a sign-in form.
+        if handovers == 0 || self.auto_gdm.borrow().began.elapsed() < Duration::from_millis(1500) {
+            return;
+        }
+        let epoch = self.assist_epoch.load(Ordering::Acquire);
+        if !self.assist_ready(&p, &transport, generation, true) {
+            if self.auto_gdm.borrow().binding.is_some() {
+                self.auto_gdm_stop(
+                    "Automatic sign-in stopped: selected tab, profile or focus changed",
+                );
+            }
+            return;
+        }
+        if self
+            .auto_gdm
+            .borrow()
+            .binding
+            .as_ref()
+            .is_some_and(|(t, g, e)| t != &transport || *g != generation || *e != epoch)
+        {
+            self.auto_gdm_stop("Automatic sign-in stopped: input or display generation changed");
+            return;
+        }
+        if self.auto_gdm.borrow().fetching {
+            return;
+        }
+        let result = {
+            let mut a = self.auto_gdm.borrow_mut();
+            match a.pending.as_ref().map(|r| r.try_recv()) {
+                Some(Ok(v)) => {
+                    a.pending = None;
+                    Some(v)
+                }
+                Some(Err(std::sync::mpsc::TryRecvError::Disconnected)) => {
+                    a.pending = None;
+                    Some(Err("Recognition worker stopped".into()))
+                }
+                _ => None,
+            }
+        };
+        if let Some(result) = result {
+            // Loading-screen observations may become obsolete during the initial
+            // service-to-GDM handover. Discard them before the first input;
+            // after input starts, the immutable binding above cancels changes.
+            if self
+                .auto_gdm
+                .borrow()
+                .scan_binding
+                .as_ref()
+                .is_none_or(|(t, g, e)| t != &transport || *g != generation || *e != epoch)
+            {
+                return;
+            }
+            let observation = match result {
+                Ok(v) => v,
+                Err(_) => {
+                    self.auto_gdm_stop("Automatic sign-in stopped: local recognition unavailable");
+                    return;
+                }
+            };
+            let action = self.auto_gdm.borrow_mut().sequence.observe(&observation);
+            if matches!(
+                action,
+                Action::Click(..) | Action::Username | Action::Password
+            ) {
+                self.auto_gdm.borrow_mut().binding = Some((transport.clone(), generation, epoch));
+            }
+            match action {
+                Action::Stop => {
+                    self.auto_gdm_stop("Automatic sign-in stopped: ambiguous or unsupported field");
+                    return;
+                }
+                Action::Click(x, y) => {
+                    let events = vec![
+                        FastPathInputEvent::MouseEvent(MousePdu {
+                            flags: PointerFlags::MOVE,
+                            x_position: x,
+                            y_position: y,
+                            number_of_wheel_rotation_units: 0,
+                        }),
+                        FastPathInputEvent::MouseEvent(MousePdu {
+                            flags: PointerFlags::LEFT_BUTTON | PointerFlags::DOWN,
+                            x_position: x,
+                            y_position: y,
+                            number_of_wheel_rotation_units: 0,
+                        }),
+                        FastPathInputEvent::MouseEvent(MousePdu {
+                            flags: PointerFlags::LEFT_BUTTON,
+                            x_position: x,
+                            y_position: y,
+                            number_of_wheel_rotation_units: 0,
+                        }),
+                    ];
+                    self.command(Command::Input(events));
+                    self.status
+                        .set_text("Automatic sign-in · selecting saved Linux account");
+                }
+                Action::Username => {
+                    self.command(Command::Assisted(
+                        SensitiveText(p.preferences.gnome_username.clone()),
+                        self.assist_epoch.clone(),
+                        epoch,
+                        generation,
+                        true,
+                    ));
+                    self.status
+                        .set_text("Automatic sign-in · saved Linux username sent");
+                }
+                Action::Password => {
+                    self.auto_gdm.borrow_mut().fetching = true;
+                    let (tx, rx) = std::sync::mpsc::sync_channel(1);
+                    let reference = p.preferences.gnome_secret_reference.clone();
+                    std::thread::spawn(move || {
+                        let _ = tx.send(crate::credentials::lookup(&reference).map(SensitiveText));
+                    });
+                    let weak = Rc::downgrade(self);
+                    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+                    glib::timeout_add_local(Duration::from_millis(25), move || {
+                        let Some(v) = weak.upgrade() else {
+                            return glib::ControlFlow::Break;
+                        };
+                        if !v.auto_gdm.borrow().armed
+                            || v.assist_epoch.load(Ordering::Acquire) != epoch
+                            || !v.assist_ready(&p, &transport, generation, true)
+                        {
+                            v.auto_gdm_stop(
+                                "Automatic sign-in stopped: credential target or focus changed",
+                            );
+                            return glib::ControlFlow::Break;
+                        }
+                        match rx.try_recv() {
+                            Ok(Ok(text)) => {
+                                if text.0.is_empty()
+                                    || text.0.len() > 4096
+                                    || text.0.chars().any(char::is_control)
+                                {
+                                    v.auto_gdm_stop(
+                                        "Automatic sign-in stopped: unsupported credential text",
+                                    );
+                                } else {
+                                    let mut a = v.auto_gdm.borrow_mut();
+                                    a.fetching = false;
+                                    a.password_queued = true;
+                                    a.submitted_handovers = v
+                                        .connection
+                                        .borrow()
+                                        .as_ref()
+                                        .map(|c| c.state.lock().unwrap().handovers)
+                                        .unwrap_or(0);
+                                    drop(a);
+                                    v.command(Command::Assisted(
+                                        text,
+                                        v.assist_epoch.clone(),
+                                        epoch,
+                                        generation,
+                                        true,
+                                    ));
+                                    v.status.set_text(
+                                        "Automatic sign-in · awaiting authenticated user desktop",
+                                    );
+                                }
+                                glib::ControlFlow::Break
+                            }
+                            Ok(Err(_)) => {
+                                v.auto_gdm_stop(
+                                    "Automatic sign-in stopped: saved Linux credential unavailable",
+                                );
+                                glib::ControlFlow::Break
+                            }
+                            _ if std::time::Instant::now() < deadline => {
+                                glib::ControlFlow::Continue
+                            }
+                            _ => {
+                                v.auto_gdm_stop(
+                                    "Automatic sign-in stopped: credential lookup deadline",
+                                );
+                                glib::ControlFlow::Break
+                            }
+                        }
+                    });
+                    return;
+                }
+                Action::Wait => {}
+            }
+        }
+        let mut a = self.auto_gdm.borrow_mut();
+        if a.pending.is_none() && a.scan_at.elapsed() > Duration::from_millis(700) {
+            if let Some((w, h, g, pixels)) = a.image.as_ref().cloned() {
+                if g != generation {
+                    drop(a);
+                    self.auto_gdm_stop("Automatic sign-in stopped: stale rendered frame");
+                    return;
+                }
+                a.scan_binding = Some((transport, generation, epoch));
+                a.pending = Some(crate::gdm::recognize(w, h, pixels));
+                a.scan_at = std::time::Instant::now();
+            }
+        }
+    }
     fn assist_dialog(self: &Rc<Self>) {
         let Some(p) = self.profile_metadata.borrow().clone() else {
             self.status
@@ -2600,7 +2971,7 @@ impl RdpView {
             glib::timeout_add_local(Duration::from_millis(25),move||{
                 let Some(v)=weak.upgrade()else{return glib::ControlFlow::Break;};
                 if v.assist_epoch.load(Ordering::Acquire)!=epoch || !v.assist_ready(&p,&transport,generation,true){v.status.set_text("Sign-in cancelled: focus, profile, tab or connection changed");return glib::ControlFlow::Break;}
-                match rx.try_recv(){Ok(Ok(text))=>{if text.0.is_empty()||text.0.len()>4096||text.0.chars().any(char::is_control){v.status.set_text("Sign-in cancelled: unsupported credential text");}else if let Some(c)=v.connection.borrow().as_ref(){if c.tx.try_send(Command::Assisted(text,v.assist_epoch.clone(),epoch,generation)).is_err(){v.status.set_text("Sign-in input not queued");}else{v.status.set_text("Confirmed field input queued; submit at GDM yourself. Login success is not verified.");}}glib::ControlFlow::Break},Ok(Err(e))=>{v.status.set_text(&e);glib::ControlFlow::Break},Err(std::sync::mpsc::TryRecvError::Empty) if std::time::Instant::now()<deadline=>glib::ControlFlow::Continue,_=>{v.status.set_text("Sign-in credential lookup unavailable");glib::ControlFlow::Break}}
+                match rx.try_recv(){Ok(Ok(text))=>{if text.0.is_empty()||text.0.len()>4096||text.0.chars().any(char::is_control){v.status.set_text("Sign-in cancelled: unsupported credential text");}else if let Some(c)=v.connection.borrow().as_ref(){if c.tx.try_send(Command::Assisted(text,v.assist_epoch.clone(),epoch,generation,false)).is_err(){v.status.set_text("Sign-in input not queued");}else{v.status.set_text("Confirmed field input queued; submit at GDM yourself. Login success is not verified.");}}glib::ControlFlow::Break},Ok(Err(e))=>{v.status.set_text(&e);glib::ControlFlow::Break},Err(std::sync::mpsc::TryRecvError::Empty) if std::time::Instant::now()<deadline=>glib::ControlFlow::Continue,_=>{v.status.set_text("Sign-in credential lookup unavailable");glib::ControlFlow::Break}}
             });
             });
         });
@@ -2655,6 +3026,7 @@ impl RdpView {
         }
     }
     pub fn close(&self) {
+        *self.auto_gdm.borrow_mut() = AutoGdm::default();
         self.rendered_generation.set(0);
         self.surface_generation.set(0);
         self.assist_epoch.fetch_add(1, Ordering::AcqRel);
@@ -2736,6 +3108,23 @@ impl RdpView {
             s.frame.take()
         };
         if let Some(f) = frame {
+            // GNOME hands the authenticated user to a fresh desktop with its
+            // own initial resolution. Reapply the viewport request there;
+            // an already matching resize acknowledgement must not loop.
+            if self.mode.get() == Scale::Dynamic
+                && f.generation != self.surface_generation.get()
+                && self.requested.get() != (0, 0)
+                && self.requested.get() != (f.width, f.height)
+            {
+                self.requested.set((0, 0));
+                self.resize_at.set(Some(std::time::Instant::now()));
+            }
+            {
+                let mut a = self.auto_gdm.borrow_mut();
+                if a.armed && !a.fetching && a.sequence.step != crate::gdm::Step::Submitted {
+                    a.image = Some((f.width, f.height, f.generation, f.pixels.clone()));
+                }
+            }
             if self.size.get() != (f.width, f.height) {
                 self.release_keys();
                 self.surface.borrow_mut().take();
@@ -2766,6 +3155,22 @@ impl RdpView {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn initial_gdm_handover_cannot_finish_pending_password_lookup() {
+        let mut a = AutoGdm::default();
+        a.sequence.step = crate::gdm::Step::Submitted;
+        a.fetching = true;
+        // The real service-to-GDM handover is already counted before lookup.
+        assert!(!a.authenticated_desktop_handover(1));
+        a.fetching = false;
+        assert!(!a.authenticated_desktop_handover(1));
+        a.submitted_handovers = 1;
+        a.password_queued = true;
+        assert!(!a.authenticated_desktop_handover(1));
+        assert!(a.authenticated_desktop_handover(2));
+        a.sequence.stop();
+        assert!(!a.authenticated_desktop_handover(2));
+    }
     #[test]
     fn handover_is_consumed_once_and_service_identity_survives_retry() {
         let mut packet = vec![0, 4, 0, 0];

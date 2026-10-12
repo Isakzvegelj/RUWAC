@@ -4,6 +4,7 @@ mod credentials;
 mod files;
 mod files_resume;
 mod files_rsync;
+mod gdm;
 mod gfx;
 mod handover;
 mod host_api;

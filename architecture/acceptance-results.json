@@ -21009,5 +21009,130 @@
     ],
     "automatic_Linux_login": "unfinished; no Linux credentials submitted",
     "physical_input": false
+  },
+  "automatic_gnome_login": {
+    "package": "0.2.6",
+    "sha256": {
+      "ruwac": "b86eee086bb1979e8d7fd6b46d189872f262d0c2d1da327639146989e57b5f28",
+      "ruwac-desktop": "8af9bdc7b3bcef79bebf0a3bcb61ba0ca764493444f4bb2bcf5c70779423e081"
+    },
+    "checks": [
+      {
+        "check": "recognition-fail-closed",
+        "status": "PASS"
+      },
+      {
+        "check": "updater-guards",
+        "status": "PASS"
+      },
+      {
+        "check": "format-core",
+        "status": "PASS"
+      },
+      {
+        "check": "format-desktop",
+        "status": "PASS"
+      },
+      {
+        "check": "lint-core",
+        "status": "PASS"
+      },
+      {
+        "check": "lint-desktop",
+        "status": "PASS"
+      },
+      {
+        "check": "workflow-syntax",
+        "status": "PASS"
+      },
+      {
+        "check": "headless-boundary",
+        "status": "PASS"
+      },
+      {
+        "check": "native-updates.py",
+        "status": "PASS"
+      },
+      {
+        "check": "run-host-inventory.py",
+        "status": "PASS"
+      },
+      {
+        "check": "run-remote-discovery.py",
+        "status": "PASS"
+      },
+      {
+        "check": "run-desktop.py",
+        "status": "PASS"
+      },
+      {
+        "check": "run-rdp-r5.py",
+        "status": "PASS"
+      },
+      {
+        "check": "run-files.py",
+        "status": "PASS"
+      },
+      {
+        "check": "run-dual.py",
+        "status": "PASS"
+      },
+      {
+        "check": "run-rsync-native.py",
+        "status": "PASS"
+      },
+      {
+        "check": "run-recovery-native.py",
+        "status": "PASS"
+      },
+      {
+        "check": "test-evf-recovery.py",
+        "status": "PASS"
+      },
+      {
+        "check": "test-evf-rsync.py",
+        "status": "PASS"
+      },
+      {
+        "check": "probe-external.py",
+        "status": "PASS"
+      },
+      {
+        "check": "test-external-lifecycle.py",
+        "status": "PASS"
+      },
+      {
+        "check": "run-actual-auto.py",
+        "status": "PASS"
+      },
+      {
+        "check": "run-actual-dynamic.py",
+        "status": "PASS"
+      },
+      {
+        "check": "run-actual-cancel.py",
+        "status": "PASS"
+      },
+      {
+        "check": "run-actual-missing-secret.py",
+        "status": "PASS"
+      }
+    ],
+    "desktop_units": 66,
+    "recognition_guards": 9,
+    "actual_Fedora_automatic_login": true,
+    "actual_Fedora_automatic_dynamic_resolution": true,
+    "dynamic_received_size": [
+      1040,
+      550
+    ],
+    "actual_Fedora_tab_cancellation": true,
+    "actual_Fedora_missing_Linux_secret_refusal": true,
+    "native_editor_persistence": true,
+    "probe_seconds": 11.724,
+    "physical_input": false,
+    "other_layouts_locales_background_tabs": "unqualified",
+    "wrong_real_GDM_password": "not submitted",
+    "remote_configuration_changed": false
   }
 }

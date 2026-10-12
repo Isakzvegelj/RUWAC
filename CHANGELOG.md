@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v0.2.6 — 2026-10-12 — Stable source release
+
+- Add opt-in native GNOME user selection and sign-in using separate saved credentials, fail-closed screen recognition and focus guards; preserve dynamic resolution across the authenticated desktop handover.
+
 ## v0.2.5 — 2026-10-12 — Stable source release
 
 - Fix GNOME dynamic-resolution completion status and stale zoom, remove overlapping profile-editor credential controls, and add read-only paged machine discovery through the authenticated CLI/desktop API.

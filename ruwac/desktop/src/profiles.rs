@@ -45,6 +45,8 @@ pub struct Preferences {
     pub gnome_username: String,
     #[serde(skip_serializing_if = "String::is_empty")]
     pub gnome_secret_reference: String,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub gnome_auto_login: bool,
     pub label: String,
     pub network: String,
     pub gateway: String,
@@ -65,6 +67,7 @@ impl Default for Preferences {
             rdp_mode: String::new(),
             gnome_username: String::new(),
             gnome_secret_reference: String::new(),
+            gnome_auto_login: false,
             label: String::new(),
             network: String::new(),
             gateway: String::new(),
@@ -1807,6 +1810,12 @@ fn editor(button: &gtk::Button, store: Rc<RefCell<Store>>, id: Option<String>, s
     gnome.append(&gnome_user);
     gnome.append(&gnome_ref);
     gnome.append(&gnome_password);
+    let gnome_auto =
+        gtk::CheckButton::with_label("Sign in automatically to the saved Linux account");
+    gnome_auto.set_widget_name("gnome-auto-login");
+    gnome_auto.set_active(original.preferences.gnome_auto_login);
+    gnome_auto.set_tooltip_text(Some("Recognizes supported Fedora GDM forms locally. Unknown fields, changed focus and user input stop sign-in. Requires local OCR tools."));
+    gnome.append(&gnome_auto);
     let gnome_actions = gtk::Box::new(gtk::Orientation::Horizontal, 4);
     gnome.append(&gnome_actions);
     for (label, forget) in [
@@ -2068,7 +2077,7 @@ fn editor(button: &gtk::Button, store: Rc<RefCell<Store>>, id: Option<String>, s
             let(s,id,machine_id,st,parent)=(store.clone(),original.id.clone(),original.machine_id.clone(),status.clone(),d.clone());confirm.connect_response(move|c,r|{if r==gtk::ResponseType::Accept {let mut s=s.borrow_mut();let old=s.items.clone();s.items.retain(|p|p.id!=id&&(!machine||p.machine_id!=machine_id));if let Err(e)=s.save(){s.items=old;st.set_text(&e);}else{drop(s);st.set_text("Metadata deleted; previous library retained for Undo");refresh_widgets(parent.transient_for().as_ref());parent.close();}}c.close();});confirm.present();return;
         }
         if response!=gtk::ResponseType::Accept && response!=gtk::ResponseType::Other(1) && response!=gtk::ResponseType::Other(3){d.close();return;}
-        let mut p=original.clone();p.name=fields[0].text().into();p.group=fields[1].text().into();p.machine_id=fields[2].text().into();p.server=fields[3].text().into();p.username=fields[4].text().into();p.preferences.label=fields[5].text().into();p.preferences.network=fields[6].text().into();p.preferences.gateway=fields[7].text().into();p.tags=fields[8].text().split(',').map(str::trim).filter(|s|!s.is_empty()).map(str::to_owned).collect();p.secret_reference=fields[9].text().into();p.preferences.trust=fields[10].text().into();p.preferences.identity_file=fields[11].text().into();p.preferences.identity_secret_reference=identity_reference.text().into();p.preferences.known_hosts=fields[12].text().into();p.protocol=if protocol.selected()==1{"SSH"}else{"RDP"}.into();p.preferences.display=["fit","native","stretch","dynamic"][display.selected() as usize].into();p.preferences.clipboard=clipboard.selected();p.preferences.zoom=zoom.value();p.preferences.fullscreen=full.is_active();p.preferences.reconnect=retry.is_active();p.inherit=inherit.is_active();p.inherit_connection=inherit_connection.is_active();p.inherit_credential=inherit_credential.is_active();p.preferences.rdp_mode=["","gnome-remote-login","gnome-desktop-sharing"][rdp_mode.selected() as usize].into();p.preferences.gnome_username=gnome_user.text().into();p.preferences.gnome_secret_reference=if p.preferences.rdp_mode=="gnome-remote-login"||!original.preferences.gnome_secret_reference.is_empty(){gnome_ref.text().into()}else{String::new()};
+        let mut p=original.clone();p.name=fields[0].text().into();p.group=fields[1].text().into();p.machine_id=fields[2].text().into();p.server=fields[3].text().into();p.username=fields[4].text().into();p.preferences.label=fields[5].text().into();p.preferences.network=fields[6].text().into();p.preferences.gateway=fields[7].text().into();p.tags=fields[8].text().split(',').map(str::trim).filter(|s|!s.is_empty()).map(str::to_owned).collect();p.secret_reference=fields[9].text().into();p.preferences.trust=fields[10].text().into();p.preferences.identity_file=fields[11].text().into();p.preferences.identity_secret_reference=identity_reference.text().into();p.preferences.known_hosts=fields[12].text().into();p.protocol=if protocol.selected()==1{"SSH"}else{"RDP"}.into();p.preferences.display=["fit","native","stretch","dynamic"][display.selected() as usize].into();p.preferences.clipboard=clipboard.selected();p.preferences.zoom=zoom.value();p.preferences.fullscreen=full.is_active();p.preferences.reconnect=retry.is_active();p.inherit=inherit.is_active();p.inherit_connection=inherit_connection.is_active();p.inherit_credential=inherit_credential.is_active();p.preferences.rdp_mode=["","gnome-remote-login","gnome-desktop-sharing"][rdp_mode.selected() as usize].into();p.preferences.gnome_auto_login=gnome_auto.is_active();p.preferences.gnome_username=gnome_user.text().into();p.preferences.gnome_secret_reference=if p.preferences.rdp_mode=="gnome-remote-login"||!original.preferences.gnome_secret_reference.is_empty(){gnome_ref.text().into()}else{String::new()};
         if response==gtk::ResponseType::Other(1){p.id=ruwac_protocol::id("endpoint");p.machine_id=ruwac_protocol::id("machine");p.secret_reference=p.id.clone();if !p.preferences.gnome_secret_reference.is_empty(){p.preferences.gnome_secret_reference=format!("{}.gnome",p.id);}p.name.push_str(" (copy)");}
         if response==gtk::ResponseType::Other(3){p.name=original.name.clone();p.group=original.group.clone();p.id=ruwac_protocol::id("endpoint");p.secret_reference=p.id.clone();if !p.preferences.gnome_secret_reference.is_empty(){p.preferences.gnome_secret_reference=format!("{}.gnome",p.id);}}
         if let Err(e)=p.validate(){info.set_text(&e);return;}
@@ -2499,6 +2508,11 @@ pub fn fixture_editor(root: &gtk::Box, q: &serde_json::Value) -> serde_json::Val
                 if let Some(e) = w.downcast_ref::<gtk::Entry>() {
                     if let Some(v) = q["named"][w.widget_name().as_str()].as_str() {
                         e.set_text(v);
+                    }
+                }
+                if let Some(c) = w.downcast_ref::<gtk::CheckButton>() {
+                    if let Some(v) = q["named"][w.widget_name().as_str()].as_bool() {
+                        c.set_active(v);
                     }
                 }
                 if let Some(e) = w.downcast_ref::<gtk::PasswordEntry>() {
@@ -3000,6 +3014,7 @@ pub(crate) fn assist_profile_current(expected: &Profile) -> bool {
                 && p.username == expected.username
                 && p.secret_reference == expected.secret_reference
                 && p.preferences.rdp_mode == expected.preferences.rdp_mode
+                && p.preferences.gnome_auto_login == expected.preferences.gnome_auto_login
                 && p.preferences.gnome_username == expected.preferences.gnome_username
                 && p.preferences.gnome_secret_reference
                     == expected.preferences.gnome_secret_reference
@@ -3020,6 +3035,7 @@ mod dual_login_tests {
         let v = serde_json::to_value(p).unwrap();
         assert!(v["preferences"].get("rdp_mode").is_none());
         assert!(v["preferences"].get("gnome_secret_reference").is_none());
+        assert!(v["preferences"].get("gnome_auto_login").is_none());
     }
     #[test]
     fn independent_gnome_credentials_roundtrip() {
@@ -3027,8 +3043,10 @@ mod dual_login_tests {
         p.preferences.rdp_mode = "gnome-remote-login".into();
         p.preferences.gnome_username = "oclaw".into();
         p.preferences.gnome_secret_reference = "endpoint_dual.gnome".into();
+        p.preferences.gnome_auto_login = true;
         p.validate().unwrap();
         let copy: Profile = serde_json::from_str(&serde_json::to_string(&p).unwrap()).unwrap();
+        assert!(copy.preferences.gnome_auto_login);
         assert_eq!(copy.username, "denis");
         assert_eq!(copy.secret_reference, "service-ref");
         assert_eq!(copy.preferences.gnome_username, "oclaw");

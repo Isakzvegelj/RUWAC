@@ -49,6 +49,8 @@ The retained headless core has named target-specific commands and an optional co
 
 The desktop is a separate Cargo workspace. Build it with `cargo build --locked --release --manifest-path ruwac/desktop/Cargo.toml`, using the same external CARGO_TARGET_DIR as the core. `ruwac gui` starts the sibling `ruwac-desktop`; Python GI is retained as a test oracle. Native dependencies are optional; only the desktop workspace includes IronRDP. See the current engineering reports before treating fixture success as desktop acceptance.
 
+Optional automatic GNOME sign-in requires local `python3-pillow`, `tesseract` and `tesseract-langpack-eng`. Enable it under the saved profile’s GNOME User Login section. The supported English Fedora GDM flow is verified on an authorized host; unknown screens and changed focus stop input. See [GNOME login behavior](spec/RUWAC_GNOME_LOGIN.md).
+
 The desktop inventory uses system SQLite through rusqlite. Fedora desktop builds also require `sqlite-devel`; the installed desktop requires the SQLite runtime library. The headless daemon and CLI require neither. Private `machines.sqlite3` is canonical storage; `machines.json` remains a compatibility bridge for older windows. Conflicting or malformed storage is preserved and unsafe writes are refused. Closing old editors before concurrent edits avoids races with older releases that do not participate in SQLite transactions.
 
 Release versions use numeric `major.minor.patch`, with odd minor numbers for beta and even minor numbers for stable. Repeated releases in the same lane advance the patch. Historical suffix tags are retained as earlier numbering mistakes; subsequent releases follow the numeric policy.

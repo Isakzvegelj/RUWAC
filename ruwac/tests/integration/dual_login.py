@@ -81,17 +81,20 @@ try:
  editor(operation='edit',named={'gnome-username':'changed-linux-user'},response='save');focus();assert not command('rdp-assist',operation='open')['dialog_shown'];assert receipt(port)==before
  results.append({'id':'DUAL-STALE-SAVED-PROFILE-REFUSES-ASSISTANCE','status':'PASS'})
  assert keyring('service-test',b'generated-invalid-transport','store').returncode==0
- editor(operation='edit',fields={'3':f'127.0.0.1:{ports[1]}'},response='save')
+ editor(operation='edit',fields={'3':f'127.0.0.1:{ports[1]}'},named={'gnome-auto-login':True},response='save')
  command('profiles',search='Fedora dual');time.sleep(.4);command('profiles',open=True)
  def wrong_service_rejected():
   q=command('rdp-inspect',rdp=1)
   reply=subprocess.run([a.binary,'--socket',str(sock),'rdp','list','--json'],env=env,capture_output=True,text=True,timeout=8);assert reply.returncode==0,reply.stderr
   row=next(v for v in json.loads(reply.stdout)['result']['views']if v['transport_id']==q['transport_id'])
   if row['phase']=='error'and row['authentication_error']:
-   assert q['status'].startswith('RDP service authentication failed'),q
-   return q
+   # Worker phase and GTK status are independent asynchronous observations.
+   # Wait for the bounded native update rather than asserting an older label.
+   if q['status'].startswith('RDP service authentication failed') and q['gnome_auto']['step']=='Stopped':return q
+   return None
   return None
  rejected=eventually(wrong_service_rejected,15);assert rejected['size']==[0,0]
+ editor(operation='edit',named={'gnome-auto-login':False},response='save')
  assert keyring('service-test',b'generated-local-only','store').returncode==0
  results.append({'id':'DUAL-WRONG-SERVICE-PASSWORD-NO-DESKTOP','status':'PASS'})
  # Restarting a named additional window shares daemon/profile DB, saves layout separately.

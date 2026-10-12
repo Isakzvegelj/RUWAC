@@ -1,6 +1,18 @@
 # RUWAC product completion audit
 
-## GNOME graphics and same-endpoint handover — latest implementation
+## Automatic GNOME sign-in — compiled package 0.2.6
+
+Machines → Edit → GNOME Remote Login → GNOME User Login now offers **Sign in automatically to the saved Linux account**. This optional endpoint setting preserves existing profiles and defaults off. RDP Service Login still authenticates the transport; the independently stored Linux username/password belongs only to GDM. Windows and Desktop Sharing retain their existing single-stage flow.
+
+The native frontend recognizes supported English Fedora GDM forms from its canonical authenticated remote framebuffer. It selects Not listed, submits the saved Linux username, recognizes the focused Password entry, retrieves the separate Linux secret from Secret Service and sends paired native RDP Unicode/Return events. No clipboard, credential CLI arguments or automation response carries the password. Each action is bound to the current saved profile, endpoint/trust, connection, display generation, selected tab, window/canvas focus and input epoch. Unknown/ambiguous forms do not authorize credentials. User input, focus/tab/profile changes, reconnects and unsupported recognition stop delivery. One password attempt is allowed; missing credentials are refused, and no second attempt is inferred from an unchanged GDM prompt. Already transmitted input cannot be recalled.
+
+Real authorized Fedora 44 acceptance passes one-Connect automatic Linux account selection and password submission, a subsequent authenticated same-endpoint handover and rendering of the existing Linux desktop. The local GTK/Wayland seat is isolated and synthetic; the remote service, GDM and Linux desktop are real. Clipboard is disabled, the SSH-attested original TLS leaf remains mandatory, and remote configuration/owner profiles/existing Linux sessions are preserved. Dynamic resolution also follows the authenticated user-desktop handover and converges to the real requested viewport. Stamped probe duration: 11.724 seconds, including process startup and connection establishment. Real GDM tab switching cancels before password submission; a missing Linux credential stops without a password or desktop handover. Native checkbox off/on persistence preserves both credential references and endpoint identities.
+
+All 25 frozen quality/native/file/RDP checks and 66 desktop units pass. Nine local recognition guards exercise missing OCR, unknown/ambiguous fields, insufficient confidence, malformed data, unsupported dimensions and deadline/child cleanup. Existing dual-credential tests retain wrong service credentials, isolated keyring-unavailable cases, stale profile/focus/reconnect refusal and Windows behavior. Wrong real GDM passwords were not deliberately submitted to the owner account; that acceptance gate remains open. CLI SHA-256: `b86eee086bb1979e8d7fd6b46d189872f262d0c2d1da327639146989e57b5f28`. GTK SHA-256: `8af9bdc7b3bcef79bebf0a3bcb61ba0ca764493444f4bb2bcf5c70779423e081`. Exact commands: existing `build.sh --release --test --desktop` and controller-managed `release.sh stable`, with the owned native acceptance runner.
+
+This is targeted client input automation, not a new GDM/RDP authentication API or system-wide autologin. Automatic background-tab login, other GDM layouts/locales, physical-seat input, external clipboard, unfixed RSA dependency security and qualified Fedora RPM/binary distribution remain separate gates. Automatic sign-in requires local Python/Pillow, Tesseract and English language data; unsupported/missing recognition stops safely. No remote Fedora settings were changed.
+
+## Previous graphics/handover baseline, before automatic sign-in
 
 GNOME modes now use the pinned upstream non-AVC EGFX client/compositor and ClearCodec, Planar and RemoteFX Progressive decoding. Standard/Windows connections preserve the existing rendering path. GFX output is applied to the canonical pointer-aware framebuffer. Graphics reset invalidates stale assisted-input generations. The headless daemon retains no graphical dependencies.
 
@@ -15,7 +27,7 @@ The full product is not yet complete. The stable source lane contains operationa
 | Requirement | Current evidence | Status / remaining work |
 |---|---|---|
 | D-00 independent windows | Actual GTK/shared-daemon window close and independent private layouts | PASS bounded native fixture; first window owns default GUI automation endpoint; RDP transport transfer between processes remains |
-| RDP-06 GNOME dual login | Separate service/GDM metadata and Secret Service operations; 14 native groups | Storage and confirmed authenticated loopback field input PASS; real service login/handover/GDM rendering PASS; Linux sign-in, wrong GDM password and unattended second-stage login remain unverified |
+| RDP-06 GNOME dual login | Separate credentials, assisted input and opt-in recognized native login | Real authorized Fedora automatic Linux sign-in PASS; tab/missing-secret refusal PASS. Other layouts/locales, background tabs and wrong real GDM password remain open |
 | T-01 Screen commands | Nine real-PTY copy/chooser/prompt/configuration and 2–5 RUWAC nesting groups | PARTIAL: implemented bounded headless interaction; mixed GNU Screen/tmux 2–5 layers pass in scoped configurations; Screen arbitrary-control paste and physical input qualification remain |
 | T-02 startup input | 100 adversarial probes in headless suite | PASS fixture |
 | T-03 multiple PTYs and load | Independent PTYs, layout suite, actual 128-pane process/wire/native paging fixture | PASS bounded capacity; maximum-load terminal/checkpoint performance remains separate |
@@ -34,7 +46,7 @@ The full product is not yet complete. The stable source lane contains operationa
 | A-06 socket/backpressure | Owned daemon socket, malformed frames, concurrency limits | PARTIAL: same-UID peer verification and byte-bounded process metadata/all-page native guards validated; broader response bounds and fuzz/soak remain |
 | A-07 GUI control | Explicit unavailable response and independent headless graph | PARTIAL: independent permission-scoped focus/RDP lifecycle over actual SSH validated; GUI events and remote input remain |
 | R-01 Windows | Authorized Windows 11 authentication and real 1280×720 framebuffer decoding | PASS bounded real-host login/frame; external clipboard, display/input and broader interoperability remain |
-| R-02 Fedora GNOME | Actual SSH-attested service authentication, same-endpoint RDSTLS handover and GDM frames | PARTIAL: service/GDM rendering, 12 resizes and reconnects pass; Linux-user sign-in and clipboard remain |
+| R-02 Fedora GNOME | Actual authorized service login, greeter/user-desktop handovers, automatic Linux sign-in and dynamic viewport | PARTIAL: supported English real-host path PASS; physical input, other locales/layouts and external clipboard remain open |
 | R-03 independent tabs | Three authenticated loopback tabs; 200 switches/450 inactive offers | PARTIAL: external-host qualification |
 | R-04 display modes | Actual Display Control/reactivation, viewport transforms and resize storm | PARTIAL: external server and physical pointer acceptance |
 | R-05 remote keys | Scancode mapping and send-key menu | PARTIAL: actual Windows/GNOME layouts, AltGr/IME/compositor restrictions |
@@ -69,4 +81,4 @@ Native endpoint-bound certificate review/pinning and changed/stale guards have f
 Authorized Fedora SSH headless/real remote-PTY acceptance passed on 2026-10-11. Mixed terminal/RDP/Files checkpoint restoration and normal application activation are implemented; detailed remaining view-management gates apply. Every remaining full-product gate above continues to apply.
 
 
-Owner explicitly requires automatic GNOME second-stage user selection and login on Connect. Saved credentials and confirmed assisted field delivery do not prove that requirement. It remains OPEN pending a supported, reliably targeted implementation and real authorized-host login evidence. Latest owner display/editor fixes and machine discovery are described in the current API/acceptance reports.
+Owner requires automatic GNOME account selection and sign-in on Connect. The supported English Fedora GDM path now passes on a real authorized host. Universal/unattended background login remains unqualified; assisted delivery remains available for unsupported screens.
