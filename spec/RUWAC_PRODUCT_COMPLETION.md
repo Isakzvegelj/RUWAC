@@ -1,5 +1,15 @@
 # RUWAC product completion audit
 
+## Native clipboard-to-Codex attachment
+
+The terminal toolbar now offers **Attach PNG to Codex**. It reads actual GDK `image/png`, validates/decode-stages an owned 0600 file, binds delivery to the selected/focused terminal and foreground Codex process, and observes the current draft’s image marker. It never submits a turn. Old conversation markers and model output cannot acknowledge a new attachment. The current persistent engine is preserved: a checked fallback uses its existing authenticated input channel when the new attachment API is unavailable. No local path is offered to an SSH foreground process as a remote attachment.
+
+Real acceptance uses a separate Wayland GDK clipboard producer and authenticated Codex 0.162.1 on CVF. The actual compiled toolbar callback accepts the generated PNG, verifies its hash/mode, cancels a slow read on Wayland focus loss and refuses an ordinary terminal. Codex consumes the PNG after the frontend is closed and before the private daemon is stopped. Both the new engine and an isolated immutable 0.1.29 engine pass. Input/focus driving is synthetic on an isolated compositor; physical-seat acceptance remains separate. No owner clipboard, configuration or sessions are used by those fixtures.
+
+Native image staging is bounded to 128 files and 256 MiB per frontend namespace, with 64 MiB input/decoded-image and 4096-pixel dimension caps. Agent files survive frontend close. Retained namespaces expire after 24 hours from their most recent attachment; active-frontends check expiry each minute and later startup reclaims expired closed namespaces. Live transfer files and unknown entries are preserved. Four filesystem tests cover frontend-close retention, expiry, symlink refusal and nonblocking FIFO refusal. Process traversal is globally bounded to 64 entries. Errors retain uncertain queued files and advise inspecting the draft before retrying; already transmitted input cannot be recalled.
+
+This qualifies the supported local Codex image journey. SSH image transport/consumption, other agent adapters/models, physical input, external RDP clipboard and qualified Fedora packages remain open. Publication uses the existing build/release scripts and controller-managed numbering.
+
 ## Automatic GNOME sign-in — compiled package 0.2.6
 
 Machines → Edit → GNOME Remote Login → GNOME User Login now offers **Sign in automatically to the saved Linux account**. This optional endpoint setting preserves existing profiles and defaults off. RDP Service Login still authenticates the transport; the independently stored Linux username/password belongs only to GDM. Windows and Desktop Sharing retain their existing single-stage flow.
@@ -58,14 +68,14 @@ The full product is not yet complete. The stable source lane contains operationa
 | C-05 ownership | Real GDK peer and three loopback RDP tabs; Files isolation | PASS owned compositor |
 | C-06 PRIMARY/internal separation | Independent internal/CLIPBOARD tests | PARTIAL: PRIMARY protocol and physical middle-click acceptance |
 | C-07 application paste | Real GDK peer, native applications, 10 KiB/1 MiB payloads | PASS owned compositor |
-| C-08 local agent image | Safe owned PNG staging | OPEN: supported agent must actually acknowledge image consumption |
+| C-08 local agent image | Real native GDK → Codex draft and actual consumption, including frontend close and preserved legacy engine | PASS scoped local Codex 0.162.1; synthetic local input, physical-seat gate separate |
 | C-09 remote agent image | SFTP integrity transport is available | OPEN: destination staging, receipt and separate-host consumer acceptance |
 | C-10 transactions/errors | Epoch cancellation, policies, reconnect and limits | PASS bounded fixture; further malformed/slow-server soak remains |
 | C-11 unsupported format/consumer | Visible staging errors and no fake attachment claim | PARTIAL: final destination/consumer fallback UX |
 | F-01 import | Explicit read-only Remmina preview, 70 imports, metadata backup | PARTIAL: explicit-ID reviewed merge, policy preservation, stale/active guards and Undo validated; broader nonsecret mapping/skip reporting remains |
 | F-02 library | Native compact sidebar/panels, CRUD, groups, favorites, recents, 1,000-profile fixture | PARTIAL: native 50-row paging and all 1,000 endpoints/search validated; transactional canonical SQLite inventory and legacy recovery validated; inherited routes remain |
 | F-03 transfers | SFTP SHA-256, native pause/resume/discard, original-host binding, lost-rename recovery and encrypted keys through Secret Service; 14 new and six existing fixture groups | PARTIAL: native rsync file/folder copies, actual authorized SSH integrity and cancellation pass; client SIGKILL recovery and native/external verified backup handling pass; partial-data resume, broader implementations, remaining independent-actor races and remote power-loss durability remain |
-| F-04 agents | Ordinary terminal execution, bounded process metadata, native search/exact jump and private D-Bus exit delivery | PARTIAL: observed process layer validated; supported agent image consumption, physical notification acceptance and optional structured adapters remain |
+| F-04 agents | Ordinary terminal execution, bounded process metadata, native search/exact jump and private D-Bus exit delivery | PARTIAL: observed process layer validated; SSH image consumption, other agent adapters, physical notification acceptance and optional structured adapters remain |
 | F-05 ordinary user/headless package | Independent graphical-free headless graph | PARTIAL: per-user installation implemented; RPM dependency/install qualification remains open |
 | F-06 install/upgrade/uninstall | Reversible private per-user installer and desktop entry | PARTIAL: per-user installer fixtures pass; Fedora RPM lifecycle remains open |
 | F-07 standard workflow | Existing build/release/controller and verified tagged source releases | PARTIAL: immutable binary/RPM publication remains unqualified |

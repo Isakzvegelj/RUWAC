@@ -1,5 +1,15 @@
 # RUWAC acceptance status
 
+## Native clipboard-to-Codex attachment
+
+The terminal toolbar now offers **Attach PNG to Codex**. It reads actual GDK `image/png`, validates/decode-stages an owned 0600 file, binds delivery to the selected/focused terminal and foreground Codex process, and observes the current draft’s image marker. It never submits a turn. Old conversation markers and model output cannot acknowledge a new attachment. The current persistent engine is preserved: a checked fallback uses its existing authenticated input channel when the new attachment API is unavailable. No local path is offered to an SSH foreground process as a remote attachment.
+
+Real acceptance uses a separate Wayland GDK clipboard producer and authenticated Codex 0.162.1 on CVF. The actual compiled toolbar callback accepts the generated PNG, verifies its hash/mode, cancels a slow read on Wayland focus loss and refuses an ordinary terminal. Codex consumes the PNG after the frontend is closed and before the private daemon is stopped. Both the new engine and an isolated immutable 0.1.29 engine pass. Input/focus driving is synthetic on an isolated compositor; physical-seat acceptance remains separate. No owner clipboard, configuration or sessions are used by those fixtures.
+
+Native image staging is bounded to 128 files and 256 MiB per frontend namespace, with 64 MiB input/decoded-image and 4096-pixel dimension caps. Agent files survive frontend close. Retained namespaces expire after 24 hours from their most recent attachment; active-frontends check expiry each minute and later startup reclaims expired closed namespaces. Live transfer files and unknown entries are preserved. Four filesystem tests cover frontend-close retention, expiry, symlink refusal and nonblocking FIFO refusal. Process traversal is globally bounded to 64 entries. Errors retain uncertain queued files and advise inspecting the draft before retrying; already transmitted input cannot be recalled.
+
+This qualifies the supported local Codex image journey. SSH image transport/consumption, other agent adapters/models, physical input, external RDP clipboard and qualified Fedora packages remain open. Publication uses the existing build/release scripts and controller-managed numbering.
+
 ## Codex image attachment — candidate implementation
 
 The CLI now supports `ruwac --socket PRIVATE_SOCKET image-attach pane_ID PNG PRIVATE_DIRECTORY`. It stages a validated PNG as an owned 0600 file in an owned 0700 directory, then invokes the installed Codex terminal’s documented image-path paste behavior. The authenticated daemon binds delivery to the explicit selected pane and foreground process group, requires a live same-user Codex executable, an observed supported model-ready footer and bracketed paste, and refuses stale targets, ordinary processes, unsafe paths, symlinks, hard links and public staging permissions. It sends no Enter and does not submit a turn. The CLI distinguishes queuing from observation of a new image marker; neither is reported as model consumption. Keep the staged file until the user submits or discards the draft.

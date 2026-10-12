@@ -22,7 +22,7 @@ pub fn stage_png_with_limit(input: &Path, dir: &Path, limit: usize) -> Result<Re
     let limit = limit.min(MAX_IMAGE_BYTES);
     let mut source = OpenOptions::new()
         .read(true)
-        .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC | libc::O_NONBLOCK)
         .open(input)
         .map_err(|e| e.to_string())?;
     let m = source.metadata().map_err(|e| e.to_string())?;
@@ -40,7 +40,7 @@ pub fn stage_png_with_limit(input: &Path, dir: &Path, limit: usize) -> Result<Re
             .write(true)
             .create_new(true)
             .mode(0o600)
-            .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
+            .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC | libc::O_NONBLOCK)
             .open(&path)
             .map_err(|e| e.to_string())?;
         let mut hash = Sha256::new();

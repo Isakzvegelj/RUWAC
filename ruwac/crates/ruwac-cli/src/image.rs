@@ -6,13 +6,9 @@ use std::{
     time::{Duration, Instant},
 };
 
-fn highest_image(text: &str) -> u64 {
-    text.split("[Image #")
-        .skip(1)
-        .filter_map(|s| s.split_once(']').and_then(|(n, _)| n.parse::<u64>().ok()))
-        .max()
-        .unwrap_or(0)
-}
+#[path = "../../ruwac-pty/src/attachment.rs"]
+mod guard;
+use guard::highest_image;
 pub fn attach(
     pane: &str,
     input: &str,
@@ -60,7 +56,7 @@ mod tests {
     use super::*;
     #[test]
     fn image_markers_require_complete_numeric_tokens() {
-        assert_eq!(highest_image("[Image #3] [Image #1]"), 3);
-        assert_eq!(highest_image("[Image #4 [Image #x]"), 0);
+        assert_eq!(highest_image("› [Image #3] [Image #1]"), 3);
+        assert_eq!(highest_image("› [Image #4 [Image #x]"), 0);
     }
 }

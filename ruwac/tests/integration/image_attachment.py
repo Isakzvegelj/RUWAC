@@ -20,7 +20,7 @@ try:
         time.sleep(.05)
     with Client(sock) as c:
         # A forged title and enabled bracketed paste must not qualify a plain process.
-        session = c.call('session.create', {'name':'Attachment refusal', 'argv':['python3', '-c', 'import time; print("\\033[?2004hOpenAI Codex",flush=True); time.sleep(60)']})
+        session = c.call('session.create', {'name':'Attachment refusal', 'argv':['python3', '-c', 'import time; print("\\033[?2004hOpenAI Codex\\nGPT-6.1-Sol\\n›",flush=True); time.sleep(60)']})
         c.call('pane.wait', {'pane':session['pane'], 'contains':'OpenAI Codex', 'timeout_ms':5000})
         image = root / 'owned.png'
         image.write_bytes(b'\x89PNG\r\n\x1a\n')
@@ -40,9 +40,16 @@ try:
         os.link(image, alias)
         c.call('pane.attachImage', params, error='INVALID_IMAGE')
         alias.unlink()
+        fifo = root / 'pipe.png'
+        os.mkfifo(fifo, 0o600)
+        started = time.monotonic()
+        c.call('pane.attachImage', {**params, 'path':str(fifo)}, error='INVALID_IMAGE')
+        assert time.monotonic()-started < 1, 'FIFO blocked the daemon actor'
+        rejected = subprocess.run([a.binary, 'image-stage', str(fifo), str(root)], capture_output=True, timeout=2)
+        assert rejected.returncode != 0, 'FIFO staged as PNG'
         image.write_bytes(b'not a PNG')
         c.call('pane.attachImage', params, error='INVALID_IMAGE')
-        result = {'refusals':7, 'ordinary_process_with_forged_title_refused':True, 'real_owned_PTY':True, 'provider_consumption':'separate authenticated acceptance required'}
+        result = {'refusals':8, 'ordinary_process_with_forged_title_refused':True, 'real_owned_PTY':True, 'PNG_stage_FIFO_refused':True, 'provider_consumption':'separate authenticated acceptance required'}
         (root/'receipt.json').write_text(json.dumps(result, indent=2)+'\n')
         print('IMAGE_ATTACHMENT_GUARDS PASS', root)
 finally:

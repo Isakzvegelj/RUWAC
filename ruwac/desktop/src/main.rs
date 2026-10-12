@@ -8,6 +8,7 @@ mod gdm;
 mod gfx;
 mod handover;
 mod host_api;
+mod image_attach;
 mod ipc;
 mod jobs;
 mod profiles;
@@ -102,7 +103,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
             "--help" => {
                 println!(
-                    "ruwac-desktop --socket PRIVATE_SOCKET [--session SESSION]... [--staging-dir PRIVATE_DIRECTORY]\nOptional --new-instance opens a separate desktop process while preserving existing windows. --window-id window_HEX uses an independent saved workspace; the New window button supplies it.\nOptional --allow-workspace-control authorizes IPC focus changes; --allow-rdp-control separately authorizes RDP lifecycle control.\nAlt+1…9/0 workspace tabs; --theme dark|light|system (default dark).\nCtrl+A prefix; Ctrl+Shift+C/V desktop selection; Shift+drag overrides application mouse.\nMachines overlays the workspace and hides after selection; pin and width controls are in Preferences. Optional --show-machines opens it at startup.\nOptional independent GTK client; daemon owns PTYs. Image staging is not agent attachment."
+                    "ruwac-desktop --socket PRIVATE_SOCKET [--session SESSION]... [--staging-dir PRIVATE_DIRECTORY]\nOptional --new-instance opens a separate desktop process while preserving existing windows. --window-id window_HEX uses an independent saved workspace; the New window button supplies it.\nOptional --allow-workspace-control authorizes IPC focus changes; --allow-rdp-control separately authorizes RDP lifecycle control.\nAlt+1…9/0 workspace tabs; --theme dark|light|system (default dark).\nCtrl+A prefix; Ctrl+Shift+C/V desktop selection; Shift+drag overrides application mouse.\nMachines overlays the workspace and hides after selection; pin and width controls are in Preferences. Optional --show-machines opens it at startup.\nOptional independent GTK client; daemon owns PTYs. Attach PNG to Codex targets the selected local Codex draft; no automatic submission."
                 );
                 return Ok(());
             }
@@ -248,11 +249,31 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
   let rv=rdp_views.clone();let b=broker.clone();let (memory,focus)=(focus_memory.clone(),focus_view.clone());tabs.connect_selected_page_notify(move|t|{if let Some(page)=t.selected_page(){for v in rv.borrow().iter(){if !tiles::contains(&page.child(),&v.root){v.inactive();}}b.borrow_mut().focus(None);tiles::focus_selected(t,&memory,&focus);}});
   let rv=rdp_views.clone();tabs.connect_close_page(move|_,page|{let mut views=rv.borrow_mut();for v in views.iter(){if tiles::contains(&page.child(),&v.root){v.close();}}views.retain(|v|!tiles::contains(&page.child(),&v.root));glib::Propagation::Proceed});
   let rv=rdp_views.clone();window.connect_close_request(move|_|{for v in rv.borrow().iter(){v.close();}glib::Propagation::Proceed});
+  if let Some(namespace)=stage.clone(){glib::timeout_add_local(Duration::from_secs(60),move||{let _=staging::expire(&namespace);glib::ControlFlow::Continue});}
   let owned_images:Rc<RefCell<Vec<PathBuf>>>=Rc::new(RefCell::new(Vec::new()));
   let clear=gtk::Button::with_label("Clear message");tools.append(&clear);let vc=all.clone();let tc=tabs.clone();clear.connect_clicked(move|_|{if let Some(page)=tc.selected_page(){for v in vc.borrow().iter(){if tiles::contains(&page.child(),&v.root){*v.warning.borrow_mut()=None;v.status.set_text("Delivery warning acknowledged");}}}});
   let image_button=gtk::Button::with_label("Stage clipboard PNG");tools.append(&image_button);
   let vb=all.clone();let tb=tabs.clone();let sb=stage.clone();let owned=owned_images.clone();let last=last_focus.clone();
   image_button.connect_clicked(move|_|{let Some(page)=tb.selected_page()else{return;};let Some(v)=vb.borrow().iter().find(|v|tiles::contains(&page.child(),&v.root)&&last.borrow().as_deref()==Some(v.session.as_str())).cloned()else{return;};let Some(dir)=sb.clone()else{v.status.set_text("Private staging directory is unavailable");return;};v.focus();let epoch=v.broker.borrow().epoch();let weak=Rc::downgrade(&v);let owned=owned.clone();clipboard::ingest_png(&v.area.display().clipboard(),dir,v.broker.clone(),epoch,ruwac_clipboard::MAX_IMAGE_BYTES,Duration::ZERO,move|r|if let Some(v)=weak.upgrade(){match r{Ok(r)=>{owned.borrow_mut().push(r.path);v.warn(&format!("PNG staged: {}×{}, {} bytes; no agent attachment",r.width,r.height,r.bytes));},Err(e)=>v.warn(&e)}});});
+  let attach_button=gtk::Button::with_label("Attach PNG to Codex");attach_button.set_tooltip_text(Some("Attach the desktop clipboard PNG to the selected Codex draft without submitting it"));tools.append(&attach_button);
+  let (views,image_tabs,image_stage,image_last)=(all.clone(),tabs.clone(),stage.clone(),last_focus.clone());
+  attach_button.connect_clicked(move|button|{
+    let Some(page)=image_tabs.selected_page()else{return;};
+    let Some(view)=views.borrow().iter().find(|v|tiles::contains(&page.child(),&v.root)&&image_last.borrow().as_deref()==Some(v.session.as_str())).cloned()else{return;};
+    let Some(directory)=image_stage.clone()else{view.warn("Private image staging is unavailable");return;};
+    let (tabs,root)=(image_tabs.downgrade(),view.root.downgrade());
+    let selected:Rc<dyn Fn()->bool>=Rc::new(move||tabs.upgrade().zip(root.upgrade()).is_some_and(|(tabs,root)|tabs.selected_page().is_some_and(|p|tiles::contains(&p.child(),&root))));
+    button.set_sensitive(false);view.warn("Reading clipboard PNG for the selected Codex draft…");
+    let (button,weak)=(button.downgrade(),Rc::downgrade(&view));
+    image_attach::clipboard(&view,directory,selected,Duration::ZERO,move|result|{
+      if let Some(button)=button.upgrade(){button.set_sensitive(true);}
+      if let Some(view)=weak.upgrade(){match result{
+        Ok(receipt) if receipt["draft_attachment_observed"]==true&&receipt["focus_current"]==true=>view.warn("PNG attached to the Codex draft; submit it in Codex when ready. File retained for 24 hours."),
+        Ok(_)=>view.warn("Image path queued; attachment not confirmed. Inspect the Codex draft before retrying."),
+        Err(error)=>view.warn(&error),
+      }}
+    });
+  });
   for session in &sessions{sessions::append(&tabs,&all,&socket,&broker,session,session_names.get(session).map(String::as_str).unwrap_or("Terminal"));}
   if let Some(id)=selected.as_ref(){if let Some(v)=all.borrow().iter().find(|v|&v.session==id){if let Some(page)=tiles::page(&tabs,&v.root){tabs.set_selected_page(&page);}}}
   header.pack_start(&sessions::controls(tabs.clone(),all.clone(),socket.clone(),broker.clone()));
@@ -425,6 +446,8 @@ v.fixture_display(q["mode"].as_str().unwrap_or("fit"),q["zoom"].as_f64().unwrap_
     "copy"=>{v.select_fixture();v.copy_clipboard(q["primary"]==true);reply(json!({"offered":true}));},
     "paste"=>{v.paste_clipboard(q["primary"]==true);reply(json!({"async":true}));},
     "read-text"=>{let epoch=v.broker.borrow().epoch();clipboard::read_text(&v.area.display().clipboard(),v.broker.clone(),epoch,ruwac_clipboard::ClipScope::Clipboard,Duration::from_millis(q["delay_ms"].as_u64().unwrap_or(0).min(100)),move|r|{use sha2::{Digest,Sha256};reply(match r{Ok(t)=>json!({"bytes":t.len(),"sha256":format!("{:x}",Sha256::digest(t.as_bytes()))}),Err(e)=>json!({"error":e})});});},
+    "attach-image-button"=>reply(json!({"clicked":sessions::fixture(&window,"Attach PNG to Codex")})),
+    "attach-image"=>{if let Some(stage)=staging.clone(){let(t,root)=(tabs.downgrade(),v.root.downgrade());let selected:Rc<dyn Fn()->bool>=Rc::new(move||t.upgrade().zip(root.upgrade()).is_some_and(|(t,r)|t.selected_page().is_some_and(|p|tiles::contains(&p.child(),&r))));image_attach::clipboard(&v,stage,selected,Duration::from_millis(q["delay_ms"].as_u64().unwrap_or(0).min(100)),move|result|reply(match result{Ok(v)=>v,Err(error)=>json!({"error":error})}));}else{reply(json!({"error":"Private stage required"}));}},
     "read-image"=>{if let Some(stage)=staging.clone(){let epoch=v.broker.borrow().epoch();let owned=owned.clone();clipboard::ingest_png(&v.area.display().clipboard(),stage,v.broker.clone(),epoch,q["limit"].as_u64().unwrap_or(ruwac_clipboard::MAX_IMAGE_BYTES as u64)as usize,Duration::from_millis(q["delay_ms"].as_u64().unwrap_or(0).min(100)),move|r|reply(match r{Ok(r)=>{owned.borrow_mut().push(r.path.clone());json!({"path":r.path,"sha256":r.sha256,"bytes":r.bytes,"width":r.width,"height":r.height})},Err(e)=>json!({"error":e})}));}else{reply(json!({"error":"staging directory required"}));}},
     "mouse"=>{v.mouse(q["button"].as_u64().unwrap_or(0)as u32,q["x"].as_f64().unwrap_or(1.0),q["y"].as_f64().unwrap_or(1.0),q["release"]==true);reply(json!({"handler":"synthetic mouse callback"}));},
     "delay-queue"=>{v.command("pane.wait",json!({"pane":*v.target.borrow(),"contains":"not-present-delayed-fixture","timeout_ms":1000}));for _ in 0..160{v.command("pane.select",json!({"pane":*v.target.borrow()}));}reply(json!({"requested":160}));},

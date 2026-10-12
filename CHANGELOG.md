@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v0.2.8 — 2026-10-13 — Stable source release
+
+- Add native clipboard PNG attachment to the selected Codex draft, preserve existing daemons through checked legacy input, and retain bounded staged images across frontend close with expiry and honest attachment receipts.
+
 ## v0.2.7 — 2026-10-13 — Stable source release
 
 - Add explicit local Codex PNG draft attachment through the authenticated terminal protocol, with foreground/process guards and observed attachment receipts; never submit the user’s draft automatically.

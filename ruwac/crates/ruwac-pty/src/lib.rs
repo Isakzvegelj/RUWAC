@@ -1,3 +1,4 @@
+pub mod attachment;
 pub mod shell;
 use portable_pty::{Child, CommandBuilder, MasterPty, PtySize};
 use std::{

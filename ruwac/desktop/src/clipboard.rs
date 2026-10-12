@@ -102,6 +102,13 @@ pub fn ingest_png(
     delay: std::time::Duration,
     done: impl FnOnce(Result<ruwac_clipboard::Receipt, String>) + 'static,
 ) {
+    let limit = match crate::staging::available(&dir) {
+        Ok(available) => limit.min(available),
+        Err(error) => {
+            done(Err(error.to_string()));
+            return;
+        }
+    };
     let Some(ticket) = broker.borrow_mut().begin_transfer(
         ClipScope::Clipboard,
         "image/png",

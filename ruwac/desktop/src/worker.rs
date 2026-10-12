@@ -78,6 +78,12 @@ pub enum Command {
     Rpc(String, Value),
     Paste(String, String),
     History(String, bool),
+    AttachImage {
+        pane: String,
+        path: std::path::PathBuf,
+        allowed: Arc<AtomicBool>,
+        done: SyncSender<Result<Value, String>>,
+    },
     Close,
 }
 impl Command {
@@ -86,6 +92,7 @@ impl Command {
             Self::Rpc(_, v) => v.to_string().len(),
             Self::Paste(_, s) => s.len(),
             Self::History(s, _) => s.len(),
+            Self::AttachImage { pane, path, .. } => pane.len() + path.as_os_str().len(),
             Self::Close => 0,
         }
     }
@@ -137,6 +144,24 @@ impl Worker {
                             Command::Close => {
                                 halt.store(true, Ordering::Relaxed);
                                 Ok(("close".into(), json!({})))
+                            }
+                            Command::AttachImage {
+                                pane,
+                                path,
+                                allowed,
+                                done,
+                            } => {
+                                let native_api = schema["methods"]
+                                    .as_array()
+                                    .is_some_and(|m| m.iter().any(|m| m == "pane.attachImage"));
+                                let result = crate::image_attach::attach(
+                                    &mut rpc, &session, &pane, &path, &allowed, native_api,
+                                )
+                                .map_err(|e| e.to_string());
+                                let _ = done.try_send(result.clone());
+                                result
+                                    .map(|v| ("image-attach".into(), v))
+                                    .map_err(io::Error::other)
                             }
                             Command::History(pane, primary) => {
                                 let mut text = String::new();
