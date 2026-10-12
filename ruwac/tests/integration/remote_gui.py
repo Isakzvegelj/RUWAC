@@ -39,10 +39,13 @@ try:
  eventually(tunnel_ready,15)
  state=api('workspace','list');view=state['views'][0]['id'];assert state['views'][0]['session']==session['session'];description=api('workspace','describe');assert description['transport']['same_uid']and not description['permissions']['rdp_lifecycle_control']
  assert api('rdp','list')['views']==[]
+ command('profile-editor',fields={'0':'Remote metadata','3':'metadata.invalid','4':'fixture','9':'PRIVATE_REF_SENTINEL'},response='save')
+ hosts=api('host','list');assert hosts['total']==1 and 'PRIVATE_REF_SENTINEL'not in json.dumps(hosts)
+ endpoint=hosts['endpoints'][0];assert api('host','query','--id',endpoint['id'])['endpoint']==endpoint
  assert api('workspace','focus','--id',view,ok=False)['code']=='PERMISSION_DENIED';command('workspace-permission',enabled=True);api('workspace','focus','--id',view);assert api('workspace','list')['focused_view']==view
  assert api('rdp','disconnect','--id',view,ok=False)['code']=='PERMISSION_DENIED';command('rdp-permission',enabled=True);assert api('rdp','disconnect','--id',view,ok=False)['code']=='STALE_TARGET'
  command('workspace-permission',enabled=False);assert api('workspace','focus','--id',view,ok=False)['code']=='PERMISSION_DENIED'
- results.append({'id':'REMOTE-GUI-AUTHENTICATED-FORWARD','status':'PASS','actual_SSH_and_Unix_socket_forward':True,'same_UID_checks_retained':True,'metadata_and_exact_view_focus':True,'runtime_permission_revocation':True,'RDP_control_separate_permission':True,'local_owned_GTK_rendering':True,'remote_desktop_rendering_claim':False})
+ results.append({'id':'REMOTE-GUI-AUTHENTICATED-FORWARD','status':'PASS','actual_SSH_and_Unix_socket_forward':True,'same_UID_checks_retained':True,'metadata_and_exact_view_focus':True,'read_only_host_inventory_and_exact_query':True,'runtime_permission_revocation':True,'RDP_control_separate_permission':True,'local_owned_GTK_rendering':True,'remote_desktop_rendering_claim':False})
  tunnel.terminate();tunnel.wait(timeout=10);tunnel=None
  assert api('workspace','list',ok=False)['code']=='GUI_UNAVAILABLE';remote(['test','!','-S',remote_sock]);results.append({'id':'REMOTE-GUI-DISCONNECT-NO-FALLBACK','status':'PASS','closed_forward_typed_error':True,'no_implicit_launch_or_target_change':True})
 finally:

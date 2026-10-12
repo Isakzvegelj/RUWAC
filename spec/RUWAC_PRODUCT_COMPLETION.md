@@ -26,7 +26,7 @@ The full product is not yet complete. The stable source lane contains operationa
 | T-08 history/internal buffer | Canonical history, paged capture, independent internal/system clipboard tests | PASS bounded fixture |
 | T-09 SSH/nested terminals | Real authorized SSH remote-PTY detach/reattach and Unicode | PARTIAL: actual 2–5 mixed GNU Screen/tmux/RUWAC layers pass with both prefix modes; Screen arbitrary-control paste remains an upstream limitation |
 | T-10 performance | Retained matched 1/5/20/40-pane measurements | PARTIAL: current 30-trial matched measurements and per-block unrelated-load accounting implemented; observed desktop/IDE load blocks idle qualification |
-| A-01 negotiation/discovery | Existing v0 schema/capabilities/typed errors | PARTIAL: describe/local GUI targeting and typed RDP lifecycle over actual SSH implemented; host inventory and workspace open/restore remain |
+| A-01 negotiation/discovery | Existing v0 schema/capabilities/typed errors | PARTIAL: describe/local GUI targeting and typed RDP lifecycle over actual SSH implemented; read-only paged host inventory/list/query now passes native and authenticated SSH tests; workspace open/restore remain |
 | A-02 literal input | Unicode, quotes, shell metacharacters and separate Enter | PASS |
 | A-03 concurrent routes | Idempotency, focus changes, stale IDs | PASS |
 | A-04 non-TTY/SSH | Real --host JSON/file control and three SSH PTY cycles | PASS authorized SSH fixture; endpoint provisioning remains explicit |
@@ -67,3 +67,6 @@ Native endpoint-bound certificate review/pinning and changed/stale guards have f
 
 
 Authorized Fedora SSH headless/real remote-PTY acceptance passed on 2026-10-11. Mixed terminal/RDP/Files checkpoint restoration and normal application activation are implemented; detailed remaining view-management gates apply. Every remaining full-product gate above continues to apply.
+
+
+Owner explicitly requires automatic GNOME second-stage user selection and login on Connect. Saved credentials and confirmed assisted field delivery do not prove that requirement. It remains OPEN pending a supported, reliably targeted implementation and real authorized-host login evidence. Latest owner display/editor fixes and machine discovery are described in the current API/acceptance reports.

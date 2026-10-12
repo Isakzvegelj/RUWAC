@@ -302,8 +302,11 @@ try:
   # Exercise the visible native toolbar against the ordinary credential-backed connection.
   command('gui','rdp-switch',rdp=2)
   toolbar=command('gui','rdp-toolbar',rdp=2)
-  assert {b['action'] for b in toolbar['controls']}=={'reconnect','disconnect','fit','dynamic','zoom-out','zoom-in','fullscreen'},toolbar
-  assert all(b['icon'] and b['label'] and b['mapped'] for b in toolbar['controls']),toolbar
+  standard={'reconnect','disconnect','fit','dynamic','zoom-out','zoom-in','fullscreen'}
+  assert {b['action'] for b in toolbar['controls']}==standard|{'gnome-sign-in'},toolbar
+  assert all(b['icon'] and b['label'] for b in toolbar['controls']),toolbar
+  assert all(b['mapped'] for b in toolbar['controls']if b['action']in standard),toolbar
+  assert not next(b['mapped']for b in toolbar['controls']if b['action']=='gnome-sign-in'),toolbar
   neighbors=[command('gui','rdp-inspect',rdp=i)['transport_id'] for i in [0,1]]
   before_zoom=command('gui','rdp-inspect',rdp=2)['zoom']
   assert command('gui','rdp-toolbar',rdp=2,control='zoom-in')['clicked']

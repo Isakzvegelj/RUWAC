@@ -60,6 +60,7 @@ try:
  results.append({'id':'DUAL-SERVICE-SET-REPLACE-FORGET-AND-CROSS-STAGE-GUARD','status':'PASS'})
  command('profiles',search='Fedora dual');time.sleep(.4);command('profiles',open=True);eventually(lambda:command('rdp-inspect',rdp=0)['size']==[320,180],20);focus()
  assert command('rdp-assist')['action_grid_row']==4 and command('rdp-assist')['action_visible']
+ assert next(c for c in command('rdp-toolbar')['controls']if c['action']=='gnome-sign-in')['mapped']
  assert not command('rdp-assist',operation='stale-frame')['dialog_shown'];assert receipt(port)['units']==0
  results.append({'id':'DUAL-STALE-RENDERED-GENERATION-REFUSES-ASSISTANCE','status':'PASS','scope':'Injected generation mismatch on a real decoded/drawn loopback framebuffer'})
  command('rdp-assist',operation='open');assert command('rdp-assist')['dialog_shown'];command('rdp-assist',field='username',confirmed=False);time.sleep(.4);assert receipt(port)['units']==0
@@ -82,7 +83,15 @@ try:
  assert keyring('service-test',b'generated-invalid-transport','store').returncode==0
  editor(operation='edit',fields={'3':f'127.0.0.1:{ports[1]}'},response='save')
  command('profiles',search='Fedora dual');time.sleep(.4);command('profiles',open=True)
- rejected=eventually(lambda:r if 'authentication/session setup failed' in(r:=command('rdp-inspect',rdp=1))['status']else None,15);assert rejected['size']==[0,0]
+ def wrong_service_rejected():
+  q=command('rdp-inspect',rdp=1)
+  reply=subprocess.run([a.binary,'--socket',str(sock),'rdp','list','--json'],env=env,capture_output=True,text=True,timeout=8);assert reply.returncode==0,reply.stderr
+  row=next(v for v in json.loads(reply.stdout)['result']['views']if v['transport_id']==q['transport_id'])
+  if row['phase']=='error'and row['authentication_error']:
+   assert q['status'].startswith('RDP service authentication failed'),q
+   return q
+  return None
+ rejected=eventually(wrong_service_rejected,15);assert rejected['size']==[0,0]
  assert keyring('service-test',b'generated-local-only','store').returncode==0
  results.append({'id':'DUAL-WRONG-SERVICE-PASSWORD-NO-DESKTOP','status':'PASS'})
  # Restarting a named additional window shares daemon/profile DB, saves layout separately.

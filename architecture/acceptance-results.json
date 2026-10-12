@@ -20838,5 +20838,176 @@
       }
     ],
     "scope": "Actual client SIGKILL and native synthetic controls; no remote power-loss, physical input or whole-product qualification"
+  },
+  "machine_discovery_gnome_display": {
+    "package": "0.2.5",
+    "sha256": {
+      "ruwac": "f53d4bf3417607dca40e61e477b2f1e40680227936e9a4abe506ecd0c5aa710f",
+      "ruwac-desktop": "47925272a11f0c678710cf6e6dc8dd25a74e51003a4c1f41c153f1138eb42520"
+    },
+    "checks": [
+      {
+        "check": "updater-guards",
+        "status": "PASS"
+      },
+      {
+        "check": "format-core",
+        "status": "PASS"
+      },
+      {
+        "check": "format-desktop",
+        "status": "PASS"
+      },
+      {
+        "check": "lint-core",
+        "status": "PASS"
+      },
+      {
+        "check": "lint-desktop",
+        "status": "PASS"
+      },
+      {
+        "check": "workflow-syntax",
+        "status": "PASS"
+      },
+      {
+        "check": "headless-boundary",
+        "status": "PASS"
+      },
+      {
+        "check": "native-updates.py",
+        "status": "PASS"
+      },
+      {
+        "check": "run-host-inventory.py",
+        "status": "PASS"
+      },
+      {
+        "check": "run-remote-discovery.py",
+        "status": "PASS"
+      },
+      {
+        "check": "run-desktop.py",
+        "status": "PASS"
+      },
+      {
+        "check": "run-rdp-r5.py",
+        "status": "PASS"
+      },
+      {
+        "check": "run-files.py",
+        "status": "PASS"
+      },
+      {
+        "check": "run-dual.py",
+        "status": "PASS"
+      },
+      {
+        "check": "run-rsync-native.py",
+        "status": "PASS"
+      },
+      {
+        "check": "run-recovery-native.py",
+        "status": "PASS"
+      },
+      {
+        "check": "test-evf-recovery.py",
+        "status": "PASS"
+      },
+      {
+        "check": "test-evf-rsync.py",
+        "status": "PASS"
+      },
+      {
+        "check": "probe-external.py",
+        "status": "PASS"
+      },
+      {
+        "check": "test-external-lifecycle.py",
+        "status": "PASS"
+      }
+    ],
+    "native_inventory": [
+      {
+        "id": "HOST-INVENTORY-REAL-1000",
+        "status": "PASS",
+        "pages": 20,
+        "all_ids": 1000,
+        "maximum_page_bytes": 15980,
+        "private_fields_excluded": true,
+        "inherited_network_visible": true,
+        "stale_account_marked_invalid": true,
+        "library_and_focus_and_daemon_unchanged": true
+      },
+      {
+        "id": "HOST-INVENTORY-STALE-AND-STRICT",
+        "status": "PASS",
+        "metadata_reload_invalidates_token": true,
+        "filter_change_invalidates_token": true,
+        "strict_unknown_and_typed_parameters": true,
+        "no_credentials_in_audit": true
+      },
+      {
+        "id": "HOST-INVENTORY-BYTE-PAGING",
+        "status": "PASS",
+        "large_unicode_rows": 4,
+        "cursor_counts_emitted_rows": true
+      },
+      {
+        "id": "NATIVE-PROFILE-CREDENTIAL-GRID",
+        "status": "PASS",
+        "no_visible_cell_collisions": true,
+        "actual_native_dialog": true
+      },
+      {
+        "id": "HOST-INVENTORY-STORAGE-FAILURE",
+        "status": "PASS",
+        "malformed_owner_document_retained": true,
+        "typed_unavailable_then_recovery": true,
+        "no_credential_or_config_path_audit": true
+      }
+    ],
+    "real_Fedora": [
+      {
+        "id": "FEDORA-GDM-PRODUCTION-TRANSPORT",
+        "status": "PASS",
+        "size": [
+          1280,
+          720
+        ]
+      },
+      {
+        "id": "FEDORA-GFX-RESIZE-12",
+        "status": "PASS",
+        "elapsed_ms": [
+          244.0,
+          286.9,
+          234.6,
+          237.8,
+          245.8,
+          257.8,
+          268.1,
+          250.0,
+          238.0,
+          252.3,
+          260.3,
+          257.1
+        ],
+        "scope": "Real external display control/GFX reset, synthetic local GTK callbacks; busy VM timings"
+      },
+      {
+        "id": "FEDORA-DYNAMIC-ZOOM-AND-ACK",
+        "status": "PASS",
+        "actual_window_resizes": 3,
+        "legacy_zoom_reset": true,
+        "confirmed_frame_status": true
+      },
+      {
+        "id": "FEDORA-GDM-RDSTLS-RECONNECT-3",
+        "status": "PASS"
+      }
+    ],
+    "automatic_Linux_login": "unfinished; no Linux credentials submitted",
+    "physical_input": false
   }
 }

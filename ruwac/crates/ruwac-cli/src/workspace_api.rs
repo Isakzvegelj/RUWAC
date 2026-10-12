@@ -5,6 +5,9 @@ use std::{io, path::Path, sync::mpsc, time::Duration};
 pub fn parse(namespace: &str, args: &[String]) -> io::Result<ruwac_protocol::Request> {
     let bad =
         || io::Error::other("Explicit workspace/RDP operation and target required; use --help");
+    if namespace == "host" {
+        return host_request(args);
+    }
     let verb = args.first().ok_or_else(bad)?;
     let mut rest = &args[1..];
     if rest.last().is_some_and(|x| x == "--json") {
@@ -115,4 +118,83 @@ mod tests {
         assert!(parse("rdp", &["open".into(), "--profile".into(), view]).is_err());
         assert!(parse("workspace", &["list".into(), "extra".into()]).is_err());
     }
+}
+
+fn host_request(args: &[String]) -> io::Result<ruwac_protocol::Request> {
+    let bad = || {
+        io::Error::other(
+            "host list [--query TEXT] [--group GROUP] [--protocol SSH|RDP] [--favorites] [--limit 1..50] [--offset N --snapshot TOKEN] | host query --id endpoint_ID [--json]",
+        )
+    };
+    let verb = args.first().ok_or_else(bad)?;
+    if !matches!(verb.as_str(), "list" | "query") {
+        return Err(bad());
+    }
+    let mut params = serde_json::Map::new();
+    let mut i = 1;
+    while i < args.len() {
+        if args[i] == "--json" && i + 1 == args.len() {
+            break;
+        }
+        let key = match args[i].as_str() {
+            "--query" => "query",
+            "--group" => "group",
+            "--protocol" => "protocol",
+            "--favorites" => "favorites",
+            "--limit" => "limit",
+            "--offset" => "offset",
+            "--snapshot" => "snapshot",
+            "--id" => "id",
+            _ => return Err(bad()),
+        };
+        if (verb == "query") != (key == "id") || params.contains_key(key) {
+            return Err(bad());
+        }
+        let value = if key == "favorites" {
+            i += 1;
+            json!(true)
+        } else {
+            let text = args.get(i + 1).ok_or_else(bad)?;
+            i += 2;
+            if matches!(key, "limit" | "offset") {
+                let n = text.parse::<u64>().map_err(|_| bad())?;
+                if key == "limit" && !(1..=50).contains(&n) || key == "offset" && n > 1000 {
+                    return Err(bad());
+                }
+                json!(n)
+            } else {
+                let cap = if key == "query" {
+                    256
+                } else if key == "snapshot" {
+                    64
+                } else {
+                    1024
+                };
+                if text.len() > cap
+                    || text.chars().any(char::is_control)
+                    || key == "protocol" && !matches!(text.as_str(), "SSH" | "RDP")
+                    || key == "id" && !ruwac_protocol::valid_id(text, "endpoint")
+                {
+                    return Err(bad());
+                }
+                if key == "snapshot"
+                    && (text.len() != 64 || !text.bytes().all(|b| b.is_ascii_hexdigit()))
+                {
+                    return Err(bad());
+                }
+                json!(text)
+            }
+        };
+        params.insert(key.into(), value);
+    }
+    if verb == "query" && !params.contains_key("id")
+        || params
+            .get("offset")
+            .and_then(Value::as_u64)
+            .is_some_and(|n| n > 0)
+            && !params.contains_key("snapshot")
+    {
+        return Err(bad());
+    }
+    Ok(request(&format!("host.{verb}"), Value::Object(params)))
 }

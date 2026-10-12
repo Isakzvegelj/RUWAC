@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v0.2.5 — 2026-10-12 — Stable source release
+
+- Fix GNOME dynamic-resolution completion status and stale zoom, remove overlapping profile-editor credential controls, and add read-only paged machine discovery through the authenticated CLI/desktop API.
+
 ## v0.2.4 — 2026-10-12 — Stable source release
 
 - Add durable endpoint-bound rsync interruption records and native recovery controls, with verified backup restoration, changed-data refusal and actual process-kill acceptance.

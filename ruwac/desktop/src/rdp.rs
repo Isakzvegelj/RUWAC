@@ -237,6 +237,7 @@ struct State {
     frame: Option<Frame>,
     frames: u64,
     display_cap: Option<u64>,
+    display_request: Option<(u16, u16)>,
     reactivating: bool,
     cadence: std::collections::VecDeque<std::time::Instant>,
     bridge: Bridge,
@@ -659,7 +660,7 @@ async fn run_session(
                     | connector::ConnectorErrorKind::AccessDenied
             ) {
                 state.lock().unwrap().authentication_error = Some(code);
-                "RDP authentication/session setup failed".to_string()
+                if p.graphics { "RDP service authentication failed; verify the service username/password, separate from GNOME User Login".to_string() } else { "RDP authentication/session setup failed".to_string() }
             } else {
                 state.lock().unwrap().protocol_error = Some(code);
                 "RDP protocol/session setup failed".to_string()
@@ -747,7 +748,7 @@ async fn run_session(
          command=input.recv()=>{let Some(command)=command else{return Ok(());};match command {
             Command::Resize(w,h,scale)=>{
                 let ready=active.get_dvc::<DisplayControlAdapter>().and_then(|d|d.channel_processor_downcast_ref::<DisplayControlAdapter>()).is_some_and(|d|d.0.ready());
-                if image.width()==w&&image.height()==h{state.lock().unwrap().status=Some(format!("Connected · remote {w}×{h}"));vec![]}else if ready && state.lock().unwrap().display_cap.is_some_and(|max|w as u64*h as u64<=max) {match encode_resize(&mut active,w,h,scale){Some(Ok(bytes))=>{state.lock().unwrap().status=Some(format!("Display Control request {w}×{h}; awaiting framebuffer"));vec![ActiveStageOutput::ResponseFrame(bytes)]},_=>{state.lock().unwrap().status=Some("Display Control rejected; local fit remains available".into());vec![]}}}else{state.lock().unwrap().status=Some("Display Control unsupported or not ready · local fit fallback".into());vec![]}
+                if image.width()==w&&image.height()==h{state.lock().unwrap().status=Some(format!("Connected · remote {w}×{h}"));vec![]}else if ready && state.lock().unwrap().display_cap.is_some_and(|max|w as u64*h as u64<=max) {match encode_resize(&mut active,w,h,scale){Some(Ok(bytes))=>{{let mut st=state.lock().unwrap();st.display_request=Some((w,h));st.status=Some(format!("Display Control request {w}×{h}; awaiting framebuffer"));}vec![ActiveStageOutput::ResponseFrame(bytes)]},_=>{state.lock().unwrap().status=Some("Display Control rejected; local fit remains available".into());vec![]}}}else{state.lock().unwrap().status=Some("Display Control unsupported or not ready · local fit fallback".into());vec![]}
             },
             Command::Assisted(text, epoch, expected, generation)=>{
                 let mut units:Vec<u16>=text.0.encode_utf16().collect();
@@ -796,6 +797,14 @@ async fn run_session(
                     let mut st = state.lock().unwrap();
                     st.reactivating = false;
                     st.phase = "connected".into();
+                    if st.display_request == Some((image.width(), image.height())) {
+                        st.display_request = None;
+                        st.status = Some(format!(
+                            "Connected · remote {}×{}",
+                            image.width(),
+                            image.height()
+                        ));
+                    }
                     if rect.right + 1 == image.width() && rect.bottom + 1 == image.height() {
                         st.frames += 1;
                         st.cadence.push_back(std::time::Instant::now());
@@ -983,6 +992,13 @@ fn quick_action(toolbar: &gtk::Box, name: &str, icon: &str, label: &str, target:
     button.set_widget_name(name);
     button.set_tooltip_text(Some(label));
     button.update_property(&[gtk::accessible::Property::Label(label)]);
+    button.set_visible(target.property::<bool>("visible"));
+    let shown = button.downgrade();
+    target.connect_visible_notify(move |target| {
+        if let Some(button) = shown.upgrade() {
+            button.set_visible(target.property::<bool>("visible"));
+        }
+    });
     let target = target.clone();
     button.connect_clicked(move |_| target.emit_clicked());
     toolbar.append(&button);
@@ -1080,6 +1096,13 @@ impl RdpView {
         assist.set_widget_name("assisted-gnome-sign-in");
         controls.attach(&assist, 0, 4, 2, 1);
         assist.set_visible(false);
+        quick_action(
+            &toolbar,
+            "gnome-sign-in",
+            "dialog-password-symbolic",
+            "Assisted GNOME Sign-in",
+            &assist,
+        );
         let v = Rc::new(Self {
             root: root.clone(),
             area,
@@ -1206,10 +1229,10 @@ impl RdpView {
             b.connect_clicked(move |_| {
                 if let Some(v) = w.upgrade() {
                     v.mode.set(mode);
-                    v.request_preferences_save();
-                    if mode == Scale::Native {
+                    if matches!(mode, Scale::Native | Scale::Dynamic) {
                         v.zoom.set(1.0);
                     }
+                    v.request_preferences_save();
                     v.canvas();
                     v.area.queue_draw();
                 }
@@ -1236,6 +1259,10 @@ impl RdpView {
             let weak = Rc::downgrade(&v);
             b.connect_clicked(move |_| {
                 if let Some(v) = weak.upgrade() {
+                    // Manual local zoom leaves viewport-matched remote resolution mode.
+                    if v.mode.get() == Scale::Dynamic {
+                        v.mode.set(Scale::Fit);
+                    }
                     v.zoom.set((v.zoom.get() * multiplier).clamp(0.25, 4.0));
                     v.request_preferences_save();
                     v.canvas();
@@ -1922,7 +1949,11 @@ impl RdpView {
             "dynamic" => Scale::Dynamic,
             _ => Scale::Fit,
         });
-        self.zoom.set(p.preferences.zoom);
+        self.zoom.set(if self.mode.get() == Scale::Dynamic {
+            1.0
+        } else {
+            p.preferences.zoom
+        });
         self.reconnect.set(p.preferences.reconnect);
         self.fullscreen.set(p.preferences.fullscreen);
         self.fixture_policy(p.preferences.clipboard);

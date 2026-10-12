@@ -790,6 +790,7 @@ impl Drop for ConnectionLease {
 }
 pub type TrustSink = Rc<dyn Fn(&str, &str, &str) -> Result<(), String>>;
 pub type PreferenceSink = Rc<dyn Fn(&str, f64, bool, u32)>;
+pub type InventoryReader = Rc<dyn Fn() -> Result<Vec<serde_json::Value>, ruwac_protocol::Error>>;
 pub type ProfileRestorer = Rc<dyn Fn(&str) -> Option<(Profile, PreferenceSink, ConnectionLease)>>;
 fn acquire(
     s: &Rc<RefCell<Store>>,
@@ -846,7 +847,13 @@ fn acquire(
 }
 pub fn sidebar(
     open: impl Fn(Profile, PreferenceSink, ConnectionLease) + 'static,
-) -> (gtk::Box, gtk::SearchEntry, ProfileRestorer, ProfileRestorer) {
+) -> (
+    gtk::Box,
+    gtk::SearchEntry,
+    ProfileRestorer,
+    ProfileRestorer,
+    InventoryReader,
+) {
     let root = gtk::Box::new(gtk::Orientation::Vertical, 6);
     root.set_width_request(180);
     root.add_css_class("background");
@@ -1439,7 +1446,24 @@ pub fn sidebar(
         gtk::glib::ControlFlow::Continue
     });
     refresh();
-    (root, search, restore, remote)
+    let inventory: InventoryReader = Rc::new(move || {
+        let s = store.borrow();
+        if s.path.is_none() || s.error.is_some() {
+            return Err(ruwac_protocol::Error::new(
+                "INVENTORY_UNAVAILABLE",
+                "Machine library unavailable; inspect the native Machines panel",
+            ));
+        }
+        Ok(s.items.iter().map(|p| {
+            let effective = resolve(p, &s.groups, &s.items);
+            let valid = effective.is_ok();
+            let e = effective.as_ref().unwrap_or(p);
+            // Explicit allowlist: credentials, login names, trust and private
+            // key/configuration paths never enter automation responses.
+            json!({"id":p.id,"machine_id":p.machine_id,"name":p.name,"group":p.group,"protocol":p.protocol,"server":p.server,"favorite":p.favorite,"last_used":p.last_used,"tags":p.tags,"label":e.preferences.label,"network":e.preferences.network,"configuration_valid":valid})
+        }).collect())
+    });
+    (root, search, restore, remote, inventory)
 }
 #[cfg(test)]
 mod tests {
@@ -1627,6 +1651,7 @@ fn editor(button: &gtk::Button, store: Rc<RefCell<Store>>, id: Option<String>, s
         .min_content_height(440)
         .child(&grid)
         .build();
+    grid.set_widget_name("machine-editor-grid");
     dialog.content_area().append(&sc);
     let vals = [
         ("Machine name", original.name.clone()),
@@ -1975,19 +2000,20 @@ fn editor(button: &gtk::Button, store: Rc<RefCell<Store>>, id: Option<String>, s
     grid.attach(
         &gtk::Label::new(Some("SSH key passphrase reference")),
         0,
-        23,
+        29,
         1,
         1,
     );
-    grid.attach(&identity_reference, 1, 23, 1, 1);
+    identity_reference.set_widget_name("ssh-key-passphrase-reference");
+    grid.attach(&identity_reference, 1, 29, 1, 1);
     let key_secret = gtk::PasswordEntry::builder()
         .show_peek_icon(true)
         .placeholder_text("Key passphrase — stored only in Secret Service")
         .build();
     key_secret.set_widget_name("ssh-key-passphrase");
-    grid.attach(&key_secret, 1, 24, 1, 1);
+    grid.attach(&key_secret, 1, 30, 1, 1);
     let key_actions = gtk::Box::new(gtk::Orientation::Horizontal, 4);
-    grid.attach(&key_actions, 1, 25, 1, 1);
+    grid.attach(&key_actions, 1, 31, 1, 1);
     for (label, forget) in [
         ("Set / replace key passphrase", false),
         ("Forget key passphrase", true),
@@ -2397,6 +2423,41 @@ pub fn fixture_editor(root: &gtk::Box, q: &serde_json::Value) -> serde_json::Val
         None
     }
     let action = q["operation"].as_str().unwrap_or("new");
+    if action == "layout" {
+        fn inspect(w: &gtk::Widget, cells: &mut Vec<serde_json::Value>, conflicts: &mut usize) {
+            if w.widget_name() == "machine-editor-grid" {
+                let grid = w.downcast_ref::<gtk::Grid>().unwrap();
+                let mut occupied = std::collections::HashSet::new();
+                let mut child = w.first_child();
+                while let Some(c) = child {
+                    child = c.next_sibling();
+                    if !c.is_visible() {
+                        continue;
+                    }
+                    let (col, row, width, height) = grid.query_child(&c);
+                    for x in col..col + width {
+                        for y in row..row + height {
+                            if !occupied.insert((x, y)) {
+                                *conflicts += 1;
+                            }
+                        }
+                    }
+                    cells.push(json!({"column":col,"row":row,"width":width,"height":height}));
+                }
+            }
+            let mut child = w.first_child();
+            while let Some(c) = child {
+                child = c.next_sibling();
+                inspect(&c, cells, conflicts);
+            }
+        }
+        let mut cells = Vec::new();
+        let mut conflicts = 0;
+        for window in gtk::Window::list_toplevels() {
+            inspect(&window, &mut cells, &mut conflicts);
+        }
+        return json!({"cells":cells,"overlapping_grid_cells":conflicts});
+    }
     if action == "group" {
         expand_sidebar_panel(root, "machines-tools-panel", true);
     }

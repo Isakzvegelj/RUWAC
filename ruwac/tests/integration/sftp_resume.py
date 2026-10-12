@@ -165,7 +165,7 @@ try:
   eventually(lambda:any('Transfer verified' in l for l in command('files-inspect')['labels']),20);assert digest(native_target)==digest(source) and not pending()
   results.append({'id':'SFTP-NATIVE-PENDING-RESUME','status':'PASS','native_dialog_job_row_and_resume_handler':True,'actual_SFTP_bytes_and_hash':True})
   command('tab-select',tab=0);native_ref='generated-native-key-'+uuid.uuid4().hex
-  command('profile-editor',operation='new',fields={'0':'Encrypted SSH native','3':profile['server'],'4':profile['username'],'11':str(encrypted),'12':str(known),'13':1,'23':native_ref},key_passphrase=passphrase,credential_action='Set / replace key passphrase',response='keep')
+  command('profile-editor',operation='new',fields={'0':'Encrypted SSH native','3':profile['server'],'4':profile['username'],'11':str(encrypted),'12':str(known),'13':1},named={'ssh-key-passphrase-reference':native_ref},key_passphrase=passphrase,credential_action='Set / replace key passphrase',response='keep')
   def secret_ready():
    r=subprocess.run(['secret-tool','lookup','application','RUWAC','profile',native_ref],env=env,text=True,capture_output=True);return r.returncode==0 and r.stdout.rstrip('\n')==passphrase
   eventually(secret_ready,10);saved=command('profile-editor',operation='update',response='save');profile_saved=next(p for p in saved['items'] if p['name']=='Encrypted SSH native');assert profile_saved['preferences']['identity_secret_reference']==native_ref
