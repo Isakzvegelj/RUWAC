@@ -763,6 +763,11 @@ fn append_rsync_controls(
     ));
     label.set_wrap(true);
     root.append(&label);
+    root.append(&rsync_recovery_control(
+        profile.clone(),
+        busy.clone(),
+        status.clone(),
+    ));
     let replace = gtk::CheckButton::with_label(
         "Rsync: replace the entire destination, including files absent from the source",
     );
@@ -865,6 +870,69 @@ fn append_rsync_controls(
             }
         });
     }
+}
+fn rsync_recovery_control(profile: Profile, busy: Busy, status: gtk::Label) -> gtk::Button {
+    let button = gtk::Button::with_label("Interrupted rsync copies…");
+    button.set_widget_name("files-rsync-pending");
+    button.connect_clicked(move|button|{
+        if busy.borrow().is_some(){status.set_text("A file operation is already running");return;}
+        let dialog=gtk::Dialog::builder().title("Recover interrupted rsync copies").default_width(650).default_height(400).build();dialog.set_widget_name("files-rsync-recovery-dialog");dialog.set_transient_for(button.root().and_then(|w|w.downcast::<gtk::Window>().ok()).as_ref());dialog.add_button("Close",gtk::ResponseType::Close);dialog.connect_response(|d,_|d.close());
+        let hint=gtk::Label::new(Some("Recover restores a missing original or keeps a verified replacement, then removes only owned staging and backups. Changed files are left for inspection. Partial copies must be restarted."));hint.set_wrap(true);dialog.content_area().append(&hint);
+        let rows=gtk::Box::new(gtk::Orientation::Vertical,6);dialog.content_area().append(&gtk::ScrolledWindow::builder().vexpand(true).child(&rows).build());let info=gtk::Label::new(Some("Loading local recovery records…"));info.set_wrap(true);info.set_widget_name("files-rsync-recovery-status");dialog.content_area().append(&info);dialog.present();
+        let(tx,rx)=std::sync::mpsc::sync_channel(1);let p=profile.clone();std::thread::spawn(move||{let _=tx.send(crate::files_rsync::pending(&p));});let(p,busy,status,dialog)=(profile.clone(),busy.clone(),status.clone(),dialog.downgrade());
+        gtk::glib::timeout_add_local(Duration::from_millis(30),move||{
+            if dialog.upgrade().is_none_or(|d|!d.is_visible()){return gtk::glib::ControlFlow::Break;}
+            match rx.try_recv(){
+                Ok(Ok(jobs))=>{info.set_text(if jobs.is_empty(){"No interrupted rsync copies for this endpoint"}else{"Select the exact copy to recover"});
+                    for job in jobs{
+                        let row=gtk::Box::new(gtk::Orientation::Vertical,4);row.set_widget_name("files-rsync-recovery-row");
+                        let phase=match job.phase.as_str(){"copy"=>"Copy interrupted","backup-intent"|"backup-moved"=>"Replacement interrupted",_=>"Copy published; cleanup pending"};
+                        let title=gtk::Label::new(Some(&format!("{phase} · {} · {}",if job.upload{"Upload"}else{"Download"},job.destination.display())));title.set_wrap(true);title.set_selectable(true);row.append(&title);
+                        let recover=gtk::Button::with_label("Recover this copy");recover.set_widget_name("files-rsync-recover");recover.set_tooltip_text(Some(&job.id));recover.set_sensitive(job.eligible(&p));row.append(&recover);
+                        if !job.eligible(&p){let warning=gtk::Label::new(Some("Profile settings changed. Restore the original endpoint settings before recovery."));warning.set_wrap(true);row.append(&warning);}
+                        let(p,id,busy,status,dialog)=(p.clone(),job.id.clone(),busy.clone(),status.clone(),dialog.clone());recover.connect_clicked(move|_|{if busy.borrow().is_some(){return;}let cancel=Arc::new(AtomicBool::new(false));*busy.borrow_mut()=Some(cancel.clone());let(tx,rx)=std::sync::mpsc::sync_channel(1);let p=p.clone();let id=id.clone();std::thread::spawn(move||{let _=tx.send(crate::files_rsync::recover(&p,&id,&cancel));});if let Some(d)=dialog.upgrade(){d.close();}status.set_text("Verifying original endpoint, copy and backup before recovery…");let(status,busy)=(status.clone(),busy.clone());gtk::glib::timeout_add_local(Duration::from_millis(50),move||match rx.try_recv(){Ok(result)=>{busy.borrow_mut().take();status.set_text(&result.unwrap_or_else(|e|e));gtk::glib::ControlFlow::Break},Err(std::sync::mpsc::TryRecvError::Empty)=>gtk::glib::ControlFlow::Continue,Err(_)=>{busy.borrow_mut().take();status.set_text("Recovery worker stopped; record retained");gtk::glib::ControlFlow::Break}});});rows.append(&row);
+                    }gtk::glib::ControlFlow::Break},
+                Ok(Err(e))=>{info.set_text(&e);gtk::glib::ControlFlow::Break},Err(std::sync::mpsc::TryRecvError::Empty)=>gtk::glib::ControlFlow::Continue,Err(_)=>{info.set_text("Recovery list worker stopped");gtk::glib::ControlFlow::Break}
+            }
+        });
+    });
+    button
+}
+pub fn fixture_recovery(root: &gtk::Box, q: &serde_json::Value) -> serde_json::Value {
+    fn walk(w: &gtk::Widget, q: &serde_json::Value, rows: &mut Vec<String>) {
+        if w.widget_name() == "files-rsync-recovery-row" {
+            if let Some(label) = w
+                .first_child()
+                .and_then(|w| w.downcast::<gtk::Label>().ok())
+            {
+                rows.push(label.text().into());
+            }
+        }
+        if let Some(button) = w.downcast_ref::<gtk::Button>() {
+            let open = q["operation"] == "open" && button.widget_name() == "files-rsync-pending";
+            let recover = q["operation"] == "recover"
+                && button.widget_name() == "files-rsync-recover"
+                && button.tooltip_text().as_deref() == q["id"].as_str();
+            if (open || recover) && button.is_sensitive() {
+                button.emit_clicked();
+            }
+        }
+        let mut child = w.first_child();
+        while let Some(w) = child {
+            child = w.next_sibling();
+            walk(&w, q, rows);
+        }
+    }
+    let mut rows = Vec::new();
+    walk(root.upcast_ref(), q, &mut rows);
+    let mut open = false;
+    for window in gtk::Window::list_toplevels() {
+        if window.widget_name() == "files-rsync-recovery-dialog" && window.is_visible() {
+            open = true;
+            walk(&window, q, &mut rows);
+        }
+    }
+    serde_json::json!({"open":open,"rows":rows})
 }
 /// The private loopback fixture invokes the same action used by the native chooser.
 pub fn fixture_rsync(root: &gtk::Box, q: &serde_json::Value) -> serde_json::Value {

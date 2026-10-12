@@ -15,7 +15,7 @@ profile_file=root/'profile.json';profile_file.write_text(json.dumps(profile));pr
 def invoke(upload,local,target,overwrite=False,cancel=None):
  args=[a.driver,'rsync-upload'if upload else'rsync-download',str(profile_file),str(local),str(target),'overwrite'if overwrite else'skip']
  if cancel is not None:args.append(str(cancel))
- return json.loads(subprocess.check_output(args,text=True,timeout=120))
+ return json.loads(subprocess.check_output(args,env={**os.environ,'XDG_STATE_HOME':str(root/'state')},text=True,timeout=120))
 def case(name,fn):
  start=time.monotonic()
  try:detail=fn();results.append({'name':name,'status':'PASS','elapsed_ms':round((time.monotonic()-start)*1000,1),'detail':detail})

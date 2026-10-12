@@ -39,6 +39,14 @@ fn main() {
                 .map_err(|_| "cannot read fixture profile")?,
         )
         .map_err(|_| "invalid fixture profile")?;
+        if args[1] == "rsync-pending" {
+            return serde_json::to_value(files_rsync::pending(&p)?)
+                .map_err(|_| "Cannot encode recovery jobs".into());
+        }
+        if args[1] == "rsync-recover" {
+            return files_rsync::recover(&p, &args[3], &AtomicBool::new(false))
+                .map(|s| serde_json::json!({"status":s}));
+        }
         if matches!(args[1].as_str(), "rsync-upload" | "rsync-download") {
             let cancel = Arc::new(AtomicBool::new(false));
             let progress = Arc::new(AtomicU64::new(0));
@@ -51,7 +59,8 @@ fn main() {
                     c.store(true, std::sync::atomic::Ordering::Relaxed);
                 });
             }
-            return serde_json::to_value(files_rsync::transfer(
+            let observe_phase = args.get(7).cloned();
+            return serde_json::to_value(files_rsync::transfer_observed(
                 &p,
                 Path::new(&args[3]),
                 Path::new(&args[4]),
@@ -59,6 +68,19 @@ fn main() {
                 args.get(5).map(String::as_str) == Some("overwrite"),
                 &cancel,
                 progress,
+                move |id, phase| {
+                    if observe_phase.as_deref() == Some(phase) {
+                        use std::io::Write;
+                        println!("{}", serde_json::json!({"checkpoint":phase,"id":id}));
+                        std::io::stdout()
+                            .flush()
+                            .map_err(|_| "Fixture output unavailable")?;
+                        unsafe {
+                            libc::raise(libc::SIGSTOP);
+                        }
+                    }
+                    Ok(())
+                },
             )?)
             .map_err(|_| "Cannot encode fixture receipt".into());
         }

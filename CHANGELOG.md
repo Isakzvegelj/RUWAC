@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v0.2.4 — 2026-10-12 — Stable source release
+
+- Add durable endpoint-bound rsync interruption records and native recovery controls, with verified backup restoration, changed-data refusal and actual process-kill acceptance.
+
 ## v0.2.3 — 2026-10-12 — Stable source release
 
 - Add native rsync-over-SSH file and folder transfers with literal file lists, verified staging, permissions/timestamps, progress, cancellation and explicit whole-destination replacement.

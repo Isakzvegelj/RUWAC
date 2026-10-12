@@ -6,6 +6,7 @@ use std::{
     collections::BTreeMap,
     fs,
     io::{Read, Write},
+    os::fd::AsRawFd,
     os::unix::{
         ffi::OsStrExt,
         fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt},
@@ -36,12 +37,529 @@ pub struct Receipt {
     pub directories: usize,
     pub sha256: String,
 }
+#[derive(Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+struct RootStamp {
+    mode: u32,
+    uid: u32,
+    gid: u32,
+    mtime: u64,
+    identity: Option<(u64, u64)>,
+}
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Recovery {
+    schema: u32,
+    pub id: String,
+    pub endpoint: String,
+    binding: String,
+    host_sha256: String,
+    pub upload: bool,
+    pub destination: PathBuf,
+    stage: PathBuf,
+    backup: PathBuf,
+    pub phase: String,
+    expected: String,
+    original: Option<String>,
+    original_stamp: Option<RootStamp>,
+}
+impl Recovery {
+    pub fn eligible(&self, p: &Profile) -> bool {
+        self.endpoint == p.id && self.binding == recovery_binding(p)
+    }
+}
+fn recovery_binding(p: &Profile) -> String {
+    format!(
+        "{:x}",
+        Sha256::digest(
+            serde_json::to_vec(&serde_json::json!([
+                crate::files_resume::binding(p),
+                p.protocol,
+                p.secret_reference,
+                p.preferences.gateway
+            ]))
+            .unwrap()
+        )
+    )
+}
+fn mutation_guard(cancel: &AtomicBool) -> Result<fs::File, String> {
+    let path = recovery_root()?.join(".mutation.lock");
+    let f = fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .mode(0o600)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(path)
+        .map_err(error)?;
+    if !crate::files_resume::private_file(&f) {
+        return Err("Recovery mutation lock ownership invalid".into());
+    }
+    let deadline = Instant::now() + Duration::from_secs(30);
+    loop {
+        check(cancel)?;
+        if unsafe { libc::flock(f.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } == 0 {
+            return Ok(f);
+        }
+        if Instant::now() > deadline {
+            return Err("Another rsync publish/recovery is active; retry later".into());
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
+}
+fn backup_unchanged(
+    job: &Recovery,
+    sftp: Option<&Sftp>,
+    cancel: &AtomicBool,
+) -> Result<(), String> {
+    if job.original_stamp != root_stamp(&job.backup, sftp)?
+        || job.original.as_deref()
+            != Some(manifest_digest(&scan(&job.backup, sftp, cancel)?).as_str())
+    {
+        return Err("Original backup changed; retained for inspection".into());
+    }
+    Ok(())
+}
+fn recovery_root() -> Result<PathBuf, String> {
+    let root = crate::files_resume::root()?
+        .parent()
+        .unwrap()
+        .join("rsync-recovery");
+    match fs::DirBuilder::new().mode(0o700).create(&root) {
+        Ok(()) => (),
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => (),
+        Err(e) => return Err(error(e)),
+    }
+    if !crate::files_resume::private_dir(&root) {
+        return Err("Rsync recovery needs an owned nonsymlink 0700 directory".into());
+    }
+    Ok(root)
+}
+struct RecoveryJournal {
+    root: PathBuf,
+    id: String,
+    lock: fs::File,
+}
+impl RecoveryJournal {
+    fn open(id: &str) -> Result<Self, String> {
+        if !ruwac_protocol::valid_id(id, "rsync") {
+            return Err("Invalid recovery ID".into());
+        }
+        let root = recovery_root()?;
+        let lock = fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .mode(0o600)
+            .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+            .open(root.join(format!("{id}.lock")))
+            .map_err(error)?;
+        if !crate::files_resume::private_file(&lock)
+            || unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0
+        {
+            return Err("Rsync transfer/recovery is active or lock ownership invalid".into());
+        }
+        Ok(Self {
+            root,
+            id: id.into(),
+            lock,
+        })
+    }
+    fn path(&self) -> PathBuf {
+        self.root.join(format!("{}.json", self.id))
+    }
+    fn save(&self, job: &Recovery) -> Result<(), String> {
+        validate_recovery(job)?;
+        if !crate::files_resume::private_dir(&self.root) {
+            return Err("Recovery directory ownership changed".into());
+        }
+        let temp = self.root.join(ruwac_protocol::id("rsync-write"));
+        let data = serde_json::to_vec(job).map_err(error)?;
+        if data.len() > 32768 {
+            return Err("Recovery metadata too large".into());
+        }
+        if self.path().exists() {
+            let _ = read_recovery(&self.path())?;
+        }
+        let result = (|| {
+            let mut f = fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(0o600)
+                .custom_flags(libc::O_NOFOLLOW)
+                .open(&temp)
+                .map_err(error)?;
+            f.write_all(&data).map_err(error)?;
+            f.sync_all().map_err(error)?;
+            fs::rename(&temp, self.path()).map_err(error)?;
+            fs::File::open(&self.root)
+                .and_then(|f| f.sync_all())
+                .map_err(error)
+        })();
+        if result.is_err() {
+            let _ = fs::remove_file(temp);
+        }
+        result
+    }
+    fn remove(&self) -> Result<(), String> {
+        let _ = read_recovery(&self.path())?;
+        let list = self.root.join(format!("{}.files", self.id));
+        match fs::symlink_metadata(&list) {
+            Ok(_) => {
+                let f = fs::OpenOptions::new()
+                    .read(true)
+                    .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+                    .open(&list)
+                    .map_err(error)?;
+                if !crate::files_resume::private_file(&f) {
+                    return Err("Recovery file-list ownership changed".into());
+                }
+                fs::remove_file(list).map_err(error)?;
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => (),
+            Err(e) => return Err(error(e)),
+        }
+
+        fs::remove_file(self.path()).map_err(error)?;
+        fs::File::open(&self.root)
+            .and_then(|f| f.sync_all())
+            .map_err(error)
+    }
+}
+impl Drop for RecoveryJournal {
+    fn drop(&mut self) {
+        if self.path().exists() {
+            return;
+        }
+        let path = self.root.join(format!("{}.lock", self.id));
+        if let (Ok(a), Ok(b)) = (self.lock.metadata(), fs::symlink_metadata(&path)) {
+            if a.ino() == b.ino() && a.dev() == b.dev() {
+                let _ = fs::remove_file(path);
+            }
+        }
+    }
+}
+fn validate_recovery(job: &Recovery) -> Result<(), String> {
+    let digest = |s: &str| s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit());
+    if job.schema != 1
+        || !ruwac_protocol::valid_id(&job.id, "rsync")
+        || job.endpoint.is_empty()
+        || job.endpoint.len() > 1024
+        || !digest(&job.binding)
+        || !digest(&job.host_sha256)
+        || !digest(&job.expected)
+        || job.original.as_ref().is_some_and(|s| !digest(s))
+        || job.original.is_some() != job.original_stamp.is_some()
+        || !matches!(
+            job.phase.as_str(),
+            "copy" | "backup-intent" | "backup-moved" | "published" | "cleaned"
+        )
+    {
+        return Err("Invalid recovery metadata; paths preserved".into());
+    }
+    let parent = job
+        .destination
+        .parent()
+        .ok_or("Invalid recovery destination")?;
+    for path in [&job.destination, &job.stage, &job.backup] {
+        valid(path)?;
+        if !path.is_absolute() {
+            return Err("Recovery paths must be absolute".into());
+        }
+    }
+    if job.stage.parent() != Some(parent)
+        || job.backup.parent() != Some(parent)
+        || !job
+            .stage
+            .file_name()
+            .and_then(|s| s.to_str())
+            .is_some_and(|s| ruwac_protocol::valid_id(s, "ruwac-rsync-part"))
+        || !job
+            .backup
+            .file_name()
+            .and_then(|s| s.to_str())
+            .is_some_and(|s| ruwac_protocol::valid_id(s, "ruwac-rsync-backup"))
+    {
+        return Err("Recovery path relationship invalid; paths preserved".into());
+    }
+    Ok(())
+}
+fn read_recovery(path: &Path) -> Result<Recovery, String> {
+    let f = fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(path)
+        .map_err(error)?;
+    if !crate::files_resume::private_file(&f) || f.metadata().map_err(error)?.len() > 32768 {
+        return Err("Recovery journal ownership/size invalid".into());
+    }
+    let job: Recovery = serde_json::from_reader(f.take(32769))
+        .map_err(|_| "Malformed recovery journal; paths preserved")?;
+    validate_recovery(&job)?;
+    if path.file_name().and_then(|s| s.to_str()) != Some(&format!("{}.json", job.id)) {
+        return Err("Recovery journal identity mismatch".into());
+    }
+    Ok(job)
+}
+pub fn pending(p: &Profile) -> Result<Vec<Recovery>, String> {
+    let mut result = Vec::new();
+    let mut count = 0;
+    for entry in fs::read_dir(recovery_root()?).map_err(error)? {
+        let path = entry.map_err(error)?.path();
+        if path.extension().is_none_or(|s| s != "json") {
+            continue;
+        }
+        count += 1;
+        if count > 128 {
+            return Err("Recovery journal exceeds 128 entries".into());
+        }
+        let job = read_recovery(&path)?;
+        if job.endpoint == p.id {
+            result.push(job);
+        }
+    }
+    result.sort_by(|a, b| a.id.cmp(&b.id));
+    Ok(result)
+}
+fn manifest_digest(manifest: &Manifest) -> String {
+    let mut hash = Sha256::new();
+    for (path, e) in manifest {
+        hash.update((path.as_os_str().len() as u64).to_le_bytes());
+        hash.update(path.as_os_str().as_bytes());
+        hash.update([u8::from(e.directory)]);
+        hash.update(e.mode.to_le_bytes());
+        hash.update(e.bytes.to_le_bytes());
+        hash.update(e.hash.as_bytes());
+    }
+    format!("{:x}", hash.finalize())
+}
+fn root_stamp(path: &Path, sftp: Option<&Sftp>) -> Result<Option<RootStamp>, String> {
+    if let Some(s) = sftp {
+        match s.lstat(path) {
+            Ok(m) => {
+                if !matches!(m.perm.map(|m| m & 0o170000), Some(0o100000 | 0o040000)) {
+                    return Err("Recovery root is not a regular file/directory".into());
+                }
+                Ok(Some(RootStamp {
+                    mode: m.perm.ok_or("Root mode absent")?,
+                    uid: m.uid.ok_or("Root owner absent")?,
+                    gid: m.gid.ok_or("Root group absent")?,
+                    mtime: m.mtime.ok_or("Root time absent")?,
+                    identity: None,
+                }))
+            }
+            Err(e) if e.code() == ssh2::ErrorCode::SFTP(2) => Ok(None),
+            Err(e) => Err(sftp_error("recovery metadata", e)),
+        }
+    } else {
+        match fs::symlink_metadata(path) {
+            Ok(m) => {
+                if !m.is_file() && !m.is_dir() {
+                    return Err("Recovery root is a symlink/special file".into());
+                }
+                Ok(Some(RootStamp {
+                    mode: m.mode(),
+                    uid: m.uid(),
+                    gid: m.gid(),
+                    mtime: (m.mtime().max(0) as u64)
+                        .saturating_mul(1_000_000_000)
+                        .saturating_add(m.mtime_nsec().max(0) as u64),
+                    identity: Some((m.dev(), m.ino())),
+                }))
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(error(e)),
+        }
+    }
+}
+fn marker(job: &Recovery, sftp: Option<&Sftp>, create: bool) -> Result<(), String> {
+    let path = job.stage.join(".ruwac-rsync-owner");
+    let data = job.id.as_bytes();
+    if create {
+        if let Some(s) = sftp {
+            let mut f = s
+                .open_mode(
+                    &path,
+                    ssh2::OpenFlags::WRITE | ssh2::OpenFlags::CREATE | ssh2::OpenFlags::EXCLUSIVE,
+                    0o600,
+                    ssh2::OpenType::File,
+                )
+                .map_err(error)?;
+            f.write_all(data).map_err(error)?;
+            f.fsync()
+                .map_err(|_| "Remote server cannot sync the recovery marker")?;
+            f.close().map_err(error)?;
+        } else {
+            let mut f = fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(0o600)
+                .custom_flags(libc::O_NOFOLLOW)
+                .open(&path)
+                .map_err(error)?;
+            f.write_all(data).map_err(error)?;
+            f.sync_all().map_err(error)?;
+            fs::File::open(&job.stage)
+                .and_then(|f| f.sync_all())
+                .map_err(error)?;
+        }
+    } else {
+        let mut bytes = Vec::new();
+        if let Some(s) = sftp {
+            let stat = s.lstat(&path).map_err(error)?;
+            if stat.perm.is_none_or(|m| m & 0o170000 != 0o100000)
+                || stat.size != Some(data.len() as u64)
+            {
+                return Err("Recovery marker type/size changed; staging preserved".into());
+            }
+            s.open(&path)
+                .map_err(error)?
+                .take(128)
+                .read_to_end(&mut bytes)
+                .map_err(error)?;
+        } else {
+            let f = fs::OpenOptions::new()
+                .read(true)
+                .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+                .open(&path)
+                .map_err(error)?;
+            if !crate::files_resume::private_file(&f) {
+                return Err("Recovery marker ownership changed".into());
+            }
+            f.take(128).read_to_end(&mut bytes).map_err(error)?;
+        }
+        if bytes != data {
+            return Err("Recovery marker changed; staging preserved".into());
+        }
+    }
+    Ok(())
+}
+/// Explicit recovery never overwrites an unexpected destination or retargets a host.
+pub fn recover(p: &Profile, id: &str, cancel: &AtomicBool) -> Result<String, String> {
+    check(cancel)?;
+    let journal = RecoveryJournal::open(id)?;
+    let job = read_recovery(&journal.path())?;
+    if !job.eligible(p) {
+        return Err("Recovery profile changed; restore original endpoint settings".into());
+    }
+    if p.protocol != "SSH" || !p.preferences.gateway.is_empty() {
+        return Err("Restore original SSH recovery profile".into());
+    }
+    if !job.upload {
+        let parent = job.destination.parent().unwrap();
+        if fs::canonicalize(parent).map_err(error)? != parent {
+            return Err("Local recovery parent namespace changed; paths preserved".into());
+        }
+    }
+    let session = if job.upload {
+        Some(crate::files::connect(p)?)
+    } else {
+        None
+    };
+    if let Some(s) = session.as_ref() {
+        if crate::files_resume::host_key(s)? != job.host_sha256 {
+            return Err("Original recovery host key changed".into());
+        }
+    }
+    let remote = if let Some(s) = session.as_ref() {
+        Some(s.sftp().map_err(error)?)
+    } else {
+        None
+    };
+    let sftp = remote.as_ref();
+    if let Some(s) = sftp {
+        let _ = crate::files::remote_path(s, &job.destination, true)?;
+        let _ = crate::files::remote_path(s, &job.stage, true)?;
+        let _ = crate::files::remote_path(s, &job.backup, true)?;
+    }
+    recover_locked(&job, &journal, sftp, cancel)
+}
+fn recover_locked(
+    job: &Recovery,
+    journal: &RecoveryJournal,
+    sftp: Option<&Sftp>,
+    cancel: &AtomicBool,
+) -> Result<String, String> {
+    let _mutation = mutation_guard(cancel)?;
+    if let Some(stamp) = root_stamp(&job.stage, sftp)? {
+        if stamp.mode & 0o170777 != 0o040700 {
+            return Err("Recovery staging type/permissions changed; paths preserved".into());
+        }
+        marker(job, sftp, false)?;
+    }
+    let mut outcome = "Incomplete copy discarded; destination was not created";
+    let backup = root_stamp(&job.backup, sftp)?;
+    let destination = root_stamp(&job.destination, sftp)?;
+    if let Some(stamp) = backup.as_ref() {
+        if job.original_stamp.as_ref() != Some(stamp)
+            || job.original.as_deref()
+                != Some(manifest_digest(&scan(&job.backup, sftp, cancel)?).as_str())
+        {
+            return Err("Original backup changed; recovery refused, paths preserved".into());
+        }
+        check(cancel)?;
+        if destination.is_none() {
+            outcome = "Original destination restored";
+            if let Some(s) = sftp {
+                s.rename(
+                    &job.backup,
+                    &job.destination,
+                    Some(ssh2::RenameFlags::empty()),
+                )
+                .map_err(error)?;
+            } else {
+                rename_local(&job.backup, &job.destination)?;
+            }
+        } else {
+            outcome = "Verified replacement retained";
+            if job.expected != manifest_digest(&scan(&job.destination, sftp, cancel)?) {
+                return Err("Destination changed; original backup preserved for inspection".into());
+            }
+            if let Some(s) = sftp {
+                clean_remote(s, &job.backup, 0)?;
+            } else {
+                clean_local(&job.backup)?;
+            }
+        }
+    } else if let Some(stamp) = destination.as_ref() {
+        let current = manifest_digest(&scan(&job.destination, sftp, cancel)?);
+        outcome = if current == job.expected {
+            "Verified destination retained"
+        } else {
+            "Original destination retained"
+        };
+        if current != job.expected
+            && (job.original.as_deref() != Some(current.as_str())
+                || job.original_stamp.as_ref() != Some(stamp))
+        {
+            return Err("Destination changed; recovery refused, paths preserved".into());
+        }
+    } else if job.original.is_some() {
+        return Err(
+            "Original destination and backup are missing; recovery needs inspection".into(),
+        );
+    }
+    if root_stamp(&job.stage, sftp)?.is_some() {
+        marker(&job, sftp, false)?;
+        if let Some(s) = sftp {
+            clean_remote(s, &job.stage, 0)?;
+        } else {
+            clean_local(&job.stage)?;
+        }
+    }
+    journal.remove()?;
+    Ok(format!(
+        "Rsync recovery complete: {outcome}; owned staging/backup cleaned"
+    ))
+}
 fn error(_: impl std::fmt::Display) -> String {
-    "Rsync file operation failed; destination was not replaced".into()
+    "Rsync file operation failed; inspect status and recovery records".into()
 }
 fn check(cancel: &AtomicBool) -> Result<(), String> {
     if cancel.load(Ordering::Relaxed) {
-        Err("Rsync cancelled; destination preserved".into())
+        Err("Rsync cancelled".into())
     } else {
         Ok(())
     }
@@ -518,6 +1036,14 @@ fn rename_local(from: &Path, to: &Path) -> Result<(), String> {
     {
         return Err(error(std::io::Error::last_os_error()));
     }
+    for path in [from.as_c_str(), to.as_c_str()] {
+        let p = Path::new(std::ffi::OsStr::from_bytes(path.to_bytes()));
+        if let Some(parent) = p.parent() {
+            fs::File::open(parent)
+                .and_then(|f| f.sync_all())
+                .map_err(error)?;
+        }
+    }
     Ok(())
 }
 pub fn transfer(
@@ -528,6 +1054,27 @@ pub fn transfer(
     overwrite: bool,
     cancel: &AtomicBool,
     progress: Arc<AtomicU64>,
+) -> Result<Receipt, String> {
+    transfer_observed(
+        p,
+        local,
+        remote,
+        upload,
+        overwrite,
+        cancel,
+        progress,
+        |_, _| Ok(()),
+    )
+}
+pub fn transfer_observed(
+    p: &Profile,
+    local: &Path,
+    remote: &Path,
+    upload: bool,
+    overwrite: bool,
+    cancel: &AtomicBool,
+    progress: Arc<AtomicU64>,
+    mut observer: impl FnMut(&str, &str) -> Result<(), String>,
 ) -> Result<Receipt, String> {
     check(cancel)?;
     valid(local)?;
@@ -567,6 +1114,9 @@ pub fn transfer(
     } else {
         (&remote, &local)
     };
+    if source.file_name().is_none() {
+        return Err("Select a source file/folder, not a filesystem root".into());
+    }
     let manifest = scan(source, if upload { None } else { Some(&sftp) }, cancel)
         .map_err(|e| format!("Preparing source: {e}"))?;
     let root = manifest.get(Path::new("")).unwrap();
@@ -605,6 +1155,61 @@ pub fn transfer(
     }
     let parent = destination.parent().ok_or("Choose a destination parent")?;
     let stage = parent.join(ruwac_protocol::id("ruwac-rsync-part"));
+    let backup = parent.join(ruwac_protocol::id("ruwac-rsync-backup"));
+    let original = if exists {
+        Some(manifest_digest(&scan(
+            destination,
+            if upload { Some(&sftp) } else { None },
+            cancel,
+        )?))
+    } else {
+        None
+    };
+    let original_stamp = root_stamp(destination, if upload { Some(&sftp) } else { None })?;
+    let id = ruwac_protocol::id("rsync");
+    let journal = RecoveryJournal::open(&id)?;
+    let mut job = Recovery {
+        schema: 1,
+        id,
+        endpoint: p.id.clone(),
+        binding: recovery_binding(p),
+        host_sha256: crate::files_resume::host_key(&session)?,
+        upload,
+        destination: destination.clone(),
+        stage: stage.clone(),
+        backup: backup.clone(),
+        phase: "copy".into(),
+        expected: manifest_digest(&manifest),
+        original,
+        original_stamp,
+    };
+    let namespace = fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .mode(0o600)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(journal.root.join(".namespace.lock"))
+        .map_err(error)?;
+    if !crate::files_resume::private_file(&namespace)
+        || unsafe { libc::flock(namespace.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0
+    {
+        return Err("Recovery namespace busy".into());
+    }
+    if fs::read_dir(&journal.root)
+        .map_err(error)?
+        .filter_map(Result::ok)
+        .filter(|e| e.path().extension().is_some_and(|s| s == "json"))
+        .take(129)
+        .count()
+        >= 128
+    {
+        return Err("Too many pending recovery jobs".into());
+    }
+    journal.save(&job)?;
+    drop(namespace);
+
     if upload {
         sftp.mkdir(&stage, 0o700).map_err(error)?;
     } else {
@@ -613,7 +1218,9 @@ pub fn transfer(
             .create(&stage)
             .map_err(error)?;
     }
-    let filelist = std::env::temp_dir().join(ruwac_protocol::id("ruwac-rsync-list"));
+    marker(&job, if upload { Some(&sftp) } else { None }, true)?;
+    observer(&job.id, "copy")?;
+    let filelist = journal.root.join(format!("{}.files", job.id));
     let result = (|| {
         let mut list = fs::OpenOptions::new()
             .write(true)
@@ -666,6 +1273,7 @@ pub fn transfer(
                 "--no-devices",
                 "--perms",
                 "--times",
+                "--fsync",
                 "--chmod=D700,F600",
                 "--info=progress2,name0",
                 "--no-inc-recursive",
@@ -705,7 +1313,20 @@ pub fn transfer(
             }
         }
         check(cancel)?;
-        let backup = parent.join(ruwac_protocol::id("ruwac-rsync-backup"));
+        let _mutation = mutation_guard(cancel)?;
+        let side = if upload { Some(&sftp) } else { None };
+        if root_stamp(destination, side)? != job.original_stamp
+            || job.original.as_ref().is_some_and(|expected| {
+                scan(destination, side, cancel)
+                    .map(|m| manifest_digest(&m) != *expected)
+                    .unwrap_or(true)
+            })
+        {
+            return Err("Original destination changed before commit; paths preserved".into());
+        }
+        job.phase = "backup-intent".into();
+        journal.save(&job)?;
+        observer(&job.id, "backup-intent")?;
         if exists {
             if upload {
                 sftp.rename(destination, &backup, Some(ssh2::RenameFlags::empty()))
@@ -713,6 +1334,12 @@ pub fn transfer(
             } else {
                 rename_local(destination, &backup)?;
             }
+        }
+        job.phase = "backup-moved".into();
+        journal.save(&job)?;
+        observer(&job.id, "backup-moved")?;
+        if exists {
+            backup_unchanged(&job, side, cancel)?;
         }
         let commit = if upload {
             sftp.rename(&payload, destination, Some(ssh2::RenameFlags::empty()))
@@ -737,7 +1364,14 @@ pub fn transfer(
             }
             return Err(e);
         }
+        job.phase = "published".into();
+        journal.save(&job)?;
+        observer(&job.id, "published")?;
         if exists {
+            backup_unchanged(&job, side, cancel)?;
+            if manifest_digest(&scan(destination, side, cancel)?) != job.expected {
+                return Err("Published destination changed; original backup retained".into());
+            }
             let cleanup = if upload {
                 clean_remote(&sftp, &backup, 0)
             } else {
@@ -754,6 +1388,9 @@ pub fn transfer(
                 ));
             }
         }
+        job.phase = "cleaned".into();
+        journal.save(&job)?;
+        observer(&job.id, "cleaned")?;
         let (mut bytes, mut files, mut directories, mut hash) =
             (0u64, 0usize, 0usize, Sha256::new());
         for (path, e) in &manifest {
@@ -779,21 +1416,29 @@ pub fn transfer(
         })
     })();
     let _ = fs::remove_file(filelist);
-    let cleaned = if upload {
-        clean_remote(&sftp, &stage, 0)
+    if let Err(e) = result.as_ref() {
+        match recover_locked(
+            &job,
+            &journal,
+            if upload { Some(&sftp) } else { None },
+            &AtomicBool::new(false),
+        ) {
+            Ok(status) => return Err(format!("{e}; {status}")),
+            Err(_) => {
+                return Err(format!(
+                    "{e}; recovery job {} retained for inspection",
+                    job.id
+                ));
+            }
+        }
     } else {
-        clean_local(&stage)
-    };
-    if let Err(e) = cleaned {
-        return Err(format!(
-            "Owned staging cleanup failed at {} ({e}); prior result: {}; inspect before retrying",
-            stage.display(),
-            result
-                .as_ref()
-                .err()
-                .map(String::as_str)
-                .unwrap_or("committed and verified")
-        ));
+        marker(&job, if upload { Some(&sftp) } else { None }, false)?;
+        if upload {
+            clean_remote(&sftp, &stage, 0)?;
+        } else {
+            clean_local(&stage)?;
+        }
+        journal.remove()?;
     }
     result
 }

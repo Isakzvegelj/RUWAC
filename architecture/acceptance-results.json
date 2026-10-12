@@ -20480,5 +20480,363 @@
       }
     ],
     "scope": "Real owned SSH/rsync and actual authorized external transfers; synthetic GTK controls, no physical/RPM/crash qualification"
+  },
+  "rsync_interruption_recovery": {
+    "package": "0.2.4",
+    "sha256": {
+      "ruwac": "6f133cdb1bddff53c6e57af99c11bb4c05aae91fcd1fa787a83e1d13f0d7a118",
+      "ruwac-desktop": "34103cf63c3da9b60299b654d3eee5ead4905067a7f48c7b3f7630a2de9f5c92"
+    },
+    "native_groups": [
+      {
+        "name": "RSYNC-RECOVERY-20-REAL-KILL-BOUNDARIES",
+        "status": "PASS",
+        "elapsed_ms": 13966.9,
+        "detail": [
+          {
+            "upload": true,
+            "directory": false,
+            "phase": "copy",
+            "lock_conflict_refused": true,
+            "SIGKILL_recovery": true
+          },
+          {
+            "upload": true,
+            "directory": false,
+            "phase": "backup-intent",
+            "lock_conflict_refused": true,
+            "SIGKILL_recovery": true
+          },
+          {
+            "upload": true,
+            "directory": false,
+            "phase": "backup-moved",
+            "lock_conflict_refused": true,
+            "SIGKILL_recovery": true
+          },
+          {
+            "upload": true,
+            "directory": false,
+            "phase": "published",
+            "lock_conflict_refused": true,
+            "SIGKILL_recovery": true
+          },
+          {
+            "upload": true,
+            "directory": false,
+            "phase": "cleaned",
+            "lock_conflict_refused": true,
+            "SIGKILL_recovery": true
+          },
+          {
+            "upload": true,
+            "directory": true,
+            "phase": "copy",
+            "lock_conflict_refused": true,
+            "SIGKILL_recovery": true
+          },
+          {
+            "upload": true,
+            "directory": true,
+            "phase": "backup-intent",
+            "lock_conflict_refused": true,
+            "SIGKILL_recovery": true
+          },
+          {
+            "upload": true,
+            "directory": true,
+            "phase": "backup-moved",
+            "lock_conflict_refused": true,
+            "SIGKILL_recovery": true
+          },
+          {
+            "upload": true,
+            "directory": true,
+            "phase": "published",
+            "lock_conflict_refused": true,
+            "SIGKILL_recovery": true
+          },
+          {
+            "upload": true,
+            "directory": true,
+            "phase": "cleaned",
+            "lock_conflict_refused": true,
+            "SIGKILL_recovery": true
+          },
+          {
+            "upload": false,
+            "directory": false,
+            "phase": "copy",
+            "lock_conflict_refused": true,
+            "SIGKILL_recovery": true
+          },
+          {
+            "upload": false,
+            "directory": false,
+            "phase": "backup-intent",
+            "lock_conflict_refused": true,
+            "SIGKILL_recovery": true
+          },
+          {
+            "upload": false,
+            "directory": false,
+            "phase": "backup-moved",
+            "lock_conflict_refused": true,
+            "SIGKILL_recovery": true
+          },
+          {
+            "upload": false,
+            "directory": false,
+            "phase": "published",
+            "lock_conflict_refused": true,
+            "SIGKILL_recovery": true
+          },
+          {
+            "upload": false,
+            "directory": false,
+            "phase": "cleaned",
+            "lock_conflict_refused": true,
+            "SIGKILL_recovery": true
+          },
+          {
+            "upload": false,
+            "directory": true,
+            "phase": "copy",
+            "lock_conflict_refused": true,
+            "SIGKILL_recovery": true
+          },
+          {
+            "upload": false,
+            "directory": true,
+            "phase": "backup-intent",
+            "lock_conflict_refused": true,
+            "SIGKILL_recovery": true
+          },
+          {
+            "upload": false,
+            "directory": true,
+            "phase": "backup-moved",
+            "lock_conflict_refused": true,
+            "SIGKILL_recovery": true
+          },
+          {
+            "upload": false,
+            "directory": true,
+            "phase": "published",
+            "lock_conflict_refused": true,
+            "SIGKILL_recovery": true
+          },
+          {
+            "upload": false,
+            "directory": true,
+            "phase": "cleaned",
+            "lock_conflict_refused": true,
+            "SIGKILL_recovery": true
+          }
+        ]
+      },
+      {
+        "name": "RSYNC-RECOVERY-INFLIGHT-CLIENT-CRASH",
+        "status": "PASS",
+        "elapsed_ms": 1400.5,
+        "detail": {
+          "SIGKILL_during_actual_rsync_child": true,
+          "original_preserved": true,
+          "owned_staging_filelist_journal_removed": true
+        }
+      },
+      {
+        "name": "RSYNC-RECOVERY-STALE-TAMPER-GUARDS",
+        "status": "PASS",
+        "elapsed_ms": 1120.8,
+        "detail": {
+          "changed_marker_stage_permissions_destination_profile_and_journal_refused": true,
+          "original_backup_preserved_until_verified_recovery": true
+        }
+      },
+      {
+        "name": "RSYNC-RECOVERY-NORMAL-COMMIT-ACTOR-GUARDS",
+        "status": "PASS",
+        "elapsed_ms": 1760.1,
+        "detail": [
+          {
+            "phase": "backup-moved",
+            "resumed_normal_operation_refused_changed_data": true,
+            "backup_preserved": true
+          },
+          {
+            "phase": "published",
+            "resumed_normal_operation_refused_changed_data": true,
+            "backup_preserved": true
+          }
+        ]
+      },
+      {
+        "name": "RSYNC-RECOVERY-ORIGINAL-SSH-HOST-IDENTITY",
+        "status": "PASS",
+        "elapsed_ms": 1144.6,
+        "detail": {
+          "actual_SSH_host_key_replacement": true,
+          "updated_trust_did_not_retarget_original_job": true,
+          "recovery_after_original_host_restored": true
+        }
+      },
+      {
+        "name": "RSYNC-RECOVERY-NATIVE-DIALOG",
+        "status": "PASS",
+        "elapsed_ms": 2083.7,
+        "detail": {
+          "real_native_recovery_dialog_and_callback": true,
+          "actual_original_backup_restored": true,
+          "terminal_PID_preserved": true,
+          "physical_input": false
+        }
+      }
+    ],
+    "external_groups": [
+      {
+        "id": "RSYNC-EXTERNAL-RECOVERY",
+        "upload": true,
+        "directory": false,
+        "phase": "backup-moved",
+        "status": "PASS",
+        "actual_SIGKILL": true,
+        "independent_SHA256": "ce76b7faa2e0ff28c395b34a90faa92cdb1073cfc9ecdf8c0698604bf8bab50d"
+      },
+      {
+        "id": "RSYNC-EXTERNAL-RECOVERY",
+        "upload": true,
+        "directory": false,
+        "phase": "published",
+        "status": "PASS",
+        "actual_SIGKILL": true,
+        "independent_SHA256": "f208bacf441d3ae3d2f2c08e7324f9f6c798478fb43b14c578c37264e7d479b4"
+      },
+      {
+        "id": "RSYNC-EXTERNAL-RECOVERY",
+        "upload": true,
+        "directory": true,
+        "phase": "backup-moved",
+        "status": "PASS",
+        "actual_SIGKILL": true,
+        "independent_SHA256": "ce76b7faa2e0ff28c395b34a90faa92cdb1073cfc9ecdf8c0698604bf8bab50d"
+      },
+      {
+        "id": "RSYNC-EXTERNAL-RECOVERY",
+        "upload": true,
+        "directory": true,
+        "phase": "published",
+        "status": "PASS",
+        "actual_SIGKILL": true,
+        "independent_SHA256": "f208bacf441d3ae3d2f2c08e7324f9f6c798478fb43b14c578c37264e7d479b4"
+      },
+      {
+        "id": "RSYNC-EXTERNAL-RECOVERY",
+        "upload": false,
+        "directory": false,
+        "phase": "backup-moved",
+        "status": "PASS",
+        "actual_SIGKILL": true,
+        "independent_SHA256": "ce76b7faa2e0ff28c395b34a90faa92cdb1073cfc9ecdf8c0698604bf8bab50d"
+      },
+      {
+        "id": "RSYNC-EXTERNAL-RECOVERY",
+        "upload": false,
+        "directory": false,
+        "phase": "published",
+        "status": "PASS",
+        "actual_SIGKILL": true,
+        "independent_SHA256": "f208bacf441d3ae3d2f2c08e7324f9f6c798478fb43b14c578c37264e7d479b4"
+      },
+      {
+        "id": "RSYNC-EXTERNAL-RECOVERY",
+        "upload": false,
+        "directory": true,
+        "phase": "backup-moved",
+        "status": "PASS",
+        "actual_SIGKILL": true,
+        "independent_SHA256": "ce76b7faa2e0ff28c395b34a90faa92cdb1073cfc9ecdf8c0698604bf8bab50d"
+      },
+      {
+        "id": "RSYNC-EXTERNAL-RECOVERY",
+        "upload": false,
+        "directory": true,
+        "phase": "published",
+        "status": "PASS",
+        "actual_SIGKILL": true,
+        "independent_SHA256": "f208bacf441d3ae3d2f2c08e7324f9f6c798478fb43b14c578c37264e7d479b4"
+      }
+    ],
+    "checks": [
+      {
+        "check": "updater-guards",
+        "status": "PASS"
+      },
+      {
+        "check": "format-core",
+        "status": "PASS"
+      },
+      {
+        "check": "format-desktop",
+        "status": "PASS"
+      },
+      {
+        "check": "lint-core",
+        "status": "PASS"
+      },
+      {
+        "check": "lint-desktop",
+        "status": "PASS"
+      },
+      {
+        "check": "workflow-syntax",
+        "status": "PASS"
+      },
+      {
+        "check": "headless-boundary",
+        "status": "PASS"
+      },
+      {
+        "check": "native-updates.py",
+        "status": "PASS"
+      },
+      {
+        "check": "run-desktop.py",
+        "status": "PASS"
+      },
+      {
+        "check": "run-rdp-r5.py",
+        "status": "PASS"
+      },
+      {
+        "check": "run-files.py",
+        "status": "PASS"
+      },
+      {
+        "check": "run-dual.py",
+        "status": "PASS"
+      },
+      {
+        "check": "run-rsync-native.py",
+        "status": "PASS"
+      },
+      {
+        "check": "run-recovery-native.py",
+        "status": "PASS"
+      },
+      {
+        "check": "test-evf-recovery.py",
+        "status": "PASS"
+      },
+      {
+        "check": "test-evf-rsync.py",
+        "status": "PASS"
+      },
+      {
+        "check": "probe-external.py",
+        "status": "PASS"
+      }
+    ],
+    "scope": "Actual client SIGKILL and native synthetic controls; no remote power-loss, physical input or whole-product qualification"
   }
 }

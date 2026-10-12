@@ -56,7 +56,7 @@ fn stopped(cancel: &AtomicBool) -> Result<(), String> {
         Ok(())
     }
 }
-fn binding(p: &Profile) -> String {
+pub(super) fn binding(p: &Profile) -> String {
     format!(
         "{:x}",
         Sha256::digest(
@@ -72,7 +72,7 @@ fn binding(p: &Profile) -> String {
         )
     )
 }
-fn host_key(session: &ssh2::Session) -> Result<String, String> {
+pub(super) fn host_key(session: &ssh2::Session) -> Result<String, String> {
     let (key, _) = session.host_key().ok_or("SSH host identity unavailable")?;
     Ok(format!("{:x}", Sha256::digest(key)))
 }
@@ -83,7 +83,7 @@ fn original_host(session: &ssh2::Session, job: &Pending) -> Result<(), String> {
         Ok(())
     }
 }
-fn private_dir(path: &Path) -> bool {
+pub(super) fn private_dir(path: &Path) -> bool {
     fs::symlink_metadata(path).is_ok_and(|m| {
         m.is_dir()
             && !m.file_type().is_symlink()
@@ -91,7 +91,7 @@ fn private_dir(path: &Path) -> bool {
             && m.mode() & 0o777 == 0o700
     })
 }
-fn root() -> Result<PathBuf, String> {
+pub(super) fn root() -> Result<PathBuf, String> {
     let state = std::env::var_os("XDG_STATE_HOME")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|p| PathBuf::from(p).join(".local/state")))
@@ -126,7 +126,7 @@ fn regular(path: &Path, write: bool) -> Result<File, String> {
     }
     Ok(f)
 }
-fn private_file(f: &File) -> bool {
+pub(super) fn private_file(f: &File) -> bool {
     f.metadata().is_ok_and(|m| {
         m.is_file()
             && m.uid() == unsafe { libc::geteuid() }
