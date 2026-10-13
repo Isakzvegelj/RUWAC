@@ -53,7 +53,7 @@ jobs:
         run: |
           printf 'CARGO_HOME=%s/cargo\nCARGO_TARGET_DIR=%s/target\n' "$RUNNER_TEMP" "$RUNNER_TEMP" >> "$GITHUB_ENV"
       - name: Install Fedora test tools
-        run: dnf install -y git cargo rust rustfmt clippy gcc gcc-c++ pkgconf-pkg-config gtk4-devel libadwaita-devel openssl openssl-devel libssh2-devel sqlite-devel python3 python3-pillow tesseract tesseract-langpack-eng screen tmux fzf
+        run: dnf install -y git cargo rust rustfmt clippy gcc gcc-c++ pkgconf-pkg-config gtk4-devel libadwaita-devel openssl openssl-devel libssh2-devel sqlite-devel python3 python3-pyyaml python3-pillow tesseract tesseract-langpack-eng screen tmux fzf
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           persist-credentials: false
@@ -74,8 +74,11 @@ jobs:
         run: python3 ruwac/tests/integration/test_updates.py
       - name: Fedora candidate bundle and installation integrity guards
         run: python3 ruwac/tests/integration/test_bundles.py
+      - name: Validate workflow test command execution
+        run: python3 ruwac/tests/integration/test_workflow_commands.py
       - name: Testing artifact attestation subject regressions
-        run: python3 ruwac/tests/integration/test_testing_subjects.py
+        run: |
+          python3 ruwac/tests/integration/test_testing_subjects.py
           python3 ruwac/tests/integration/test_verified_quality.py
       - name: Testing bundle updater integrity and archive faults
         run: python3 ruwac/tests/integration/test_bundle_updates.py

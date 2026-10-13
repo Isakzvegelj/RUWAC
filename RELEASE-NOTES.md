@@ -1,21 +1,34 @@
-# RUWAC publication resilience and measured RDP latency
+# RUWAC workflow execution and artifact privacy repair
 
-The product-owned quality wait retries bounded GitHub timeout/429/5xx failures
-without treating them as passing checks. Access failures and completed source or
-privacy failures stop publication. Exact commit/workflow selection is preserved;
-dependency advisories remain separate and unsuppressed. Five transport/process
-fault tests cover retry, recovery, deadlines, access denial and immutable commit
-selection. Shared build/release infrastructure and version allocation are unchanged.
+The quality workflow now uses a literal multiline shell block for the two
+publication regression suites. YAML previously folded them into one command,
+which failed before source qualification. New tests parse the real workflow,
+execute its exact shell body and reproduce the rejected folded form. PyYAML is
+an explicit CI test dependency; it adds no headless or desktop runtime dependency.
 
-Authenticated same-endpoint FreeRDP comparisons now measure actual timestamped
-X11 pixels, first-frame time, CPU and RSS. Ten alternating trials per client with
-fifty frames each establish an A/B/A baseline. Disabling TCP packet coalescing for
-interactive RDP reduced measured TCP-accept-to-first-frame time from about 203 ms
-to 121 ms in the software fixture. TLS/CredSSP and explicit certificate trust
-remain intact. GTK paint latency and memory remain higher than the FreeRDP CLI.
-See the benchmark report for exact scopes, variation and empirical regression budgets.
+Artifact privacy handling now decodes bounded exception-frame records and masks
+only numeric PC address/range fields that resolve to executable sections. A linked
+address can coincidentally contain a short identifier's bytes; that does not make
+it a stored machine/account name. CIE augmentation and other data remain scanned.
+Unsupported/truncated encodings and out-of-code ranges fail closed. Generated
+ELF tests verify numeric coincidences, real short/long strings and malformed
+records; private keys, paths, URLs and other string findings remain blocked.
+No private matching value or operational receipt is published.
 
-This qualification uses generated loopback desktops and owned compositors.
-Windows/physical/3K interoperability, signed RPM repository, unattended RPM
-installation and desktop RSA remediation remain separate open requirements.
-Operational source releases and testing RPMs do not prove whole-product security.
+Mixed nesting now separates GNU Screen's documented default retained-window
+policy from explicit display-size adaptation with -A. The fit-size matrix retains
+all sixteen depth/prefix/input/persistence checks; a separate real default case
+forces 80×24, verifies reattachment preserves it, then requires propagation of an
+actual outer resize to 137 columns. Leaf PID/start time, exact bytes and termios
+restoration remain required. No owner session is accessed.
+
+The normal build/release flow reruns functional, package, privacy and certificate
+checks. Application Rust and dependency source are unchanged except for versions
+assigned by the controller. The measured v0.2.35 performance evidence is retained
+with source equivalence checks, not reported as a new benchmark. Existing tags
+and history remain immutable. Artifact publication still requires successful
+exact-commit quality/privacy checks; dependency advisories remain unsuppressed.
+
+Source qualification, testing RPM delivery and complete physical/external/security
+acceptance remain distinct. This repair changes no daemon, RDP, clipboard,
+credential, profile, file-transfer or workspace behavior.

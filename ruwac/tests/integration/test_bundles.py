@@ -214,6 +214,50 @@ class Bundles(unittest.TestCase):
         checker = runpy.run_path(str(ROOT / 'scripts/privacy-check.py'))
         self.assertTrue(bundles.artifact_findings(self.relocation_elf(b'toy\x00'), checker, ['toy'])[0])
 
+    def unwind_elf(self, literal=b'generated fixture', invalid_range=False):
+        path = self.root / 'unwind-elf'
+        cie_body = struct.pack('<I', 0) + b'\x01zR\x00\x01\x78\x10\x01\x1b\x0c\x07\x08'
+        cie = struct.pack('<I', len(cie_body)) + cie_body
+        unwind_address = 0x3000
+        begin_offset = len(cie) + 8
+        encoded = b'abc\x00'  # Generated numeric offset, not a site identifier.
+        code_address = unwind_address + begin_offset + int.from_bytes(encoded, 'little')
+        fde_body = struct.pack('<I', len(cie) + 4) + encoded + struct.pack('<I', 8) + b'\x00\x00\x00\x00'
+        unwind = cie + struct.pack('<I', len(fde_body)) + fde_body + bytes(4)
+        names = b'\x00.text\x00.eh_frame\x00.rodata\x00.shstrtab\x00'
+        payloads = [b'\x90' * 8, unwind, literal, names]
+        offsets = []; offset = 64 + 5 * 64
+        for payload in payloads:offsets.append(offset);offset += len(payload)
+        header = struct.pack('<16sHHIQQQIHHHHHH', b'\x7fELF\x02\x01'+bytes(10), 3, 62, 1, 0, 0, 64, 0, 64, 0, 0, 64, 5, 4)
+        records = bytes(64)
+        records += struct.pack('<IIQQQQIIQQ', 1, 1, 6, code_address + (100 if invalid_range else 0), offsets[0], 8, 0, 0, 1, 0)
+        records += struct.pack('<IIQQQQIIQQ', 7, 1, 2, unwind_address, offsets[1], len(unwind), 0, 0, 4, 0)
+        records += struct.pack('<IIQQQQIIQQ', 17, 1, 2, 0x5000, offsets[2], len(literal), 0, 0, 1, 0)
+        records += struct.pack('<IIQQQQIIQQ', 25, 3, 0, 0, offsets[3], len(names), 0, 0, 1, 0)
+        path.write_bytes(header + records + b''.join(payloads))
+        return path
+
+    def test_unwind_numeric_code_offset_is_not_a_short_name(self):
+        checker = runpy.run_path(str(ROOT / 'scripts/privacy-check.py'))
+        self.assertFalse(bundles.artifact_findings(self.unwind_elf(), checker, ['abc'])[0])
+
+    def test_unwind_mask_does_not_hide_actual_string(self):
+        checker = runpy.run_path(str(ROOT / 'scripts/privacy-check.py'))
+        self.assertTrue(bundles.artifact_findings(self.unwind_elf(b'abc\x00'), checker, ['abc'])[0])
+        self.assertTrue(bundles.artifact_findings(self.unwind_elf(b'generated-private-host\x00'), checker, ['generated-private-host'])[0])
+
+    def test_unwind_pointer_must_resolve_to_executable_code(self):
+        with self.assertRaisesRegex(ValueError, 'outside executable'):
+            bundles.binary_data(self.unwind_elf(invalid_range=True))
+
+    def test_unwind_malformed_records_fail_closed(self):
+        path = self.unwind_elf();data = bytearray(path.read_bytes())
+        # Corrupt the unwind record length while retaining valid ELF bounds.
+        struct.pack_into('<I', data, 64 + 5 * 64 + 8, 0xffffffff)
+        path.write_bytes(data)
+        with self.assertRaisesRegex(ValueError, 'record bounds'):
+            bundles.binary_data(path)
+
     def test_elf_scanner_rejects_key_material_but_allows_parser_markers(self):
         checker = runpy.run_path(str(ROOT / 'scripts/privacy-check.py'))
         marker = b'-----BEGIN ' + b'PRIVATE KEY-----'

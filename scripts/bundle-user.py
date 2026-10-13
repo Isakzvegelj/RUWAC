@@ -121,6 +121,99 @@ def notices(root, destination, packages):
     return rows
 
 
+def unwind_address_data(content, address, executable):
+    """Mask only validated FDE PC address/range fields, retaining all other bytes.
+
+    LSB exception-frame records describe numeric code ranges. Their linked
+    offsets can coincidentally spell a short site label; they are not names.
+    Unknown/truncated encodings fail closed. Augmentations and instructions
+    remain subject to the normal string/private-policy scan.
+    """
+    data = bytearray(content)
+    cies = {}
+    at = 0
+
+    def leb(position, end):
+        value = 0
+        for shift in range(0, 70, 7):
+            if position >= end:
+                raise ValueError('Truncated exception-frame integer')
+            byte = data[position]
+            position += 1
+            value |= (byte & 127) << shift
+            if not byte & 128:
+                return value, position
+        raise ValueError('Oversized exception-frame integer')
+
+    def width(encoding):
+        sizes = {0: 8, 2: 2, 3: 4, 4: 8, 10: 2, 11: 4, 12: 8}
+        if encoding & 15 not in sizes:
+            raise ValueError('Unsupported exception-frame pointer encoding')
+        return sizes[encoding & 15]
+
+    while at < len(data):
+        if at + 4 > len(data):
+            raise ValueError('Truncated exception-frame record')
+        size = struct.unpack_from('<I', data, at)[0]
+        if size == 0:
+            if any(data[at:]):
+                raise ValueError('Unexpected exception-frame trailer')
+            break
+        end = at + 4 + size
+        if size == 0xffffffff or size < 4 or end > len(data):
+            raise ValueError('Invalid exception-frame record bounds')
+        reference = struct.unpack_from('<I', data, at + 4)[0]
+        if reference == 0:
+            if at + 9 >= end or data[at + 8] != 1:
+                raise ValueError('Unsupported exception-frame CIE version')
+            nul = data.find(b'\0', at + 9, end)
+            if nul < 0:
+                raise ValueError('Unterminated exception-frame augmentation')
+            augmentation = bytes(data[at + 9:nul])
+            if augmentation not in {b'zR', b'zPLR'}:
+                raise ValueError('Unsupported exception-frame augmentation')
+            _, position = leb(nul + 1, end)  # Code alignment.
+            _, position = leb(position, end)  # Signed data alignment: same length encoding.
+            if position >= end:
+                raise ValueError('Missing exception-frame return register')
+            length, position = leb(position + 1, end)
+            aug_end = position + length
+            if aug_end > end:
+                raise ValueError('Invalid exception-frame augmentation length')
+            encoding = None
+            for letter in augmentation[1:]:
+                if position >= aug_end:
+                    raise ValueError('Truncated exception-frame augmentation data')
+                value = data[position]
+                position += 1
+                if letter == ord('P'):
+                    position += width(value)
+                elif letter == ord('R'):
+                    encoding = value
+            if position != aug_end or encoding not in {0, 3, 11, 0x1b}:
+                raise ValueError('Invalid or unsupported FDE address encoding')
+            cies[at] = encoding
+        else:
+            cie = at + 4 - reference
+            if cie not in cies:
+                raise ValueError('Invalid exception-frame CIE reference')
+            encoding = cies[cie]
+            size_pc = width(encoding)
+            begin = at + 8
+            if begin + 2 * size_pc > end:
+                raise ValueError('Truncated exception-frame code range')
+            signed = encoding & 15 in {10, 11, 12}
+            location = int.from_bytes(data[begin:begin + size_pc], 'little', signed=signed)
+            if encoding & 0x70 == 0x10:
+                location += address + begin
+            extent = int.from_bytes(data[begin + size_pc:begin + 2 * size_pc], 'little', signed=signed)
+            if extent < 0 or not any(start <= location and location + extent <= stop for start, stop in executable):
+                raise ValueError('Exception-frame code range is outside executable sections')
+            data[begin:begin + 2 * size_pc] = bytes(2 * size_pc)
+        at = end
+    return data
+
+
 def binary_data(path):
     """Read bounded non-executable ELF sections, retaining constants and symbols."""
     data = path.read_bytes()
@@ -143,6 +236,13 @@ def binary_data(path):
             address, info = struct.unpack_from('<QQ', data, position)
             if info & 0xffffffff in {1, 6, 7, 8}:  # x86_64 pointer-sized relocation kinds.
                 relocations.add(address)
+    names = b''
+    if 0 <= header[13] < len(records):
+        names_record = records[header[13]]
+        if names_record[4] + names_record[5] > len(data):
+            raise ValueError('ELF section names exceed artifact bounds')
+        names = data[names_record[4]:names_record[4] + names_record[5]]
+    executable = [(s[3], s[3] + s[5]) for s in records if s[2] & 4]
     sections = []
     for section in records:
         kind, flags, address, start, size = section[1:6]
@@ -153,6 +253,9 @@ def binary_data(path):
         if flags & 4 or kind in {4, 9}:  # Instructions and ABI numeric relocation tables.
             continue
         content = bytearray(data[start:start + size])
+        name = names[section[0]:].split(b'\0', 1)[0] if section[0] < len(names) else b''
+        if name == b'.eh_frame':
+            content = unwind_address_data(content, address, executable)
         if flags & 2:  # SHF_ALLOC: r_offset is an allocated virtual address.
             for pointer in relocations:
                 if address <= pointer and pointer + 8 <= address + size:

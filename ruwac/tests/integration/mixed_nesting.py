@@ -46,7 +46,7 @@ class UI:
   os.close(self.master);os.close(self.slave);uis.remove(self)
   assert restored,'Client did not restore owned PTY modes';return self.p.returncode
 
-def new_layer(kind,child,name,default=False):
+def new_layer(kind,child,name,default=False,adapt=True):
  config=default_tmux if default else tmux_config
  directory=root/name;directory.mkdir(mode=0o700)
  # Clearing nesting hints is explicit for these separate fixture servers.
@@ -58,7 +58,7 @@ def new_layer(kind,child,name,default=False):
   sock=directory/'tmux.sock';run(['tmux','-S',str(sock),'-f',str(config),'new-session','-d','-s',name,'-x','100','-y','30',shlex.join(child)])
   layer={'kind':kind,'socket':sock,'name':name};attach=['tmux','-S',str(sock),'-f',str(config),'attach-session','-t',name]
  else:
-  run(['screen','-c',str(screen_config),'-dmS',name,*child]);layer={'kind':kind,'name':name};attach=['screen','-c',str(screen_config),'-r',name]
+  run(['screen','-c',str(screen_config),'-dmS',name,*child]);layer={'kind':kind,'name':name};attach=['screen','-c',str(screen_config),*(['-A']if adapt else []),'-r',name]
  layers.append(layer);return layer,attach
 
 def pid_receipt():
@@ -104,9 +104,26 @@ try:
    fcntl.ioctl(ui.slave,termios.TIOCSWINSZ,struct.pack('HHHH',42,137,0,0));os.kill(ui.p.pid,signal.SIGWINCH)
    size=eventually(lambda:(r if (r:=pid_receipt())and r['cols']==137 and r['rows']>initial_size['rows']else None),10)
    assert identities_equal(identity,size)and size['rows']==initial_size['rows']+12;assert ui.finish()==0
-   results.append({'id':f'MIXED-NESTING-{index+1}','status':'PASS','layers':pattern,'depth':len(pattern),'seconds':time.monotonic()-started,'literal_utf8_and_prefix_exact':True,'single_bracketed_paste_pair':True,'paste_contains_both_control_prefixes': 'screen'not in pattern,'prefix_configuration':'tmux default Control-B'if default else 'common Control-A','deep_window_create_select':True,'leaf_resize_propagated':{'before':[initial_size['rows'],initial_size['cols']],'after':[size['rows'],size['cols']]},'same_leaf_pid_and_start_time_after_detach_reattach':True,'termios_restored':True,'receiver_sha256':hashlib.sha256(out.read_bytes()).hexdigest()});print(name,'PASS',pattern,'default tmux prefix'if default else 'common prefix',flush=True)
+   results.append({'id':f'MIXED-NESTING-{index+1}','status':'PASS','layers':pattern,'depth':len(pattern),'seconds':time.monotonic()-started,'literal_utf8_and_prefix_exact':True,'single_bracketed_paste_pair':True,'paste_contains_both_control_prefixes': 'screen'not in pattern,'prefix_configuration':'tmux default Control-B'if default else 'common Control-A','GNU_Screen_display_adaptation_explicit':True,'deep_window_create_select':True,'leaf_resize_propagated':{'before':[initial_size['rows'],initial_size['cols']],'after':[size['rows'],size['cols']]},'same_leaf_pid_and_start_time_after_detach_reattach':True,'termios_restored':True,'receiver_sha256':hashlib.sha256(out.read_bytes()).hexdigest()});print(name,'PASS',pattern,'default tmux prefix'if default else 'common prefix',flush=True)
   except Exception as error:
    results.append({'id':f'MIXED-NESTING-{index+1}','status':'FAIL','layers':pattern,'error':str(error),'traceback':traceback.format_exc()});print(name,'FAIL',error,flush=True);raise
+ # Default Screen reattachment may restore its retained window dimensions.
+ # Test that policy separately from the explicit -A display-fit matrix above.
+ retained=root/'default-retained.bin';pid_file=root/'default-retained.pid.json';pid_file.unlink(missing_ok=True)
+ saved_screen,child=new_layer('screen',[sys.executable,str(leaf),str(retained),str(pid_file),str(receiver)],'retained-screen',adapt=False)
+ saved_outer,attach=new_layer('ruwac',child,'retained-ruwac');ui=UI(attach,'default-retained')
+ eventually(lambda:retained.exists()and b'RUWAC_RECEIVER_READY'in ui.data,20)
+ run(['screen','-c',str(screen_config),'-S',saved_screen['name'],'-p','0','-X','width','-w','80','24'])
+ before=eventually(lambda:r if (r:=pid_receipt())and (r['rows'],r['cols'])==(24,80)else None,10)
+ assert ui.finish()==0
+ ui=UI(attach,'default-retained-reattach');eventually(lambda:b'RUWAC_RECEIVER_READY'in ui.data,20)
+ ui.send(b'DEFAULT_RESUME');eventually(lambda:retained.read_bytes()==b'DEFAULT_RESUME',10)
+ restored=pid_receipt();assert identities_equal(before,restored)and(restored['rows'],restored['cols'])==(24,80)
+ fcntl.ioctl(ui.slave,termios.TIOCSWINSZ,struct.pack('HHHH',42,137,0,0));os.kill(ui.p.pid,signal.SIGWINCH)
+ changed=eventually(lambda:r if (r:=pid_receipt())and(r['rows'],r['cols'])==(41,137)else None,10)
+ assert identities_equal(before,changed)and ui.finish()==0
+ results.append({'id':'GNU-SCREEN-DEFAULT-RETAINED-SIZE','status':'PASS','explicitly_retained_window':[24,80],'reattached_physical_terminal':[30,100],'restored_leaf':[restored['rows'],restored['cols']],'actual_outer_resize_leaf':[changed['rows'],changed['cols']],'same_leaf_pid_and_start':True,'resumed_input_exact':True,'termios_restored':True})
+ print('GNU-SCREEN-DEFAULT-RETAINED-SIZE PASS',flush=True)
  # Screen's input parser still treats its own prefix in terminal paste as commands.
  # Record this separately rather than weakening the ordinary byte-preservation tests.
  boundary=root/'screen-prefix-paste.bin';pid_file=root/'boundary.pid.json';pid_file.unlink(missing_ok=True)
@@ -136,4 +153,4 @@ finally:
    except Exception:proc.kill();proc.wait()
  receipt={'results':results,'binary_sha256':hashlib.sha256(binary.read_bytes()).hexdigest(),'versions':{'screen':run(['screen','--version']).strip(),'tmux':run(['tmux','-V']).strip()},'evidence':str(root),'scope':'Actual private local PTYs and owned GNU Screen/tmux/RUWAC servers; common Control-A and native tmux Control-B configurations; explicit upstream Screen paste-prefix limitation; no owner session, remote graphical or physical input claim'}
  (root/'receipt.json').write_text(json.dumps(receipt,indent=2)+'\n');print(json.dumps(receipt,indent=2))
-assert len(results)==17 and sum(c['status']=='PASS'for c in results)==16 and results[-1]['status']=='LIMITATION'
+assert len(results)==18 and sum(c['status']=='PASS'for c in results)==17 and results[-1]['status']=='LIMITATION'

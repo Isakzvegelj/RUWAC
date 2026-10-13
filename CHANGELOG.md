@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v0.2.36 — 2026-10-14 — Stable source release
+
+- Validate exact workflow shell commands and numeric ELF unwind address fields while keeping real private strings and malformed artifact metadata blocked.
+
 ## v0.2.35 — 2026-10-13 — Stable source release
 
 - Bound transient publication API retries, measure real RDP pixels against FreeRDP, and reduce connection latency with TCP_NODELAY while preserving authentication and clipboard policy.
