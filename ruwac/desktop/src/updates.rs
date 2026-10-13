@@ -1,4 +1,4 @@
-//! Automatic GitHub checks and explicitly requested source installation off the GTK thread.
+//! GitHub checks, opt-in unattended updates and reversible source installation off the GTK thread.
 use adw::prelude::*;
 use gtk::glib;
 use serde_json::Value;
@@ -108,6 +108,51 @@ pub fn attach(header: &adw::HeaderBar, window: &adw::ApplicationWindow, automati
                 });
             }
         });
+        let auto_install = gtk::CheckButton::with_label("Install GitHub updates automatically (Fedora 44)");
+        auto_install.set_widget_name("update-auto-install");
+        auto_install.set_sensitive(false);
+        content.append(&auto_install);
+        let detail = gtk::Label::new(Some("Checks every six hours while logged in. Builds locally; the next application restart uses the update. Running windows and terminal sessions stay open."));
+        detail.set_wrap(true);
+        content.append(&detail);
+        let weak_auto = auto_install.downgrade();
+        let update_status = status.downgrade();
+        task(&["--auto-install", "status"], move |result| {
+            if let (Some(check), Ok(value)) = (weak_auto.upgrade(), result) {
+                check.set_active(value["automatic_install"] == true);
+                check.set_sensitive(true);
+                let changing = Rc::new(Cell::new(false));
+                check.connect_toggled(move |check| {
+                    if changing.get() { return; }
+                    check.set_sensitive(false);
+                    let weak_check = check.downgrade();
+                    let changing = changing.clone();
+                    let label = update_status.clone();
+                    let args: &'static [&'static str] = if check.is_active() { &["--auto-install", "on"] } else { &["--auto-install", "off"] };
+                    task(args, move |result| {
+                        if let Some(label) = label.upgrade() {
+                            label.set_text(&match &result {
+                                Ok(value) if value["automatic_install"] == true => "Automatic installation enabled. Checks every six hours; running sessions are preserved.".into(),
+                                Ok(_) => "Automatic installation disabled. Existing sessions and installations are preserved.".into(),
+                                Err(error) => format!("Unable to configure automatic installation: {error}"),
+                            });
+                        }
+                        // Query persisted state even after a scheduler error: opting
+                        // out remains committed when a stopped manager rejects disable.
+                        task(&["--auto-install", "status"], move |saved| {
+                            if let Some(check) = weak_check.upgrade() {
+                                if let Ok(value) = saved {
+                                    changing.set(true);
+                                    check.set_active(value["automatic_install"] == true);
+                                    changing.set(false);
+                                    check.set_sensitive(true);
+                                }
+                            }
+                        });
+                    });
+                });
+            }
+        });
         dialog.set_child(Some(&content)); dialog.present();
         let label = status.downgrade(); let install = install.downgrade();
         task(&["--check"], move |result| { if let Some(label) = label.upgrade() { match result {
@@ -190,6 +235,18 @@ pub fn fixture(window: &adw::ApplicationWindow, command: &Value) -> Value {
                     }
                 }
             }
+            if let Some(enabled) = command["automatic_install"].as_bool() {
+                if let Some(button) = find(dialog.upcast_ref(), "update-auto-install")
+                    .and_then(|w| w.downcast::<gtk::CheckButton>().ok())
+                {
+                    if button.is_sensitive() {
+                        button.set_active(enabled);
+                    }
+                }
+            }
+            let automatic_install = find(dialog.upcast_ref(), "update-auto-install")
+                .and_then(|w| w.downcast::<gtk::CheckButton>().ok())
+                .map(|w| w.is_active());
             let status = find(dialog.upcast_ref(), "update-status")
                 .and_then(|w| w.downcast::<gtk::Label>().ok())
                 .map(|label| label.text().to_string());
@@ -198,7 +255,7 @@ pub fn fixture(window: &adw::ApplicationWindow, command: &Value) -> Value {
             let automatic = find(dialog.upcast_ref(), "update-auto-check")
                 .and_then(|w| w.downcast::<gtk::CheckButton>().ok())
                 .map(|w| w.is_active());
-            let result = serde_json::json!({"dialog":true,"status":status,"install_enabled":install,"automatic":automatic});
+            let result = serde_json::json!({"dialog":true,"status":status,"install_enabled":install,"automatic":automatic,"automatic_install":automatic_install});
             if command["operation"] == "close" {
                 dialog.close();
             }

@@ -69,33 +69,171 @@ def latest(current):
             'available': newer, 'url': url, 'delivery': 'source-build'}
 
 
+def automatic_release_verified(release):
+    """Unattended installs wait for source/privacy checks on the exact commit.
+
+    Dependency advisories are a separate, unsuppressed qualification gate; this
+    is an opt-in testing-source updater, not a qualified binary distribution.
+    """
+    commit = release.get('commit', '')
+    if not SHA.fullmatch(commit):
+        raise ValueError('Automatic update lacks an immutable release commit')
+    runs = api('/actions/runs?head_sha=' + commit + '&event=push&per_page=100').get('workflow_runs', [])
+    matching = [run for run in runs if run.get('head_sha') == commit and run.get('head_branch') == 'main' and run.get('path') == '.github/workflows/quality.yml']
+    if not matching:
+        return False
+    newest = max(matching, key=lambda run: run['id'])
+    jobs = api('/actions/runs/' + str(newest['id']) + '/jobs?per_page=100').get('jobs', [])
+    return all(any(job.get('name') == name and job.get('conclusion') == 'success' for job in jobs) for name in ['quality', 'privacy'])
+
+
 def settings_path():
     root = Path(os.environ.get('XDG_CONFIG_HOME', Path.home() / '.config')) / 'RUWAC'
     return private_directory(root) / 'updates.json'
 
 
-def automatic_setting(value=None):
+def preferences():
     path = settings_path()
-    enabled = True
+    data = {'schema': 1, 'automatic_check': True, 'automatic_install': False}
     if path.exists() or path.is_symlink():
         info = path.lstat()
         if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() or info.st_mode & 0o077 or info.st_size > 4096:
             raise ValueError('Unsafe update preferences; preserve and repair them')
         data = json.loads(path.read_text())
-        if data.get('schema') != 1 or not isinstance(data.get('automatic_check'), bool):
+        if data.get('schema') != 1 or not isinstance(data.get('automatic_check'), bool) or not isinstance(data.get('automatic_install', False), bool):
             raise ValueError('Unknown update preferences; preserve and repair them')
-        enabled = data['automatic_check']
-    if value is not None:
-        fd, name = tempfile.mkstemp(prefix='.updates-', dir=path.parent)
+    return data
+
+
+def save_preferences(data):
+    path = settings_path()
+    encoded = json.dumps(data) + '\n'
+    if len(encoded.encode()) > 4096:
+        raise ValueError('Update preferences exceed the size limit')
+    fd, name = tempfile.mkstemp(prefix='.updates-', dir=path.parent)
+    try:
+        with os.fdopen(fd, 'w') as stream:
+            stream.write(encoded); stream.flush(); os.fsync(stream.fileno())
+        Path(name).replace(path)
+    finally:
+        Path(name).unlink(missing_ok=True)
+
+
+def automatic_setting(value=None):
+    if value is None:
+        return preferences()['automatic_check']
+    lock = locked_file(settings_path().parent / '.settings.lock')
+    try:
+        data = preferences(); data['automatic_check'] = value
+        save_preferences(data)
+        return value
+    finally:
+        os.close(lock)
+
+
+UNIT_MARKER = '# Managed by RUWAC automatic updates v1\n'
+UNIT_NAMES = ('ruwac-update.service', 'ruwac-update.timer')
+
+
+def unit_quote(value):
+    if any(ord(c) < 32 or ord(c) == 127 for c in value):
+        raise ValueError('Update paths cannot contain control characters')
+    return '\"' + value.replace('\\', '\\\\').replace('\"', '\\\"').replace('%', '%%') + '\"'
+
+
+def update_units(prefix):
+    current = installed_version(prefix, '0.0.0')
+    if current == '0.0.0' or not (prefix / 'bin/ruwac').is_file():
+        raise ValueError('Install RUWAC before enabling unattended updates')
+    binary = prefix / 'bin/ruwac'
+    if not binary.is_symlink() or str(binary.readlink()) != '../lib/ruwac/current/ruwac':
+        raise ValueError('Unrelated RUWAC command; automatic-update configuration preserved')
+    cache = Path(os.environ.get('XDG_CACHE_HOME', Path.home() / '.cache')).absolute()
+    config = settings_path().parent.parent.absolute()
+    service = UNIT_MARKER + '[Unit]\nDescription=RUWAC unattended source update\n\n[Service]\nType=oneshot\n'
+    # ':' disables shell-style environment expansion; percent specifiers are escaped.
+    service += 'ExecStart=:' + unit_quote(str(prefix / 'bin/ruwac')) + ' update --install-auto --prefix ' + unit_quote(str(prefix)) + '\n'
+    service += 'Environment=' + unit_quote('XDG_CONFIG_HOME=' + str(config)) + '\n'
+    service += 'Environment=' + unit_quote('XDG_CACHE_HOME=' + str(cache)) + '\n'
+    service += 'UMask=0077\nNice=10\nIOSchedulingClass=idle\nCPUWeight=20\nNoNewPrivileges=yes\nTimeoutStartSec=2h\n'
+    timer = UNIT_MARKER + '[Unit]\nDescription=Check for RUWAC updates every six hours\n\n[Timer]\nOnActiveSec=5min\nOnUnitActiveSec=6h\nRandomizedDelaySec=5min\nUnit=' + UNIT_NAMES[0] + '\n\n[Install]\nWantedBy=timers.target\n'
+    return dict(zip(UNIT_NAMES, (service, timer)))
+
+
+def scheduler_directory():
+    # The directory can contain other application units: retain existing permissions.
+    base = settings_path().parent.parent / 'systemd'
+    for directory in [base, base / 'user']:
+        directory.mkdir(mode=0o700, exist_ok=True)
+        info = directory.lstat()
+        if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid() or info.st_mode & 0o022:
+            raise ValueError('Unsafe user service directory; existing configuration preserved')
+    return base / 'user'
+
+
+def automatic_install_setting(value=None, prefix=None):
+    if value is None:
+        return preferences().get('automatic_install', False)
+    prefix = (prefix or Path.home() / '.local').absolute()
+    lock = locked_file(settings_path().parent / '.settings.lock')
+    try:
+        data = preferences()
+        if value is False:
+            # Commit opt-out first. In-flight builds recheck it before installation.
+            data['automatic_install'] = False; save_preferences(data)
+            expected = data.get('automatic_install_units_sha256', {})
+            if not expected:
+                return False
+            directory = scheduler_directory()
+            for name in UNIT_NAMES:
+                path = directory / name
+                if path.is_symlink() or not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != expected.get(name):
+                    raise ValueError('Automatic installation disabled; edited scheduler configuration was preserved')
+            run(['systemctl', '--user', 'disable', '--now', UNIT_NAMES[1]])
+            return False
+        generated = update_units(prefix)
+        directory = scheduler_directory()
+        expected = data.get('automatic_install_units_sha256', {})
+        before = {}
+        for name in UNIT_NAMES:
+            path = directory / name
+            if path.exists() or path.is_symlink():
+                info = path.lstat()
+                if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() or info.st_mode & 0o077 or info.st_size > 8192:
+                    raise ValueError('Unsafe automatic-update unit; existing configuration preserved')
+                raw = path.read_bytes()
+                if expected.get(name) != hashlib.sha256(raw).hexdigest():
+                    raise ValueError('Automatic-update unit was edited or belongs to another tool; preserved')
+                before[name] = raw
+            else:
+                before[name] = None
         try:
-            with os.fdopen(fd, 'w') as stream:
-                json.dump({'schema': 1, 'automatic_check': value}, stream)
-                stream.write('\n'); stream.flush(); os.fsync(stream.fileno())
-            Path(name).replace(path)
-        finally:
-            Path(name).unlink(missing_ok=True)
-        enabled = value
-    return enabled
+            for name, content in generated.items():
+                fd, temporary = tempfile.mkstemp(prefix='.ruwac-unit-', dir=directory)
+                try:
+                    with os.fdopen(fd, 'w') as stream:
+                        stream.write(content); stream.flush(); os.fsync(stream.fileno())
+                    Path(temporary).replace(directory / name)
+                finally:
+                    Path(temporary).unlink(missing_ok=True)
+            run(['systemctl', '--user', 'daemon-reload'])
+            run(['systemctl', '--user', 'enable', '--now', UNIT_NAMES[1]])
+            data['automatic_install'] = True
+            data['automatic_install_units_sha256'] = {name: hashlib.sha256(content.encode()).hexdigest() for name, content in generated.items()}
+            save_preferences(data)
+        except Exception:
+            for name, raw in before.items():
+                path = directory / name
+                if raw is None:
+                    path.unlink(missing_ok=True)
+                else:
+                    path.write_bytes(raw); path.chmod(0o600)
+            # Restoring the old units is best effort; original failure is retained.
+            subprocess.run(['systemctl', '--user', 'daemon-reload'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            raise
+        return True
+    finally:
+        os.close(lock)
 
 
 def run(command, *, cwd=None, env=None):
@@ -208,7 +346,7 @@ def rollback(prefix):
         os.close(lock)
 
 
-def install(release, prefix, cache, desktop=True):
+def install(release, prefix, cache, desktop=True, automatic=False):
     os_release = Path('/etc/os-release').read_text()
     os_info = dict(line.split('=', 1) for line in os_release.splitlines() if '=' in line)
     if os_info.get('ID', '').strip('"') != 'fedora' or os_info.get('VERSION_ID', '').strip('"') != '44':
@@ -236,7 +374,14 @@ def install(release, prefix, cache, desktop=True):
         args = ['python3', str(root / 'scripts/install-user.py'), '--build-root', str(root), '--prefix', str(prefix)]
         if desktop:
             args.append('--desktop')
-        run(args)
+        preference_lock = locked_file(settings_path().parent / '.settings.lock') if automatic else None
+        try:
+            if automatic and not automatic_install_setting():
+                return dict(release, skipped='automatic updates disabled during build', running_sessions='preserved')
+            run(args)
+        finally:
+            if preference_lock is not None:
+                os.close(preference_lock)
         return dict(release, installed=release['latest'], running_sessions='preserved')
     finally:
         shutil.rmtree(root)
@@ -249,15 +394,24 @@ def main():
     modes.add_argument('--check', action='store_true')
     modes.add_argument('--check-auto', action='store_true')
     modes.add_argument('--install', action='store_true')
+    modes.add_argument('--bootstrap', action='store_true', help='Build/install the latest published version when no CLI is installed')
+    modes.add_argument('--install-auto', action='store_true')
+    modes.add_argument('--auto-install', choices=['on', 'off', 'status'])
     modes.add_argument('--rollback', action='store_true')
     modes.add_argument('--auto-check', choices=['on', 'off', 'status'])
-    parser.add_argument('--current', required=True)
+    parser.add_argument('--current', default='0.0.0')
     parser.add_argument('--prefix', type=Path, default=Path.home() / '.local')
     parser.add_argument('--headless', action='store_true')
     args = parser.parse_args()
+    if not args.bootstrap and args.current == '0.0.0':
+        parser.error('--current is required except for bootstrap installation')
     version(args.current)
     prefix = args.prefix.absolute()
-    if args.auto_check:
+    if args.auto_install:
+        result = {'automatic_install': automatic_install_setting({'on': True, 'off': False}.get(args.auto_install), prefix)}
+    elif args.install_auto and not automatic_install_setting():
+        result = {'automatic_install': False, 'available': False, 'skipped': 'automatic installation disabled'}
+    elif args.auto_check:
         result = {'automatic_check': automatic_setting({'on': True, 'off': False}.get(args.auto_check))}
     elif args.check_auto and not automatic_setting():
         result = {'automatic_check': False, 'available': False}
@@ -270,11 +424,20 @@ def main():
         finally:
             os.close(lock)
     else:
-        result = latest(installed_version(prefix, args.current))
+        result = latest(installed_version(prefix, '0.0.0' if args.bootstrap else args.current))
         result['running'] = args.current
-        if args.install and result['available']:
+        if args.install_auto and result['available'] and not automatic_release_verified(result):
+            result['skipped'] = 'waiting for successful source quality and privacy checks on the release commit'
+        elif (args.install or args.install_auto or args.bootstrap) and result['available']:
             cache = private_directory(Path(os.environ.get('XDG_CACHE_HOME', Path.home() / '.cache')) / 'RUWAC/updates')
-            result = install(result, prefix, cache, not args.headless)
+            desktop = not args.headless
+            if args.install_auto:
+                receipt = prefix / 'lib/ruwac/current/installation.json'
+                artifacts = json.loads(receipt.read_text()).get('artifacts', {})
+                if set(artifacts) not in [{'ruwac'}, {'ruwac', 'ruwac-desktop'}]:
+                    raise ValueError('Unknown installed components; automatic update refused')
+                desktop = 'ruwac-desktop' in artifacts
+            result = install(result, prefix, cache, desktop, automatic=args.install_auto)
     print(json.dumps(result))
 
 

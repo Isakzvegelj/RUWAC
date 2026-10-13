@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v0.2.20 — 2026-10-13 — Stable source release
+
+- Add opt-in unattended Fedora source updates, a reversible per-user timer, exact-commit quality/privacy gates and a first-install bootstrap command while preserving running sessions.
+
 ## v0.2.19 — 2026-10-13 — Stable source release
 
 - Sanitize public operational evidence and synthetic examples; enforce privacy checks before publication and in CI while preserving historical release references.

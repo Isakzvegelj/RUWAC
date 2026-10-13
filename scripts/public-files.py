@@ -58,7 +58,7 @@ def verify(root,paths):
  allowed=set(files(root));bad=[]
  for name in paths:
   p=Path(name)
-  if p not in allowed:bad.append(f'not allowlisted: {p}');continue
+  if p not in allowed:bad.append('not allowlisted source entry (path withheld)');continue
  if bad:raise SystemExit('\n'.join(bad))
  import runpy
  privacy=runpy.run_path(str(root/'scripts/privacy-check.py'))

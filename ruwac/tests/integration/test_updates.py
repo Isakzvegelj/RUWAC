@@ -174,5 +174,135 @@ class Updates(unittest.TestCase):
             os.close(lock)
 
 
+    def test_automatic_install_defaults_off_and_performs_no_network(self):
+        self.assertFalse(updates.automatic_install_setting())
+        with patch.object(sys, 'argv', ['updater', '--current', '0.2.0', '--install-auto']), patch.object(updates, 'api') as api, contextlib.redirect_stdout(io.StringIO()) as output:
+            updates.main()
+        api.assert_not_called()
+        self.assertFalse(json.loads(output.getvalue())['automatic_install'])
+
+    def test_install_preference_retains_existing_check_and_extension_fields(self):
+        updates.automatic_setting(False)
+        data = updates.preferences(); data['extension'] = {'generated': True}; updates.save_preferences(data)
+        self.fixture_install('0.0.1')
+        with patch.object(updates, 'run'):
+            self.assertTrue(updates.automatic_install_setting(True, self.root / 'prefix'))
+            self.assertFalse(updates.automatic_install_setting(False, self.root / 'prefix'))
+        self.assertFalse(updates.automatic_setting())
+        self.assertEqual(updates.preferences()['extension'], {'generated': True})
+
+    def test_scheduler_units_escape_paths_and_keep_installed_components(self):
+        self.fixture_install('0.0.1')
+        with patch.object(updates, 'run') as run:
+            updates.automatic_install_setting(True, self.root / 'prefix')
+        directory = updates.scheduler_directory()
+        service = (directory / 'ruwac-update.service').read_text()
+        self.assertIn('--install-auto', service)
+        self.assertIn('ExecStart=:', service)
+        self.assertIn('OnUnitActiveSec=6h', (directory / 'ruwac-update.timer').read_text())
+        self.assertEqual((directory / 'ruwac-update.service').stat().st_mode & 0o777, 0o600)
+        self.assertIn(['systemctl', '--user', 'enable', '--now', 'ruwac-update.timer'], [call.args[0] for call in run.call_args_list])
+        self.assertIn('%%', updates.unit_quote('generated%prefix'))
+        with self.assertRaises(ValueError): updates.unit_quote('generated\nUnit=foreign')
+        with patch.object(sys, 'argv', ['updater', '--current', '0.0.1', '--install-auto', '--prefix', str(self.root / 'prefix')]), patch.object(updates, 'latest', return_value={'available': True, 'latest': '0.0.2'}), patch.object(updates, 'automatic_release_verified', return_value=True), patch.object(updates, 'install', return_value={'installed': '0.0.2'}) as install, contextlib.redirect_stdout(io.StringIO()):
+            updates.main()
+        self.assertFalse(install.call_args.args[3])
+        self.assertTrue(install.call_args.kwargs['automatic'])
+
+    def test_scheduler_error_restores_units_and_preferences(self):
+        self.fixture_install('0.0.1'); updates.automatic_setting(False)
+        before = updates.settings_path().read_bytes()
+        def run(args):
+            if 'enable' in args: raise subprocess.CalledProcessError(1, args)
+        with patch.object(updates, 'run', side_effect=run), patch.object(subprocess, 'run'):
+            with self.assertRaises(subprocess.CalledProcessError): updates.automatic_install_setting(True, self.root / 'prefix')
+        self.assertEqual(updates.settings_path().read_bytes(), before)
+        self.assertFalse(list(updates.scheduler_directory().glob('ruwac-update.*')))
+
+    def test_edited_and_foreign_scheduler_units_preserved(self):
+        self.fixture_install('0.0.1')
+        with patch.object(updates, 'run'):
+            updates.automatic_install_setting(True, self.root / 'prefix')
+        path = updates.scheduler_directory() / 'ruwac-update.service'
+        path.write_text('owner edited unit')
+        with self.assertRaisesRegex(ValueError, 'edited'): updates.automatic_install_setting(True, self.root / 'prefix')
+        self.assertEqual(path.read_text(), 'owner edited unit')
+        path.unlink(); path.symlink_to(self.root / 'foreign')
+        with self.assertRaisesRegex(ValueError, 'Unsafe'): updates.automatic_install_setting(True, self.root / 'prefix')
+        self.assertTrue(path.is_symlink())
+
+    def test_opt_out_stays_committed_when_user_manager_unavailable(self):
+        self.fixture_install('0.0.1')
+        with patch.object(updates, 'run'): updates.automatic_install_setting(True, self.root / 'prefix')
+        with patch.object(updates, 'run', side_effect=subprocess.CalledProcessError(1, ['systemctl'])):
+            with self.assertRaises(subprocess.CalledProcessError): updates.automatic_install_setting(False)
+        self.assertFalse(updates.automatic_install_setting())
+
+    def test_opt_out_during_build_prevents_automatic_install(self):
+        self.fixture_install('0.0.1')
+        data = updates.preferences(); data['automatic_install'] = True; updates.save_preferences(data)
+        cache = updates.private_directory(self.root / 'update-cache')
+        called = []
+        def run(args, **kwargs):
+            called.append(args)
+            if args[0] == 'cargo':
+                data = updates.preferences(); data['automatic_install'] = False; updates.save_preferences(data)
+        original = Path.read_text
+        def text(path, *args, **kwargs):
+            return 'ID=fedora\nVERSION_ID=44\n' if str(path) == '/etc/os-release' else original(path, *args, **kwargs)
+        with patch.object(Path, 'read_text', text), patch.object(updates, 'checkout'), patch.object(shutil, 'which', return_value='/usr/bin/tool'), patch.object(updates, 'run', side_effect=run):
+            result = updates.install({'latest': '0.0.2'}, self.root / 'prefix', cache, False, automatic=True)
+        self.assertIn('disabled during build', result['skipped'])
+        self.assertFalse(any('install-user.py' in str(args[0:2]) for args in called))
+        self.assertEqual(updates.installed_version(self.root / 'prefix', '0.0.0'), '0.0.1')
+
+    def test_missing_installation_or_unrelated_command_refuses_scheduler(self):
+        with self.assertRaisesRegex(ValueError, 'Install RUWAC'): updates.automatic_install_setting(True, self.root / 'prefix')
+        self.fixture_install('0.0.1')
+        command = self.root / 'prefix/bin/ruwac'; command.unlink(); command.write_text('unrelated')
+        with self.assertRaisesRegex(ValueError, 'Unrelated'): updates.automatic_install_setting(True, self.root / 'prefix')
+        self.assertEqual(command.read_text(), 'unrelated')
+
+
+    def test_disable_does_not_stop_unrelated_scheduler(self):
+        directory = updates.scheduler_directory()
+        path = directory / 'ruwac-update.timer'; path.write_text('foreign timer')
+        with patch.object(updates, 'run') as run:
+            self.assertFalse(updates.automatic_install_setting(False))
+        run.assert_not_called()
+        self.assertEqual(path.read_text(), 'foreign timer')
+
+
+    def test_automatic_quality_gate_is_bound_to_release_commit(self):
+        matching = {'id': 2, 'head_sha': COMMIT, 'head_branch': 'main', 'path': '.github/workflows/quality.yml'}
+        for jobs, expected in [([{'name': 'quality', 'conclusion': 'success'}, {'name': 'privacy', 'conclusion': 'success'}, {'name': 'advisories', 'conclusion': 'failure'}], True), ([{'name': 'quality', 'conclusion': 'success'}, {'name': 'privacy', 'conclusion': None}], False)]:
+            with patch.object(updates, 'api', side_effect=[{'workflow_runs': [matching]}, {'jobs': jobs}]):
+                self.assertEqual(updates.automatic_release_verified({'commit': COMMIT}), expected)
+        for mismatch in [{'head_sha': 'b' * 40}, {'head_branch': 'feature'}, {'path': '.github/workflows/other.yml'}]:
+            with patch.object(updates, 'api', return_value={'workflow_runs': [dict(matching, **mismatch)]}):
+                self.assertFalse(updates.automatic_release_verified({'commit': COMMIT}))
+
+    def test_pending_automatic_quality_gate_never_invokes_installer(self):
+        data = updates.preferences(); data['automatic_install'] = True; updates.save_preferences(data)
+        with patch.object(sys, 'argv', ['updater', '--current', '0.0.1', '--install-auto']), patch.object(updates, 'latest', return_value={'available': True}), patch.object(updates, 'automatic_release_verified', return_value=False), patch.object(updates, 'install') as install, contextlib.redirect_stdout(io.StringIO()) as output:
+            updates.main()
+        install.assert_not_called()
+        self.assertIn('waiting', json.loads(output.getvalue())['skipped'])
+
+
+    def test_bootstrap_installs_without_a_preexisting_cli(self):
+        with patch.object(sys, 'argv', ['updater', '--bootstrap', '--prefix', str(self.root / 'prefix')]), patch.object(updates, 'latest', return_value={'available': True}) as latest, patch.object(updates, 'install', return_value={'installed': 'generated-release'}) as install, contextlib.redirect_stdout(io.StringIO()):
+            updates.main()
+        self.assertEqual(latest.call_args.args[0], '0.0.0')
+        self.assertTrue(install.call_args.args[3])
+
+    def test_bootstrap_respects_installed_version_and_does_not_downgrade(self):
+        self.fixture_install('0.0.2')
+        with patch.object(sys, 'argv', ['updater', '--bootstrap', '--prefix', str(self.root / 'prefix')]), patch.object(updates, 'latest', return_value={'available': False}) as latest, patch.object(updates, 'install') as install, contextlib.redirect_stdout(io.StringIO()):
+            updates.main()
+        self.assertEqual(latest.call_args.args[0], '0.0.2')
+        install.assert_not_called()
+
+
 if __name__ == '__main__':
     unittest.main()

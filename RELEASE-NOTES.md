@@ -1,13 +1,13 @@
-# RUWAC source release
+# RUWAC Fedora source update release
 
-This source release sanitizes public documentation, acceptance evidence and synthetic
-profile examples. A project-owned privacy check now guards publication and CI;
-standard secret scanning remains separate from dependency-security checks.
+The Updates dialog now offers opt-in automatic installation. A per-user timer checks
+eligible GitHub source releases every six hours, compiles locally, preserves installed
+components and existing sessions, and retains reversible previous installations.
+Automatic installation waits for source quality and privacy checks on the exact
+release commit. Opt-out is rechecked before installation, including during a build.
+A bootstrap command supports first installation without an existing CLI.
 
-Detailed operational evidence is retained privately outside Git. Published history,
-tags and earlier release descriptions have not been rewritten or deleted. Existing
-installed clients retain their release-commit references.
-
-See [acceptance status](spec/RUWAC_ACCEPTANCE_STATUS.md) for PASS/FAIL/BLOCKED results.
-Source publication does not qualify Fedora binary distribution, physical desktop
-input or unresolved Windows display and dependency-security gates.
+See [installation and updates](spec/RUWAC_UPDATES.md). Source installation is validated
+for Fedora 44. This is not a qualified RPM or downloadable binary distribution.
+The known desktop RSA advisory remains unsuppressed. Historical privacy disclosures
+remain unchanged pending the owner's separately reviewed cleanup decision.
