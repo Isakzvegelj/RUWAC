@@ -190,7 +190,17 @@ impl Server {
                                             "UNSUPPORTED_VERSION",
                                             "GUI protocol requires version 0",
                                         ))
-                                    } else if r.idempotency_key.is_some() {
+                                    } else if r.idempotency_key.as_ref().is_some_and(|k| {
+                                        k.is_empty()
+                                            || k.len() > 128
+                                            || k.chars().any(char::is_control)
+                                            || !matches!(
+                                                r.method.as_str(),
+                                                "workspace.save"
+                                                    | "workspace.open"
+                                                    | "workspace.restore"
+                                            )
+                                    }) {
                                         Err(Error::new(
                                             "INVALID_REQUEST",
                                             "GUI operations do not accept idempotency keys",

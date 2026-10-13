@@ -14,6 +14,19 @@ pub fn parse(namespace: &str, args: &[String]) -> io::Result<ruwac_protocol::Req
         rest = &rest[..rest.len() - 1];
     }
     let params = match (namespace, verb.as_str()) {
+        ("workspace", "saved") if rest.is_empty() => json!({}),
+        ("workspace", "save") if rest.len() == 2 && rest[0] == "--name" => {
+            if rest[1].is_empty() || rest[1].len() > 128 || rest[1].chars().any(char::is_control) {
+                return Err(bad());
+            }
+            json!({"name":rest[1]})
+        }
+        ("workspace", "open" | "restore") if rest.len() == 2 && rest[0] == "--id" => {
+            if !ruwac_protocol::valid_id(&rest[1], "workspace") {
+                return Err(bad());
+            }
+            json!({"id":rest[1]})
+        }
         ("workspace", "describe" | "list") | ("rdp", "list") if rest.is_empty() => json!({}),
         ("workspace", "activate" | "focus") | ("rdp", "query" | "reconnect" | "disconnect")
             if rest.len() == 2 && rest[0] == "--id" =>
@@ -113,6 +126,25 @@ mod tests {
             .unwrap()
             .params["activate"],
             true
+        );
+        assert!(
+            parse(
+                "workspace",
+                &[
+                    "open".into(),
+                    "--id".into(),
+                    ruwac_protocol::id("workspace")
+                ]
+            )
+            .is_ok()
+        );
+        assert!(parse("workspace", &["restore".into()]).is_err());
+        assert!(
+            parse(
+                "workspace",
+                &["save".into(), "--name".into(), "\ninvalid".into()]
+            )
+            .is_err()
         );
         assert!(parse("rdp", &["disconnect".into()]).is_err());
         assert!(parse("rdp", &["open".into(), "--profile".into(), view]).is_err());

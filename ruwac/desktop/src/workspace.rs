@@ -86,7 +86,7 @@ impl Layout {
         }
     }
 }
-fn validate(w: &Workspace) -> io::Result<()> {
+pub(super) fn validate(w: &Workspace) -> io::Result<()> {
     fn walk(
         l: &Layout,
         depth: usize,
@@ -227,7 +227,7 @@ pub fn identity(socket: &Path) -> String {
     );
     format!("workspace_{}", &hash[..32])
 }
-fn directory() -> io::Result<PathBuf> {
+pub(super) fn directory() -> io::Result<PathBuf> {
     let p = std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|p| PathBuf::from(p).join(".config")))

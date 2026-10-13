@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v0.2.10 — 2026-10-13 — Stable source release
+
+- Add private named workspace snapshots and authenticated open/restore operations that preserve live views and terminal processes, with lifecycle permissions, deadlines and GUI-instance idempotency.
+
 ## v0.2.9 — 2026-10-13 — Stable source release
 
 - Add verified PNG attachment over authenticated SSH to an explicit remote Codex pane, reject malformed transfer receipts, and include temporary source/final copies in the native staging peak quota.

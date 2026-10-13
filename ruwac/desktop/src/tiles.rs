@@ -324,6 +324,10 @@ fn take(tabs: &adw::TabView, leaf: &gtk::Widget) -> Result<(), String> {
 
 pub type CloseView = std::rc::Rc<dyn Fn(&gtk::Widget)>;
 
+pub fn detach(tabs: &adw::TabView, leaf: &gtk::Widget) -> Result<(), String> {
+    take(tabs, leaf)
+}
+
 pub fn move_view(tabs: &adw::TabView, leaf: &gtk::Widget) -> Result<(), String> {
     take(tabs, leaf)?;
     let p = append(tabs, leaf);
