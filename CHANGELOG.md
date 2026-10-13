@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v0.2.32 — 2026-10-13 — Stable source release
+
+- Bind the archive and both Fedora testing RPMs to one explicit checksum subject manifest, refusing incomplete or mixed-version artifact sets before signing.
+
 ## v0.2.31 — 2026-10-13 — Stable source release
 
 - Build separate Fedora 44 testing RPMs through the existing build/release workflow, preserve sessions during package transactions, and keep system RPM updates separate from per-user automatic installations.
