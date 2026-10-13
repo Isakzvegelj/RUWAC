@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v0.2.16 — 2026-10-13 — Stable source release
+
+- Support GNOME image/png CLIPRDR offers, preserve newly copied local content against repeated Receive actions, and prevent compositor-consumed Super chords from opening the remote overview.
+
 ## v0.2.15 — 2026-10-13 — Stable source release
 
 - Add authenticated GUI metadata event subscriptions with typed filters, cursor paging, expiry, unsubscribe and explicit history-gap errors, without exposing terminal or clipboard contents.

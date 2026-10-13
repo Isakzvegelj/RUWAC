@@ -7,6 +7,7 @@ use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
 };
 pub const PNG_ID: ClipboardFormatId = ClipboardFormatId(0xc001);
+pub const MIME_PNG_ID: ClipboardFormatId = ClipboardFormatId(0xc002);
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Format {
     Text,
@@ -38,6 +39,10 @@ pub fn formats(text: bool, image: bool) -> Vec<ClipboardFormat> {
     }
     if image {
         f.push(ClipboardFormat::new(PNG_ID).with_name(ClipboardFormatName::new_static("PNG")));
+        f.push(
+            ClipboardFormat::new(MIME_PNG_ID)
+                .with_name(ClipboardFormatName::new_static("image/png")),
+        );
         for x in [Format::DibV5, Format::Dib] {
             f.push(ClipboardFormat::new(x.id()));
         }
@@ -45,10 +50,11 @@ pub fn formats(text: bool, image: bool) -> Vec<ClipboardFormat> {
     f
 }
 pub fn select(formats: &[ClipboardFormat]) -> Option<(ClipboardFormatId, Format)> {
-    if let Some(f) = formats
-        .iter()
-        .find(|f| f.name().is_some_and(|n| n.value() == "PNG"))
-    {
+    if let Some(f) = formats.iter().find(|f| {
+        f.name().is_some_and(|n| {
+            n.value().eq_ignore_ascii_case("PNG") || n.value().eq_ignore_ascii_case("image/png")
+        })
+    }) {
         return Some((f.id(), Format::Png));
     }
     for kind in [Format::DibV5, Format::Dib, Format::Text] {
@@ -408,5 +414,25 @@ mod fragment_tests {
         assert!(guard.check(&chunk(3, 2, &[2, 3])).is_ok());
         assert!(guard.check(&chunk(1, 2, &[1])).is_err());
         assert!(guard.check(&chunk(3, 3, &[1])).is_err());
+    }
+    #[test]
+    fn gnome_named_png_preserves_peer_assigned_id() {
+        let offered = ClipboardFormat::new(ClipboardFormatId(0xd011))
+            .with_name(ClipboardFormatName::new_static("image/png"));
+        assert_eq!(
+            select(&[offered]),
+            Some((ClipboardFormatId(0xd011), Format::Png))
+        );
+        let local = formats(false, true);
+        assert!(
+            local.iter().any(
+                |f| f.id() == MIME_PNG_ID && f.name().is_some_and(|n| n.value() == "image/png")
+            )
+        );
+        assert!(
+            local
+                .iter()
+                .any(|f| f.id() == PNG_ID && f.name().is_some_and(|n| n.value() == "PNG"))
+        );
     }
 }

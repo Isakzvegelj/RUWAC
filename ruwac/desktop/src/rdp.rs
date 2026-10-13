@@ -1017,6 +1017,7 @@ pub struct RdpView {
     desired: Cell<(u16, u16)>,
     resize_at: Cell<Option<std::time::Instant>>,
     requested: Cell<(u16, u16)>,
+    pending_super: RefCell<crate::remote_keys::DeferredSuper>,
     held: RefCell<HashSet<(u8, bool)>>,
     buttons: RefCell<HashSet<u32>>,
     pointer_position: Cell<(u16, u16)>,
@@ -1183,6 +1184,7 @@ impl RdpView {
             desired: Cell::new((0, 0)),
             resize_at: Cell::new(None),
             requested: Cell::new((0, 0)),
+            pending_super: RefCell::new(Default::default()),
             held: RefCell::new(HashSet::new()),
             buttons: RefCell::new(HashSet::new()),
             pointer_position: Cell::new((0, 0)),
@@ -2181,9 +2183,18 @@ impl RdpView {
             .as_ref()
             .is_some_and(|p| clip.content().as_ref() == Some(p))
         {
+            if manual {
+                self.status.set_text("Clipboard still belongs to this remote session; copy new local content before sending");
+            }
             return;
         }
         let f = clip.formats();
+        if std::env::var_os("RUWAC_RDP_CLIP_TRACE").as_deref() == Some(std::ffi::OsStr::new("1")) {
+            eprintln!(
+                "{}",
+                serde_json::json!({"clip_trace":"advertise","manual":manual,"self_provider":self.provider.borrow().as_ref().is_some_and(|p|clip.content().as_ref()==Some(p)),"local":clip.is_local(),"png":f.contain_mime_type("image/png"),"epoch":self.broker.borrow().epoch()})
+            );
+        }
         let formats = crate::cliprdr::formats(
             f.contain_mime_type("text/plain;charset=utf-8") || f.contain_mime_type("text/plain"),
             f.contain_mime_type("image/png"),
@@ -2208,6 +2219,11 @@ impl RdpView {
         let Some((id, kind, generation, offered_epoch)) = self.remote.get() else {
             return;
         };
+        // A repeated Receive after automatic delivery must not re-read the same
+        // remote generation and reclaim a newer local selection asynchronously.
+        if self.received_generation.get() == generation {
+            return;
+        }
         let epoch = self.broker.borrow().epoch();
         if !manual && offered_epoch != epoch {
             return;
@@ -2216,6 +2232,34 @@ impl RdpView {
         self.command(Command::Request(id));
     }
     fn clip_event(self: &Rc<Self>, e: Event) {
+        if std::env::var_os("RUWAC_RDP_CLIP_TRACE").as_deref() == Some(std::ffi::OsStr::new("1")) {
+            let event = match &e {
+                Event::Reset => "reset",
+                Event::Initialize => "initialize",
+                Event::Ready => "ready",
+                Event::Offer { .. } => "offer",
+                Event::Request(_) => "request",
+                Event::Data(_) => "data",
+                Event::Accepted(_) => "accepted",
+            };
+            let detail = match &e {
+                Event::Offer {
+                    generation,
+                    epoch,
+                    selected,
+                } => {
+                    serde_json::json!({"generation":generation,"epoch":epoch,"kind":selected.map(|(_,kind)|format!("{kind:?}"))})
+                }
+                Event::Request(id) => serde_json::json!({"format_id":id.0}),
+                Event::Accepted(ok) => serde_json::json!({"accepted":ok}),
+                _ => serde_json::json!({}),
+            };
+            eprintln!(
+                "{}",
+                serde_json::json!({"clip_trace":event,"epoch":self.broker.borrow().epoch(),"advertised":self.advertised.get(),"replying":self.replying.get(),"pending":self.pending.borrow().is_some(),"detail":detail})
+            );
+        }
+
         match e {
             Event::Reset => {
                 self.serial.set(self.serial.get().saturating_add(1));
@@ -2223,6 +2267,7 @@ impl RdpView {
                 self.broker.borrow_mut().disconnect(&self.id);
                 self.pending.borrow_mut().take();
                 self.remote.set(None);
+                self.received_generation.set(0);
                 self.advertised.set(0);
                 self.requested.set((0, 0));
                 self.replying.set(false);
@@ -2280,7 +2325,7 @@ impl RdpView {
             Event::Request(id) => {
                 let kind = if id == Format::Text.id() {
                     Some(Format::Text)
-                } else if id == Format::Png.id() {
+                } else if id == Format::Png.id() || id == crate::cliprdr::MIME_PNG_ID {
                     Some(Format::Png)
                 } else if id == Format::Dib.id() {
                     Some(Format::Dib)
@@ -2326,6 +2371,14 @@ impl RdpView {
                                     let valid = v.allowed(false, true)
                                         && v.broker.borrow().epoch() == epoch
                                         && v.advertised.get() == epoch;
+                                    if std::env::var_os("RUWAC_RDP_CLIP_TRACE").as_deref()
+                                        == Some(std::ffi::OsStr::new("1"))
+                                    {
+                                        eprintln!(
+                                            "{}",
+                                            serde_json::json!({"clip_trace":"reply","valid":valid,"success":r.is_ok(),"bytes":r.as_ref().ok().map(Vec::len),"reason":r.as_ref().err(),"epoch":v.broker.borrow().epoch(),"expected_epoch":epoch})
+                                        );
+                                    }
                                     v.command(Command::Reply(if valid { r.ok() } else { None }));
                                 }
                                 glib::ControlFlow::Break
@@ -2409,6 +2462,49 @@ impl RdpView {
         }
     }
     fn key(&self, key: gdk::Key, code: u32, release: bool) {
+        let meta = match key {
+            gdk::Key::Super_L => Some(0x5b),
+            gdk::Key::Super_R => Some(0x5c),
+            _ => None,
+        };
+        if meta.is_some() {
+            self.assist_epoch.fetch_add(1, Ordering::AcqRel);
+        }
+        let focused = self.area.has_focus()
+            && self
+                .root
+                .root()
+                .and_downcast::<gtk::Window>()
+                .is_some_and(|w| w.is_active());
+        let held = meta.is_some_and(|scan| self.held.borrow().contains(&(scan, true)));
+        let plan = self
+            .pending_super
+            .borrow_mut()
+            .key(meta, release, focused, held);
+        if !plan.events.is_empty() {
+            let mut events = Vec::new();
+            for (scan, up) in plan.events {
+                if !up {
+                    self.held.borrow_mut().insert((scan, true));
+                } else {
+                    self.held.borrow_mut().remove(&(scan, true));
+                }
+                events.push(FastPathInputEvent::KeyboardEvent(
+                    KeyboardFlags::EXTENDED
+                        | if up {
+                            KeyboardFlags::RELEASE
+                        } else {
+                            KeyboardFlags::empty()
+                        },
+                    scan,
+                ));
+            }
+            self.send(events);
+        }
+        if plan.handled {
+            return;
+        }
+
         // GDK/XKB hardware codes are evdev+8, mostly set-1 for base keys.
         let special = match key {
             gdk::Key::Up => Some((0x48, true)),
@@ -2992,6 +3088,7 @@ impl RdpView {
         self.activate_clipboard();
     }
     fn release_keys(&self) {
+        self.pending_super.borrow_mut().clear();
         let (x, y) = self.pointer_position.get();
         let events: Vec<_> = self
             .buttons
@@ -3048,6 +3145,7 @@ impl RdpView {
         self.bridge.borrow().epoch.store(0, Ordering::Release);
         self.pending.borrow_mut().take();
         self.remote.set(None);
+        self.received_generation.set(0);
         self.advertised.set(0);
         self.replying.set(false);
         self.decoding.set(false);

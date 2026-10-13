@@ -1,5 +1,54 @@
 # RUWAC product completion audit
 
+## Fedora clipboard ownership and PNG interoperability
+
+The native CLIPRDR bridge advertises both registered PNG names, `PNG` and
+`image/png`, and retains the server-assigned ID when receiving either. This
+matches GNOME Remote Desktop's MIME-named PNG format without hardcoding its ID.
+Both existing DIB formats and Windows Unicode text remain supported.
+
+Receive no longer replays a successfully received remote generation. A fresh
+local copy therefore cannot be reclaimed by a redundant Receive action for
+that same generation. Disconnect/reset clears the received-generation marker.
+Send refuses to reflect the same view's received ContentProvider back to its
+server; it asks for a new local copy instead. Optional `RUWAC_RDP_CLIP_TRACE=1`
+diagnostics contain event kinds, epochs, format IDs, ownership flags and lengths,
+never payload text/images or credentials.
+
+Physical Super presses are deferred until a delivered remote chord or a focused
+intentional tap. Compositor-consumed window switching clears the unsent modifier
+on focus loss, avoiding an unintended remote GNOME overview. Explicit Send
+Super remains available. Three modifier-state units cover a focused tap/chord,
+focus-loss cancellation and an inactive release; physical-seat qualification
+remains separate.
+
+On the authorized Fedora GNOME host, the production candidate completed automatic
+saved-account sign-in, authenticated desktop handovers, and distinct Unicode
+text and opaque RGBA PNG transfers in both directions. Directional policies and
+bidirectional policy each passed with 64×64 and 2560×1440 PNGs, independent pixel
+hashes and different content in each direction. This journey includes explicit
+Send/Receive actions; it does not qualify every automatic clipboard timing case.
+The local GTK/Wayland seat and focus driving were isolated and synthetic. Only
+generated payloads were used; owner profile bytes and existing daemons/sessions
+were preserved. Earlier stale-provider failures remain in private evidence and
+were followed by clean successful candidate reruns. Windows text/PNG, three
+external RDP tabs, physical input and broader clipboard timing/soak remain open.
+
+`ruwac/tests/integration/rdp_external_clipboard.py` is the portable explicit-opt-in
+transfer driver. It requires an already authenticated private GUI fixture,
+isolated compositor environment, authorized SSH alias and owned remote GDK peer
+with an initially empty clipboard. It enforces distinct directional hashes and
+preserves generated metadata receipts. It neither provisions secrets nor starts
+an owner desktop. The existing loopback RDP suite adds a regression proving that
+a repeated Receive leaves a newer local copy intact. Real external and generated
+loopback results are recorded separately by the build acceptance runner.
+
+The tested implementation uses the ordinary `build.sh --release --test --desktop`
+and `release.sh stable` workflow; controller-owned source releases do not qualify
+Fedora RPM/signing or whole-product completion. GNOME's original format naming
+is documented in its [clipboard implementation](https://github.com/GNOME/gnome-remote-desktop/blob/50.2/src/grd-clipboard-rdp.c).
+
+
 ## Named workspace lifecycle
 
 The running native desktop now supports `workspace save --name NAME`, `workspace saved`, and `workspace open|restore --id workspace_ID` through authenticated GUI IPC. No GUI or daemon is started by these operations. The existing workspace-control switch explicitly authorizes lifecycle and focus mutations; saved summaries are read-only and omit profile data and credential references. Snapshots are immutable owned 0600 files under a private 0700 daemon-bound catalog, capped at 64 snapshots and 1 MiB per snapshot. Caller-supplied paths, layout payloads, shell commands and credentials are not accepted.

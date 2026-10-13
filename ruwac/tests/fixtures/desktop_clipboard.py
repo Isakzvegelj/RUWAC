@@ -15,13 +15,14 @@ def tick():
  sequence=q['seq'];clip=display.get_primary_clipboard() if q.get('primary') else display.get_clipboard()
  def reply(data):
   temp=root/'peer-response.tmp';temp.write_text(json.dumps({'seq':q['seq'],'result':data}));temp.replace(root/'peer-response.json')
- if q['action'] in ('set-text','set-png'):
+ if q['action']=='inspect':reply({'window_active':window.is_active(),'formats':list(clip.get_formats().get_mime_types())})
+ elif q['action'] in ('set-text','set-png'):
   payload=(root/q['file']).read_bytes();mime='image/png' if q['action']=='set-png' else 'text/plain;charset=utf-8'
   provider=Gdk.ContentProvider.new_for_bytes(mime,GLib.Bytes.new(payload));clip.set_content(provider);reply({'offered_bytes':len(payload),'sha256':hashlib.sha256(payload).hexdigest(),'mime':mime})
  elif q['action']=='read-text':
   def read(c,result):
    try:
-    text=c.read_text_finish(result);data=text.encode();reply({'bytes':len(data),'sha256':hashlib.sha256(data).hexdigest()})
+    text=c.read_text_finish(result);data=text.encode();reply({'bytes':len(data),'sha256':hashlib.sha256(data).hexdigest(),'lf_sha256':hashlib.sha256(data.replace(b'\r\n',b'\n')).hexdigest()})
    except Exception as e:reply({'error':str(e)})
   clip.read_text_async(None,read)
  elif q['action']=='read-png':
@@ -42,6 +43,7 @@ def tick():
     except Exception as e:reply({'error':str(e)})
    stream.read_bytes_async(65536,GLib.PRIORITY_DEFAULT,None,chunk)
   clip.read_async(['image/png'],GLib.PRIORITY_DEFAULT,None,opened)
+ elif q['action']=='clear':clip.set_content(Gdk.ContentProvider.new_for_bytes('text/plain;charset=utf-8',GLib.Bytes.new(b'')));reply({'cleared':True,'empty_text':True})
  elif q['action']=='quit':reply({'quit':True});loop.quit();return False
  return True
 GLib.timeout_add(20,tick);loop.run()

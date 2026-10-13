@@ -20,6 +20,7 @@ mod profiles;
 mod rdp;
 mod rdp_trust;
 mod remote_image;
+mod remote_keys;
 mod sessions;
 #[path = "../../crates/ruwac-pty/src/shell.rs"]
 mod shell;

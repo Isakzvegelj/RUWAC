@@ -146,6 +146,19 @@ try:
   focus('gui');command('gui','rdp-policy',rdp=0,policy=2);focus('peer');command('peer','set-text',file='policy-local.txt');focus('gui');before=receipt(0).get('received',0);command('gui','rdp-send',rdp=0);time.sleep(.2);assert receipt(0).get('received',0)==before;got=read_remote(0,'text','policy-remote.txt');assert got['sha256']==digest(remote);focus('gui');command('gui','rdp-policy',rdp=0,policy=0)
   return {'policies':5,'manual_receive':'explicit action','directional_gates':'real GDK and CLIPRDR'}
  case('RDP-NATIVE-POLICIES-5',policies)
+ def repeated_receive_preserves_local_copy():
+  focus('gui');command('gui','rdp-switch',rdp=0);command('gui','rdp-policy',rdp=0,policy=0)
+  remote=b'REPEAT-RECEIVE-REMOTE';local=b'NEW-LOCAL-AFTER-RECEIVE'
+  (root/'repeat-remote.txt').write_bytes(remote);(root/'repeat-local.txt').write_bytes(local)
+  assert read_remote(0,'text','repeat-remote.txt')['sha256']==digest(remote)
+  received=command('gui','rdp-inspect',rdp=0)['received_generation']
+  focus('peer');command('peer','set-text',file='repeat-local.txt');focus('gui')
+  command('gui','rdp-receive',rdp=0);time.sleep(.3);focus('peer')
+  assert command('peer','read-text')['sha256']==digest(local)
+  assert command('gui','rdp-inspect',rdp=0)['received_generation']==received
+  return {'new_local_copy_preserved':True,'same_remote_generation_not_replayed':True}
+ case('RDP-NATIVE-REPEATED-RECEIVE',repeated_receive_preserves_local_copy)
+
  def reconnect():
   focus('gui');command('gui','rdp-switch',rdp=0);started=time.perf_counter();command('server-0','disconnect')
   spike.eventually(lambda:'Reconnecting' in command('gui','rdp-inspect',rdp=0)['status'],8)
