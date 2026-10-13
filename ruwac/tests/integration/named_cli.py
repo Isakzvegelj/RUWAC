@@ -30,7 +30,8 @@ try:
  run('pane','send-text','--id',s['pane'],'--text','x','--file',str(file),ok=False)
  error=run('pane','capture','--id','pane_'+'0'*32,ok=False);assert error['error']['code']=='STALE_ID'
  run('pane','list','--session',s['session'],'--unknown','x',ok=False)
- error=run('rdp','open',ok=False);assert error['error']['code']=='GUI_UNAVAILABLE'
+ run('rdp','open',ok=False)
+ error=run('rdp','open','--profile','endpoint_'+'0'*32,ok=False);assert error['error']['code']=='GUI_UNAVAILABLE'
  print('NAMED_CLI PASS',root)
  (root/'acceptance.json').write_text(json.dumps({'status':'PASS','literal_file_input':True,'separate_enter':True,'missing_target_rejected':True,'stale_id_rejected':True,'unknown_flags_rejected':True,'rdp_unavailable_explicit':True},indent=2)+'\n')
 finally:

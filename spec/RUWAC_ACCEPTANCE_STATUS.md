@@ -7,6 +7,7 @@ receipts and original reports are archived privately outside Git.
 | Area | Result | Scope |
 | --- | --- | --- |
 | Persistent terminal daemon, CLI, Screen navigation and history | PASS | Rust units and real generated PTY fixtures |
+| Independent attached-client selection, zoom and input | PASS | Disposable daemon, two real TUI clients, generated raw receivers; shared PTY sizing, closed-target repair and scoped/global deduplication |
 | Native GTK profiles, SQLite migration and credential separation | PASS | Generated profiles, disposable Secret Service, isolated compositor |
 | RDP authentication, framebuffer, text/PNG clipboard and focus ownership | PASS | Authenticated IronRDP loopback fixtures with generated credentials |
 | Fedora RDP sign-in and bidirectional text/PNG clipboard | PASS | Authorized Fedora RDP host; GNOME Remote Desktop 50.2 / GDM 50.3; simulated local input |
@@ -17,7 +18,7 @@ receipts and original reports are archived privately outside Git.
 | Explicit SSH jump routing and separate gateway/target trust | PASS | Two disposable OpenSSH servers; eight actual transport groups and four native editor groups |
 | Remote agent image transport/consumption | PASS | External CLI route and native loopback route; complete external native launcher remains unqualified |
 | PRIMARY and native middle-click dispatch | PASS | Real GDK/Mutter protocol, generated text, synthetic click dispatch, SGR routing and Shift bypass; physical input remains separate |
-| Physical GTK/Wayland mouse, keyboard and touchpad acceptance | BLOCKED | Isolated synthetic input does not qualify a physical desktop |
+| Physical GTK/Wayland mouse, keyboard and touchpad acceptance | BLOCKED | Owner confirms Alt+1–0 on 0.2.23; selection, paste, touchpad and newer-version physical checks remain unqualified |
 | Fedora RPM, signing, provenance and binary security qualification | BLOCKED | Source releases are distinct from qualified binary distribution |
 | Desktop RSA dependency advisory | FAIL | RUSTSEC-2023-0071 remains unsuppressed |
 
@@ -29,6 +30,7 @@ Reproduce portable tests after building into a separate build directory:
 ```sh
 cargo test --locked --workspace --manifest-path ruwac/Cargo.toml
 cargo test --locked --manifest-path ruwac/desktop/Cargo.toml
+python3 ruwac/tests/integration/client_focus.py --binary "$CARGO_TARGET_DIR/release/ruwac" --evidence "$EVIDENCE_DIR"
 python3 scripts/test-privacy-check.py
 python3 scripts/public-files.py --tracked
 python3 ruwac/tests/integration/test_gdm_recognition.py

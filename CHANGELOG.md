@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v0.2.30 — 2026-10-13 — Stable source release
+
+- Keep attached terminal clients’ window, pane and zoom selection independent, repair closed targets safely, and preserve shared PTY sizing and mutation deduplication.
+
 ## v0.2.29 — 2026-10-13 — Stable source release
 
 - Qualify native PRIMARY copy and middle-click dispatch on a disposable Mutter display, including SGR application mouse routing, Shift bypass and independent desktop/Screen buffers.

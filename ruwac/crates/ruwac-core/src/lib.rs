@@ -67,9 +67,22 @@ impl Session {
     }
 }
 struct Client {
+    scope: String,
     session: String,
     rows: u16,
     cols: u16,
+    window: String,
+    previous: Option<String>,
+    panes: HashMap<String, String>,
+    zooms: HashMap<String, bool>,
+}
+impl Client {
+    fn select_window(&mut self, window: String) {
+        if self.window != window {
+            self.previous = Some(self.window.clone());
+            self.window = window;
+        }
+    }
 }
 pub enum Message {
     Call(Request, String, oneshot::Sender<Result<Value>>),
@@ -106,8 +119,8 @@ struct State {
     clients: HashMap<String, Client>,
     histories: HashMap<String, HistoryPin>,
     tx: mpsc::Sender<Message>,
-    cache: HashMap<String, (String, Result<Value>)>,
-    order: VecDeque<String>,
+    cache: HashMap<(Option<String>, String), (String, Result<Value>)>,
+    order: VecDeque<(Option<String>, String)>,
     revision: u64,
     store: Option<std::sync::Arc<Store>>,
     checkpoint_revision: u64,
@@ -314,8 +327,21 @@ impl State {
                     "idempotency unsupported for connection-local operations",
                 ));
             }
+            let scope = self.clients.contains_key(client)
+                && matches!(
+                    r.method.as_str(),
+                    "window.select"
+                        | "window.cycle"
+                        | "window.previous"
+                        | "pane.select"
+                        | "pane.layout"
+                        | "client.resize"
+                        | "window.list"
+                        | "session.list"
+                );
+            let cache_key = (scope.then(|| self.clients[client].scope.clone()), k.clone());
             let signature = format!("{}:{}", r.method, r.params);
-            if let Some((old, result)) = self.cache.get(k) {
+            if let Some((old, result)) = self.cache.get(&cache_key) {
                 return if *old == signature {
                     result.clone()
                 } else {
@@ -326,8 +352,9 @@ impl State {
                 };
             }
             let result = self.dispatch(&r.method, &r.params, client);
-            self.cache.insert(k.clone(), (signature, result.clone()));
-            self.order.push_back(k.clone());
+            self.cache
+                .insert(cache_key.clone(), (signature, result.clone()));
+            self.order.push_back(cache_key);
             if self.order.len() > 1024 {
                 if let Some(k) = self.order.pop_front() {
                     self.cache.remove(&k);
@@ -402,7 +429,72 @@ impl State {
         session.select_window(w.clone());
         Ok(json!({"window":w,"pane":p,"pid":self.panes[&p].pty.as_ref().map(|p|p.pid)}))
     }
+    fn focused_pane(&self, client: &str, window: &Window) -> String {
+        self.clients
+            .get(client)
+            .filter(|c| c.session == window.session)
+            .and_then(|c| c.panes.get(&window.id))
+            .filter(|p| window.panes.contains(p))
+            .unwrap_or(&window.active)
+            .clone()
+    }
+    fn focused_zoom(&self, client: &str, window: &Window) -> bool {
+        self.clients
+            .get(client)
+            .filter(|c| c.session == window.session)
+            .and_then(|c| c.zooms.get(&window.id))
+            .copied()
+            .unwrap_or(window.zoom)
+    }
+    fn select_client_window(&mut self, client: &str, session: &str, window: &str) {
+        self.sessions
+            .get_mut(session)
+            .unwrap()
+            .select_window(window.into());
+        if let Some(c) = self
+            .clients
+            .get_mut(client)
+            .filter(|c| c.session == session)
+        {
+            c.select_window(window.into());
+        }
+    }
+    fn normalize_client_focus(&mut self, session: &str) {
+        let Some(s) = self.sessions.get(session) else {
+            return;
+        };
+        for c in self.clients.values_mut().filter(|c| c.session == session) {
+            c.panes.retain(|w, _| s.windows.contains(w));
+            c.zooms.retain(|w, _| s.windows.contains(w));
+            if !s.windows.contains(&c.window) {
+                c.window = c
+                    .previous
+                    .clone()
+                    .filter(|w| s.windows.contains(w))
+                    .unwrap_or_else(|| s.active.clone());
+            }
+            if c.previous
+                .as_ref()
+                .is_some_and(|w| !s.windows.contains(w) || w == &c.window)
+            {
+                c.previous = None;
+            }
+            for id in &s.windows {
+                let w = &self.windows[id];
+                let selected = c
+                    .panes
+                    .entry(id.clone())
+                    .or_insert_with(|| w.active.clone());
+                if !w.panes.contains(selected) {
+                    *selected = w.active.clone();
+                    c.zooms.insert(id.clone(), false);
+                }
+                c.zooms.entry(id.clone()).or_insert(w.zoom);
+            }
+        }
+    }
     fn layout(&mut self, s: &str) {
+        self.normalize_client_focus(s);
         let sizes: Vec<_> = self
             .clients
             .values()
@@ -423,29 +515,44 @@ impl State {
             let Some(w) = self.windows.get(&w) else {
                 continue;
             };
+            let full = Rect {
+                x: 0,
+                y: 0,
+                rows,
+                cols,
+            };
             let mut rects = Vec::new();
-            if w.zoom {
-                rects.push((
-                    w.active.clone(),
-                    Rect {
-                        x: 0,
-                        y: 0,
-                        rows,
-                        cols,
-                    },
-                ));
+            let viewers: Vec<_> = self
+                .clients
+                .values()
+                .filter(|c| c.session == s && c.window == w.id)
+                .collect();
+            if viewers.is_empty() {
+                if w.zoom {
+                    rects.push((w.active.clone(), full));
+                } else {
+                    w.layout.rects(full, &mut rects);
+                }
             } else {
-                w.layout.rects(
-                    Rect {
-                        x: 0,
-                        y: 0,
-                        rows,
-                        cols,
-                    },
-                    &mut rects,
-                );
+                for c in viewers {
+                    if c.zooms.get(&w.id).copied().unwrap_or(w.zoom) {
+                        rects.push((c.panes.get(&w.id).unwrap_or(&w.active).clone(), full));
+                    } else {
+                        w.layout.rects(full, &mut rects);
+                    }
+                }
             }
-            for (id, r) in rects {
+            let mut minimum: HashMap<String, Rect> = HashMap::new();
+            for (id, rect) in rects {
+                minimum
+                    .entry(id)
+                    .and_modify(|r| {
+                        r.rows = r.rows.min(rect.rows);
+                        r.cols = r.cols.min(rect.cols);
+                    })
+                    .or_insert(rect);
+            }
+            for (id, r) in minimum {
                 if let Some(p) = self.panes.get_mut(&id) {
                     if p.term.rows != r.rows || p.term.cols != r.cols {
                         if let Some(pty) = &p.pty {
@@ -470,7 +577,7 @@ impl State {
                 json!({"name":"ruwac","implementation":"spike","package":env!("CARGO_PKG_VERSION"),"protocol":0}),
             ),
             "capabilities" => Ok(
-                json!({"job_metadata":true,"job_metadata_no_argv":true,"structured_agent_state":false,"recovery":self.store.is_some(),"primary_buffer_history":true,"extended_terminal_styles":true,"kitty_keyboard_input":false,"history_checkpoints":"private canonical active and hidden primary tail, 50000 lines or 512 KiB per pane; processes restore ended","desktop_clipboard":false,"primary":false,"graphics":false,"image_attachment":true,"image_attachment_adapters":["codex draft path"],"image_attachment_submits":false,"ssh_transport":"authenticated OpenSSH through CLI --host","shared_focus":true,"split":"persistent horizontal/vertical tree, sixteen panes","capture_limit":2000,"history_page_limit":500,"scrollback_default":50000,"max_text_bytes":ruwac_protocol::MAX_TEXT}),
+                json!({"job_metadata":true,"job_metadata_no_argv":true,"structured_agent_state":false,"recovery":self.store.is_some(),"primary_buffer_history":true,"extended_terminal_styles":true,"kitty_keyboard_input":false,"history_checkpoints":"private canonical active and hidden primary tail, 50000 lines or 512 KiB per pane; processes restore ended","desktop_clipboard":false,"primary":false,"graphics":false,"image_attachment":true,"image_attachment_adapters":["codex draft path"],"image_attachment_submits":false,"ssh_transport":"authenticated OpenSSH through CLI --host","shared_focus":false,"independent_client_focus":true,"client_zoom":true,"pty_sizing":"minimum session dimensions and minimum visible pane size across attached clients","split":"persistent horizontal/vertical tree, sixteen panes","capture_limit":2000,"history_page_limit":500,"scrollback_default":50000,"max_text_bytes":ruwac_protocol::MAX_TEXT}),
             ),
             "schema" => Ok(schema()),
             "describe" => Ok(
@@ -513,7 +620,7 @@ impl State {
                 }
             }
             "session.list" => {
-                let mut a:Vec<_>=self.sessions.values().map(|s|json!({"id":s.id,"name":s.name,"active_window":s.active,"windows":s.windows,"rows":s.rows,"cols":s.cols,"previous_window":s.previous,"restored":s.windows.iter().filter_map(|w|self.windows.get(w)).flat_map(|w|w.panes.iter()).all(|p|self.panes.get(p).is_some_and(|p|p.pty.is_none()))})).collect();
+                let mut a:Vec<_>=self.sessions.values().map(|s|json!({"id":s.id,"name":s.name,"active_window":self.clients.get(client).filter(|c| c.session==s.id).map(|c|&c.window).unwrap_or(&s.active),"windows":s.windows,"rows":s.rows,"cols":s.cols,"previous_window":self.clients.get(client).filter(|c| c.session==s.id).map(|c|&c.previous).unwrap_or(&s.previous),"restored":s.windows.iter().filter_map(|w|self.windows.get(w)).flat_map(|w|w.panes.iter()).all(|p|self.panes.get(p).is_some_and(|p|p.pty.is_none()))})).collect();
                 a.sort_by_key(|v| v["id"].as_str().unwrap().to_owned());
                 Ok(json!(a))
             }
@@ -530,9 +637,22 @@ impl State {
                 self.clients.insert(
                     client.into(),
                     Client {
+                        scope: id("display"),
                         session: s.clone(),
                         rows,
                         cols,
+                        window: self.sessions[&s].active.clone(),
+                        previous: self.sessions[&s].previous.clone(),
+                        panes: self.sessions[&s]
+                            .windows
+                            .iter()
+                            .map(|w| (w.clone(), self.windows[w].active.clone()))
+                            .collect(),
+                        zooms: self.sessions[&s]
+                            .windows
+                            .iter()
+                            .map(|w| (w.clone(), self.windows[w].zoom))
+                            .collect(),
                     },
                 );
                 self.layout(&s);
@@ -547,7 +667,10 @@ impl State {
             }
             "window.create" => {
                 let s = target(v, "session", "session")?;
-                self.create_window(&s, v)
+                let result = self.create_window(&s, v)?;
+                self.select_client_window(client, &s, result["window"].as_str().unwrap());
+                self.layout(&s);
+                Ok(result)
             }
             "window.list" => {
                 let s = target(v, "session", "session")?;
@@ -555,7 +678,7 @@ impl State {
                     .sessions
                     .get(&s)
                     .ok_or_else(|| Error::new("STALE_ID", "session does not exist"))?;
-                Ok(json!(s.windows.iter().filter_map(|w|self.windows.get(w)).map(|w|json!({"id":w.id,"name":w.name,"panes":w.panes,"active_pane":w.active})).collect::<Vec<_>>()))
+                Ok(json!(s.windows.iter().filter_map(|w|self.windows.get(w)).map(|w|json!({"id":w.id,"name":w.name,"panes":w.panes,"active_pane":self.focused_pane(client,w)})).collect::<Vec<_>>()))
             }
             "window.rename" => {
                 let w = target(v, "window", "window")?;
@@ -574,41 +697,40 @@ impl State {
                     .windows
                     .get(&w)
                     .ok_or_else(|| Error::new("STALE_ID", "window does not exist"))?;
-                self.sessions
-                    .get_mut(&w.session)
-                    .unwrap()
-                    .select_window(w.id.clone());
-                Ok(json!({"selected":w.id}))
+                let (session, window) = (w.session.clone(), w.id.clone());
+                self.select_client_window(client, &session, &window);
+                self.layout(&session);
+                Ok(json!({"selected":window}))
             }
-            "window.previous" => {
-                let s = target(v, "session", "session")?;
+            "window.previous" | "window.cycle" => {
+                let session = target(v, "session", "session")?;
                 let s = self
                     .sessions
-                    .get_mut(&s)
+                    .get(&session)
                     .ok_or_else(|| Error::new("STALE_ID", "session does not exist"))?;
-                if let Some(previous) = s.previous.clone().filter(|id| s.windows.contains(id)) {
-                    s.select_window(previous);
-                } else if s.windows.len() > 1 {
-                    let index = s.windows.iter().position(|w| w == &s.active).unwrap_or(0);
-                    s.select_window(s.windows[(index + 1) % s.windows.len()].clone());
-                }
-                Ok(json!({"selected":s.active}))
-            }
-            "window.cycle" => {
-                let s = target(v, "session", "session")?;
-                let s = self
-                    .sessions
-                    .get_mut(&s)
-                    .ok_or_else(|| Error::new("STALE_ID", "session does not exist"))?;
-                let i = s.windows.iter().position(|w| w == &s.active).unwrap_or(0);
-                let n = s.windows.len();
-                let j = if v.get("previous").and_then(Value::as_bool).unwrap_or(false) {
-                    (i + n - 1) % n
+                let c = self.clients.get(client).filter(|c| c.session == session);
+                let active = c.map(|c| &c.window).unwrap_or(&s.active);
+                let index = s.windows.iter().position(|w| w == active).unwrap_or(0);
+                let previous = c
+                    .map(|c| c.previous.as_ref())
+                    .unwrap_or(s.previous.as_ref());
+                let selected = if m == "window.previous" {
+                    previous
+                        .filter(|id| s.windows.contains(id))
+                        .cloned()
+                        .unwrap_or_else(|| s.windows[(index + 1) % s.windows.len()].clone())
                 } else {
-                    (i + 1) % n
+                    let n = s.windows.len();
+                    let j = if v.get("previous").and_then(Value::as_bool).unwrap_or(false) {
+                        (index + n - 1) % n
+                    } else {
+                        (index + 1) % n
+                    };
+                    s.windows[j].clone()
                 };
-                s.select_window(s.windows[j].clone());
-                Ok(json!({"selected":s.active}))
+                self.select_client_window(client, &session, &selected);
+                self.layout(&session);
+                Ok(json!({"selected":selected}))
             }
             "pane.create" => {
                 let w = target(v, "window", "window")?;
@@ -629,10 +751,11 @@ impl State {
                         "orientation must be horizontal or vertical",
                     ));
                 }
+                let focused = self.focused_pane(client, window);
                 let selected = v
                     .get("pane")
                     .and_then(Value::as_str)
-                    .unwrap_or(&window.active)
+                    .unwrap_or(&focused)
                     .to_string();
                 if !window.panes.contains(&selected) {
                     return Err(Error::new("TARGET_WINDOW", "split target is not in window"));
@@ -652,6 +775,10 @@ impl State {
                 w.zoom = false;
                 w.panes.push(p.clone());
                 w.active = p.clone();
+                if let Some(c) = self.clients.get_mut(client).filter(|c| c.session == s) {
+                    c.panes.insert(w.id.clone(), p.clone());
+                    c.zooms.insert(w.id.clone(), false);
+                }
                 self.layout(&s);
                 Ok(json!({"pane":p,"pid":self.panes[&p].pty.as_ref().map(|p|p.pid)}))
             }
@@ -709,6 +836,13 @@ impl State {
                 let w = p.window.clone();
                 self.windows.get_mut(&w).unwrap().active = id.clone();
                 let session = self.windows[&w].session.clone();
+                if let Some(c) = self
+                    .clients
+                    .get_mut(client)
+                    .filter(|c| c.session == session)
+                {
+                    c.panes.insert(w, id.clone());
+                }
                 self.layout(&session);
                 Ok(json!({"selected":id}))
             }
@@ -720,6 +854,13 @@ impl State {
                     .ok_or_else(|| Error::new("STALE_ID", "window does not exist"))?;
                 if let Some(zoom) = v.get("zoom").and_then(Value::as_bool) {
                     w.zoom = zoom;
+                    if let Some(c) = self
+                        .clients
+                        .get_mut(client)
+                        .filter(|c| c.session == w.session)
+                    {
+                        c.zooms.insert(id.clone(), zoom);
+                    }
                 }
                 if let Some(split) = v.get("split").and_then(Value::as_str) {
                     let ratio = num(v, "ratio", 500, 100, 900)?;
@@ -971,14 +1112,16 @@ impl State {
                     .get(client)
                     .ok_or_else(|| Error::new("NOT_ATTACHED", "attach first"))?;
                 let s = &self.sessions[&c.session];
-                let w = &self.windows[&s.active];
+                let w = &self.windows[&c.window];
+                let active = self.focused_pane(client, w);
+                let zoom = self.focused_zoom(client, w);
                 if v.get("revision").and_then(Value::as_u64) == Some(self.revision) {
                     return Ok(json!({"revision":self.revision,"unchanged":true}));
                 }
                 let mut rects = Vec::new();
-                if w.zoom {
+                if zoom {
                     rects.push((
-                        w.active.clone(),
+                        active.clone(),
                         Rect {
                             x: 0,
                             y: 0,
@@ -999,7 +1142,7 @@ impl State {
                 }
                 let panes=rects.iter().filter_map(|(id,r)|self.panes.get(id).map(|p|json!({"id":p.id,"grid":p.term.snapshot(),"ended":p.ended,"restored":p.pty.is_none(),"exit_code":p.exit_code.or_else(||p.pty.as_ref().and_then(Pty::exit_code)),"rect":{"x":r.x,"y":r.y,"rows":r.rows,"cols":r.cols}}))).collect::<Vec<_>>();
                 Ok(
-                    json!({"revision":self.revision,"session":s.id,"window":w.id,"name":w.name,"active_pane":w.active,"layout":w.layout.json(),"zoom":w.zoom,"panes":panes}),
+                    json!({"revision":self.revision,"session":s.id,"window":w.id,"name":w.name,"active_pane":active,"layout":w.layout.json(),"zoom":zoom,"panes":panes}),
                 )
             }
 

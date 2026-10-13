@@ -329,3 +329,30 @@ Normal GTK launches use one application instance and activate its window on a se
 Reference-counted connection leases replace the restart-only profile deletion guard. RDP owns one lease; an SSH terminal and Files tab share separate leases. A profile can be deleted after all associated tabs close. Runtime RDP display/zoom/clipboard preferences persist through the same store used by the native sidebar, tested through actual Secret Service credential lookup and authenticated loopback connection.
 
 The existing build workflow accepts `--install-user` after successful optimized builds. Its product helper installs versioned immutable artifacts with hash/source receipts, stable commands, a desktop launcher and a previous-version pointer. It rejects command/launcher collisions, changed immutable artifacts, concurrent installation and invalid controller versions. It consumes the release version and never allocates one.
+
+### Independent attached terminal focus
+
+Attached clients retain their own selected window, selected pane per window,
+previous window and zoom state. New attachments seed from the persistent canonical
+default. Unattached automation may change that default without redirecting existing
+views. Closing a target repairs only affected views; stable surviving pane IDs and
+processes are retained. Shared split ratios and PTYs remain canonical.
+
+Session rows and columns use the minimum attached dimensions. Each pane uses the
+minimum dimensions of its visible rectangles across viewing clients, including
+independent zoom. Unviewed windows follow the canonical default layout. This keeps
+shared terminal state consistent without alternating sizes between clients.
+
+Selection, layout/zoom, resize and view-dependent list idempotency keys use a fresh
+attachment namespace. Shared creation and text mutations retain global deduplication.
+A cached shared creation does not reapply UI focus to another client. Protocol v0
+methods remain available; capabilities advertise independent_client_focus and
+client_zoom, and shared_focus is false. Older running daemons retain their existing
+behavior; installing new binaries does not migrate or restart them.
+
+The generated client_focus integration test covers independent window/pane input,
+cycle/previous, implicit split targets, zoom/minimum sizes, closed-target repair,
+attachment namespaces, globally deduplicated creation and cross-session refusal.
+Two real TUI processes send a prefix and text in the same input packet and deliver
+bytes to separate raw receivers. This is actual TUI/PTY integration, not physical
+GTK input qualification.

@@ -34,3 +34,5 @@ Canonical real-daemon run: `evidence/spike-4jw0njyz/acceptance.json`; full unit/
 | Historical evidence preservation | PASS | all 4,960 manifest entries verified unchanged after relocation to evaluation |
 
 **Decision: GO for the next bounded TUI reliability milestone.** Core correctness and the measured API target support continued experimentation. Production deployment, production binary distribution, full multiplexer replacement and desktop/image claims remain NO-GO until their separate gates pass. If a hard correctness gate regresses or performance misses its target, profile and reconsider tmux/frontend or ttmux repair before expansion.
+
+The historical C03 shared-selection receipt describes the original spike only. Current attached clients retain independent window, pane and zoom state. The reproducible `ruwac/tests/integration/client_focus.py` suite covers two real TUI clients, independent byte routing, minimum shared PTY sizing and creation/selection idempotency; see the current acceptance status.

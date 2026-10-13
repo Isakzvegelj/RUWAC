@@ -15,11 +15,11 @@ Responses contain version, matching id and exactly one of result/error. Errors c
 | session.list | {} | stable IDs, active window, dimensions |
 | session.attach | session; optional rows, cols | registers this connection as a view |
 | session.detach | {} | detaches only this connection |
-| window.create | session; optional name, argv | new window/pane/PID; shared focus selects it |
+| window.create | session; optional name, argv | new window/pane/PID; creator selects it; existing views keep their focus |
 | window.list | session | ordered windows and active pane |
 | window.rename/select | window; name for rename | updates explicit window |
-| window.cycle | session; optional previous boolean | ordered shared focus |
-| pane.create | window; optional argv | second horizontal pane; max two per window |
+| window.cycle | session; optional previous boolean | ordered caller view focus; unattached calls set canonical defaults |
+| pane.create | window; optional argv | nested horizontal/vertical split; max sixteen panes per window |
 | pane.list | session | IDs, PID, dimensions, ended flag |
 | pane.select/close | pane | selects or closes explicit pane; last pane removes its window |
 | pane.sendText | pane, text | queued_bytes; never appends Enter |
@@ -34,11 +34,11 @@ Responses contain version, matching id and exactly one of result/error. Errors c
 | events.subscribe | {} | initial ack, then state.changed revisions |
 | daemon.stop | {} | terminates this daemon and its owned panes |
 
-Text is UTF-8, max 256 KiB; NUL and oversize are rejected. Send acknowledges queue admission, not application execution. Direct argv spawning avoids `sh -c` interpolation; the default shell is Bash without profile/rc. Queued bytes are subject to the child's line discipline unless the child enters raw mode. Send literal Enter separately. Internal paste respects bracketed-paste mode; embedded paste end markers are rejected by client.input.
+Text is UTF-8, max 256 KiB; NUL and oversize are rejected. Send acknowledges queue admission, not application execution. Direct argv spawning avoids `sh -c` interpolation; the default shell follows the user account and loads its normal interactive startup files. Queued bytes are subject to the child's line discipline unless the child enters raw mode. Send literal Enter separately. Internal paste respects bracketed-paste mode; embedded paste end markers are rejected by client.input.
 
-Idempotency keys are bounded (1024-entry FIFO), daemon-lifetime, and scoped to exact method/params. Replays return cached outcomes; changed requests yield IDEMPOTENCY_CONFLICT. Connection-local view/input/render operations and shutdown cannot use them. Keys do not survive daemon restart; a timeout can leave a mutation outcome unknown. Use a stable key when retrying a supported mutation. No durable transaction/exactly-once claim.
+Idempotency keys are bounded (1024-entry FIFO), daemon-lifetime, and scoped to exact method/params. Replays return cached outcomes; changed requests yield IDEMPOTENCY_CONFLICT. Connection-local view/input/render operations and shutdown cannot use them. Keys do not survive daemon restart; a timeout can leave a mutation outcome unknown. Use a stable key when retrying a supported mutation. No durable transaction/exactly-once claim. Attached selection, zoom/layout, resize and view-dependent list keys have a fresh attachment namespace. Shared object creation and text mutations retain global deduplication. A replay returns the original outcome without replaying later UI focus changes. Reattaching starts a new selection namespace.
 
-Grid cells are arrays `[text,wide_spacer,foreground,background,bold,inverse]`; colors are RGB triplets or indexed/named numbers. Capture strips trailing cell spaces and separates rows with newlines. Shared focus and minimum attached size are documented in the architecture; automation always names its target. Revision events coalesce output and mutations, not individual raw-byte delivery.
+Grid cells are arrays `[text,wide_spacer,foreground,background,bold,inverse]`; colors are RGB triplets or indexed/named numbers. Capture strips trailing cell spaces and separates rows with newlines. Independent attached-client focus and minimum attached size are documented in the architecture; automation always names its target. Revision events coalesce output and mutations, not individual raw-byte delivery.
 
 Remote use can pipe a JSON request into `ssh EXISTING_HOST ruwac request` using existing authenticated SSH. The request body stays on stdin. Host selection, remote installation, transfer and disconnect behavior have not been tested on a second host; there is no custom TCP listener or implemented --host convenience flag.
 
