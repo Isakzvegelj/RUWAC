@@ -1,7 +1,9 @@
 # Fedora testing bundles
 
 The product-owned bundle assembler packages the existing native desktop and
-headless CLI without assigning versions or publishing artifacts. Source releases
+headless CLI without assigning versions. The existing tagged GitHub workflow attaches checked
+archives and SHA256 sidecars to its controller-created release; the assembler itself
+does not publish. Source releases
 continue through the existing build/release adapters. It requires a clean source
 commit matching its existing controller-owned tag and matching compiled versions.
 
@@ -19,6 +21,10 @@ The private site policy and checksum-verified standard secret scanner must be
 available to the maintainer. The helper never embeds the policy or raw matches.
 ELF data, constants and symbols are checked separately from instruction bytes;
 short opcode coincidences are not reported as textual infrastructure identifiers.
+ELF relocation records and pointer-sized fields identified by x86_64 relocations
+are treated as ABI numeric data. Actual constants and string tables retain short
+identifier checks; generated regressions distinguish pointer bytes from literal
+three-letter strings. Invalid relocation tables fail parsing.
 Long private values and complete private-key material are also checked across the
 whole artifact. Crypto-parser BEGIN markers alone are not private keys. Printable
 data sections are additionally passed to the standard secret scanner. Source
@@ -66,9 +72,33 @@ sessions and running executable inodes. It refuses an existing same-version
 installation with different artifacts. Use a later controller-owned release for
 a changed build; do not overwrite that installation.
 
-Automatic updates continue compiling published source. Install the development
-prerequisites in [RUWAC_UPDATES.md](RUWAC_UPDATES.md) before opting in. A testing
-bundle is not a signed RPM or a qualified stable security distribution. The known
-desktop RUSTSEC-2023-0071 advisory remains explicit. RPM/signing, publisher
-attestation, clean-target interoperability and physical desktop input remain
-separate acceptance gates; bundle assembly does not claim they pass.
+GitHub release downloads now include the Fedora testing archive and its SHA256
+sidecar once the tag's build and exact-commit quality/privacy gates complete. The
+archive metadata includes a [GitHub asset SHA256 digest](https://docs.github.com/en/rest/releases/assets).
+The workflow preserves existing same-name assets; differing bytes require a later
+controller release, not replacement. Tags and old release notes remain unchanged.
+
+Source-build updates remain the default. To select checked testing bundles and
+opt into unattended installation on Fedora 44 x86_64:
+
+```sh
+"$HOME/.local/bin/ruwac" update --testing-bundles on
+"$HOME/.local/bin/ruwac" update --auto-install on
+```
+
+The equivalent checkbox is in Updates. Runtime prerequisites above are sufficient
+for bundle delivery; development prerequisites apply to source-build delivery.
+Use `--testing-bundles off` to restore source builds, or `--auto-install off` to stop
+unattended installation. Existing rollback also disables automatic installation.
+A missing or unchecked asset leaves a pending update and does not compile silently.
+
+The updater verifies the expected repository/tag/asset name and HTTPS origins,
+GitHub's SHA256 digest and size, download/decompression budgets, regular-only unique
+archive members, the exact source commit and every manifest file. Changed settings
+or a newer installation discovered during download prevent the installation.
+These checks establish integrity under the repository/GitHub trust model; they do
+not provide independent publisher signing or attestation.
+
+Testing bundles retain the known desktop RUSTSEC-2023-0071 advisory explicitly.
+RPM/signing, publisher attestation, clean-target interoperability and physical
+input remain separate acceptance gates.

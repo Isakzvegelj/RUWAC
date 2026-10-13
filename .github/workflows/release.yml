@@ -70,3 +70,85 @@ jobs:
           gh release view "$RELEASE_TAG" --json url,isPrerelease,tagName
       # Historical release repair is intentionally manual: replaying old notes can
       # republish material that has since been removed from the current tree.
+
+  fedora-testing-bundle:
+    if: github.repository == 'w3fans/RUWAC' && startsWith(github.ref, 'refs/tags/')
+    needs: release
+    runs-on: ubuntu-latest
+    container: registry.fedoraproject.org/fedora@sha256:05e3c351a7e762aca8fb067a9a92c1f775a7c4fbb1382c97cdd87bd6fb5b162c
+    timeout-minutes: 45
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - name: Initialize isolated paths and remap build paths
+        run: |
+          printf 'CARGO_HOME=%s/bundle-cargo\nCARGO_TARGET_DIR=%s/target\nCARGO_BUILD_JOBS=2\n' "$RUNNER_TEMP" "$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
+          printf 'RUSTFLAGS=--remap-path-prefix=%s=/usr/src/ruwac --remap-path-prefix=%s/bundle-cargo=/usr/src/cargo --remap-path-prefix=%s=/usr/src/build-home\n' "$GITHUB_WORKSPACE" "$RUNNER_TEMP" "$HOME" >> "$GITHUB_ENV"
+          printf 'CFLAGS=-ffile-prefix-map=%s=/usr/src/ruwac -ffile-prefix-map=%s=/usr/src/build-home\n' "$GITHUB_WORKSPACE" "$HOME" >> "$GITHUB_ENV"
+          printf 'CXXFLAGS=-ffile-prefix-map=%s=/usr/src/ruwac -ffile-prefix-map=%s=/usr/src/build-home\n' "$GITHUB_WORKSPACE" "$HOME" >> "$GITHUB_ENV"
+      - name: Install Fedora build and scanner dependencies
+        run: dnf install -y git cargo rust gcc gcc-c++ cmake perl openssl-devel pkgconf-pkg-config gtk4-devel libadwaita-devel libssh2-devel sqlite-devel python3 curl tar gzip gh
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Verify the existing controller tag and public source
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          python3 scripts/public-files.py --tracked
+          python3 - <<'PYCODE'
+          import os, subprocess, tomllib
+          from pathlib import Path
+          version = tomllib.loads(Path('ruwac/Cargo.toml').read_text())['workspace']['package']['version']
+          assert os.environ['GITHUB_REF_NAME'] == 'v' + version
+          assert subprocess.check_output(['git','rev-parse',os.environ['GITHUB_REF_NAME']+'^{commit}'],text=True).strip() == os.environ['GITHUB_SHA']
+          PYCODE
+      - name: Build and test the tagged compiled applications
+        run: |
+          cargo test --release --locked --workspace --manifest-path ruwac/Cargo.toml
+          cargo test --release --locked --manifest-path ruwac/desktop/Cargo.toml
+          cargo build --release --locked --manifest-path ruwac/Cargo.toml
+          cargo build --release --locked --manifest-path ruwac/desktop/Cargo.toml
+      - name: Install checksum-pinned artifact scanner and assemble testing bundle
+        run: |
+          curl -fsSL --retry 3 https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz -o "$RUNNER_TEMP/gitleaks.tar.gz"
+          printf '551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  %s\n' "$RUNNER_TEMP/gitleaks.tar.gz" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/privacy-tools"
+          tar -xzf "$RUNNER_TEMP/gitleaks.tar.gz" -C "$RUNNER_TEMP/privacy-tools" gitleaks
+          RUWAC_GITLEAKS="$RUNNER_TEMP/privacy-tools/gitleaks" python3 scripts/bundle-user.py --build-root "$GITHUB_WORKSPACE" --output "$RUNNER_TEMP/bundles" > "$RUNNER_TEMP/bundle.json"
+      - name: Wait for quality and privacy on the exact source commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 - <<'PYCODE'
+          import json, os, runpy, subprocess, time
+          helper = runpy.run_path('scripts/update-user.py')['automatic_release_verified']
+          helper.__globals__['api'] = lambda path: json.loads(subprocess.check_output(['gh','api','repos/'+os.environ['GITHUB_REPOSITORY']+path],text=True))
+          for attempt in range(60):
+              if helper({'commit':os.environ['GITHUB_SHA']}):
+                  break
+              time.sleep(20)
+          else:
+              raise SystemExit('Testing assets held: exact-commit quality/privacy checks did not pass')
+          PYCODE
+      - name: Attach immutable testing assets to the existing release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          python3 - <<'PYCODE'
+          import hashlib, json, os, subprocess
+          from pathlib import Path
+          tag = os.environ['GITHUB_REF_NAME']
+          for path in sorted((Path(os.environ['RUNNER_TEMP'])/'bundles').iterdir()):
+              release = json.loads(subprocess.check_output(['gh','api','repos/'+os.environ['GITHUB_REPOSITORY']+'/releases/tags/'+tag],text=True))
+              digest = 'sha256:' + hashlib.sha256(path.read_bytes()).hexdigest()
+              existing = [a for a in release['assets'] if a['name'] == path.name]
+              if existing:
+                  assert len(existing) == 1 and existing[0]['digest'] == digest, 'Existing immutable asset differs; preserve it'
+                  continue
+              subprocess.run(['gh','release','upload',tag,str(path)],check=True)
+              release = json.loads(subprocess.check_output(['gh','api','repos/'+os.environ['GITHUB_REPOSITORY']+'/releases/tags/'+tag],text=True))
+              assert any(a['name']==path.name and a['digest']==digest and a['state']=='uploaded' for a in release['assets'])
+          PYCODE

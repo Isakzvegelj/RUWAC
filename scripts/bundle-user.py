@@ -128,16 +128,35 @@ def binary_data(path):
     offset, width, count = header[6], header[11], header[12]
     if header[2] != 62 or width != 64 or not 0 < count < 4096 or offset + width * count > len(data):
         raise ValueError('Invalid x86_64 ELF section table')
+    records = [struct.unpack_from('<IIQQQQIIQQ', data, offset + index * width) for index in range(count)]
+    relocations = set()
+    for section in records:
+        if section[1] not in {4, 9}:  # SHT_RELA / SHT_REL: ABI numeric records.
+            continue
+        start, size, entry = section[4], section[5], section[9]
+        expected_entry = 24 if section[1] == 4 else 16
+        if entry != expected_entry or size % entry or start + size > len(data):
+            raise ValueError('Invalid ELF64 relocation table')
+        for position in range(start, start + size, entry):
+            address, info = struct.unpack_from('<QQ', data, position)
+            if info & 0xffffffff in {1, 6, 7, 8}:  # x86_64 pointer-sized relocation kinds.
+                relocations.add(address)
     sections = []
-    for index in range(count):
-        section = struct.unpack_from('<IIQQQQIIQQ', data, offset + index * width)
-        kind, flags, start, size = section[1], section[2], section[4], section[5]
+    for section in records:
+        kind, flags, address, start, size = section[1:6]
         if kind in [0, 8]:
             continue
         if start + size > len(data):
             raise ValueError('ELF section exceeds artifact bounds')
-        if not flags & 4:  # SHF_EXECINSTR: opcode bytes are not textual identifiers.
-            sections.append(data[start:start + size])
+        if flags & 4 or kind in {4, 9}:  # Instructions and ABI numeric relocation tables.
+            continue
+        content = bytearray(data[start:start + size])
+        if flags & 2:  # SHF_ALLOC: r_offset is an allocated virtual address.
+            for pointer in relocations:
+                if address <= pointer and pointer + 8 <= address + size:
+                    at = pointer - address
+                    content[at:at + 8] = bytes(8)
+        sections.append(bytes(content))
     return data, sections
 
 
@@ -320,9 +339,13 @@ distribution. RUSTSEC-2023-0071 remains unresolved. Compare its SHA256 with the
 trusted delivery reference before extraction; the internal manifest checks
 integrity and does not establish a cryptographic publisher signature.
 
-Automatic updates still compile published source locally. Install the build
-prerequisites described in spec/RUWAC_UPDATES.md in the corresponding GitHub
-source release before enabling automatic installation.
+Source-build updates remain the default. To use checked Fedora testing bundles:
+  "$HOME/.local/bin/ruwac" update --testing-bundles on
+To opt into six-hour automatic installation:
+  "$HOME/.local/bin/ruwac" update --auto-install on
+Use --testing-bundles off for source builds (development dependencies required),
+or --auto-install off to stop unattended installation. Running windows and
+terminal daemons are preserved; restart the frontend when ready.
 ''')
         rows = notices(root, destination / 'notices', runtime_packages(root))
         document_hashes = {str(path.relative_to(destination)): digest(path) for path in destination.rglob('*') if path.is_file()}

@@ -190,6 +190,30 @@ class Bundles(unittest.TestCase):
         path = self.elf(b'generated-private-host\x00', b'portable fixture\x00')
         self.assertTrue(bundles.artifact_findings(path, checker, ['generated-private-host'])[0])
 
+    def relocation_elf(self, literal):
+        # Generated pointer bytes happen to spell a three-letter identifier.
+        # An actual literal must still fail independently of the numeric slots.
+        path = self.root / 'relocation-elf'
+        table, count = 64, 4
+        start = table + count * 64
+        relocation = struct.pack('<QQq', 0x2000, 8, int.from_bytes(b'toy' + bytes(5), 'little'))
+        pointer = b'toy' + bytes(5)
+        header = struct.pack('<16sHHIQQQIHHHHHH', b'\x7fELF\x02\x01' + bytes(10), 3, 62, 1, 0, 0, table, 0, 64, 0, 0, 64, count, 0)
+        records = bytes(64)
+        records += struct.pack('<IIQQQQIIQQ', 0, 4, 2, 0x1000, start, len(relocation), 0, 0, 8, 24)
+        records += struct.pack('<IIQQQQIIQQ', 0, 1, 3, 0x2000, start + len(relocation), len(pointer), 0, 0, 8, 0)
+        records += struct.pack('<IIQQQQIIQQ', 0, 1, 2, 0x3000, start + len(relocation) + len(pointer), len(literal), 0, 0, 1, 0)
+        path.write_bytes(header + records + relocation + pointer + literal)
+        return path
+
+    def test_relocated_numeric_addresses_do_not_become_short_identifiers(self):
+        checker = runpy.run_path(str(ROOT / 'scripts/privacy-check.py'))
+        self.assertFalse(bundles.artifact_findings(self.relocation_elf(b'generated fixture'), checker, ['toy'])[0])
+
+    def test_actual_short_string_is_still_rejected_beside_relocations(self):
+        checker = runpy.run_path(str(ROOT / 'scripts/privacy-check.py'))
+        self.assertTrue(bundles.artifact_findings(self.relocation_elf(b'toy\x00'), checker, ['toy'])[0])
+
     def test_elf_scanner_rejects_key_material_but_allows_parser_markers(self):
         checker = runpy.run_path(str(ROOT / 'scripts/privacy-check.py'))
         marker = b'-----BEGIN ' + b'PRIVATE KEY-----'

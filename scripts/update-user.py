@@ -5,6 +5,10 @@ import fcntl
 import hashlib
 import json
 import os
+import gzip
+import platform
+import tarfile
+import time
 from pathlib import Path
 import re
 import shutil
@@ -87,6 +91,155 @@ def automatic_release_verified(release):
     return all(any(job.get('name') == name and job.get('conclusion') == 'success' for job in jobs) for name in ['quality', 'privacy'])
 
 
+MAX_BUNDLE_BYTES = 128 * 1024 * 1024
+MAX_UNPACKED_BYTES = 256 * 1024 * 1024
+
+
+def testing_bundle_setting(enabled=None):
+    if enabled is None:
+        return preferences().get('testing_bundles', False)
+    lock = locked_file(settings_path().parent / '.settings.lock')
+    try:
+        data = preferences()
+        data['testing_bundles'] = bool(enabled)
+        save_preferences(data)
+    finally:
+        os.close(lock)
+    return bool(enabled)
+
+
+def bundle_asset(release):
+    data = api('/releases/tags/' + release['tag'])
+    if data.get('tag_name') != release['tag'] or data.get('draft') is not False or data.get('prerelease') is not False:
+        raise ValueError('Unexpected testing bundle release')
+    name = 'ruwac-' + release['latest'] + '-fedora44-x86_64-testing.tar.gz'
+    matches = [a for a in data.get('assets', []) if a.get('name') == name]
+    if not matches:
+        return None
+    if len(matches) != 1:
+        raise ValueError('Ambiguous testing bundle asset')
+    asset = matches[0]
+    expected_url = 'https://github.com/w3fans/RUWAC/releases/download/' + release['tag'] + '/' + name
+    if (asset.get('state') != 'uploaded' or type(asset.get('size')) is not int
+            or not 0 < asset['size'] <= MAX_BUNDLE_BYTES
+            or asset.get('browser_download_url') != expected_url
+            or not re.fullmatch(r'sha256:[0-9a-f]{64}', asset.get('digest', ''))):
+        raise ValueError('Testing bundle asset lacks trusted size, SHA256 or URL')
+    return asset
+
+
+def asset_url_allowed(url):
+    parsed = urllib.parse.urlparse(url)
+    return (parsed.scheme == 'https' and parsed.hostname in {'github.com', 'release-assets.githubusercontent.com'}
+            and parsed.port in {None, 443} and parsed.username is None and parsed.password is None and not parsed.fragment)
+
+
+class AssetRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, request, fp, code, message, headers, url):
+        if not asset_url_allowed(url):
+            raise ValueError('Untrusted testing bundle redirect')
+        return super().redirect_request(request, fp, code, message, headers, url)
+
+
+def download_bundle(asset, destination):
+    if not asset_url_allowed(asset['browser_download_url']):
+        raise ValueError('Untrusted testing bundle URL')
+    opener = urllib.request.build_opener(AssetRedirect())
+    request = urllib.request.Request(asset['browser_download_url'], headers={'User-Agent': 'RUWAC-updater'})
+    started = time.monotonic()
+    count, digest = 0, hashlib.sha256()
+    with opener.open(request, timeout=20) as response, destination.open('xb') as output:
+        if not asset_url_allowed(response.url):
+            raise ValueError('Untrusted testing bundle response')
+        while True:
+            if time.monotonic() - started > 120:
+                raise ValueError('Testing bundle download deadline exceeded')
+            chunk = response.read(65536)
+            if not chunk:
+                break
+            count += len(chunk)
+            if count > asset['size'] or count > MAX_BUNDLE_BYTES:
+                raise ValueError('Testing bundle download exceeds declared size')
+            output.write(chunk)
+            digest.update(chunk)
+    if count != asset['size'] or digest.hexdigest() != asset['digest'][7:]:
+        raise ValueError('Testing bundle SHA256 or size mismatch')
+
+
+class BoundedArchive:
+    def __init__(self, stream):
+        self.stream, self.count = stream, 0
+
+    def read(self, size=-1):
+        data = self.stream.read(min(65536, size if size >= 0 else 65536))
+        self.count += len(data)
+        if self.count > MAX_UNPACKED_BYTES:
+            raise ValueError('Testing bundle expanded stream exceeds limit')
+        return data
+
+
+def unpack_bundle(archive, destination, release):
+    name = 'ruwac-' + release['latest'] + '-fedora44-x86_64-testing'
+    names, total = set(), 0
+    with gzip.open(archive, 'rb') as zipped, tarfile.open(fileobj=BoundedArchive(zipped), mode='r|') as source:
+        for member in source:
+            parts = member.name.split('/')
+            if (len(names) >= 2000 or len(member.name) > 1024 or member.name in names
+                    or parts[0] != name or any(p in {'', '.', '..'} for p in parts)
+                    or '\\' in member.name or not (member.isfile() or member.isdir())
+                    or member.size < 0 or member.size > MAX_BUNDLE_BYTES):
+                raise ValueError('Unsafe testing bundle archive member')
+            names.add(member.name)
+            total += member.size
+            if total > MAX_UNPACKED_BYTES:
+                raise ValueError('Testing bundle extracted files exceed limit')
+            source.extract(member, destination, filter='data')
+    root = destination / name
+    metadata = root / 'bundle.json'
+    if not metadata.is_file() or metadata.stat().st_size > 1024 * 1024:
+        raise ValueError('Missing or oversized testing bundle manifest')
+    manifest = json.loads(metadata.read_text())
+    if (manifest.get('source_commit') != release['commit'] or manifest.get('version') != release['latest']
+            or manifest.get('kind') != 'fedora-testing-bundle' or manifest.get('schema') != 1
+            or manifest.get('distribution') != 'fedora' or manifest.get('distribution_version') != '44'
+            or manifest.get('architecture') != 'x86_64' or manifest.get('security_qualified') is not False
+            or manifest.get('known_advisories') != ['RUSTSEC-2023-0071']):
+        raise ValueError('Testing bundle manifest identity or qualification mismatch')
+    files = manifest.get('files')
+    actual = {str(p.relative_to(root)) for p in root.rglob('*') if p.is_file() and p != metadata}
+    if not isinstance(files, dict) or set(files) != actual or 'install-user.py' not in files:
+        raise ValueError('Testing bundle file inventory mismatch')
+    for relative, expected in files.items():
+        if not isinstance(expected, str) or not SHA256.fullmatch(expected) or hashlib.sha256((root / relative).read_bytes()).hexdigest() != expected:
+            raise ValueError('Testing bundle file checksum mismatch')
+    return root
+
+
+SHA256 = re.compile(r'[0-9a-f]{64}\Z')
+
+
+def install_testing_bundle(release, asset, prefix, cache, automatic):
+    lock = locked_file(cache / '.update.lock')
+    root = Path(tempfile.mkdtemp(prefix='testing-', dir=cache))
+    try:
+        archive = root / 'bundle.tar.gz'
+        download_bundle(asset, archive)
+        bundle = unpack_bundle(archive, root / 'unpacked', release)
+        if version(installed_version(prefix, '0.0.0')) > version(release['latest']):
+            raise ValueError('A newer installation appeared; refusing bundle downgrade')
+        preference_lock = locked_file(settings_path().parent / '.settings.lock')
+        try:
+            if not testing_bundle_setting() or (automatic and not automatic_install_setting()):
+                return dict(release, skipped='testing bundle or automatic installation disabled during download')
+            run(['python3', str(bundle / 'install-user.py'), '--build-root', str(bundle), '--prefix', str(prefix), '--desktop'])
+        finally:
+            os.close(preference_lock)
+        return dict(release, installed=release['latest'], delivery='testing-bundle', running_sessions='preserved')
+    finally:
+        shutil.rmtree(root)
+        os.close(lock)
+
+
 def settings_path():
     root = Path(os.environ.get('XDG_CONFIG_HOME', Path.home() / '.config')) / 'RUWAC'
     return private_directory(root) / 'updates.json'
@@ -94,13 +247,13 @@ def settings_path():
 
 def preferences():
     path = settings_path()
-    data = {'schema': 1, 'automatic_check': True, 'automatic_install': False}
+    data = {'schema': 1, 'automatic_check': True, 'automatic_install': False, 'testing_bundles': False}
     if path.exists() or path.is_symlink():
         info = path.lstat()
         if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() or info.st_mode & 0o077 or info.st_size > 4096:
             raise ValueError('Unsafe update preferences; preserve and repair them')
         data = json.loads(path.read_text())
-        if data.get('schema') != 1 or not isinstance(data.get('automatic_check'), bool) or not isinstance(data.get('automatic_install', False), bool):
+        if data.get('schema') != 1 or not isinstance(data.get('automatic_check'), bool) or not isinstance(data.get('automatic_install', False), bool) or not isinstance(data.get('testing_bundles', False), bool):
             raise ValueError('Unknown update preferences; preserve and repair them')
     return data
 
@@ -361,6 +514,13 @@ def install(release, prefix, cache, desktop=True, automatic=False):
     os_info = dict(line.split('=', 1) for line in os_release.splitlines() if '=' in line)
     if os_info.get('ID', '').strip('"') != 'fedora' or os_info.get('VERSION_ID', '').strip('"') != '44':
         raise ValueError('This source updater is currently validated for Fedora 44')
+    if desktop and testing_bundle_setting():
+        if platform.machine() != 'x86_64':
+            raise ValueError('Fedora testing bundles currently require x86_64; select source builds on other architectures')
+        asset = bundle_asset(release)
+        if asset is None or not automatic_release_verified(release):
+            return dict(release, delivery='testing-bundle', skipped='waiting for the Fedora testing bundle and successful exact-commit quality/privacy checks')
+        return install_testing_bundle(release, asset, prefix, cache, automatic)
     for tool in ['git', 'cargo', 'cc', 'pkg-config', 'python3']:
         if not shutil.which(tool):
             raise ValueError('Missing build dependency: ' + tool + '; see Fedora update instructions')
@@ -409,6 +569,7 @@ def main():
     modes.add_argument('--auto-install', choices=['on', 'off', 'status'])
     modes.add_argument('--rollback', action='store_true')
     modes.add_argument('--auto-check', choices=['on', 'off', 'status'])
+    modes.add_argument('--testing-bundles', choices=['on', 'off', 'status'])
     parser.add_argument('--current', default='0.0.0')
     parser.add_argument('--prefix', type=Path, default=Path.home() / '.local')
     parser.add_argument('--headless', action='store_true')
@@ -417,7 +578,9 @@ def main():
         parser.error('--current is required except for bootstrap installation')
     version(args.current)
     prefix = args.prefix.absolute()
-    if args.auto_install:
+    if args.testing_bundles:
+        result = {'testing_bundles': testing_bundle_setting({'on': True, 'off': False}.get(args.testing_bundles))}
+    elif args.auto_install:
         result = {'automatic_install': automatic_install_setting({'on': True, 'off': False}.get(args.auto_install), prefix)}
     elif args.install_auto and not automatic_install_setting():
         result = {'automatic_install': False, 'available': False, 'skipped': 'automatic installation disabled'}
@@ -436,6 +599,8 @@ def main():
     else:
         result = latest(installed_version(prefix, '0.0.0' if args.bootstrap else args.current))
         result['running'] = args.current
+        if not args.headless and testing_bundle_setting():
+            result['delivery'] = 'testing-bundle'
         if args.install_auto and result['available'] and not automatic_release_verified(result):
             result['skipped'] = 'waiting for successful source quality and privacy checks on the release commit'
         elif (args.install or args.install_auto or args.bootstrap) and result['available']:

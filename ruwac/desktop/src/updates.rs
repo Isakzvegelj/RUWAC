@@ -68,11 +68,13 @@ pub fn attach(header: &adw::HeaderBar, window: &adw::ApplicationWindow, automati
         install.connect_clicked(move |button| {
             if busy_install.replace(true) { return; }
             button.set_sensitive(false);
-            label.set_text("Building and installing… This may take several minutes. Existing windows keep running.");
-            let label = label.downgrade(); let busy = busy_install.clone();
+            label.set_text("Downloading or building the selected update… Existing windows keep running.");
+            let label = label.downgrade(); let busy = busy_install.clone(); let retry = button.downgrade();
             task(&["--install"], move |result| {
                 busy.set(false);
+                if result.is_err() || result.as_ref().is_ok_and(|v| v["skipped"].is_string()) { if let Some(button) = retry.upgrade() { button.set_sensitive(true); } }
                 if let Some(label) = label.upgrade() { label.set_text(&match result {
+                    Ok(value) if value["skipped"].is_string() => format!("Update pending: {}", value["skipped"].as_str().unwrap()),
                     Ok(value) => format!("Installed {}. Close and reopen the frontend when ready; terminal sessions remain running.", value["installed"].as_str().unwrap_or(value["latest"].as_str().unwrap_or("current version"))),
                     Err(error) => format!("Update failed: {error}\nPrevious installation remains available. Use ruwac update --install in a terminal for build diagnostics."),
                 }); }
@@ -127,7 +129,36 @@ pub fn attach(header: &adw::HeaderBar, window: &adw::ApplicationWindow, automati
         auto_install.set_widget_name("update-auto-install");
         auto_install.set_sensitive(false);
         content.append(&auto_install);
-        let detail = gtk::Label::new(Some("Checks every six hours while logged in. Builds locally; the next application restart uses the update. Running windows and terminal sessions stay open."));
+        let testing = gtk::CheckButton::with_label("Use Fedora testing bundles (skip local compilation)");
+        testing.set_widget_name("update-testing-bundles"); testing.set_sensitive(false);
+        testing.set_tooltip_text(Some("Fedora 44 x86_64 testing artifacts; source/quality checks and hashes are verified. These are unsigned and retain the known dependency advisory. Source builds remain the default."));
+        content.append(&testing);
+        let weak_testing = testing.downgrade(); let testing_status = status.downgrade();
+        let testing_changing = Rc::new(Cell::new(false));
+        task(&["--testing-bundles", "status"], move |result| {
+            if let (Some(check), Ok(value)) = (weak_testing.upgrade(), result) {
+                check.set_active(value["testing_bundles"] == true); check.set_sensitive(true);
+                check.connect_toggled(move |check| {
+                    if testing_changing.get() { return; }
+                    check.set_sensitive(false); let weak = check.downgrade(); let label = testing_status.clone();
+                    let changing = testing_changing.clone();
+                    let args: &'static [&'static str] = if check.is_active() { &["--testing-bundles", "on"] } else { &["--testing-bundles", "off"] };
+                    task(args, move |result| {
+                        if let Some(label) = label.upgrade() { label.set_text(&match result {
+                            Ok(value) if value["testing_bundles"] == true => "Fedora testing bundle delivery enabled. Updates wait for checked assets; source compilation is skipped.".into(),
+                            Ok(_) => "Source-build delivery enabled.".into(),
+                            Err(error) => format!("Unable to save update delivery: {error}"),
+                        }); }
+                        task(&["--testing-bundles", "status"], move |saved| {
+                            if let Some(check) = weak.upgrade() {
+                                if let Ok(value) = saved { changing.set(true); check.set_active(value["testing_bundles"] == true); changing.set(false); check.set_sensitive(true); }
+                            }
+                        });
+                    });
+                });
+            }
+        });
+        let detail = gtk::Label::new(Some("Checks every six hours while logged in. Uses your selected delivery mode; the next application restart uses the update. Running windows and terminal sessions stay open."));
         detail.set_wrap(true);
         content.append(&detail);
         let weak_auto = auto_install.downgrade();
@@ -251,6 +282,13 @@ pub fn fixture(window: &adw::ApplicationWindow, command: &Value) -> Value {
                     }
                 }
             }
+            if let Some(enabled) = command["testing_bundles"].as_bool() {
+                if let Some(check) = find(dialog.upcast_ref(), "update-testing-bundles")
+                    .and_then(|w| w.downcast::<gtk::CheckButton>().ok())
+                {
+                    check.set_active(enabled);
+                }
+            }
             if let Some(enabled) = command["automatic_install"].as_bool() {
                 if let Some(button) = find(dialog.upcast_ref(), "update-auto-install")
                     .and_then(|w| w.downcast::<gtk::CheckButton>().ok())
@@ -275,7 +313,12 @@ pub fn fixture(window: &adw::ApplicationWindow, command: &Value) -> Value {
             let automatic = find(dialog.upcast_ref(), "update-auto-check")
                 .and_then(|w| w.downcast::<gtk::CheckButton>().ok())
                 .map(|w| w.is_active());
-            let result = serde_json::json!({"dialog":true,"status":status,"install_enabled":install,"automatic":automatic,"automatic_install":automatic_install,"automatic_install_enabled":automatic_install_enabled,"rollback_enabled":rollback_enabled});
+            let testing_bundles = find(dialog.upcast_ref(), "update-testing-bundles")
+                .and_then(|w| w.downcast::<gtk::CheckButton>().ok())
+                .is_some_and(|w| w.is_active());
+            let testing_bundles_enabled = find(dialog.upcast_ref(), "update-testing-bundles")
+                .is_some_and(|w| w.is_sensitive());
+            let result = serde_json::json!({"testing_bundles":testing_bundles,"testing_bundles_enabled":testing_bundles_enabled,"dialog":true,"status":status,"install_enabled":install,"automatic":automatic,"automatic_install":automatic_install,"automatic_install_enabled":automatic_install_enabled,"rollback_enabled":rollback_enabled});
             if command["operation"] == "close" {
                 dialog.close();
             }

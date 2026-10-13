@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v0.2.26 — 2026-10-13 — Stable source release
+
+- Publish Fedora testing bundles through the existing tagged release workflow and add explicit checked-bundle update delivery without local compilation, preserving source builds, rollback and running sessions.
+
 ## v0.2.25 — 2026-10-13 — Stable source release
 
 - Bound text paste and PNG staging reads from stalled desktop clipboard providers, cancel blocked reads on focus/ownership changes, remove partial staging files and keep fresh clipboard reads usable after cancellation.
