@@ -19,6 +19,7 @@ mod jobs;
 mod profiles;
 mod rdp;
 mod rdp_trust;
+mod remote_content;
 mod remote_image;
 mod remote_keys;
 mod sessions;

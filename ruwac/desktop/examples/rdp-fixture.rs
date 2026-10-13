@@ -184,6 +184,9 @@ async fn run(dir: PathBuf) -> anyhow::Result<()> {
             let mut offered_kind = Format::Text;
             let mut requested = Format::Text;
             let mut received = 0;
+            let mut request_count = 0u64;
+            let mut data_delay = Duration::ZERO;
+            let mut delayed: Option<(tokio::time::Instant, Option<Vec<u8>>)> = None;
             loop {
                 tokio::time::sleep(Duration::from_millis(10)).await;
                 if let Ok(b) = std::fs::read(d.join(format!("server-{tab}-request.json"))) {
@@ -224,6 +227,9 @@ async fn run(dir: PathBuf) -> anyhow::Result<()> {
                                         .read_to_end(&mut offered)
                                         .map_err(|_| "Cannot read fixture payload")?;
                                     cliprdr::encode(offered_kind, &offered)?;
+                                    data_delay = Duration::from_millis(
+                                        q["delay_ms"].as_u64().unwrap_or(0).min(1000),
+                                    );
                                     let formats = if offered_kind == Format::Png {
                                         vec![ironrdp_cliprdr::pdu::ClipboardFormat::new(cliprdr::PNG_ID).with_name(ironrdp_cliprdr::pdu::ClipboardFormatName::new_static("PNG"))]
                                     } else {
@@ -246,13 +252,15 @@ async fn run(dir: PathBuf) -> anyhow::Result<()> {
                 for e in bridge.drain() {
                     match e {
                         Event::Request(_) => {
-                            let data = cliprdr::encode(offered_kind, &offered).ok();
-                            let _ = sender.send(ServerEvent::Clipboard(
-                                ClipboardMessage::SendFormatData(match data {
-                                    Some(b) => FormatDataResponse::new_data(b),
-                                    None => FormatDataResponse::new_error(),
-                                }),
-                            ));
+                            if delayed.is_none() {
+                                request_count += 1;
+                                let data = cliprdr::encode(offered_kind, &offered).ok();
+                                delayed = Some((tokio::time::Instant::now() + data_delay, data));
+                                let _ = std::fs::write(
+                                    d.join(format!("server-{tab}-pending.json")),
+                                    json!({"requests":request_count}).to_string(),
+                                );
+                            }
                         }
                         Event::Offer {
                             selected: Some((id, kind)),
@@ -296,6 +304,18 @@ async fn run(dir: PathBuf) -> anyhow::Result<()> {
                         }
                         _ => (),
                     }
+                }
+                if delayed
+                    .as_ref()
+                    .is_some_and(|(at, _)| tokio::time::Instant::now() >= *at)
+                {
+                    let (_, data) = delayed.take().unwrap();
+                    let _ = sender.send(ServerEvent::Clipboard(ClipboardMessage::SendFormatData(
+                        match data {
+                            Some(b) => FormatDataResponse::new_data(b),
+                            None => FormatDataResponse::new_error(),
+                        },
+                    )));
                 }
             }
         });

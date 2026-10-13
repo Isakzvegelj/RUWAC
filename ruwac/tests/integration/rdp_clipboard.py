@@ -3,7 +3,7 @@
 import argparse,hashlib,importlib.util,json,os,subprocess,sys,tempfile,time,traceback
 from pathlib import Path
 from PIL import Image
-p=argparse.ArgumentParser();p.add_argument('--binary',required=True);p.add_argument('--gui',required=True);p.add_argument('--server',required=True);p.add_argument('--evidence',required=True);p.add_argument('--r5-only',action='store_true');p.add_argument('--mixed-only',action='store_true');a=p.parse_args()
+p=argparse.ArgumentParser();p.add_argument('--binary',required=True);p.add_argument('--gui',required=True);p.add_argument('--server',required=True);p.add_argument('--evidence',required=True);p.add_argument('--r5-only',action='store_true');p.add_argument('--mixed-only',action='store_true');p.add_argument('--case',action='append',default=[]);a=p.parse_args()
 spec=importlib.util.spec_from_file_location('spike',Path(__file__).with_name('spike.py'));spike=importlib.util.module_from_spec(spec);spec.loader.exec_module(spike)
 root=Path(tempfile.mkdtemp(prefix='rdp-native-',dir=a.evidence));root.chmod(0o700);env={**os.environ,'HOME':str(root/'home'),'XDG_CONFIG_HOME':str(root/'config'),'XDG_CACHE_HOME':str(root/'cache'),'XDG_DATA_HOME':str(root/'data'),'GSETTINGS_BACKEND':'memory','GTK_USE_PORTAL':'0','GTK_A11Y':'none'}
 for key in ['HOME','XDG_CONFIG_HOME','XDG_CACHE_HOME','XDG_DATA_HOME']:Path(env[key]).mkdir(mode=0o700)
@@ -23,6 +23,7 @@ def focus(who):
   subprocess.run(['xdotool','key','--clearmodifiers','Super_L+Tab'],env={**os.environ,'DISPLAY':os.environ['RUWAC_XTEST_DISPLAY']},check=True);time.sleep(.12)
  raise AssertionError('Isolated compositor focus failed')
 def case(name,fn):
+ if a.case and name not in a.case and name!='RDP-NATIVE-AUTH-3':return
  if a.mixed_only and name not in {'RDP-NATIVE-AUTH-3','MIXED-NATIVE-RDP-TERMINAL','FILES-CLIPBOARD-OWNERSHIP','GUI-IPC-BACKGROUND-RDP-OWNERSHIP'}:return
  if a.r5_only and name not in {"RDP-NATIVE-AUTH-3","MACHINES-NATIVE-EDITOR","RDP-NATIVE-RESIZE-20","MACHINES-RESTART-1000","FILES-CLIPBOARD-OWNERSHIP","RDP-PROFILE-KEYRING-PREFERENCES","RDP-GUI-LIFECYCLE-API"}:return
  try:results.append({'id':name,'status':'PASS','details':fn()});print(name,'PASS',flush=True)
@@ -158,6 +159,50 @@ try:
   assert command('gui','rdp-inspect',rdp=0)['received_generation']==received
   return {'new_local_copy_preserved':True,'same_remote_generation_not_replayed':True}
  case('RDP-NATIVE-REPEATED-RECEIVE',repeated_receive_preserves_local_copy)
+ def automatic_clipboard():
+  proof=[]
+  for tab in range(3):
+   focus('gui');command('gui','rdp-switch',rdp=tab);command('gui','rdp-policy',rdp=tab,policy=0)
+   path=root/f'auto-local-{tab}.txt';payload=f'Automatic local copy tab {tab} Živjo 🦀'.encode();path.write_bytes(payload)
+   before=receipt(tab).get('received',0)
+   focus('peer');command('peer','set-text',file=path.name);focus('gui')
+   spike.eventually(lambda:receipt(tab).get('received',0)>before and receipt(tab).get('sha256')==digest(payload),12)
+   # Two consecutive remote copies while the same canvas remains focused.
+   for index in range(2):
+    name=f'auto-remote-{tab}-{index}.txt';data=f'Automatic remote {tab}/{index} 中文'.encode();(root/name).write_bytes(data)
+    before=command('gui','rdp-inspect',rdp=tab)['received_generation'];command(f'server-{tab}',format='text',file=name)
+    spike.eventually(lambda:command('gui','rdp-inspect',rdp=tab)['received_generation']>before,10)
+   focus('peer');first=command('peer','read-text');observed=[first];started=time.monotonic()
+   def clipboard_matches():
+    got=command('peer','read-text');observed.append(got);(root/f'auto-poll-{tab}.json').write_text(json.dumps({'expected':digest(data),'observed':observed,'gui':command('gui','rdp-inspect',rdp=tab)}));return got.get('sha256')==digest(data)
+   matched=first.get('sha256')==digest(data)
+   if not matched:spike.eventually(clipboard_matches,3)
+   record={'tab':tab,'expected_sha256':digest(data),'observed':observed,'settle_ms':(time.monotonic()-started)*1000}
+   (root/f'auto-observed-{tab}.json').write_text(json.dumps(record))
+   assert observed[-1].get('sha256')==digest(data),record
+   focus('gui')
+   for index in range(2):
+    name=f'auto-png-{tab}-{index}.png';pixels=bytes([tab+20,50+index*70,99,255])*(64*64);Image.frombytes('RGBA',(64,64),pixels).save(root/name)
+    before=command('gui','rdp-inspect',rdp=tab)['received_generation'];command(f'server-{tab}',format='png',file=name)
+    spike.eventually(lambda:command('gui','rdp-inspect',rdp=tab)['received_generation']>before,10)
+   focus('peer');actual=command('peer','read-png');assert actual.get('pixel_sha256')==digest(pixels),actual
+   proof.append({'tab':tab,'automatic_send':True,'consecutive_automatic_receives':2,'consecutive_automatic_png_receives':2})
+  return {'tabs':proof,'explicit_send_receive_actions':0}
+ case('RDP-NATIVE-AUTOMATIC-CLIPBOARD-3',automatic_clipboard)
+ def newer_offer_during_read():
+  focus('gui');command('gui','rdp-switch',rdp=0);command('gui','rdp-policy',rdp=0,policy=0)
+  (root/'offer-old.txt').write_bytes(b'OLD-INFLIGHT-GENERATED');new=b'NEWEST-GENERATED-CLIPBOARD';(root/'offer-new.txt').write_bytes(new)
+  p=root/'server-0-pending.json';before_requests=json.loads(p.read_text())['requests']if p.exists()else 0
+  before=command('gui','rdp-inspect',rdp=0)['received_generation']
+  command('server-0',format='text',file='offer-old.txt',delay_ms=800)
+  spike.eventually(lambda:p.exists()and json.loads(p.read_text())['requests']>before_requests)
+  command('server-0',format='text',file='offer-new.txt')
+  spike.eventually(lambda:command('gui','rdp-inspect',rdp=0)['received_generation']>before,12)
+  focus('peer');assert command('peer','read-text')['sha256']==digest(new)
+  assert json.loads(p.read_text())['requests']>=before_requests+2
+  return {'first_response_delay_ms':800,'newest_copy_received':True,'explicit_receive_actions':0}
+ case('RDP-NATIVE-SUPERSEDED-CLIPBOARD-READ',newer_offer_during_read)
+
 
  def reconnect():
   focus('gui');command('gui','rdp-switch',rdp=0);started=time.perf_counter();command('server-0','disconnect')

@@ -1018,6 +1018,7 @@ pub struct RdpView {
     resize_at: Cell<Option<std::time::Instant>>,
     requested: Cell<(u16, u16)>,
     pending_super: RefCell<crate::remote_keys::DeferredSuper>,
+    clipboard_refresh_pending: Cell<bool>,
     held: RefCell<HashSet<(u8, bool)>>,
     buttons: RefCell<HashSet<u32>>,
     pointer_position: Cell<(u16, u16)>,
@@ -1185,6 +1186,7 @@ impl RdpView {
             resize_at: Cell::new(None),
             requested: Cell::new((0, 0)),
             pending_super: RefCell::new(Default::default()),
+            clipboard_refresh_pending: Cell::new(false),
             held: RefCell::new(HashSet::new()),
             buttons: RefCell::new(HashSet::new()),
             pointer_position: Cell::new((0, 0)),
@@ -1437,17 +1439,29 @@ impl RdpView {
             });
         }
         let w = Rc::downgrade(&v);
-        v.area.display().clipboard().connect_changed(move |clip| {
-            if let Some(v) = w.upgrade() {
-                if v.provider
-                    .borrow()
-                    .as_ref()
-                    .is_some_and(|p| clip.content().as_ref() == Some(p))
-                {
-                    return;
-                }
-                v.advertise(false);
+        v.area.display().clipboard().connect_changed(move |_| {
+            let Some(v) = w.upgrade() else {
+                return;
+            };
+            if v.clipboard_refresh_pending.replace(true) {
+                return;
             }
+            let w = w.clone();
+            // Run after every clipboard observer has advanced FocusBroker's
+            // ownership epoch. Signal registration order must not authorize
+            // stale remote offers or make fresh local copies disappear.
+            glib::idle_add_local_once(move || {
+                if let Some(v) = w.upgrade() {
+                    v.clipboard_refresh_pending.set(false);
+                    if v.broker.borrow().active() == Some(v.id.as_str()) {
+                        v.bridge
+                            .borrow()
+                            .epoch
+                            .store(v.broker.borrow().epoch(), Ordering::Release);
+                        v.advertise(false);
+                    }
+                }
+            });
         });
         let paste = gtk::Button::with_label("Paste clipboard into remote");
         tools.insert(&paste, -1);
@@ -2420,20 +2434,39 @@ impl RdpView {
                             {
                                 match r {
                                     Ok(b) => {
-                                        let provider = gdk::ContentProvider::for_bytes(
-                                            if kind == Format::Text {
-                                                "text/plain;charset=utf-8"
-                                            } else {
-                                                kind.mime()
-                                            },
-                                            &glib::Bytes::from_owned(b),
-                                        );
+                                        let mime = if kind == Format::Text {
+                                            "text/plain;charset=utf-8"
+                                        } else {
+                                            kind.mime()
+                                        };
+                                        let clip = v.area.display().clipboard();
+                                        let current = v.provider.borrow().as_ref()
+                                            .filter(|p| clip.content().as_ref() == Some(p))
+                                            .and_then(|p| p.clone().downcast::<crate::remote_content::RemoteContent>().ok())
+                                            .filter(|p| p.mime() == Some(mime));
+                                        let bytes = glib::Bytes::from_owned(b);
+                                        let reused = current.is_some();
+                                        let provider: gdk::ContentProvider = if let Some(p) =
+                                            current
+                                        {
+                                            p.replace_bytes(bytes);
+                                            v.broker.borrow_mut().local_copy();
+                                            v.bridge.borrow().epoch.store(
+                                                v.broker.borrow().epoch(),
+                                                Ordering::Release,
+                                            );
+                                            p.upcast()
+                                        } else {
+                                            crate::remote_content::RemoteContent::new(mime, bytes)
+                                                .upcast()
+                                        };
                                         *v.provider.borrow_mut() = Some(provider.clone());
-                                        if v.area
-                                            .display()
-                                            .clipboard()
-                                            .set_content(Some(&provider))
-                                            .is_ok()
+                                        if reused
+                                            || v.area
+                                                .display()
+                                                .clipboard()
+                                                .set_content(Some(&provider))
+                                                .is_ok()
                                         {
                                             v.received_generation.set(generation);
                                             v.status.set_text(
@@ -2443,6 +2476,12 @@ impl RdpView {
                                     }
                                     Err(e) => v.status.set_text(&e),
                                 }
+                            }
+                            if v.remote.get().is_some_and(|o| o.2 != generation) {
+                                // An offer received during this read replaced its
+                                // generation. Request only that newest eligible
+                                // offer; receive rechecks focus/ownership/policy.
+                                v.receive(false);
                             }
                         }
                         glib::ControlFlow::Break
@@ -2612,13 +2651,20 @@ impl RdpView {
             return;
         }
 
-        if self.broker.borrow().active() != Some(self.id.as_str()) {
+        let changed = self.broker.borrow().active() != Some(self.id.as_str());
+        if changed {
             self.broker.borrow_mut().focus(Some(&self.id));
         }
         self.bridge
             .borrow()
             .epoch
             .store(self.broker.borrow().epoch(), Ordering::Release);
+        if changed {
+            // A Wayland selection can reach GDK before the window-active
+            // notification. Re-advertise the current local selection on focus;
+            // advertise still refuses this view's received remote provider.
+            self.advertise(false);
+        }
     }
     pub fn fixture_assist(self: &Rc<Self>, q: &serde_json::Value) -> serde_json::Value {
         if !self.profile_metadata.borrow().as_ref().is_some_and(|p| {

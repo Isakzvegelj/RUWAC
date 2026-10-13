@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v0.2.17 — 2026-10-13 — Stable source release
+
+- Restore automatic RDP clipboard delivery after window focus and clipboard ownership changes, and receive the newest offer when it supersedes an in-flight read.
+
 ## v0.2.16 — 2026-10-13 — Stable source release
 
 - Support GNOME image/png CLIPRDR offers, preserve newly copied local content against repeated Receive actions, and prevent compositor-consumed Super chords from opening the remote overview.

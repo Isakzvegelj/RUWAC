@@ -1,5 +1,68 @@
 # RUWAC product completion audit
 
+## External SSH image consumption and ephemeral Codex verification
+
+After owner reauthentication, an authorized EVF integration passed RUWAC SSH
+PNG transport, independent remote SHA-256, private file/directory modes, real
+Codex draft attachment and actual generated-image consumption. A separate
+`codex exec --ephemeral` run on EVF Codex 0.162.1 correctly read the same generated
+image with exit zero and no new persisted session files. It ran noninteractively
+in the owned fixture directory with a read-only sandbox, preserving owner
+configuration and existing terminal sessions. These are actual external-host
+consumer results, distinct from the native registered-SSH route's earlier
+loopback acceptance. The complete native GTK→external EVF consumer journey,
+saved destination contexts and other provider adapters remain separate gates.
+Earlier expired-token results below describe their historical baseline; they
+are superseded for this verified external CLI consumer journey.
+
+
+## Automatic RDP clipboard delivery
+
+Same-MIME received copies now reuse an owned GDK content provider and its
+selection source. Each consumer read snapshots the current immutable bytes;
+updates invalidate RUWAC's in-flight ownership tickets without discarding that
+selection. Three-tab tests verify two consecutive text and two consecutive PNG
+copies while each pair retains canvas focus. Format changes continue to use
+normal GDK selection claims; broader background format-transition/compositor
+and clipboard-manager persistence cases remain separate timing gates.
+
+Clipboard-change handling now coalesces one idle refresh per RDP view, after all
+GDK clipboard observers have advanced the shared ownership epoch. Only the
+current FocusBroker owner updates its bridge epoch and advertises eligible local
+formats. A newly focused RDP canvas re-advertises its current local selection,
+covering Wayland selection notifications that preceded window activation.
+Received providers are still excluded from reflection; Manual, Off and
+one-direction policies retain their existing restrictions.
+
+A newer remote format offer can arrive while a clipboard read is pending. The
+older result remains ineligible for promotion. After its decoding completes,
+RUWAC requests the newest offer only if the current focus, ownership epoch and
+policy still authorize automatic receipt. It retains one pending read and the
+latest offer metadata, rather than queuing every remote copy or replaying a
+cached inactive-session offer.
+
+The released baseline failed the actual authorized Fedora test without Send or
+Receive actions. The revised development candidate passed distinct Unicode text
+and distinct opaque RGBA PNG transfers both ways at 64×64 and 2560×1440, with
+bidirectional policy, automatic saved-account sign-in and authenticated desktop
+handover. The local seat/focus driving is isolated and synthetic; the remote
+GNOME desktop, CLIPRDR and GDK consumers are real. Owner profiles and existing
+sessions were preserved. The portable external driver now exposes `--automatic`
+with `--bidirectional`, requires explicit host authorization, and records that
+no explicit Send/Receive action was invoked.
+
+The native RDP regression suite adds automatic local-copy delivery across three
+loopback tabs, consecutive remote copies without changing canvas focus, and a
+bounded delayed-response fixture proving that a newer offer survives an
+in-flight read. These generated-desktop fixture results remain distinct from
+the real Fedora journey. The normal build/release acceptance runner validates
+both against the same frozen compiled artifacts before publication.
+
+Windows clipboard, three external RDP hosts, physical input, broader slow or
+malformed-peer timing and qualified Fedora distribution retain their separate
+acceptance gates. The full product completion matrix still applies.
+
+
 ## Fedora clipboard ownership and PNG interoperability
 
 The native CLIPRDR bridge advertises both registered PNG names, `PNG` and
@@ -134,7 +197,7 @@ The full product is not yet complete. The stable source lane contains operationa
 | C-06 PRIMARY/internal separation | Independent internal/CLIPBOARD tests | PARTIAL: PRIMARY protocol and physical middle-click acceptance |
 | C-07 application paste | Real GDK peer, native applications, 10 KiB/1 MiB payloads | PASS owned compositor |
 | C-08 local agent image | Real native GDK → Codex draft and actual consumption, including frontend close and preserved legacy engine | PASS scoped local Codex 0.162.1; synthetic local input, physical-seat gate separate |
-| C-09 remote agent image | Real authenticated SSH PNG transport, independent remote hash/modes and Codex draft acceptance | PARTIAL: actual consumption blocked by expired EVF Codex authentication; native registered SSH routing now passes real authenticated loopback transfer and actual Codex consumption; external EVF consumption still requires owner reauthentication |
+| C-09 remote agent image | Real authenticated SSH PNG transport, independent remote hash/modes and Codex draft acceptance | PARTIAL: actual external EVF CLI transfer/draft/consumption now passes after owner reauthentication; ephemeral noninteractive consumption creates no persisted session files. Native registered SSH routing passes real authenticated loopback transfer/consumption; the complete native external-host journey remains separate |
 | C-10 transactions/errors | Epoch cancellation, policies, reconnect and limits | PASS bounded fixture; further malformed/slow-server soak remains |
 | C-11 unsupported format/consumer | Visible staging errors and no fake attachment claim | PARTIAL: final destination/consumer fallback UX |
 | F-01 import | Explicit read-only Remmina preview, 70 imports, metadata backup | PARTIAL: explicit-ID reviewed merge, policy preservation, stale/active guards and Undo validated; broader nonsecret mapping/skip reporting remains |
