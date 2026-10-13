@@ -47,6 +47,9 @@ fn walk(layout: &workspace::Layout, out: &mut Vec<workspace::Layout>) {
 }
 impl Control {
     pub fn submit(self: &Rc<Self>, task: ipc::Task) {
+        self.submit_as(task, false);
+    }
+    fn submit_as(self: &Rc<Self>, task: ipc::Task, interactive: bool) {
         let method = task.request.method.clone();
         let params = task.request.params.as_object();
         let parse =
@@ -66,7 +69,7 @@ impl Control {
                             .ok_or_else(|| {
                                 error("INVALID_REQUEST", "Bounded snapshot name required")
                             })?;
-                        if !self.permission.get() {
+                        if !interactive && !self.permission.get() {
                             return Err(error(
                                 "PERMISSION_DENIED",
                                 "Workspace lifecycle control is disabled",
@@ -90,7 +93,7 @@ impl Control {
                             .ok_or_else(|| {
                                 error("INVALID_TARGET", "Explicit saved workspace ID required")
                             })?;
-                        if !self.permission.get() {
+                        if !interactive && !self.permission.get() {
                             return Err(error(
                                 "PERMISSION_DENIED",
                                 "Workspace lifecycle control is disabled",
@@ -169,7 +172,11 @@ impl Control {
         );
         let (tx, rx) = mpsc::sync_channel(1);
         let workers = self.workers.clone();
-        let gate = self.gate.clone();
+        let gate = if interactive {
+            std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true))
+        } else {
+            self.gate.clone()
+        };
         std::thread::spawn(move || {
             struct Count(std::sync::Arc<std::sync::atomic::AtomicUsize>);
             impl Drop for Count {
@@ -215,7 +222,7 @@ impl Control {
                             "GUI_TIMEOUT",
                             "Expired workspace request was not applied",
                         ))
-                    } else if !control.permission.get() {
+                    } else if !interactive && !control.permission.get() {
                         Err(error(
                             "PERMISSION_DENIED",
                             "Workspace permission was revoked",
@@ -262,11 +269,47 @@ impl Control {
             gtk::glib::ControlFlow::Break
         });
     }
+    pub fn user(self: &Rc<Self>, method: &str, params: Value, done: impl FnOnce(Answer) + 'static) {
+        let (tx, rx) = mpsc::sync_channel(1);
+        self.submit_as(
+            ipc::Task {
+                request: ruwac_protocol::request(method, params),
+                reply: tx,
+                actor_uid: unsafe { libc::geteuid() },
+                actor_pid: std::process::id() as i32,
+                expires: Instant::now() + Duration::from_secs(2),
+            },
+            true,
+        );
+        let mut done = Some(done);
+        let end = Instant::now() + Duration::from_secs(3);
+        gtk::glib::timeout_add_local(Duration::from_millis(10), move || {
+            let result = match rx.try_recv() {
+                Ok(r) => r,
+                Err(mpsc::TryRecvError::Empty) if Instant::now() < end => {
+                    return gtk::glib::ControlFlow::Continue;
+                }
+                _ => Err(error("GUI_TIMEOUT", "Workspace action deadline")),
+            };
+            if let Some(done) = done.take() {
+                done(result);
+            }
+            gtk::glib::ControlFlow::Break
+        });
+    }
     fn apply(
         &self,
-        snapshot: workspace_store::Snapshot,
+        mut snapshot: workspace_store::Snapshot,
         restore: bool,
     ) -> ruwac_protocol::Result<Value> {
+        if !self
+            .tabs
+            .root()
+            .and_downcast::<gtk::Window>()
+            .is_some_and(|w| w.is_visible())
+        {
+            return Err(error("GUI_UNAVAILABLE", "Workspace window closed"));
+        }
         let original_selected = self.tabs.selected_page();
         let current = (self.record)().map_err(|e| error("WORKSPACE_UNAVAILABLE", e))?;
         let roots = tiles::views(&self.tabs);
@@ -274,6 +317,17 @@ impl Control {
             .iter()
             .map(|w| (w.widget_name().to_string(), w.clone()))
             .collect();
+        let mut bound = HashMap::new();
+        for t in &current.tabs {
+            let mut leaves = Vec::new();
+            walk(&t.layout, &mut leaves);
+            for l in leaves {
+                if let Some(id) = l.view_id() {
+                    bound.insert(id.to_owned(), l);
+                }
+            }
+        }
+        let aliases = resolve_aliases(&mut snapshot.workspace, &bound);
         let mut wanted = Vec::new();
         for t in &snapshot.workspace.tabs {
             walk(&t.layout, &mut wanted);
@@ -287,16 +341,6 @@ impl Control {
             || self.tabs.n_pages() as usize + snapshot.workspace.tabs.len() > 64
         {
             return Err(error("LIMIT", "Workspace view or tab limit exceeded"));
-        }
-        let mut bound = HashMap::new();
-        for t in &current.tabs {
-            let mut leaves = Vec::new();
-            walk(&t.layout, &mut leaves);
-            for l in leaves {
-                if let Some(id) = l.view_id() {
-                    bound.insert(id.to_owned(), l);
-                }
-            }
         }
         // Existing IDs must keep their semantic target; snapshots cannot retarget a live connection.
         for l in &wanted {
@@ -323,8 +367,6 @@ impl Control {
                             "Saved view ID conflicts with its live target",
                         ));
                     }
-                } else if let workspace::Layout::Terminal { session, .. } = l {
-                    if bound.values().any(|other|matches!(other,workspace::Layout::Terminal{session:s,..}if s==session)){return Err(error("WORKSPACE_CONFLICT","Session is open with another view identity; preserve that view"));}
                 }
             }
         }
@@ -417,7 +459,7 @@ impl Control {
             }
         }
         Ok(
-            json!({"workspace_id":snapshot.id,"opened_tabs":tabs_to_restore.iter().map(|t|&t.id).collect::<Vec<_>>(),"already_open_tabs":preserved,"restored":restore,"additional_views_preserved":extras.len(),"remote_connections_started":false,"terminal_processes_started":false}),
+            json!({"workspace_id":snapshot.id,"view_identity_aliases":aliases,"opened_tabs":tabs_to_restore.iter().map(|t|&t.id).collect::<Vec<_>>(),"already_open_tabs":preserved,"restored":restore,"additional_views_preserved":extras.len(),"remote_connections_started":false,"terminal_processes_started":false}),
         )
     }
 }
@@ -429,4 +471,97 @@ fn audit(task: &ipc::Task, verdict: &str) {
         "{}",
         json!({"audit":"workspace_ipc","actor_uid":task.actor_uid,"actor_pid":task.actor_pid,"operation":task.request.method,"target":target,"verdict":verdict})
     );
+}
+
+fn resolve_aliases(
+    saved: &mut workspace::Workspace,
+    live: &HashMap<String, workspace::Layout>,
+) -> HashMap<String, String> {
+    let mut aliases = HashMap::new();
+    fn remap(
+        layout: &mut workspace::Layout,
+        live: &HashMap<String, workspace::Layout>,
+        aliases: &mut HashMap<String, String>,
+    ) {
+        match layout {
+            workspace::Layout::Terminal { view_id, session } if !live.contains_key(view_id) => {
+                if let Some((id, _)) = live.iter().find(
+                    |(_, l)| matches!(l,workspace::Layout::Terminal{session:s,..}if s==session),
+                ) {
+                    aliases.insert(view_id.clone(), id.clone());
+                    *view_id = id.clone();
+                }
+            }
+            workspace::Layout::Split { first, second, .. } => {
+                remap(first, live, aliases);
+                remap(second, live, aliases);
+            }
+            _ => (),
+        }
+    }
+    for tab in &mut saved.tabs {
+        remap(&mut tab.layout, live, &mut aliases);
+        if let Some(id) = tab.focused_view.as_ref() {
+            if let Some(actual) = aliases.get(id) {
+                tab.focused_view = Some(actual.clone());
+            }
+        }
+    }
+    aliases
+}
+
+#[cfg(test)]
+mod alias_tests {
+    use super::*;
+    fn terminal(view: &str, session: &str) -> workspace::Layout {
+        workspace::Layout::Terminal {
+            view_id: view.into(),
+            session: session.into(),
+        }
+    }
+    fn saved(layout: workspace::Layout) -> workspace::Workspace {
+        workspace::Workspace {
+            tabs: vec![workspace::Tab {
+                id: "tab_saved".into(),
+                title: "Saved".into(),
+                focused_view: Some("view_old".into()),
+                layout,
+            }],
+            ..Default::default()
+        }
+    }
+    #[test]
+    fn reopened_session_remaps_nested_layout_and_focus() {
+        let mut w = saved(workspace::Layout::Split {
+            vertical: true,
+            ratio: 0.5,
+            first: Box::new(terminal("view_old", "session_same")),
+            second: Box::new(terminal("view_other", "session_other")),
+        });
+        let live = HashMap::from([("view_new".into(), terminal("view_new", "session_same"))]);
+        assert_eq!(
+            resolve_aliases(&mut w, &live),
+            HashMap::from([("view_old".into(), "view_new".into())])
+        );
+        assert_eq!(w.tabs[0].focused_view.as_deref(), Some("view_new"));
+        if let workspace::Layout::Split { first, second, .. } = &w.tabs[0].layout {
+            assert_eq!(first.view_id(), Some("view_new"));
+            assert_eq!(second.view_id(), Some("view_other"));
+        } else {
+            panic!("split lost");
+        }
+    }
+    #[test]
+    fn existing_identity_is_not_retargeted_and_other_sessions_do_not_alias() {
+        let live = HashMap::from([
+            ("view_old".into(), terminal("view_old", "session_conflict")),
+            ("view_new".into(), terminal("view_new", "session_same")),
+        ]);
+        let mut w = saved(terminal("view_old", "session_same"));
+        assert!(resolve_aliases(&mut w, &live).is_empty());
+        assert_eq!(w.tabs[0].layout.view_id(), Some("view_old"));
+        let mut other = saved(terminal("view_missing", "session_unknown"));
+        assert!(resolve_aliases(&mut other, &live).is_empty());
+        assert_eq!(other.tabs[0].layout.view_id(), Some("view_missing"));
+    }
 }

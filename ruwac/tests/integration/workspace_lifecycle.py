@@ -56,6 +56,45 @@ try:
  assert raw('workspace.open',{'id':snapshot,'password':'NO_AUDIT_SENTINEL'})['error']['code']=='INVALID_REQUEST'
  assert 'NO_AUDIT_SENTINEL'not in(root/'gui.log').read_text()
  cases.append({'id':'LIFECYCLE_PERMISSION_AND_PAYLOAD_BOUNDARIES','PASS':True})
+ # Native management works without granting IPC lifecycle permission.
+ command('workspace-permission',enabled=False)
+ assert command('workspace-picker',operation='show')['clicked']
+ eventually(lambda:'No saved'not in command('workspace-picker',operation='inspect').get('status','Loading') and 'Loading'not in command('workspace-picker',operation='inspect').get('status','Loading'))
+ command('workspace-picker',operation='save')
+ eventually(lambda:'Bounded snapshot name' in command('workspace-picker',operation='inspect').get('status',''))
+ command('workspace-picker',operation='name',value='Native layout')
+ command('workspace-picker',operation='save')
+ eventually(lambda:len(api(['saved'])['result']['saved_workspaces'])==2)
+ native_id=next(v['id']for v in api(['saved'])['result']['saved_workspaces']if v['name']=='Native layout')
+ assert api(['save','--name','Still denied'],False)['error']['code']=='PERMISSION_DENIED'
+ command('workspace-picker',operation='close')
+ cases.append({'id':'NATIVE_SAVE_VALIDATION_WITHOUT_AUTOMATION_GRANT','PASS':True})
+ # Reopening the same session through Sessions creates a fresh view identity.
+ state=listing();index=next(i for i,t in enumerate(state['tabs'])if t['id']==single['id'])
+ old_view=next(v for v in original['views']if v['tab']==single['id'])
+ before_snapshot=files[0].read_bytes()
+ command('close-tab',tab=index);eventually(lambda:len(identities())==4)
+ assert command('sessions-open')['clicked']
+ eventually(lambda:command('sessions-open',session=old_view['session'])['clicked'])
+ eventually(lambda:len(identities())==5)
+ new_view=next(v for v in listing()['views']if v.get('session')==old_view['session'])
+ assert new_view['id']!=old_view['id']
+ aliased_ids=identities();command('workspace-permission',enabled=True)
+ restored=api(['restore','--id',snapshot])['result']
+ assert restored['view_identity_aliases']=={old_view['id']:new_view['id']},restored
+ assert identities()==aliased_ids and pids()==all_pids
+ assert files[0].read_bytes()==before_snapshot
+ cases.append({'id':'REOPENED_SESSION_ALIAS_PRESERVES_PROCESS_AND_SNAPSHOT','PASS':True})
+ command('workspace-permission',enabled=False)
+ assert command('workspace-picker',operation='show')['clicked']
+ eventually(lambda:'Loading'not in command('workspace-picker',operation='inspect').get('status','Loading'))
+ assert command('workspace-picker',operation='restore',value=native_id)['clicked']
+ eventually(lambda:not command('workspace-picker',operation='inspect')['open'])
+ assert identities()==aliased_ids and pids()==all_pids
+ assert api(['restore','--id',snapshot],False)['error']['code']=='PERMISSION_DENIED'
+ cases.append({'id':'NATIVE_RESTORE_PRESERVES_REOPENED_SESSION_WITHOUT_AUTOMATION_GRANT','PASS':True})
+ all_ids=aliased_ids
+ command('workspace-permission',enabled=True)
  command('ipc-delay',ms=3200);result=api(['restore','--id',snapshot],False);assert result['error']['code']=='GUI_TIMEOUT';time.sleep(1.3);assert identities()==all_ids and pids()==all_pids
  cases.append({'id':'EXPIRED_REQUEST_DOES_NOT_APPLY','PASS':True})
  command('workspace-close');gui.wait(timeout=10);assert pids()==all_pids

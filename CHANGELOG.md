@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v0.2.11 — 2026-10-13 — Stable source release
+
+- Add a native saved-workspace picker and restore reopened terminal sessions through their current view identities without restarting shells or enabling automation access.
+
 ## v0.2.10 — 2026-10-13 — Stable source release
 
 - Add private named workspace snapshots and authenticated open/restore operations that preserve live views and terminal processes, with lifecycle permissions, deadlines and GUI-instance idempotency.

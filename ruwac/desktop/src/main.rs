@@ -27,6 +27,7 @@ mod view;
 mod worker;
 mod workspace;
 mod workspace_control;
+mod workspace_picker;
 mod workspace_store;
 use adw::prelude::*;
 use gtk::{gdk, glib};
@@ -352,6 +353,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
   });
   workspace::watch(&window,recorder.clone());
   let workspace_lifecycle=workspace_store::folder(&socket).ok().map(|folder|Rc::new(workspace_control::Control{tabs:tabs.clone(),memory:focus_memory.clone(),permission:control_policy.clone(),gate:control_gate.clone(),record:recorder.clone(),create:create_saved_view.clone(),known_sessions:known_sessions.clone(),socket:socket.clone(),folder,state:RefCell::new(Default::default()),workers:std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0))}));
+  if let Some(control)=workspace_lifecycle.as_ref(){header.pack_start(&workspace_picker::button(&window,control.clone()));}
   match ipc::Server::start(&socket){
    Ok((server,requests))=>{
     let (t,memory,focus,policy,terminal,remote,files)=(tabs.clone(),focus_memory.clone(),focus_view.clone(),control_policy.clone(),all.clone(),rdp_views.clone(),file_views.clone());
@@ -418,6 +420,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     "mixed-join"=>{reply(match tiles::join_focused(&tabs,q["tab"].as_i64().unwrap_or(-1)as i32,q["vertical"]==true,&focus_memory,&focus_view){Ok(())=>tiles::inspect(&tabs,&focus_memory),Err(e)=>json!({"error":e})});},
     "mixed-separate"=>{reply(match tiles::separate_focused(&tabs,&focus_memory,&focus_view){Ok(_)=>tiles::inspect(&tabs,&focus_memory),Err(e)=>json!({"error":e})});},
     "rdp-permission"=>{remote_consent.set_active(q["enabled"]==true);reply(json!({"rdp_lifecycle_control":remote_policy.get(),"native_checkbutton":true}));},
+    "workspace-picker"=>{if q["operation"]=="show"{reply(json!({"clicked":sessions::fixture(&window,"Workspaces…")}));}else{reply(workspace_picker::fixture(q["operation"].as_str().unwrap_or("inspect"),q["value"].as_str()));}},
     "workspace-permission"=>{consent.set_active(q["enabled"]==true);reply(json!({"focus_control":control_policy.get(),"native_checkbutton":true}));},
     "ipc-delay"=>{reply(json!({"synthetic_main_loop_delay":true}));std::thread::sleep(Duration::from_millis(q["ms"].as_u64().unwrap_or(0).min(4000)));},
     "view-focus"=>{reply(match tiles::focus_id(&tabs,q["id"].as_str().unwrap_or(""),&focus_view){Ok(())=>tiles::inspect(&tabs,&focus_memory),Err(e)=>json!({"error":e})});},
