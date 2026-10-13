@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v0.2.35 — 2026-10-13 — Stable source release
+
+- Bound transient publication API retries, measure real RDP pixels against FreeRDP, and reduce connection latency with TCP_NODELAY while preserving authentication and clipboard policy.
+
 ## v0.2.34 — 2026-10-13 — Stable source release
 
 - Deliver large native clipboard paste as one bounded PTY operation, with connection-owned staging, cancellation, expiry and legacy-daemon compatibility.

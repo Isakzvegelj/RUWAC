@@ -129,17 +129,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          python3 - <<'PYCODE'
-          import json, os, runpy, subprocess, time
-          helper = runpy.run_path('scripts/update-user.py')['automatic_release_verified']
-          helper.__globals__['api'] = lambda path: json.loads(subprocess.check_output(['gh','api','repos/'+os.environ['GITHUB_REPOSITORY']+path],text=True))
-          for attempt in range(60):
-              if helper({'commit':os.environ['GITHUB_SHA']}):
-                  break
-              time.sleep(20)
-          else:
-              raise SystemExit('Testing assets held: exact-commit quality/privacy checks did not pass')
-          PYCODE
+          python3 scripts/verified-quality.py
       - name: Validate all artifact attestation subjects
         run: |
           python3 ruwac/tests/integration/test_testing_subjects.py

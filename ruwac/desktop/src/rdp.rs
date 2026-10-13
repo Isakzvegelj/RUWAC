@@ -478,6 +478,8 @@ async fn inspect_certificate(p: &Profile, previous: &Trust) -> Result<Review, St
     let tcp = tokio::net::TcpStream::connect((p.host.as_str(), p.port))
         .await
         .map_err(|_| "Certificate inspection TCP connection failed")?;
+    tcp.set_nodelay(true)
+        .map_err(|_| "Certificate inspection socket configuration failed")?;
     let addr = tcp
         .local_addr()
         .map_err(|_| "Certificate inspection address unavailable")?;
@@ -527,6 +529,9 @@ async fn run_session(
         let tcp = tokio::net::TcpStream::connect((p.host.as_str(), p.port))
             .await
             .map_err(|_| "RDP TCP connection failed".to_string())?;
+        // Interactive RDP and CredSSP records must not wait for TCP packet coalescing.
+        tcp.set_nodelay(true)
+            .map_err(|_| "RDP socket configuration failed".to_string())?;
         let addr = tcp
             .local_addr()
             .map_err(|_| "RDP socket address unavailable".to_string())?;

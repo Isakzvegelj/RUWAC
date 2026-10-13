@@ -1,19 +1,21 @@
-# RUWAC single-operation native paste
+# RUWAC publication resilience and measured RDP latency
 
-Native GTK clipboard paste stages UTF-8 chunks on the authenticated attached
-connection, then commits one complete bounded PTY write with one bracket pair.
-The daemon accepts at most 1 MiB per paste and sixteen simultaneous uploads.
-Nothing is sent before commit. Abort, disconnect, detach and a 30-second deadline
-release staged data; malformed offsets, oversized input, foreign tokens and
-embedded end markers are rejected. A timed-out commit is never replayed.
+The product-owned quality wait retries bounded GitHub timeout/429/5xx failures
+without treating them as passing checks. Access failures and completed source or
+privacy failures stop publication. Exact commit/workflow selection is preserved;
+dependency advisories remain separate and unsuppressed. Five transport/process
+fault tests cover retry, recovery, deadlines, access denial and immutable commit
+selection. Shared build/release infrastructure and version allocation are unchanged.
 
-Actual daemon/PTy tests cover a 1 MiB Unicode paste, staging isolation, duplicate
-commit refusal, cancellation, limits, disconnect cleanup and the elapsed deadline.
-An actual GDK clipboard peer and compiled GTK frontend on owned Wayland verify
-one wrapper pair with exact content. Existing plain clipboard tests remain.
-Older daemons accept small single-operation paste; large paste reports that the
-daemon needs updating rather than silently splitting a user operation.
+Authenticated same-endpoint FreeRDP comparisons now measure actual timestamped
+X11 pixels, first-frame time, CPU and RSS. Ten alternating trials per client with
+fifty frames each establish an A/B/A baseline. Disabling TCP packet coalescing for
+interactive RDP reduced measured TCP-accept-to-first-frame time from about 203 ms
+to 121 ms in the software fixture. TLS/CredSSP and explicit certificate trust
+remain intact. GTK paint latency and memory remain higher than the FreeRDP CLI.
+See the benchmark report for exact scopes, variation and empirical regression budgets.
 
-This is testing artifact qualification. Physical input, remaining external RDP
-interoperability, signed RPM repository, unattended RPM installation and the
-unsuppressed desktop RSA advisory remain separate open gates.
+This qualification uses generated loopback desktops and owned compositors.
+Windows/physical/3K interoperability, signed RPM repository, unattended RPM
+installation and desktop RSA remediation remain separate open requirements.
+Operational source releases and testing RPMs do not prove whole-product security.

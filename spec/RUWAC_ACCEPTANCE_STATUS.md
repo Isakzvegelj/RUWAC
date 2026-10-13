@@ -12,6 +12,7 @@ receipts and original reports are archived privately outside Git.
 | RDP authentication, framebuffer, text/PNG clipboard and focus ownership | PASS | Authenticated IronRDP loopback fixtures with generated credentials |
 | Fedora RDP sign-in and bidirectional text/PNG clipboard | PASS | Authorized Fedora RDP host; GNOME Remote Desktop 50.2 / GDM 50.3; simulated local input |
 | Windows RDP authentication and framebuffer | PASS | Windows test host; single authenticated connection |
+| RDP latency, CPU and memory comparison | PASS | Authenticated same-endpoint RUWAC/FreeRDP X11 fixture, ten alternating trials and fifty actual observed frames per client; external/physical and 3K scopes remain separate |
 | Windows dynamic display and external clipboard matrix | BLOCKED | Qualification incomplete |
 | Single-operation large native clipboard paste | PASS | Actual 1 MiB GDK transfer and daemon/PTy Unicode fixture; one bracket pair, staging/ownership/limits/expiry; synthetic GTK callback |
 | Desktop clipboard deadlines and stalled-provider cancellation | PASS | Real GDK/GIO on owned Wayland; generated incomplete provider, kernel-stream recovery and partial-file cleanup |

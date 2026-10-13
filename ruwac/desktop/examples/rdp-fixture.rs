@@ -16,6 +16,30 @@ use std::{
     sync::Arc,
     time::Duration,
 };
+fn fixture_monotonic_ns() -> anyhow::Result<u64> {
+    let mut stamp = libc::timespec {
+        tv_sec: 0,
+        tv_nsec: 0,
+    };
+    anyhow::ensure!(
+        unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut stamp) } == 0,
+        "fixture clock unavailable"
+    );
+    Ok(stamp.tv_sec as u64 * 1_000_000_000 + stamp.tv_nsec as u64)
+}
+fn fixture_stamp(path: &std::path::Path, value: serde_json::Value) -> anyhow::Result<()> {
+    use std::os::unix::fs::OpenOptionsExt;
+    let temporary = path.with_extension(format!("{}.tmp", fixture_monotonic_ns()?));
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(&temporary)?;
+    std::io::Write::write_all(&mut file, &serde_json::to_vec(&value)?)?;
+    drop(file);
+    std::fs::rename(temporary, path)?;
+    Ok(())
+}
 /// Receipt for generated loopback input only; never stores typed text.
 struct InputReceipt {
     path: PathBuf,
@@ -32,6 +56,7 @@ impl RdpServerInputHandler for InputReceipt {
     fn mouse(&mut self, _: MouseEvent) {}
 }
 struct Display {
+    marker: Option<PathBuf>,
     size: Arc<std::sync::Mutex<DesktopSize>>,
     tx: tokio::sync::mpsc::Sender<DesktopSize>,
     rx: Option<tokio::sync::mpsc::Receiver<DesktopSize>>,
@@ -40,17 +65,20 @@ struct Updates {
     size: Arc<std::sync::Mutex<DesktopSize>>,
     rx: tokio::sync::mpsc::Receiver<DesktopSize>,
     clock: tokio::time::Interval,
+    marker: Option<PathBuf>,
+    sequence: u32,
 }
 impl Display {
-    fn new() -> Self {
+    fn new(marker: Option<PathBuf>) -> Self {
         let (tx, rx) = tokio::sync::mpsc::channel(1);
         Self {
             size: Arc::new(std::sync::Mutex::new(DesktopSize {
-                width: 320,
-                height: 180,
+                width: if marker.is_some() { 640 } else { 320 },
+                height: if marker.is_some() { 480 } else { 180 },
             })),
             tx,
             rx: Some(rx),
+            marker,
         }
     }
 }
@@ -71,12 +99,17 @@ impl RdpServerDisplay for Display {
             size: self.size.clone(),
             rx,
             clock,
+            marker: self.marker.clone(),
+            sequence: 0,
         }))
     }
     fn request_layout(
         &mut self,
         layout: ironrdp::displaycontrol::pdu::DisplayControlMonitorLayout,
     ) {
+        if self.marker.is_some() {
+            return;
+        }
         if let Some(m) = layout.monitors().first() {
             let (w, h) = m.dimensions();
             if w <= 4096 && h <= 4096 {
@@ -94,11 +127,27 @@ impl RdpServerDisplayUpdates for Updates {
         tokio::select! {Some(size)=self.rx.recv()=>{*self.size.lock().unwrap()=size;return Ok(Some(DisplayUpdate::Resize(size)));},_=self.clock.tick()=>()}
         let size = *self.size.lock().unwrap();
         let (w, h) = (size.width as usize, size.height as usize);
+        self.sequence = self.sequence.wrapping_add(1);
+        let generated_ns = if self.marker.is_some() {
+            fixture_monotonic_ns()?
+        } else {
+            0
+        };
         let mut data = vec![0; w * h * 4];
         for (y, row) in data.chunks_mut(w * 4).enumerate() {
             for (x, p) in row.chunks_mut(4).enumerate() {
-                p.copy_from_slice(&[x as u8, y as u8, 90, 255]);
+                p.copy_from_slice(&if self.marker.is_some() {
+                    [211, (self.sequence >> 8) as u8, self.sequence as u8, 255]
+                } else {
+                    [x as u8, y as u8, 90, 255]
+                });
             }
+        }
+        if let Some(path) = &self.marker {
+            fixture_stamp(
+                path,
+                json!({"sequence":self.sequence,"generated_ns":generated_ns,"width":w,"height":h}),
+            )?;
         }
         Ok(Some(DisplayUpdate::Bitmap(BitmapUpdate {
             x: 0,
@@ -157,7 +206,10 @@ async fn run(dir: PathBuf) -> anyhow::Result<()> {
                 path: dir.join(format!("input-{port}.json")),
                 units: Vec::new(),
             })
-            .with_display_handler(Display::new())
+            .with_display_handler(Display::new(
+                (std::env::var("RUWAC_FIXTURE_FRAME_MARKERS").as_deref() == Ok("1"))
+                    .then(|| dir.join(format!("frame-marker-{tab}.json"))),
+            ))
             .with_bitmap_codecs(ironrdp::pdu::rdp::capability_sets::BitmapCodecs(Vec::new()))
             .with_cliprdr_factory(Some(Box::new(Factory(bridge.clone()))))
             .build();
@@ -167,11 +219,21 @@ async fn run(dir: PathBuf) -> anyhow::Result<()> {
             domain: None,
         }));
         let sender = server.event_sender().clone();
+        let accepted_marker = (std::env::var("RUWAC_FIXTURE_FRAME_MARKERS").as_deref() == Ok("1"))
+            .then(|| dir.join(format!("accepted-marker-{tab}.json")));
         let d = dir.clone();
         tokio::task::spawn_local(async move {
             loop {
                 match listener.accept().await {
                     Ok((s, _)) => {
+                        if let Some(path) = &accepted_marker {
+                            if fixture_monotonic_ns()
+                                .and_then(|ns| fixture_stamp(path, json!({"accepted_ns":ns})))
+                                .is_err()
+                            {
+                                break;
+                            }
+                        }
                         let _ = server.run_connection(s).await;
                     }
                     Err(_) => break,
