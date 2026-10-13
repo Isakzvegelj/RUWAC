@@ -2066,6 +2066,16 @@ impl RdpView {
     pub fn automation_reconnect(&self) -> Result<(), String> {
         self.begin_connect(false)
     }
+    pub fn event_state(&self) -> (String, bool) {
+        self.connection
+            .borrow()
+            .as_ref()
+            .map(|c| {
+                let s = c.state.lock().unwrap();
+                (s.phase.clone(), s.frames > 0)
+            })
+            .unwrap_or(("disconnected".into(), false))
+    }
     pub fn metadata(&self) -> serde_json::Value {
         let connection = self.connection.borrow();
         let phase = connection

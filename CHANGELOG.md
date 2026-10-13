@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v0.2.15 — 2026-10-13 — Stable source release
+
+- Add authenticated GUI metadata event subscriptions with typed filters, cursor paging, expiry, unsubscribe and explicit history-gap errors, without exposing terminal or clipboard contents.
+
 ## v0.2.14 — 2026-10-13 — Stable source release
 
 - Add authenticated remote Codex pane discovery and selection, with a read-only bounded process probe for launcher wrappers and foreground PID checks before attachment.

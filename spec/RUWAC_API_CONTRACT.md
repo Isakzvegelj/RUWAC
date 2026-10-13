@@ -335,3 +335,20 @@ Real authorized Fedora tests verify twelve explicit remote resolution changes, t
 Owner requires Connect to finish both GNOME authentication stages, select the saved Linux account and open its desktop. This remains unfinished; assisted field delivery is not a substitute for that requirement. Installed packages report GNOME Remote Desktop50.2 and GDM50.3; the live GDM Manager reports50.1. The package/source review is distinguished from that still-running daemon, which was not restarted. The inspected upstream50.2 source (60423c896a54e3eacb65bd93167e91c1ce5e648c) creates GDM displays using remote ID/hostname and performs RDP handover with server-generated credentials. No supported client-controlled second-stage autologon has been verified. [GNOME's configuration guide](https://github.com/GNOME/gnome-remote-desktop/blob/50.2/docs/configuration.md) describes system-wide authentication followed by user-specific graphical login. The upstream source is evaluation-only; no GPL implementation was copied into RUWAC. Read-only introspection on the authorized host also finds GDM CreateUserDisplay. The inspected GDM50.3 source (bb0f6ad980419def9fc6fb817d32ee22a65b0820) requires administrator Polkit authorization, creates a separate autologin display with no current remote ID and refuses an existing graphical session for that user. It is not completion of the current RDP greeter login. Neither this method nor any GDM settings/session mutation was invoked. No system-wide GDM autologin is enabled.
 
 Full-product gates remain: verified automatic Linux sign-in and external clipboard, physical desktop/input, broader terminal/transport/workspace/agent scope, unsuppressed RSA advisory and qualified Fedora binary/RPM distribution. This is an operational source release, not whole-product qualification.
+
+
+## GUI metadata event subscriptions
+
+Discover `workspace.events.subscribe`, `workspace.events.poll` and `workspace.events.unsubscribe` from `workspace.describe` (gui_api3). These use the existing same-UID GUI socket and protocol0 envelopes, including via authenticated SSH GUI forwarding. They start no GUI/daemon and grant no focus, lifecycle, clipboard or input permission.
+
+Subscribe takes only `types`, a nonempty unique array drawn from `tab`, `focus`, `layout`, `rdp`. It returns a subscription ID, GUI instance ID and current cursor. Poll takes only `subscription`, `after` (unsigned cursor) and `limit`1–50. It returns filtered `events`, the examined `cursor`, `head` and `more`. Continue with the returned cursor even for an empty filtered page. Unsubscribe takes only `subscription`. Idempotency keys are rejected.
+
+Subscriptions are bound to actor UID and one GUI process, capped at64, and expire after60seconds without a valid poll. A restarted frontend invalidates old subscriptions. The ring retains256 observations. `EVENT_GAP` means the cursor fell behind retained history; query workspace.list, unsubscribe if still live and create a new subscription. Missing/expired/foreign subscriptions produce STALE_SUBSCRIPTION. Unknown fields, duplicate/unknown types, future cursors and invalid limits are rejected.
+
+Delivery is explicit polling, not a socket push stream. The feed observes GUI state every100ms and coalesces intermediate changes; it is a state-notification feed, not an exact record of every GTK action or RDP handshake. Metadata contains stable IDs, tab open/close or layout-change markers, selected tab/input-focus view/window-active state, and RDP phase/frame-available booleans. No clipboard contents/MIME payloads, terminal text, profile names/server addresses, credentials or agent prompts enter the ring. Consumers query the existing snapshot/query methods for current state.
+
+```sh
+ruwac --socket DAEMON_SOCKET workspace events subscribe --types tab,focus,layout,rdp --json
+ruwac --socket DAEMON_SOCKET workspace events poll --subscription subscription_ID --after CURSOR --limit 50 --json
+ruwac --socket DAEMON_SOCKET workspace events unsubscribe --subscription subscription_ID --json
+```

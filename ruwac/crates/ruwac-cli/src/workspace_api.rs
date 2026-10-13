@@ -9,6 +9,9 @@ pub fn parse(namespace: &str, args: &[String]) -> io::Result<ruwac_protocol::Req
         return host_request(args);
     }
     let verb = args.first().ok_or_else(bad)?;
+    if namespace == "workspace" && verb == "events" {
+        return event_request(&args[1..]);
+    }
     let mut rest = &args[1..];
     if rest.last().is_some_and(|x| x == "--json") {
         rest = &rest[..rest.len() - 1];
@@ -53,6 +56,61 @@ pub fn parse(namespace: &str, args: &[String]) -> io::Result<ruwac_protocol::Req
         _ => return Err(bad()),
     };
     Ok(request(&format!("{namespace}.{verb}"), params))
+}
+fn event_request(args: &[String]) -> io::Result<ruwac_protocol::Request> {
+    let bad = || {
+        io::Error::other(
+            "Use workspace events subscribe --types tab,focus,layout,rdp; poll --subscription ID --after CURSOR --limit 1..50; unsubscribe --subscription ID",
+        )
+    };
+    let args = if args.last().is_some_and(|a| a == "--json") {
+        &args[..args.len() - 1]
+    } else {
+        args
+    };
+    let verb = args.first().ok_or_else(bad)?;
+    let rest = &args[1..];
+    let params = match verb.as_str() {
+        "subscribe" if rest.len() == 2 && rest[0] == "--types" => {
+            let types: Vec<_> = rest[1].split(',').collect();
+            if types.is_empty()
+                || types.len() > 4
+                || types
+                    .iter()
+                    .any(|k| !["tab", "focus", "layout", "rdp"].contains(k))
+                || types.iter().collect::<std::collections::HashSet<_>>().len() != types.len()
+            {
+                return Err(bad());
+            }
+            json!({"types":types})
+        }
+        "poll"
+            if rest.len() == 6
+                && rest[0] == "--subscription"
+                && rest[2] == "--after"
+                && rest[4] == "--limit" =>
+        {
+            if !ruwac_protocol::valid_id(&rest[1], "subscription") {
+                return Err(bad());
+            }
+            let after = rest[3].parse::<u64>().map_err(|_| bad())?;
+            let limit = rest[5]
+                .parse::<u64>()
+                .ok()
+                .filter(|n| (1..=50).contains(n))
+                .ok_or_else(bad)?;
+            json!({"subscription":rest[1],"after":after,"limit":limit})
+        }
+        "unsubscribe"
+            if rest.len() == 2
+                && rest[0] == "--subscription"
+                && ruwac_protocol::valid_id(&rest[1], "subscription") =>
+        {
+            json!({"subscription":rest[1]})
+        }
+        _ => return Err(bad()),
+    };
+    Ok(request(&format!("workspace.events.{verb}"), params))
 }
 pub fn exchange(socket: &Path, r: &ruwac_protocol::Request) -> io::Result<Value> {
     let r = r.clone();
@@ -159,6 +217,7 @@ fn host_request(args: &[String]) -> io::Result<ruwac_protocol::Request> {
         )
     };
     let verb = args.first().ok_or_else(bad)?;
+
     if !matches!(verb.as_str(), "list" | "query") {
         return Err(bad());
     }

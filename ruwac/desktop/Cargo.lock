@@ -3040,7 +3040,7 @@ checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
 
 [[package]]
 name = "ruwac-clipboard"
-version = "0.2.14"
+version = "0.2.15"
 dependencies = [
  "libc",
  "png",
@@ -3050,7 +3050,7 @@ dependencies = [
 
 [[package]]
 name = "ruwac-desktop"
-version = "0.2.14"
+version = "0.2.15"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3083,7 +3083,7 @@ dependencies = [
 
 [[package]]
 name = "ruwac-protocol"
-version = "0.2.14"
+version = "0.2.15"
 dependencies = [
  "serde",
  "serde_json",
