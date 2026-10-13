@@ -1,23 +1,22 @@
-# RUWAC independent terminal client focus
+# RUWAC Fedora testing RPM delivery
 
-Attached terminal clients now retain independent selected windows, panes, previous
-windows and zoom state. One client’s navigation no longer redirects another
-client’s input. Split topology, canonical terminal state and PTYs remain shared.
+The existing tagged release job now assembles separate Fedora 44 x86_64 upstream
+testing RPMs for the daemon/CLI and native desktop. The desktop requires the exact
+core package and declares its runtime dependencies; the headless RPM has no GTK or
+RDP dependency. Original and dependency licenses are preserved with each package.
 
-Shared PTYs use the documented minimum attached and visible-pane sizing policy.
-Closing a target repairs affected views without replacing surviving processes.
-New attachments use the persistent canonical default. Selection idempotency uses
-a fresh attachment namespace; shared creation and text mutations retain global
-deduplication. A cached creation does not replay UI focus onto a second client.
+Use build.sh --release --desktop --package rpm for local testing packages. The
+release controller continues to assign the application version. RPM metadata uses
+a generic build host and is checked for private disclosures; exact GitHub source
+provenance is verified before attaching RPM assets through the existing workflow.
 
-The generated integration fixture tests two real TUI processes, same-packet
-prefix/input routing, independent selection and zoom, minimum sizing, stale
-target repair, cross-session refusal and both idempotency policies. Existing
-terminal, GTK, clipboard, profile, file and authenticated local RDP regressions
-remain part of the normal validation workflow.
+RPM transactions do not restart daemons, close windows or alter private profiles.
+The RPM updater displays the release downloads and refuses per-user installation,
+rollback and automatic-install settings that would shadow the system package.
+System RPM updates currently require DNF; a signed automatic-update repository is
+not yet implemented. Existing per-user update delivery remains unchanged.
 
-Installing new binaries does not restart existing GUI windows or daemons. Older
-running daemons retain their existing behavior until deliberately replaced.
-Physical desktop input, Windows dynamic display/external clipboard and qualified
-Fedora RPM distribution remain separate acceptance gates. Testing archives are
-not qualified RPMs. RUSTSEC-2023-0071 remains visible and unsuppressed.
+Tests distinguish real payload/executable checks and private RPM database
+upgrade/removal using host libraries and --nodeps from a clean Fedora DNF
+installation. These unsigned testing RPMs are not official Fedora packages or
+complete security qualification. The desktop RSA advisory remains unsuppressed.

@@ -168,3 +168,27 @@ Native windows, the overlay sidebar and GNOME dual-credential storage are docume
 Fedora 44 updates: use the header's update icon or `ruwac update --check` and `ruwac update --install`. Automatic checks announce newer stable GitHub releases; explicit installation builds published source locally and retains active sessions and the previous version. See [prerequisites, bootstrap and rollback](spec/RUWAC_UPDATES.md). Prebuilt RPM delivery remains open.
 
 The native Files view supports SFTP and verified staged rsync copies of files and folders. See [SSH file transfers](spec/RUWAC_FILES.md) for authentication, replacement and cancellation behavior.
+
+## Fedora testing RPMs
+
+Tagged releases provide upstream Fedora 44 x86_64 testing RPMs: `ruwac` contains
+only the daemon/CLI; `ruwac-desktop` adds GTK/RDP and depends on the matching core
+package. Download both RPMs and their checksum/provenance assets from the same
+release, then install the downloaded files with `sudo dnf install ./ruwac-*.rpm`.
+Launch the system package explicitly with `/usr/bin/ruwac gui` if a prior per-user
+installation is also present. RPM transactions do not restart sessions or alter
+private profiles and credentials.
+
+Build testing packages through `./build.sh --release --desktop --package rpm`.
+Omit `--desktop` for the independent headless package. The controller-assigned
+Cargo version is reused; `1.fc44` is the fixed RPM packaging revision. Build output
+stays under the configured external build workspace. Repeated outputs are preserved.
+
+These upstream RPMs are unsigned RPM packages with GitHub workflow provenance;
+they are not Fedora repository or complete security qualification. Verify the
+published hashes and attestation before installation. Updates to system RPMs use
+DNF and the release's RPM files. The RPM UI opens the release downloads and refuses
+per-user automatic installation or rollback that would shadow the system package.
+Per-user source/testing-bundle updates remain available for separately installed
+per-user builds. RPM auto-installation and a signed package repository are not yet
+implemented. The desktop RSA advisory remains unsuppressed.

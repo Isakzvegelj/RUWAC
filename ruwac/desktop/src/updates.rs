@@ -5,9 +5,16 @@ use serde_json::Value;
 use std::{cell::Cell, rc::Rc, sync::mpsc, time::Duration};
 
 fn request(args: &[&str]) -> Result<Value, String> {
-    let output = std::process::Command::new("python3")
+    let managed =
+        std::env::current_exe().is_ok_and(|exe| ruwac_protocol::managed_rpm_installation(&exe));
+    let mut helper = std::process::Command::new("python3");
+    helper
         .arg("-c")
-        .arg(include_str!("../../../scripts/update-user.py"))
+        .arg(include_str!("../../../scripts/update-user.py"));
+    if managed {
+        helper.arg("--managed-rpm");
+    }
+    let output = helper
         .args(["--current", env!("CARGO_PKG_VERSION")])
         .args(args)
         .stderr(std::process::Stdio::null())
@@ -59,6 +66,23 @@ pub fn attach(header: &adw::HeaderBar, window: &adw::ApplicationWindow, automati
         let status = gtk::Label::new(Some("Checking GitHub…"));
         status.set_wrap(true); status.set_widget_name("update-status");
         content.append(&status);
+        if std::env::current_exe().is_ok_and(|exe| ruwac_protocol::managed_rpm_installation(&exe)) {
+            status.set_text("Checking GitHub for RPM updates…");
+            let detail = gtk::Label::new(Some("Installed with RPM. Download the verified Fedora RPMs and install them with DNF. Per-user automatic updates and rollback do not manage this system installation; running sessions remain open."));
+            detail.set_wrap(true); content.append(&detail);
+            content.append(&gtk::LinkButton::with_label("https://github.com/w3fans/RUWAC/releases/latest", "Open RPM releases"));
+            let label = status.downgrade();
+            task(&["--check"], move |result| {
+                if let Some(label) = label.upgrade() {
+                    label.set_text(&match result {
+                        Ok(value) if value["available"] == true => format!("RPM update {} is available. Open the release to download it.", value["latest"].as_str().unwrap_or("latest")),
+                        Ok(_) => "This running RPM version is current.".into(),
+                        Err(error) => format!("Unable to check RPM releases: {error}"),
+                    });
+                }
+            });
+            dialog.set_child(Some(&content)); dialog.present(); return;
+        }
         content.append(&gtk::Label::new(Some("Fedora 44 · builds published source locally\nPrevious installation and running sessions are retained.")));
         let install = gtk::Button::with_label("Build and install update");
         install.set_widget_name("update-install"); install.set_sensitive(false);

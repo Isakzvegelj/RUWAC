@@ -90,7 +90,7 @@ jobs:
           printf 'CFLAGS=-ffile-prefix-map=%s=/usr/src/ruwac -ffile-prefix-map=%s=/usr/src/build-home\n' "$GITHUB_WORKSPACE" "$HOME" >> "$GITHUB_ENV"
           printf 'CXXFLAGS=-ffile-prefix-map=%s=/usr/src/ruwac -ffile-prefix-map=%s=/usr/src/build-home\n' "$GITHUB_WORKSPACE" "$HOME" >> "$GITHUB_ENV"
       - name: Install Fedora build and scanner dependencies
-        run: dnf install -y git cargo rust gcc gcc-c++ cmake perl openssl openssl-devel pkgconf-pkg-config gtk4-devel libadwaita-devel libssh2-devel sqlite-devel python3 curl tar gzip gh
+        run: dnf install -y git cargo rust gcc gcc-c++ cmake perl openssl openssl-devel pkgconf-pkg-config gtk4-devel libadwaita-devel libssh2-devel sqlite-devel python3 curl tar gzip gh rpm-build desktop-file-utils
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           persist-credentials: false
@@ -120,6 +120,11 @@ jobs:
           mkdir -p "$RUNNER_TEMP/privacy-tools"
           tar -xzf "$RUNNER_TEMP/gitleaks.tar.gz" -C "$RUNNER_TEMP/privacy-tools" gitleaks
           RUWAC_GITLEAKS="$RUNNER_TEMP/privacy-tools/gitleaks" python3 scripts/bundle-user.py --build-root "$GITHUB_WORKSPACE" --output "$RUNNER_TEMP/bundles" > "$RUNNER_TEMP/bundle.json"
+      - name: Assemble split Fedora testing RPMs and validate the desktop launcher
+        run: |
+          desktop-file-validate ruwac/packaging/ruwac.desktop
+          RUWAC_GITLEAKS="$RUNNER_TEMP/privacy-tools/gitleaks" python3 scripts/rpm-user.py --build-root "$GITHUB_WORKSPACE" --output "$RUNNER_TEMP/rpms" --require-tag > "$RUNNER_TEMP/rpm-receipt.json"
+          python3 ruwac/tests/integration/rpm_packages.py --rpms "$RUNNER_TEMP/rpms" --evidence "$RUNNER_TEMP/rpm-evidence" --query-only
       - name: Wait for quality and privacy on the exact source commit
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -139,7 +144,9 @@ jobs:
         id: provenance
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
         with:
-          subject-path: ${{ runner.temp }}/bundles/*.tar.gz
+          subject-path: |
+            ${{ runner.temp }}/bundles/*.tar.gz
+            ${{ runner.temp }}/rpms/*.rpm
           show-summary: false
       - name: Verify provenance identity and retain the signed bundle
         env:
@@ -151,9 +158,11 @@ jobs:
           from pathlib import Path
           archives = list((Path(os.environ['RUNNER_TEMP'])/'bundles').glob('*.tar.gz'))
           assert len(archives) == 1
-          archive = archives[0]
-          subprocess.run(['gh','attestation','verify',str(archive),'--repo','w3fans/RUWAC','--signer-workflow','w3fans/RUWAC/.github/workflows/release.yml','--source-ref',os.environ['GITHUB_REF'],'--source-digest',os.environ['GITHUB_SHA'],'--deny-self-hosted-runners','--bundle',os.environ['ATTESTATION_BUNDLE']],check=True)
-          shutil.copyfile(os.environ['ATTESTATION_BUNDLE'],archive.with_name(archive.name+'.sigstore.json'))
+          rpms = list((Path(os.environ['RUNNER_TEMP'])/'rpms').glob('*.rpm'))
+          assert len(rpms) == 2
+          for archive in archives + rpms:
+              subprocess.run(['gh','attestation','verify',str(archive),'--repo','w3fans/RUWAC','--signer-workflow','w3fans/RUWAC/.github/workflows/release.yml','--source-ref',os.environ['GITHUB_REF'],'--source-digest',os.environ['GITHUB_SHA'],'--deny-self-hosted-runners','--bundle',os.environ['ATTESTATION_BUNDLE']],check=True)
+              shutil.copyfile(os.environ['ATTESTATION_BUNDLE'],archive.with_name(archive.name+'.sigstore.json'))
           PYCODE
       - name: Attach immutable testing assets to the existing release
         env:
@@ -164,7 +173,8 @@ jobs:
           import hashlib, json, os, subprocess
           from pathlib import Path
           tag = os.environ['GITHUB_REF_NAME']
-          for path in sorted((Path(os.environ['RUNNER_TEMP'])/'bundles').iterdir()):
+          directories = [Path(os.environ['RUNNER_TEMP'])/'bundles', Path(os.environ['RUNNER_TEMP'])/'rpms']
+          for path in sorted(p for directory in directories for p in directory.iterdir()):
               release = json.loads(subprocess.check_output(['gh','api','repos/'+os.environ['GITHUB_REPOSITORY']+'/releases/tags/'+tag],text=True))
               digest = 'sha256:' + hashlib.sha256(path.read_bytes()).hexdigest()
               existing = [a for a in release['assets'] if a['name'] == path.name]

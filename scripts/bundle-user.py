@@ -29,9 +29,11 @@ def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def runtime_packages(root):
+def runtime_packages(root, applications=None):
     packages = {}
     for manifest, application in [('ruwac/Cargo.toml', 'ruwac-cli'), ('ruwac/desktop/Cargo.toml', 'ruwac-desktop')]:
+        if applications is not None and application not in applications:
+            continue
         metadata = json.loads(subprocess.check_output([
             'cargo', 'metadata', '--locked', '--filter-platform', TARGET,
             '--format-version', '1', '--manifest-path', str(root / manifest),
@@ -221,7 +223,7 @@ def reviewed_diagnostic(finding, directory):
     return isinstance(number, int) and 0 < number <= len(lines) and hashlib.sha256(lines[number - 1]).hexdigest() in REVIEWED_BINARY_DIAGNOSTICS
 
 
-def scan(root, destination, require_private=False):
+def scan(root, destination, require_private=False, artifacts=("ruwac", "ruwac-desktop")):
     checker = runpy.run_path(str(root / 'scripts/privacy-check.py'))
     terms = checker['private_terms'](root, required=require_private)
     text_scan(root, destination, checker, terms)
@@ -230,7 +232,7 @@ def scan(root, destination, require_private=False):
         raise ValueError('A checksum-verified secret scanner is required for bundle assembly')
     # Raw matches are never placed in the bundle or echoed by this helper.
     with tempfile.TemporaryDirectory(prefix='.binary-scan-', dir=destination.parent) as temporary:
-        for name in ['ruwac', 'ruwac-desktop']:
+        for name in artifacts:
             found, strings = artifact_findings(destination / 'target/release' / name, checker, terms)
             if found:
                 raise ValueError('Artifact privacy scan failed; inspect privately')

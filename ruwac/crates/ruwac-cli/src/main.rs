@@ -237,9 +237,16 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         if host.is_some() || explicit_socket.is_some() {
             return Err("run updates locally on each machine, without --host or --socket".into());
         }
-        let status = std::process::Command::new("python3")
+        let managed =
+            std::env::current_exe().is_ok_and(|exe| ruwac_protocol::managed_rpm_installation(&exe));
+        let mut update = std::process::Command::new("python3");
+        update
             .arg("-c")
-            .arg(include_str!("../../../../scripts/update-user.py"))
+            .arg(include_str!("../../../../scripts/update-user.py"));
+        if managed {
+            update.arg("--managed-rpm");
+        }
+        let status = update
             .arg("--current")
             .arg(env!("CARGO_PKG_VERSION"))
             .args(&a[1..])

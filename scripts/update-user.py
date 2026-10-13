@@ -573,10 +573,27 @@ def main():
     parser.add_argument('--current', default='0.0.0')
     parser.add_argument('--prefix', type=Path, default=Path.home() / '.local')
     parser.add_argument('--headless', action='store_true')
+    parser.add_argument('--managed-rpm', action='store_true', help=argparse.SUPPRESS)
     args = parser.parse_args()
     if not args.bootstrap and args.current == '0.0.0':
         parser.error('--current is required except for bootstrap installation')
     version(args.current)
+    if args.managed_rpm:
+        if args.check:
+            result = latest(args.current)
+            result.update(distribution='rpm', running=args.current,
+                          update_method='Download verified RPM assets and install with DNF',
+                          updates_url='https://github.com/w3fans/RUWAC/releases/tag/' + result['tag'])
+        elif args.check_auto or args.install_auto:
+            result = {'distribution': 'rpm', 'available': False, 'automatic_install': False,
+                      'automatic_check': False, 'skipped': 'RPM updates are managed by DNF'}
+        elif args.auto_install == 'status' or args.auto_check == 'status' or args.testing_bundles == 'status':
+            result = {'distribution': 'rpm', 'automatic_install': False,
+                      'automatic_check': False, 'testing_bundles': False}
+        else:
+            raise ValueError('RPM installation is managed by DNF. Download the verified release RPMs and install with DNF; per-user installations and timers are unchanged.')
+        print(json.dumps(result))
+        return
     prefix = args.prefix.absolute()
     if args.testing_bundles:
         result = {'testing_bundles': testing_bundle_setting({'on': True, 'off': False}.get(args.testing_bundles))}

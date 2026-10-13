@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=RUWAC
+Comment=Persistent terminals, remote desktops and files
+Exec=/usr/bin/ruwac gui
+Icon=utilities-terminal
+Terminal=false
+Categories=System;TerminalEmulator;RemoteAccess;
+StartupNotify=true
+Actions=NewWindow;
+
+[Desktop Action NewWindow]
+Name=New window
+Exec=/usr/bin/ruwac-desktop --new-instance

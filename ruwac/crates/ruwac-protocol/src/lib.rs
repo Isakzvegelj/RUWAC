@@ -137,3 +137,22 @@ mod tests {
         assert!(checked_text(&"x".repeat(MAX_TEXT + 1)).is_err());
     }
 }
+
+/// Detect the distribution marker adjacent to this executable's installation.
+/// Version equality is intentionally unnecessary: an older process survives RPM upgrades.
+pub fn managed_rpm_installation(executable: &std::path::Path) -> bool {
+    let Some(prefix) = executable.parent().and_then(std::path::Path::parent) else {
+        return false;
+    };
+    let marker = prefix.join("share/ruwac/rpm-installation.json");
+    let Ok(metadata) = marker.metadata() else {
+        return false;
+    };
+    if !metadata.is_file() || metadata.len() > 8192 {
+        return false;
+    }
+    std::fs::read(marker)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+        .is_some_and(|value| value["kind"] == "fedora-testing-rpm")
+}
