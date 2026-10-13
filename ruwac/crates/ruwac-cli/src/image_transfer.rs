@@ -1,5 +1,5 @@
 //! Verified PNG stdin transport over the existing authenticated OpenSSH connection.
-use crate::{image, remote::Remote};
+use crate::image;
 use ruwac_protocol::{Request, request};
 use serde_json::{Value, json};
 use std::{
@@ -34,7 +34,14 @@ fn directory(path: &Path) -> io::Result<()> {
     }
     Ok(())
 }
-pub fn send(remote: &Remote, pane: &str, input: &str, destination: &str) -> io::Result<Value> {
+pub fn send(
+    host: &str,
+    rpc: &impl Fn(&Request) -> io::Result<Value>,
+    exchange: &impl Fn(Vec<u8>) -> io::Result<Value>,
+    pane: &str,
+    input: &str,
+    destination: &str,
+) -> io::Result<Value> {
     if !ruwac_protocol::valid_id(pane, "pane")
         || !Path::new(destination).is_absolute()
         || destination.len() > 512
@@ -44,7 +51,7 @@ pub fn send(remote: &Remote, pane: &str, input: &str, destination: &str) -> io::
             "Explicit pane and absolute remote staging directory required",
         ));
     }
-    let schema = remote.rpc(&request("schema", json!({})))?;
+    let schema = rpc(&request("schema", json!({})))?;
     if !schema["result"]["methods"]
         .as_array()
         .is_some_and(|m| m.iter().any(|m| m == "pane.attachImage"))
@@ -53,7 +60,7 @@ pub fn send(remote: &Remote, pane: &str, input: &str, destination: &str) -> io::
             "Remote daemon does not support image attachment; preserve it and use an explicitly selected current daemon",
         ));
     }
-    let job = remote.rpc(&request("job.query", json!({"pane":pane})))?;
+    let job = rpc(&request("job.query", json!({"pane":pane})))?;
     let pid = job["result"]["foreground"]["pid"]
         .as_u64()
         .ok_or_else(|| io::Error::other("Remote foreground unavailable"))?;
@@ -71,7 +78,7 @@ pub fn send(remote: &Remote, pane: &str, input: &str, destination: &str) -> io::
     let mut input = (encoded.len() as u32).to_be_bytes().to_vec();
     input.extend(encoded);
     input.extend(fs::read(&staged.path)?);
-    let response = remote.image_transfer(input)?;
+    let response = exchange(input)?;
     if response["version"] != 0 || response["id"] != id {
         return Err(io::Error::other("Image transfer correlation rejected"));
     }
@@ -105,7 +112,7 @@ pub fn send(remote: &Remote, pane: &str, input: &str, destination: &str) -> io::
         ));
     }
     let mut response = response;
-    response["result"]["remote_host"] = json!(remote.host);
+    response["result"]["remote_host"] = json!(host);
     response["result"]["transfer_verified"] = json!(true);
     Ok(response)
 }

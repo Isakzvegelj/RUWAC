@@ -24,7 +24,7 @@ Real acceptance uses a separate Wayland GDK clipboard producer and authenticated
 
 Native image staging is bounded to 128 files and 256 MiB per frontend namespace, with 64 MiB input/decoded-image and 4096-pixel dimension caps. Agent files survive frontend close. Retained namespaces expire after 24 hours from their most recent attachment; active-frontends check expiry each minute and later startup reclaims expired closed namespaces. Live transfer files and unknown entries are preserved. Four filesystem tests cover frontend-close retention, expiry, symlink refusal and nonblocking FIFO refusal. Process traversal is globally bounded to 64 entries. Errors retain uncertain queued files and advise inspecting the draft before retrying; already transmitted input cannot be recalled.
 
-This qualifies the supported local Codex image journey. SSH image transport/consumption, other agent adapters/models, physical input, external RDP clipboard and qualified Fedora packages remain open. Publication uses the existing build/release scripts and controller-managed numbering.
+This qualifies the supported local Codex image journey. External SSH image consumption and other agent adapters/models, physical input, external RDP clipboard and qualified Fedora packages remain open. Publication uses the existing build/release scripts and controller-managed numbering.
 
 ## Automatic GNOME sign-in — compiled package 0.2.6
 
@@ -85,7 +85,7 @@ The full product is not yet complete. The stable source lane contains operationa
 | C-06 PRIMARY/internal separation | Independent internal/CLIPBOARD tests | PARTIAL: PRIMARY protocol and physical middle-click acceptance |
 | C-07 application paste | Real GDK peer, native applications, 10 KiB/1 MiB payloads | PASS owned compositor |
 | C-08 local agent image | Real native GDK → Codex draft and actual consumption, including frontend close and preserved legacy engine | PASS scoped local Codex 0.162.1; synthetic local input, physical-seat gate separate |
-| C-09 remote agent image | Real authenticated SSH PNG transport, independent remote hash/modes and Codex draft acceptance | PARTIAL: actual consumption blocked by expired EVF Codex authentication; GTK remote routing also remains |
+| C-09 remote agent image | Real authenticated SSH PNG transport, independent remote hash/modes and Codex draft acceptance | PARTIAL: actual consumption blocked by expired EVF Codex authentication; native registered SSH routing now passes real authenticated loopback transfer and actual Codex consumption; external EVF consumption still requires owner reauthentication |
 | C-10 transactions/errors | Epoch cancellation, policies, reconnect and limits | PASS bounded fixture; further malformed/slow-server soak remains |
 | C-11 unsupported format/consumer | Visible staging errors and no fake attachment claim | PARTIAL: final destination/consumer fallback UX |
 | F-01 import | Explicit read-only Remmina preview, 70 imports, metadata backup | PARTIAL: explicit-ID reviewed merge, policy preservation, stale/active guards and Undo validated; broader nonsecret mapping/skip reporting remains |
@@ -108,3 +108,10 @@ Authorized Fedora SSH headless/real remote-PTY acceptance passed on 2026-10-11. 
 
 
 Owner requires automatic GNOME account selection and sign-in on Connect. The supported English Fedora GDM path now passes on a real authorized host. Universal/unattended background login remains unqualified; assisted delivery remains available for unsupported screens.
+
+
+## Native remote Codex image route
+
+Attach PNG to remote Codex… uses an explicit registered SSH profile, absolute remote daemon socket, stable pane ID and existing private staging directory. Endpoint ID, resolved account/address and explicit confirmation bind the reviewed destination. Profile edits require a fresh review; focus/tab/local-pane/profile changes cancel ongoing delivery. Passwords and key passphrases use the existing Secret Service/libssh2 components, strict known-host verification and selected private key; unsupported gateways are refused. The shared binary PNG sender/receiver retains hash/dimensions/mode/path/correlation and remote foreground guards. Four remote workers and per-read/transfer deadlines bound work outside GTK; the local daemon worker continues serving input/rendering. Local staging reserves three copies for this route. No automatic submission or retry occurs.
+
+Actual isolated Wayland/GDK plus generated-key authenticated loopback SSH passes native confirmation, invalid target and changed-profile refusals, real Codex draft attachment, frontend-close retention and actual image consumption. Existing local focus cancellation and ordinary-terminal refusal also pass. This is real SSH protocol/provider integration on CVF, with synthetic local input; it is not an external EVF consumption or physical desktop pass. The explicit destination is held for one operation; saved remote contexts, pane discovery and other agent adapters remain open. Remote receiver files remain available for the draft and require managed cleanup in the chosen staging directory.

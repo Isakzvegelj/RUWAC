@@ -299,7 +299,17 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                             .into(),
                     );
                 }
-                println!("{}", image_transfer::send(remote, &a[1], &a[2], &a[3])?);
+                println!(
+                    "{}",
+                    image_transfer::send(
+                        &remote.host,
+                        &|q| remote.rpc(q),
+                        &|input| remote.image_transfer(input),
+                        &a[1],
+                        &a[2],
+                        &a[3]
+                    )?
+                );
                 return Ok(());
             }
             Some("gui" | "serve" | "image-stage" | "image-receive" | "gui-request") => return Err(

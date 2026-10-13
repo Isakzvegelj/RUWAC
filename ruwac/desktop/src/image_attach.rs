@@ -112,6 +112,16 @@ pub fn clipboard(
     delay: Duration,
     done: impl FnOnce(Result<Value, String>) + 'static,
 ) {
+    clipboard_route(view, directory, selected, delay, None, done);
+}
+pub fn clipboard_route(
+    view: &std::rc::Rc<crate::view::View>,
+    directory: std::path::PathBuf,
+    selected: std::rc::Rc<dyn Fn() -> bool>,
+    delay: Duration,
+    remote: Option<crate::remote_image::Target>,
+    done: impl FnOnce(Result<Value, String>) + 'static,
+) {
     use gtk::prelude::*;
     use std::sync::{Arc, mpsc};
     view.focus();
@@ -135,13 +145,14 @@ pub fn clipboard(
         ));
         return;
     }
-    let limit = match crate::staging::available(&directory) {
-        Ok(v) => v,
-        Err(e) => {
-            done(Err(e.to_string()));
-            return;
-        }
-    };
+    let limit =
+        match crate::staging::available_copies(&directory, if remote.is_some() { 3 } else { 2 }) {
+            Ok(v) => v,
+            Err(e) => {
+                done(Err(e.to_string()));
+                return;
+            }
+        };
     let weak = std::rc::Rc::downgrade(view);
     crate::clipboard::ingest_png(
         &view.area.display().clipboard(),
@@ -177,16 +188,27 @@ pub fn clipboard(
             }
             let allowed = Arc::new(AtomicBool::new(true));
             let (send, receive) = mpsc::sync_channel(1);
-            if let Err(error) = view.worker.send(crate::worker::Command::AttachImage {
-                pane: view.target.borrow().clone(),
-                path: image.path.clone(),
-                allowed: allowed.clone(),
-                done: send,
-            }) {
+            let remote_delivery = remote.is_some();
+            let queued = if let Some(target) = remote {
+                let (path, ticket) = (image.path.clone(), allowed.clone());
+                std::thread::spawn(move || {
+                    let result = crate::remote_image::send(&target, &path, &ticket);
+                    let _ = send.send(result);
+                });
+                Ok(())
+            } else {
+                view.worker.send(crate::worker::Command::AttachImage {
+                    pane: view.target.borrow().clone(),
+                    path: image.path.clone(),
+                    allowed: allowed.clone(),
+                    done: send,
+                })
+            };
+            if let Err(error) = queued {
                 done(Err(error));
                 return;
             }
-            let end = Instant::now() + Duration::from_secs(15);
+            let end = Instant::now() + Duration::from_secs(if remote_delivery { 75 } else { 15 });
             let mut done = Some(done);
             gtk::glib::timeout_add_local(Duration::from_millis(16), move || {
                 let valid = weak.upgrade().is_some_and(|view| valid(&view));

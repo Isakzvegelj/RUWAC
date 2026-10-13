@@ -793,6 +793,7 @@ impl Drop for ConnectionLease {
 }
 pub type TrustSink = Rc<dyn Fn(&str, &str, &str) -> Result<(), String>>;
 pub type PreferenceSink = Rc<dyn Fn(&str, f64, bool, u32)>;
+pub type ImageProfileReader = Rc<dyn Fn(&str) -> Result<Profile, String>>;
 pub type InventoryReader = Rc<dyn Fn() -> Result<Vec<serde_json::Value>, ruwac_protocol::Error>>;
 pub type ProfileRestorer = Rc<dyn Fn(&str) -> Option<(Profile, PreferenceSink, ConnectionLease)>>;
 fn acquire(
@@ -856,6 +857,7 @@ pub fn sidebar(
     ProfileRestorer,
     ProfileRestorer,
     InventoryReader,
+    ImageProfileReader,
 ) {
     let root = gtk::Box::new(gtk::Orientation::Vertical, 6);
     root.set_width_request(180);
@@ -1449,6 +1451,23 @@ pub fn sidebar(
         gtk::glib::ControlFlow::Continue
     });
     refresh();
+    let image_store = store.clone();
+    let image_profile: ImageProfileReader = Rc::new(move |id| {
+        let s = image_store.borrow();
+        if s.error.is_some() || s.path.is_none() {
+            return Err("Machine library unavailable".into());
+        }
+        let p = s
+            .items
+            .iter()
+            .find(|p| p.id == id)
+            .ok_or("SSH profile no longer exists")?;
+        let p = resolve(p, &s.groups, &s.items)?;
+        if p.protocol != "SSH" || !p.preferences.gateway.is_empty() {
+            return Err("A direct registered SSH endpoint is required".into());
+        }
+        Ok(p)
+    });
     let inventory: InventoryReader = Rc::new(move || {
         let s = store.borrow();
         if s.path.is_none() || s.error.is_some() {
@@ -1466,7 +1485,7 @@ pub fn sidebar(
             json!({"id":p.id,"machine_id":p.machine_id,"name":p.name,"group":p.group,"protocol":p.protocol,"server":p.server,"favorite":p.favorite,"last_used":p.last_used,"tags":p.tags,"label":e.preferences.label,"network":e.preferences.network,"configuration_valid":valid})
         }).collect())
     });
-    (root, search, restore, remote, inventory)
+    (root, search, restore, remote, inventory, image_profile)
 }
 #[cfg(test)]
 mod tests {

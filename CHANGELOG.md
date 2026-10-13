@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v0.2.13 — 2026-10-13 — Stable source release
+
+- Add native clipboard PNG attachment to a confirmed registered SSH/Codex destination, reusing profile credentials and the verified binary transfer with focus/profile cancellation and bounded workers.
+
 ## v0.2.12 — 2026-10-13 — Stable source release
 
 - Add opt-in real-host RDP workspace acceptance proving repeated restoration preserves authenticated transport and receives fresh display frames; correct outdated backend/readiness descriptions.

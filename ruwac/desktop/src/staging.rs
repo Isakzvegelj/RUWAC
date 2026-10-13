@@ -22,6 +22,12 @@ fn now() -> u64 {
 }
 /// Reserve room for both the incoming source file and its validated final copy.
 pub fn available(path: &Path) -> io::Result<usize> {
+    available_copies(path, 2)
+}
+pub fn available_copies(path: &Path, copies: u64) -> io::Result<usize> {
+    if !(1..=4).contains(&copies) {
+        return Err(io::Error::other("Invalid image copy reservation"));
+    }
     if !owned_dir(path) {
         return Err(io::Error::other("Private image namespace required"));
     }
@@ -48,7 +54,7 @@ pub fn available(path: &Path) -> io::Result<usize> {
             "Image staging quota reached; discard old drafts before staging more",
         ));
     }
-    Ok(((MAX_STAGE_BYTES - bytes) / 2).min(ruwac_clipboard::MAX_IMAGE_BYTES as u64) as usize)
+    Ok(((MAX_STAGE_BYTES - bytes) / copies).min(ruwac_clipboard::MAX_IMAGE_BYTES as u64) as usize)
 }
 /// Keep attachment files across frontend close: Codex reads them when the user submits.
 /// A later frontend startup reclaims the owned namespace after 24 hours.
