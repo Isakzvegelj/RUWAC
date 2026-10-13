@@ -73,6 +73,59 @@ impl Rpc {
         Ok(v["result"].clone())
     }
 }
+fn paste(rpc: &mut Rpc, pane: &str, text: &str, atomic: bool, halt: &AtomicBool) -> io::Result<()> {
+    if text.len() > 1024 * 1024 || text.contains('\0') || text.contains("\x1b[201~") {
+        return Err(io::Error::other(
+            "paste text rejected before input delivery",
+        ));
+    }
+    if halt.load(Ordering::Relaxed) {
+        return Err(io::Error::other("paste cancelled before delivery"));
+    }
+    if !atomic {
+        if text.len() > 32 * 1024 {
+            return Err(io::Error::other(
+                "This daemon cannot accept a single large paste; update the daemon before retrying",
+            ));
+        }
+        rpc.call(
+            "client.input",
+            json!({"pane":pane,"kind":"paste","text":text}),
+        )?;
+        return Ok(());
+    }
+    let metadata = rpc.call(
+        "client.paste",
+        json!({"operation":"begin","pane":pane,"bytes":text.len()}),
+    )?;
+    let token = metadata["token"]
+        .as_str()
+        .ok_or_else(|| io::Error::other("paste token missing"))?;
+    let result = (|| -> io::Result<()> {
+        let mut offset = 0;
+        while offset < text.len() {
+            if halt.load(Ordering::Relaxed) {
+                return Err(io::Error::other("paste cancelled; no input committed"));
+            }
+            let mut end = (offset + 32 * 1024).min(text.len());
+            while !text.is_char_boundary(end) {
+                end -= 1;
+            }
+            rpc.call("client.paste", json!({"operation":"chunk","token":token,"offset":offset,"text":&text[offset..end]}))?;
+            offset = end;
+        }
+        if halt.load(Ordering::Relaxed) {
+            return Err(io::Error::other("paste cancelled; no input committed"));
+        }
+        rpc.call("client.paste", json!({"operation":"commit","token":token}))?;
+        Ok(())
+    })();
+    if result.is_err() {
+        // A timed-out commit may have reached the daemon. Never replay it.
+        let _ = rpc.call("client.paste", json!({"operation":"abort","token":token}));
+    }
+    result
+}
 #[derive(Debug)]
 pub enum Command {
     Rpc(String, Value),
@@ -238,39 +291,14 @@ impl Worker {
                                 }
                                 result.map(|()|("pane.history".into(),json!({"pane":pane,"text":text,"total_lines":total,"truncated":truncated,"buffer":if primary {"primary"}else{"active"}})))
                             }
-                            Command::Paste(pane, text) => {
-                                let mut rest = text.as_str();
-                                let mut sent = 0;
-                                let mut err = None;
-                                while !rest.is_empty() {
-                                    if halt.load(Ordering::Relaxed) {
-                                        err = Some(io::Error::other(format!(
-                                            "paste cancelled after {sent} bytes"
-                                        )));
-                                        break;
-                                    }
-                                    let mut n = rest.len().min(32 * 1024);
-                                    while !rest.is_char_boundary(n) {
-                                        n -= 1;
-                                    }
-                                    let chunk = &rest[..n];
-                                    if let Err(e) = rpc.call(
-                                        "client.input",
-                                        json!({"pane":pane,"kind":"paste","text":chunk}),
-                                    ) {
-                                        err = Some(io::Error::other(format!(
-                                            "paste failed after {sent} acknowledged bytes: {e}"
-                                        )));
-                                        break;
-                                    }
-                                    rest = &rest[n..];
-                                    sent += n;
-                                }
-                                match err {
-                                    Some(e) => Err(e),
-                                    None => Ok(("paste".into(), json!({"bytes":sent}))),
-                                }
-                            }
+                            Command::Paste(pane, text) => paste(
+                                &mut rpc,
+                                &pane,
+                                &text,
+                                capabilities["atomic_paste"] == true,
+                                &halt,
+                            )
+                            .map(|()| ("paste".into(), json!({"bytes":text.len()}))),
                         };
                         budget.fetch_sub(size, Ordering::Relaxed);
                         let mut s = st.lock().unwrap();

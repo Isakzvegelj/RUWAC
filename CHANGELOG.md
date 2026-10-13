@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v0.2.34 — 2026-10-13 — Stable source release
+
+- Deliver large native clipboard paste as one bounded PTY operation, with connection-owned staging, cancellation, expiry and legacy-daemon compatibility.
+
 ## v0.2.33 — 2026-10-13 — Stable source release
 
 - Qualify clean Fedora desktop RPM dependency resolution and rollback while preserving the daemon, PTY child and private configuration; select the supported Codex browser or prompt-free TUI without overriding user cx commands.

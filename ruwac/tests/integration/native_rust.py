@@ -135,6 +135,16 @@ try:
     unit='žółć 🧪\n\t"quotes"\\'.encode();payload=(unit*(size//len(unit)))+b'x'*(size%len(unit));(root/'text-fixture.utf8').write_bytes(payload);focus('peer');command('peer','set-text',file='text-fixture.utf8');time.sleep(.1);focus('gui');r=command('gui','read-text',timeout=10);assert r.get('sha256')==hashlib.sha256(payload).hexdigest(),r
     before=files[0].read_bytes();command('gui','paste');spike.eventually(lambda:files[0].read_bytes()==before+payload,20);return {'bytes':size,'sha256':r['sha256'],'exact_paste':True,'responsive':command('gui','inspect')}
    case('CLIP-R3-'+str(size),transfer)
+  def bracketed_large_paste():
+   rpc('pane.sendText',{'pane':targets[0],'text':'/paste-on/'});time.sleep(.3)
+   payload=b'x'*(1024*1024);(root/'text-fixture.utf8').write_bytes(payload)
+   focus('peer');command('peer','set-text',file='text-fixture.utf8');time.sleep(.1);focus('gui')
+   r=command('gui','read-text',timeout=10);assert r.get('sha256')==hashlib.sha256(payload).hexdigest(),r
+   before=files[0].read_bytes();command('gui','paste')
+   expected=before+b'\x1b[200~'+payload+b'\x1b[201~'
+   spike.eventually(lambda:files[0].read_bytes()==expected,20)
+   return {'bytes':len(payload),'one_begin_and_end_marker':True,'exact_payload':True,'source':'actual GDK peer clipboard, native GTK callback and real PTY; synthetic input'}
+  case('CLIP-single-large-bracketed-paste',bracketed_large_paste)
   def independent():
    rpc('buffer.set',{'session':one['session'],'text':'INTERNAL_A'});(root/'text-fixture.utf8').write_text('EXTERNAL_B');focus('peer');command('peer','set-text',file='text-fixture.utf8');time.sleep(.1);focus('gui');command('gui','read-text');assert rpc('buffer.get',{'session':one['session']})['text']=='INTERNAL_A';return {'internal_unchanged':True}
   case('CLIP-R2-internal',independent)

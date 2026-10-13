@@ -1,6 +1,7 @@
 mod image;
 mod jobs;
 mod layout;
+mod paste;
 mod recovery;
 use layout::{Layout, Rect};
 pub use recovery::Store;
@@ -67,6 +68,7 @@ impl Session {
     }
 }
 struct Client {
+    paste: Option<paste::Upload>,
     scope: String,
     session: String,
     rows: u16,
@@ -160,7 +162,7 @@ pub fn start_with_store(store: Option<Store>) -> std::io::Result<Handle> {
         loop {
             let m = tokio::select! {
                 m=rx.recv()=>match m {Some(m)=>m,None=>break},
-                _=timer.tick()=>{s.expire_histories();s.schedule_checkpoint(); continue;},
+                _=timer.tick()=>{s.expire_histories();s.expire_pastes();s.schedule_checkpoint(); continue;},
             };
             match m {
                 Message::Call(r, c, reply) => {
@@ -313,6 +315,7 @@ impl State {
                     | "session.detach"
                     | "client.render"
                     | "client.input"
+                    | "client.paste"
                     | "job.list"
                     | "job.query"
                     | "agent.probe"
@@ -568,6 +571,79 @@ impl State {
         self.histories
             .retain(|_, pin| pin.read_at.elapsed() < std::time::Duration::from_secs(30));
     }
+    fn expire_pastes(&mut self) {
+        for c in self.clients.values_mut() {
+            if c.paste.as_ref().is_some_and(paste::Upload::expired) {
+                c.paste = None;
+            }
+        }
+    }
+    fn paste(&mut self, v: &Value, client: &str) -> Result<Value> {
+        self.expire_pastes();
+        let operation = text(v, "operation")?;
+        if !self.clients.contains_key(client) {
+            return Err(Error::new("NOT_ATTACHED", "attach first"));
+        }
+        if operation == "begin" {
+            let pane = self.pane(v)?;
+            pane.live_pty()?;
+            if self.windows[&pane.window].session != self.clients[client].session {
+                return Err(Error::new(
+                    "TARGET_SESSION",
+                    "pane belongs to another session",
+                ));
+            }
+            let pane = pane.id.clone();
+            let total = paste::size(v, "bytes")?;
+            if self.clients.values().filter(|c| c.paste.is_some()).count() >= 16 {
+                return Err(Error::new("LIMIT", "maximum sixteen staged pastes"));
+            }
+            let c = self.clients.get_mut(client).unwrap();
+            if c.paste.is_some() {
+                return Err(Error::new("PASTE_BUSY", "abort existing paste first"));
+            }
+            let token = id("paste");
+            c.paste = Some(paste::Upload::new(token.clone(), pane, total));
+            return Ok(json!({"token":token}));
+        }
+        let token = text(v, "token")?;
+        let c = self.clients.get_mut(client).unwrap();
+        let upload = c
+            .paste
+            .as_mut()
+            .filter(|u| u.token == token)
+            .ok_or_else(|| {
+                Error::new(
+                    "STALE_ID",
+                    "paste absent, expired or owned by another connection",
+                )
+            })?;
+        match operation.as_str() {
+            "chunk" => {
+                let offset = paste::size(v, "offset")?;
+                upload.append(offset, &text(v, "text")?)?;
+                Ok(json!({"staged":true}))
+            }
+            "abort" => {
+                c.paste = None;
+                Ok(json!({"aborted":true}))
+            }
+            "commit" => {
+                let upload = c.paste.take().unwrap();
+                let p = self
+                    .panes
+                    .get(&upload.pane)
+                    .ok_or_else(|| Error::new("STALE_ID", "paste target closed"))?;
+                let bytes = upload.finish(p.term.paste())?;
+                let count = bytes.len();
+                p.live_pty()?
+                    .send(bytes)
+                    .map_err(|e| Error::new("BACKPRESSURE", e))?;
+                Ok(json!({"queued":true,"bytes":count}))
+            }
+            _ => Err(Error::new("INVALID_PARAMS", "unknown paste operation")),
+        }
+    }
     fn dispatch(&mut self, m: &str, v: &Value, client: &str) -> Result<Value> {
         match m {
             "health" => Ok(
@@ -577,7 +653,7 @@ impl State {
                 json!({"name":"ruwac","implementation":"spike","package":env!("CARGO_PKG_VERSION"),"protocol":0}),
             ),
             "capabilities" => Ok(
-                json!({"job_metadata":true,"job_metadata_no_argv":true,"structured_agent_state":false,"recovery":self.store.is_some(),"primary_buffer_history":true,"extended_terminal_styles":true,"kitty_keyboard_input":false,"history_checkpoints":"private canonical active and hidden primary tail, 50000 lines or 512 KiB per pane; processes restore ended","desktop_clipboard":false,"primary":false,"graphics":false,"image_attachment":true,"image_attachment_adapters":["codex draft path"],"image_attachment_submits":false,"ssh_transport":"authenticated OpenSSH through CLI --host","shared_focus":false,"independent_client_focus":true,"client_zoom":true,"pty_sizing":"minimum session dimensions and minimum visible pane size across attached clients","split":"persistent horizontal/vertical tree, sixteen panes","capture_limit":2000,"history_page_limit":500,"scrollback_default":50000,"max_text_bytes":ruwac_protocol::MAX_TEXT}),
+                json!({"job_metadata":true,"job_metadata_no_argv":true,"structured_agent_state":false,"recovery":self.store.is_some(),"primary_buffer_history":true,"extended_terminal_styles":true,"kitty_keyboard_input":false,"history_checkpoints":"private canonical active and hidden primary tail, 50000 lines or 512 KiB per pane; processes restore ended","desktop_clipboard":false,"primary":false,"graphics":false,"image_attachment":true,"image_attachment_adapters":["codex draft path"],"image_attachment_submits":false,"ssh_transport":"authenticated OpenSSH through CLI --host","shared_focus":false,"independent_client_focus":true,"client_zoom":true,"atomic_paste":true,"max_paste_bytes":paste::MAX_BYTES,"pty_sizing":"minimum session dimensions and minimum visible pane size across attached clients","split":"persistent horizontal/vertical tree, sixteen panes","capture_limit":2000,"history_page_limit":500,"scrollback_default":50000,"max_text_bytes":ruwac_protocol::MAX_TEXT}),
             ),
             "schema" => Ok(schema()),
             "describe" => Ok(
@@ -637,6 +713,7 @@ impl State {
                 self.clients.insert(
                     client.into(),
                     Client {
+                        paste: None,
                         scope: id("display"),
                         session: s.clone(),
                         rows,
@@ -1146,6 +1223,7 @@ impl State {
                 )
             }
 
+            "client.paste" => self.paste(v, client),
             "client.input" => {
                 let p = self.pane(v)?;
                 let c = self
@@ -1223,7 +1301,7 @@ impl State {
     }
 }
 pub fn schema() -> Value {
-    json!({"protocol":0,"framing":"u32 big-endian byte length + UTF-8 JSON","max_frame_bytes":ruwac_protocol::MAX_FRAME,"methods":["job.list","job.query","agent.probe","health","version","capabilities","schema","describe","session.create","session.list","session.attach","session.detach","window.create","window.list","window.rename","window.select","window.cycle","window.previous","pane.create","pane.layout","pane.history","pane.history.freeze","pane.history.release","pane.close","pane.list","pane.select","pane.attachImage","pane.sendText","pane.sendKey","pane.capture","pane.wait","buffer.set","buffer.get","buffer.paste","client.resize","client.render","client.input","events.subscribe","daemon.checkpoint","daemon.stop"],"targets":{"session":"session_ + 32 hex","window":"window_ + 32 hex","pane":"pane_ + 32 hex"},"request":{"version":0,"id":"JSON request correlation value","method":"method name","params":"object","idempotency_key":"optional 1..128 byte daemon-lifetime key"}})
+    json!({"protocol":0,"framing":"u32 big-endian byte length + UTF-8 JSON","max_frame_bytes":ruwac_protocol::MAX_FRAME,"methods":["job.list","job.query","agent.probe","health","version","capabilities","schema","describe","session.create","session.list","session.attach","session.detach","window.create","window.list","window.rename","window.select","window.cycle","window.previous","pane.create","pane.layout","pane.history","pane.history.freeze","pane.history.release","pane.close","pane.list","pane.select","pane.attachImage","pane.sendText","pane.sendKey","pane.capture","pane.wait","buffer.set","buffer.get","buffer.paste","client.resize","client.render","client.input","client.paste","events.subscribe","daemon.checkpoint","daemon.stop"],"targets":{"session":"session_ + 32 hex","window":"window_ + 32 hex","pane":"pane_ + 32 hex"},"request":{"version":0,"id":"JSON request correlation value","method":"method name","params":"object","idempotency_key":"optional 1..128 byte daemon-lifetime key"}})
 }
 
 fn primary_buffer(v: &Value) -> std::result::Result<bool, Error> {

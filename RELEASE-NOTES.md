@@ -1,20 +1,19 @@
-# RUWAC Fedora lifecycle and remote launcher compatibility
+# RUWAC single-operation native paste
 
-Fresh Fedora 44 testing now covers actual DNF dependency resolution, installation,
-matching core/desktop upgrade, rollback to a genuine prior build and removal.
-The daemon and raw-receiver PTY survive upgrade/rollback; generated private
-configuration is preserved. A reusable opt-in driver runs in a bounded disposable
-RAM filesystem and removes its own containers/mount without touching the host
-package database, homes, desktop or RDP sessions.
+Native GTK clipboard paste stages UTF-8 chunks on the authenticated attached
+connection, then commits one complete bounded PTY write with one bracket pair.
+The daemon accepts at most 1 MiB per paste and sixteen simultaneous uploads.
+Nothing is sent before commit. Abort, disconnect, detach and a 30-second deadline
+release staged data; malformed offsets, oversized input, foreign tokens and
+embedded end markers are rejected. A timed-out commit is never replayed.
 
-Remote Codex launch preserves an existing cx alias/function. Without one, a
-read-only help probe chooses the supported agents browser or the ordinary TUI
-without a positional prompt. Actual process-boundary regressions cover both CLI
-variants, command precedence and unavailable Codex; quoted bootstrap targets
-remain supported. Tests do not open interactive external agent threads.
+Actual daemon/PTy tests cover a 1 MiB Unicode paste, staging isolation, duplicate
+commit refusal, cancellation, limits, disconnect cleanup and the elapsed deadline.
+An actual GDK clipboard peer and compiled GTK frontend on owned Wayland verify
+one wrapper pair with exact content. Existing plain clipboard tests remain.
+Older daemons accept small single-operation paste; large paste reports that the
+daemon needs updating rather than silently splitting a user operation.
 
-System RPM updates use DNF. Per-user checked bundles retain opt-in unattended
-updates; the two installation modes remain separate. Physical input, Windows
-interoperability, complete external interactive launcher acceptance, a signed
-RPM repository and desktop RSA remediation remain open. These testing artifacts
-do not establish whole-product security/stability qualification.
+This is testing artifact qualification. Physical input, remaining external RDP
+interoperability, signed RPM repository, unattended RPM installation and the
+unsuppressed desktop RSA advisory remain separate open gates.
