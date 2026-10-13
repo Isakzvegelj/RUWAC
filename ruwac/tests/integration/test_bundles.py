@@ -1,0 +1,250 @@
+#!/usr/bin/env python3
+"""Candidate archive integrity and reversible installation tests, without network."""
+import contextlib
+import hashlib
+import importlib.util
+import io
+import json
+import os
+from pathlib import Path
+import runpy
+import shutil
+import struct
+import sys
+import tarfile
+import tempfile
+import unittest
+from unittest.mock import patch
+
+ROOT = Path(__file__).resolve().parents[3]
+SPEC = importlib.util.spec_from_file_location('ruwac_bundles', ROOT / 'scripts/bundle-user.py')
+bundles = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(bundles)
+
+
+class Bundles(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name)
+        self.environment = patch.dict(os.environ, {'XDG_CONFIG_HOME': str(self.root / 'config'), 'XDG_DATA_HOME': str(self.root / 'data')})
+        self.environment.start()
+
+    def tearDown(self):
+        self.environment.stop()
+        self.temp.cleanup()
+
+    def package(self):
+        source = self.root / 'registry/generated-package'
+        source.mkdir(parents=True)
+        (source / 'Cargo.toml').write_text('')
+        (source / 'LICENSE').write_text('Generated license fixture, not a real legal grant.\n')
+        (source / '.cargo-checksum.json').write_text(json.dumps({'files': {'LICENSE': bundles.digest(source / 'LICENSE')}}))
+        return {'name': 'generated-package', 'version': '1.0.0', 'manifest_path': str(source / 'Cargo.toml'), 'license': 'MIT', 'license_file': None, 'repository': 'https://example.org/generated'}
+
+    def fixture(self, version='0.0.1'):
+        root = self.root / ('bundle-' + version)
+        binary = root / 'target/release/ruwac'
+        binary.parent.mkdir(parents=True)
+        (root / 'ruwac').mkdir()
+        (root / 'ruwac/Cargo.toml').write_text('[workspace.package]\nversion="' + version + '"\n')
+        for name in ['ruwac', 'ruwac-desktop']:
+            binary = root / 'target/release' / name
+            binary.write_text('#!/bin/sh\nprintf "RUWAC ' + version + '\\n"\n')
+            binary.chmod(0o755)
+        (root / 'notices').mkdir()
+        (root / 'notices/index.json').write_text('{"generated":true}\n')
+        (root / 'LICENSE').write_text('Generated fixture\n')
+        files = {str(path.relative_to(root)): bundles.digest(path) for path in root.rglob('*') if path.is_file()}
+        manifest = {'schema': 1, 'kind': 'fedora-testing-bundle', 'version': version, 'source_commit': 'a' * 40,
+                    'distribution': 'fedora', 'distribution_version': '44', 'architecture': 'x86_64',
+                    'security_qualified': False, 'known_advisories': ['RUSTSEC-2023-0071'],
+                    'files': files, 'artifacts': {name: files['target/release/' + name] for name in ['ruwac', 'ruwac-desktop']}}
+        (root / 'bundle.json').write_text(json.dumps(manifest))
+        return root
+
+    def install(self, root):
+        prefix = self.root / 'prefix'
+        original = Path.read_text
+        def read(path, *args, **kwargs):
+            if str(path) == '/etc/os-release':
+                return 'ID=fedora\nVERSION_ID=44\n'
+            return original(path, *args, **kwargs)
+        with patch.object(sys, 'argv', ['installer', '--build-root', str(root), '--desktop', '--prefix', str(prefix)]), patch.object(Path, 'read_text', read), patch('platform.machine', return_value='x86_64'), contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            result = runpy.run_path(str(ROOT / 'scripts/install-user.py'), run_name='__main__')
+            os.close(result['lock'])
+        return prefix
+
+    def test_registry_license_tampering_is_rejected(self):
+        package = self.package()
+        documents = bundles.license_documents(self.root, package)
+        self.assertEqual(len(documents), 1)
+        documents[0][1].write_text('Modified fixture')
+        with self.assertRaisesRegex(ValueError, 'checksum'):
+            bundles.license_documents(self.root, package)
+
+    def test_notices_retain_exact_bytes_and_public_identity(self):
+        package = self.package()
+        output = self.root / 'notices'
+        rows = bundles.notices(self.root, output, [package])
+        self.assertEqual(rows[0]['name'], package['name'])
+        self.assertEqual((output / 'generated-package-1.0.0/LICENSE').read_bytes(), (Path(package['manifest_path']).parent / 'LICENSE').read_bytes())
+        self.assertNotIn(str(self.root), (output / 'index.json').read_text())
+
+    def test_unlisted_upstream_license_and_stale_vcs_fail_closed(self):
+        package = self.package()
+        source = Path(package['manifest_path']).parent
+        (source / 'LICENSE').unlink()
+        (source / '.cargo_vcs_info.json').write_text(json.dumps({'git': {'sha1': 'a' * 40}}))
+        (self.root / 'scripts').mkdir()
+        (self.root / 'scripts/license-sources.json').write_text('{"documents":[]}')
+        with self.assertRaisesRegex(ValueError, 'no verified'):
+            bundles.license_documents(self.root, package)
+        notice = self.root / 'ruwac/notices/generated-package-1.0.0/LICENSE-MIT'
+        notice.parent.mkdir(parents=True)
+        notice.write_text('Generated fixture')
+        (self.root / 'scripts/license-sources.json').write_text(json.dumps({'documents': [{'package': package['name'], 'version': package['version'], 'vcs_commit': 'b' * 40, 'file': str(notice.relative_to(self.root)), 'sha256': bundles.digest(notice), 'source': 'https://example.org/generated'}]}))
+        with self.assertRaisesRegex(ValueError, 'provenance'):
+            bundles.license_documents(self.root, package)
+
+    def test_archive_assembly_is_deterministic_and_has_no_private_headers(self):
+        directory = self.root / 'generated-archive'
+        directory.mkdir()
+        (directory / 'README').write_text('Generated fixture')
+        first, second = self.root / 'first.tar.gz', self.root / 'second.tar.gz'
+        bundles.archive(directory, first, 1)
+        bundles.archive(directory, second, 1)
+        self.assertEqual(first.read_bytes(), second.read_bytes())
+        with tarfile.open(first) as archive:
+            for member in archive.getmembers():
+                self.assertEqual(member.uid, 0)
+                self.assertEqual(member.uname, '')
+                self.assertNotIn(str(self.root), member.name)
+
+    def test_archive_refuses_symlinks_and_preserves_existing_output(self):
+        directory = self.root / 'generated-archive'
+        directory.mkdir()
+        (directory / 'linked').symlink_to(self.root / 'other')
+        with self.assertRaises(ValueError): bundles.archive(directory, self.root / 'archive.tar.gz', 1)
+        self.assertFalse((self.root / 'archive.tar.gz').exists())
+        existing = self.root / 'existing.tar.gz'; existing.write_text('preserve')
+        with self.assertRaises(FileExistsError): bundles.archive(directory, existing, 1)
+        self.assertEqual(existing.read_text(), 'preserve')
+
+    def test_bundle_install_needs_no_git_and_retains_notices_and_old_executable(self):
+        first = self.fixture()
+        prefix = self.install(first)
+        binary = (prefix / 'bin/ruwac').resolve()
+        inode = binary.stat().st_ino
+        self.install(self.fixture('0.0.2'))
+        self.assertEqual(binary.stat().st_ino, inode)
+        self.assertEqual((prefix / 'lib/ruwac/previous').readlink(), Path('releases/0.0.1'))
+        self.assertTrue((prefix / 'lib/ruwac/current/notices/index.json').is_file())
+        self.assertEqual(json.loads((prefix / 'lib/ruwac/current/installation.json').read_text())['source_commit'], 'a' * 40)
+
+    def test_tampered_bundle_is_rejected_before_any_executable_runs(self):
+        root = self.fixture()
+        (root / 'target/release/ruwac').write_text('#!/bin/sh\ntouch "' + str(self.root / 'executed') + '"\n')
+        with self.assertRaisesRegex(SystemExit, 'integrity'): self.install(root)
+        self.assertFalse((self.root / 'executed').exists())
+        self.assertFalse((self.root / 'prefix').exists())
+
+    def test_extra_files_and_directory_symlinks_are_rejected(self):
+        root = self.fixture()
+        (root / 'extra').write_text('Generated fixture')
+        with self.assertRaisesRegex(SystemExit, 'inventory'): self.install(root)
+        (root / 'extra').unlink()
+        (root / 'notices/linked').symlink_to(self.root, target_is_directory=True)
+        with self.assertRaisesRegex(SystemExit, 'symlinks'): self.install(root)
+
+    def test_wrong_architecture_or_security_claim_is_rejected(self):
+        root = self.fixture()
+        path = root / 'bundle.json'
+        manifest = json.loads(path.read_text())
+        manifest['architecture'] = 'generated-incompatible-architecture'
+        path.write_text(json.dumps(manifest))
+        with self.assertRaisesRegex(SystemExit, 'architecture'): self.install(root)
+        manifest['architecture'] = 'x86_64'; manifest['security_qualified'] = True
+        path.write_text(json.dumps(manifest))
+        with self.assertRaisesRegex(SystemExit, 'qualification'): self.install(root)
+
+    def elf(self, code, constants):
+        path = self.root / 'generated-elf'
+        table = 64
+        start = table + 3 * 64
+        header = struct.pack('<16sHHIQQQIHHHHHH', b'\x7fELF\x02\x01' + bytes(10), 3, 62, 1, 0, 0, table, 0, 64, 0, 0, 64, 3, 0)
+        sections = bytes(64) + struct.pack('<IIQQQQIIQQ', 0, 1, 6, 0, start, len(code), 0, 0, 1, 0) + struct.pack('<IIQQQQIIQQ', 0, 1, 2, 0, start + len(code), len(constants), 0, 0, 1, 0)
+        path.write_bytes(header + sections + code + constants)
+        return path
+
+    def test_elf_scanner_separates_opcode_bytes_from_private_text(self):
+        checker = runpy.run_path(str(ROOT / 'scripts/privacy-check.py'))
+        path = self.elf(b'\x90labx\x00', b'portable fixture\x00')
+        found, strings = bundles.artifact_findings(path, checker, ['labx'])
+        self.assertFalse(found)
+        self.assertNotIn(b'labx', strings)
+        path = self.elf(b'\x90', b'labx\x00')
+        self.assertTrue(bundles.artifact_findings(path, checker, ['labx'])[0])
+
+    def test_elf_scanner_rejects_long_private_values_even_in_code(self):
+        checker = runpy.run_path(str(ROOT / 'scripts/privacy-check.py'))
+        path = self.elf(b'generated-private-host\x00', b'portable fixture\x00')
+        self.assertTrue(bundles.artifact_findings(path, checker, ['generated-private-host'])[0])
+
+    def test_elf_scanner_rejects_key_material_but_allows_parser_markers(self):
+        checker = runpy.run_path(str(ROOT / 'scripts/privacy-check.py'))
+        marker = b'-----BEGIN ' + b'PRIVATE KEY-----'
+        path = self.elf(b'\x90', marker + b'\x00')
+        self.assertFalse(bundles.artifact_findings(path, checker, [])[0])
+        path = self.elf(b'\x90', marker + b'\n' + b'A' * 64 + b'\n-----END ' + b'PRIVATE KEY-----')
+        self.assertTrue(bundles.artifact_findings(path, checker, [])[0])
+
+    def test_elf_scanner_rejects_truncated_sections(self):
+        path = self.elf(b'\x90', b'portable fixture')
+        path.write_bytes(path.read_bytes()[:-4])
+        with self.assertRaisesRegex(ValueError, 'bounds'): bundles.binary_data(path)
+
+    def test_exact_reviewed_notice_cannot_allow_changed_or_other_text(self):
+        source = self.root / 'source'; source.mkdir()
+        destination = self.root / 'candidate'
+        notice = destination / 'notices/generated-1.0.0/LICENSE'
+        notice.parent.mkdir(parents=True)
+        notice.write_text('Generated upstream copyright generated-author-name\n')
+        policy = self.root / 'private-notice-review.json'
+        policy.write_text(json.dumps({'schema': 1, 'documents': {str(notice.relative_to(destination)): bundles.digest(notice)}}))
+        policy.chmod(0o600)
+        checker = runpy.run_path(str(ROOT / 'scripts/privacy-check.py'))
+        with patch.dict(os.environ, {'RUWAC_PRIVATE_NOTICE_ALLOWLIST': str(policy)}):
+            bundles.text_scan(source, destination, checker, ['generated-author-name'])
+            notice.write_text('Changed generated-author-name\n')
+            with self.assertRaises(ValueError): bundles.text_scan(source, destination, checker, ['generated-author-name'])
+            notice.unlink()
+            (destination / 'README').write_text('generated-author-name')
+            with self.assertRaises(ValueError): bundles.text_scan(source, destination, checker, ['generated-author-name'])
+
+    def test_notice_review_policy_rejects_public_permissions_and_source_paths(self):
+        source = self.root / 'source'; source.mkdir()
+        policy = self.root / 'private-notice-review.json'
+        policy.write_text('{"schema":1,"documents":{}}'); policy.chmod(0o644)
+        with patch.dict(os.environ, {'RUWAC_PRIVATE_NOTICE_ALLOWLIST': str(policy)}):
+            with self.assertRaises(ValueError): bundles.notice_allowlist(source)
+        policy.chmod(0o600)
+        with patch.dict(os.environ, {'RUWAC_PRIVATE_NOTICE_ALLOWLIST': str(policy)}):
+            with self.assertRaises(ValueError): bundles.notice_allowlist(self.root)
+
+    def test_scanner_diagnostic_review_is_exact_and_does_not_allow_other_findings(self):
+        directory = self.root / 'strings'; directory.mkdir()
+        path = directory / 'ruwac-desktop.txt'
+        generated = b'Generated static diagnostic fixture'
+        path.write_bytes(generated + b'\n')
+        finding = {'RuleID': 'generic-api-key', 'File': str(path), 'StartLine': 1, 'EndLine': 1}
+        with patch.object(bundles, 'REVIEWED_BINARY_DIAGNOSTICS', {hashlib.sha256(generated).hexdigest()}):
+            self.assertTrue(bundles.reviewed_diagnostic(finding, directory))
+            self.assertFalse(bundles.reviewed_diagnostic(dict(finding, RuleID='private-key'), directory))
+            path.write_bytes(generated + b' changed\n')
+            self.assertFalse(bundles.reviewed_diagnostic(finding, directory))
+            other = self.root / 'foreign.txt'; other.write_bytes(generated + b'\n')
+            self.assertFalse(bundles.reviewed_diagnostic(dict(finding, File=str(other)), directory))
+
+
+if __name__ == '__main__':
+    unittest.main()

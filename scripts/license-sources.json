@@ -1,0 +1,70 @@
+{
+  "schema": 1,
+  "scope": "License documents omitted from registry archives; retrieved from their recorded upstream VCS commits",
+  "documents": [
+    {
+      "package": "winscard",
+      "version": "0.3.3",
+      "vcs_commit": "fb5ce085e48c337b03968349f5e2e85c83959754",
+      "source": "https://raw.githubusercontent.com/devolutions/sspi-rs/fb5ce085e48c337b03968349f5e2e85c83959754/LICENSE-APACHE",
+      "file": "ruwac/notices/winscard-0.3.3/LICENSE-APACHE",
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    },
+    {
+      "package": "winscard",
+      "version": "0.3.3",
+      "vcs_commit": "fb5ce085e48c337b03968349f5e2e85c83959754",
+      "source": "https://raw.githubusercontent.com/devolutions/sspi-rs/fb5ce085e48c337b03968349f5e2e85c83959754/LICENSE-MIT",
+      "file": "ruwac/notices/winscard-0.3.3/LICENSE-MIT",
+      "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+    },
+    {
+      "package": "rustcrypto-ff_derive",
+      "version": "0.14.0-rc.0",
+      "vcs_commit": "8417973539baabf561975144e0a68d166d0f9a95",
+      "source": "https://raw.githubusercontent.com/zkcrypto/ff/8417973539baabf561975144e0a68d166d0f9a95/LICENSE-APACHE",
+      "file": "ruwac/notices/rustcrypto-ff_derive-0.14.0-rc.0/LICENSE-APACHE",
+      "sha256": "3708458dee7f359ac6c9c5558023ed481be87e5372c43ebd7f2ca7ad23c12026"
+    },
+    {
+      "package": "rustcrypto-ff_derive",
+      "version": "0.14.0-rc.0",
+      "vcs_commit": "8417973539baabf561975144e0a68d166d0f9a95",
+      "source": "https://raw.githubusercontent.com/zkcrypto/ff/8417973539baabf561975144e0a68d166d0f9a95/LICENSE-MIT",
+      "file": "ruwac/notices/rustcrypto-ff_derive-0.14.0-rc.0/LICENSE-MIT",
+      "sha256": "8d0c1d1d4b2bebf5b9211f0e883d5a482b7808f3ed31320da14ddee95811f4ef"
+    },
+    {
+      "package": "asn1-rs-impl",
+      "version": "0.2.0",
+      "vcs_commit": "a20e5f7319c896737ad0f2557037817b91ad854f",
+      "source": "https://raw.githubusercontent.com/rusticata/asn1-rs/a20e5f7319c896737ad0f2557037817b91ad854f/LICENSE-APACHE",
+      "file": "ruwac/notices/asn1-rs-impl-0.2.0/LICENSE-APACHE",
+      "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+    },
+    {
+      "package": "asn1-rs-impl",
+      "version": "0.2.0",
+      "vcs_commit": "a20e5f7319c896737ad0f2557037817b91ad854f",
+      "source": "https://raw.githubusercontent.com/rusticata/asn1-rs/a20e5f7319c896737ad0f2557037817b91ad854f/LICENSE-MIT",
+      "file": "ruwac/notices/asn1-rs-impl-0.2.0/LICENSE-MIT",
+      "sha256": "a5c61b93b6ee1d104af9920cf020ff3c7efe818e31fe562c72261847a728f513"
+    },
+    {
+      "package": "ironrdp-bulk",
+      "version": "0.1.1",
+      "vcs_commit": "e3dc0e70d04253d0f881e051c653fb8cb6403281",
+      "source": "https://raw.githubusercontent.com/Devolutions/IronRDP/e3dc0e70d04253d0f881e051c653fb8cb6403281/LICENSE-APACHE",
+      "file": "ruwac/notices/ironrdp-bulk-0.1.1/LICENSE-APACHE",
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    },
+    {
+      "package": "ironrdp-bulk",
+      "version": "0.1.1",
+      "vcs_commit": "e3dc0e70d04253d0f881e051c653fb8cb6403281",
+      "source": "https://raw.githubusercontent.com/Devolutions/IronRDP/e3dc0e70d04253d0f881e051c653fb8cb6403281/LICENSE-MIT",
+      "file": "ruwac/notices/ironrdp-bulk-0.1.1/LICENSE-MIT",
+      "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+    }
+  ]
+}

@@ -1,14 +1,16 @@
-# RUWAC rollback recovery fix
+# RUWAC Fedora testing-bundle preparation
 
-A deliberate rollback now disables unattended installation before switching to the
-verified previous artifacts. The timer cannot immediately reinstall the reverted
-update. Notification preferences and running terminal and RDP sessions are retained.
-Recovery does not depend on a running user service manager. Invalid receipts, locked
-preferences and preference-write failures prevent artifact changes. The GTK Updates
-dialog reflects the disabled setting and permits another recovery attempt.
+Add a product-owned candidate bundle assembler and Git-free per-user installation.
+Every bundled file is hashed before artifact execution. Symlinks, unexpected files,
+wrong architectures, stale license provenance and modified registry license texts
+are rejected. Immutable previous releases and running sessions are preserved.
 
-Validation covers portable updater faults and actual GTK callbacks on an isolated
-Wayland compositor with generated helper responses. Physical desktop acceptance and
-qualified Fedora binary distribution remain separate gates. See
-[installation and updates](spec/RUWAC_UPDATES.md). The desktop RSA advisory remains
-unsuppressed; historical privacy cleanup remains subject to owner authorization.
+Dependency notice generation retains original texts for the Linux runtime/build
+closure and supplements omitted texts from their pinned upstream VCS commits.
+Candidate archive headers are normalized and private-content/standard-secret checks
+are mandatory. The assembler does not allocate versions or publish artifacts.
+
+This remains a source release. Candidate bundles are not signed RPMs, publisher
+attestations or stable security qualification. RUSTSEC-2023-0071 remains unresolved.
+Windows dynamic display, physical input and qualified Fedora packaging remain open.
+See spec/RUWAC_BUNDLES.md and spec/RUWAC_UPDATES.md for installation and limits.

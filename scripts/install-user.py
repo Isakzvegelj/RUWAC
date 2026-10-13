@@ -1,11 +1,29 @@
 #!/usr/bin/env python3
 """Reversible per-user installation of built RUWAC artifacts; never allocates a version."""
-import argparse, fcntl, hashlib, json, os, re, shutil, stat, subprocess, tempfile, tomllib
+import argparse, fcntl, hashlib, json, os, platform, re, shutil, stat, subprocess, tempfile, tomllib
 from pathlib import Path
 p=argparse.ArgumentParser();p.add_argument('--build-root',type=Path,required=True);p.add_argument('--desktop',action='store_true');p.add_argument('--prefix',type=Path);a=p.parse_args()
 root=a.build_root.resolve();prefix=(a.prefix or Path.home()/'.local').absolute()
 version=tomllib.loads((root/'ruwac/Cargo.toml').read_text())['workspace']['package']['version']
 if not re.fullmatch(r'(0|[1-9][0-9]*)\.[0-9]\.([0-9]|[1-9][0-9])',version):raise SystemExit('Invalid controller-assigned numeric version')
+bundle=None
+if (root/'bundle.json').exists() or (root/'bundle.json').is_symlink():
+ path=root/'bundle.json'
+ if path.is_symlink() or not path.is_file() or path.stat().st_size>1024*1024:raise SystemExit('Unsafe bundle receipt')
+ bundle=json.loads(path.read_text())
+ if bundle.get('schema')!=1 or bundle.get('kind')!='fedora-testing-bundle' or bundle.get('version')!=version or not re.fullmatch(r'[0-9a-f]{40}',bundle.get('source_commit','')):raise SystemExit('Invalid candidate bundle identity')
+ if bundle.get('distribution')!='fedora' or bundle.get('distribution_version')!='44' or bundle.get('architecture')!=platform.machine() or 'ID=fedora\n'not in Path('/etc/os-release').read_text() or 'VERSION_ID=44\n'not in Path('/etc/os-release').read_text():raise SystemExit('Candidate bundle requires Fedora 44 and its declared architecture')
+ if bundle.get('security_qualified')is not False or bundle.get('known_advisories')!=['RUSTSEC-2023-0071']:raise SystemExit('Unknown bundle qualification; preserve it for review')
+ expected=bundle.get('files')
+ if not isinstance(expected,dict)or len(expected)>2000:raise SystemExit('Invalid bundle inventory')
+ if any(path.is_symlink()for path in root.rglob('*')):raise SystemExit('Candidate bundles cannot contain symlinks')
+ actual={str(path.relative_to(root))for path in root.rglob('*')if path.is_file()and path!=root/'bundle.json'}
+ if actual!=set(expected):raise SystemExit('Bundle file inventory differs from its receipt')
+ for name,digest in expected.items():
+  path=root/name
+  if Path(name).is_absolute()or '..'in Path(name).parts or path.is_symlink()or not path.resolve().is_relative_to(root)or not re.fullmatch(r'[0-9a-f]{64}',digest)or hashlib.sha256(path.read_bytes()).hexdigest()!=digest:raise SystemExit('Bundle file integrity failed')
+ if bundle.get('artifacts')!={name:expected.get('target/release/'+name)for name in ['ruwac','ruwac-desktop']}:raise SystemExit('Bundle artifact inventory mismatch')
+ print('Installing a Fedora testing candidate. Checksums verify archive integrity, not a signature. Known desktop advisory RUSTSEC-2023-0071 remains unresolved.',file=__import__('sys').stderr)
 if any(c=='='or ord(c)<32 for c in str(prefix)):raise SystemExit('Unsupported desktop executable path')
 files=['ruwac']+(['ruwac-desktop'] if a.desktop else [])
 artifacts={name:root/'target/release'/name for name in files}
@@ -21,7 +39,8 @@ try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
 except BlockingIOError:raise SystemExit('Another RUWAC installation is active')
 release=base/'releases'/version;release.parent.mkdir(exist_ok=True)
 if release.parent.is_symlink():raise SystemExit('Unsafe releases directory')
-manifest={'version':version,'artifacts':{name:hashlib.sha256(path.read_bytes()).hexdigest()for name,path in artifacts.items()},'source_commit':subprocess.check_output(['git','-C',str(root),'rev-parse','HEAD'],text=True).strip(),'dirty':bool(subprocess.check_output(['git','-C',str(root),'diff','--name-only'],text=True).strip())}
+manifest={'version':version,'artifacts':{name:hashlib.sha256(path.read_bytes()).hexdigest()for name,path in artifacts.items()},'source_commit':bundle['source_commit']if bundle else subprocess.check_output(['git','-C',str(root),'rev-parse','HEAD'],text=True).strip(),'dirty':False if bundle else bool(subprocess.check_output(['git','-C',str(root),'diff','--name-only'],text=True).strip())}
+if bundle:manifest['distribution']='fedora-testing-bundle'
 receipt=release/'installation.json'
 if release.exists():
  if release.is_symlink() or not receipt.is_file() or json.loads(receipt.read_text())!=manifest:raise SystemExit('Existing immutable installation differs; preserve it and use a new controller-assigned release')
@@ -31,6 +50,10 @@ else:
  temp=Path(tempfile.mkdtemp(prefix='.install-',dir=release.parent))
  try:
   for name,path in artifacts.items():shutil.copyfile(path,temp/name);(temp/name).chmod(0o755)
+  if bundle:
+   shutil.copytree(root/'notices',temp/'notices')
+   shutil.copyfile(root/'LICENSE',temp/'LICENSE')
+   shutil.copyfile(root/'bundle.json',temp/'bundle.json')
   (temp/'installation.json').write_text(json.dumps(manifest,indent=2)+'\n');(temp/'installation.json').chmod(0o600)
   temp.rename(release)
  finally:

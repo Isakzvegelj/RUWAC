@@ -72,6 +72,8 @@ jobs:
         run: python3 .github/scripts/test-label-pr.py
       - name: GitHub updater and reversible installation guards
         run: python3 ruwac/tests/integration/test_updates.py
+      - name: Fedora candidate bundle and installation integrity guards
+        run: python3 ruwac/tests/integration/test_bundles.py
       - name: Fail-closed local GDM recognition fixtures
         run: python3 ruwac/tests/integration/test_gdm_recognition.py
       - name: Rust formatting

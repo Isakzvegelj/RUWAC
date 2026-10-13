@@ -5,7 +5,7 @@ import argparse,ast,json,sys
 ROOT_FILES={'.gitignore','README.md','CHANGELOG.md','RELEASE-NOTES.md','LICENSE','CONTRIBUTING.md','SECURITY.md','CODE_OF_CONDUCT.md'}
 ARCH_FILES={f'{n:02}-{name}.md' for n,name in enumerate(['RUWAC-DECISION','ARCHITECTURE','PROTOCOL-V0','ACCEPTANCE-MATRIX','BENCHMARKS','OPEN-ISSUES','IMPLEMENTATION-ROADMAP','COMPONENTS-LICENSES'])}|{'evidence-index.json','dependency-licenses.json','benchmark-results.json','acceptance-results.json'}
 VENDOR_FILES={f'ruwac/desktop/vendor/ironrdp-connector/{name}' for name in ['README.md','LICENSE-APACHE','UPSTREAM.json','RUWAC-PATCH.md']}|{'ruwac/vendor/alacritty_terminal/'+name for name in ['Cargo.toml.orig','README.md','LICENSE-APACHE','UPSTREAM.json','RUWAC-PATCH.md']}
-SCRIPT_FILES={'public-files.py','install-user.py','dependency-check.py','update-user.py','gdm-recognize.py','privacy-check.py','test-privacy-check.py','gitleaks.toml'}
+SCRIPT_FILES={'public-files.py','install-user.py','dependency-check.py','update-user.py','gdm-recognize.py','privacy-check.py','test-privacy-check.py','gitleaks.toml','bundle-user.py','license-sources.json'}
 VENDOR_FILES |= {f'ruwac/desktop/vendor/ironrdp-{crate}/{name}' for crate in ['egfx','graphics','session'] for name in ['README.md','LICENSE-APACHE','LICENSE-MIT','UPSTREAM.json']}
 # Pinned upstream codec test vectors are source fixtures, not compiled artifacts.
 VENDOR_FILES |= {
@@ -45,6 +45,7 @@ def files(root):
   if not p.is_file():continue
   if any(x in FORBIDDEN or x in {'target','.git','__pycache__'} for x in r.parts):continue
   if r.as_posix() in VENDOR_FILES:out.append(r)
+  elif r.parts[:2]==('ruwac','notices') and len(r.parts)==4 and r.name in {'LICENSE-APACHE','LICENSE-MIT'}:out.append(r)
   elif len(r.parts)==1 and r.name in ROOT_FILES:out.append(r)
   elif r.parts[0]=='spec' and len(r.parts)==2 and r.suffix=='.md':out.append(r)
   elif r.parts[0]=='ruwac' and r.parts[1]=='desktop' and (r.name in {'Cargo.toml','Cargo.lock'} or r.suffix=='.rs'):out.append(r)

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v0.2.22 — 2026-10-13 — Stable source release
+
+- Add deterministic Fedora testing-bundle assembly with preserved dependency notices, private-content checks and a Git-free installer that verifies every file before running an artifact.
+
 ## v0.2.21 — 2026-10-13 — Stable source release
 
 - Prevent unattended updates from undoing a deliberate rollback; preserve running sessions and notification settings, and refuse artifact changes if saving the recovery preference fails.
