@@ -218,12 +218,59 @@ def unpack_bundle(archive, destination, release):
 SHA256 = re.compile(r'[0-9a-f]{64}\Z')
 
 
+def verify_bundle_provenance(release, asset, archive, root):
+    """Verify the downloaded bytes against their hosted release-build identity."""
+    verifier = shutil.which('gh')
+    if verifier is None:
+        raise ValueError('Testing bundle updates require GitHub CLI attestation verification; install gh with DNF')
+    version(release['latest'])
+    if release['tag'] != 'v' + release['latest'] or not SHA.fullmatch(release['commit']):
+        raise ValueError('Invalid testing bundle source identity')
+    data = api('/releases/tags/' + release['tag'])
+    if (data.get('tag_name') != release['tag'] or data.get('draft') is not False
+            or data.get('prerelease') is not False):
+        raise ValueError('Unexpected testing bundle attestation release')
+    expected_name = 'ruwac-' + release['latest'] + '-fedora44-x86_64-testing.tar.gz'
+    expected_url = 'https://github.com/w3fans/RUWAC/releases/download/' + release['tag'] + '/' + expected_name
+    if asset.get('name') != expected_name or asset.get('browser_download_url') != expected_url:
+        raise ValueError('Unexpected attestation subject')
+    signatures = [a for a in data.get('assets', []) if a.get('name') == expected_name + '.sigstore.json']
+    if len(signatures) != 1:
+        raise ValueError('Testing bundle attestation is missing or ambiguous; installation held')
+    signature = signatures[0]
+    if (signature.get('state') != 'uploaded' or type(signature.get('size')) is not int
+            or not 0 < signature['size'] <= 1024 * 1024
+            or signature.get('browser_download_url') != expected_url + '.sigstore.json'
+            or not re.fullmatch(r'sha256:[0-9a-f]{64}', signature.get('digest', ''))):
+        raise ValueError('Invalid testing bundle attestation asset')
+    bundle = root / 'attestation.sigstore.json'
+    download_bundle(signature, bundle)
+    config = root / 'verifier-config'
+    config.mkdir(mode=0o700)
+    env = {key: value for key, value in os.environ.items()
+           if key not in {'GH_TOKEN', 'GITHUB_TOKEN', 'GH_ENTERPRISE_TOKEN', 'GITHUB_ENTERPRISE_TOKEN',
+                          'GH_HOST', 'GH_REPO', 'GH_DEBUG'}}
+    env['GH_CONFIG_DIR'] = str(config)
+    args = [verifier, 'attestation', 'verify', str(archive), '--bundle', str(bundle),
+            '--repo', 'w3fans/RUWAC', '--signer-workflow', 'w3fans/RUWAC/.github/workflows/release.yml',
+            '--source-ref', 'refs/tags/' + release['tag'], '--source-digest', release['commit'],
+            '--deny-self-hosted-runners']
+    try:
+        verified = subprocess.run(args, env=env, stdin=subprocess.DEVNULL,
+                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=60)
+    except (OSError, subprocess.TimeoutExpired):
+        raise ValueError('Testing bundle attestation verifier unavailable or timed out; installation held') from None
+    if verified.returncode != 0:
+        raise ValueError('Testing bundle attestation verification failed; installation held')
+
+
 def install_testing_bundle(release, asset, prefix, cache, automatic):
     lock = locked_file(cache / '.update.lock')
     root = Path(tempfile.mkdtemp(prefix='testing-', dir=cache))
     try:
         archive = root / 'bundle.tar.gz'
         download_bundle(asset, archive)
+        verify_bundle_provenance(release, asset, archive, root)
         bundle = unpack_bundle(archive, root / 'unpacked', release)
         if version(installed_version(prefix, '0.0.0')) > version(release['latest']):
             raise ValueError('A newer installation appeared; refusing bundle downgrade')

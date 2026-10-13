@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v0.2.37 — 2026-10-14 — Stable source release
+
+- Enforce signed hosted-workflow provenance before extracting or installing compiled updates; hold missing or invalid attestations without changing running sessions.
+
 ## v0.2.36 — 2026-10-14 — Stable source release
 
 - Validate exact workflow shell commands and numeric ELF unwind address fields while keeping real private strings and malformed artifact metadata blocked.

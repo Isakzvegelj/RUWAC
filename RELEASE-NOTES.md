@@ -1,34 +1,20 @@
-# RUWAC workflow execution and artifact privacy repair
+# RUWAC compiled-update provenance enforcement
 
-The quality workflow now uses a literal multiline shell block for the two
-publication regression suites. YAML previously folded them into one command,
-which failed before source qualification. New tests parse the real workflow,
-execute its exact shell body and reproduce the rejected folded form. PyYAML is
-an explicit CI test dependency; it adds no headless or desktop runtime dependency.
+Per-user Fedora testing-bundle updates now verify the signed build attestation
+before archive extraction or execution of the installer. Verification binds the
+actual bytes to the RUWAC repository, release workflow, exact source tag/commit
+and hosted-runner identity. Missing, ambiguous, invalid or timed-out attestations
+hold installation. GitHub CLI uses isolated configuration without owner tokens.
+Install gh through DNF before enabling compiled bundle updates.
 
-Artifact privacy handling now decodes bounded exception-frame records and masks
-only numeric PC address/range fields that resolve to executable sections. A linked
-address can coincidentally contain a short identifier's bytes; that does not make
-it a stored machine/account name. CIE augmentation and other data remain scanned.
-Unsupported/truncated encodings and out-of-code ranges fail closed. Generated
-ELF tests verify numeric coincidences, real short/long strings and malformed
-records; private keys, paths, URLs and other string findings remain blocked.
-No private matching value or operational receipt is published.
+Generated verifier-process faults check identity arguments, credential isolation,
+invalid metadata and rejection before unpack/install. A genuine published archive
+and attestation also exercise the production verification and immutable installer.
+Existing opt-out, locks, rollback and session-preservation behavior remain intact.
+The CI quality job runs the new regressions explicitly.
 
-Mixed nesting now separates GNU Screen's documented default retained-window
-policy from explicit display-size adaptation with -A. The fit-size matrix retains
-all sixteen depth/prefix/input/persistence checks; a separate real default case
-forces 80×24, verifies reattachment preserves it, then requires propagation of an
-actual outer resize to 137 columns. Leaf PID/start time, exact bytes and termios
-restoration remain required. No owner session is accessed.
-
-The normal build/release flow reruns functional, package, privacy and certificate
-checks. Application Rust and dependency source are unchanged except for versions
-assigned by the controller. The measured v0.2.35 performance evidence is retained
-with source equivalence checks, not reported as a new benchmark. Existing tags
-and history remain immutable. Artifact publication still requires successful
-exact-commit quality/privacy checks; dependency advisories remain unsuppressed.
-
-Source qualification, testing RPM delivery and complete physical/external/security
-acceptance remain distinct. This repair changes no daemon, RDP, clipboard,
-credential, profile, file-transfer or workspace behavior.
+Fedora 44 core and desktop testing RPMs continue through the normal tagged build
+and publication workflow. System RPM updates still use DNF; unattended RPM updates
+and a signed Fedora repository remain unfinished. The RSA advisory is unsuppressed.
+External Windows display/clipboard and physical desktop acceptance remain separate
+from owned fixture passes. No remote system or live owner connection is changed.

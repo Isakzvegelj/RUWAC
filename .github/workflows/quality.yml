@@ -81,7 +81,9 @@ jobs:
           python3 ruwac/tests/integration/test_testing_subjects.py
           python3 ruwac/tests/integration/test_verified_quality.py
       - name: Testing bundle updater integrity and archive faults
-        run: python3 ruwac/tests/integration/test_bundle_updates.py
+        run: |
+          python3 ruwac/tests/integration/test_bundle_updates.py
+          python3 ruwac/tests/integration/test_update_provenance.py
       - name: Fail-closed local GDM recognition fixtures
         run: python3 ruwac/tests/integration/test_gdm_recognition.py
       - name: Rust formatting

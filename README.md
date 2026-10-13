@@ -165,7 +165,7 @@ Contribution and repository checks: see [CONTRIBUTING.md](CONTRIBUTING.md), [SEC
 
 Native windows, the overlay sidebar and GNOME dual-credential storage are documented in [GNOME login and desktop windows](spec/RUWAC_GNOME_LOGIN.md). GNOME modes support the non-AVC Graphics Pipeline and verified same-endpoint RDSTLS handover. Real Fedora GDM rendering is tested; Linux user sign-in remains a separate explicit action.
 
-Fedora 44 updates: use the header's update icon or `ruwac update --check` and `ruwac update --install`. Automatic checks announce newer stable GitHub releases; explicit installation builds published source locally and retains active sessions and the previous version. See [prerequisites, bootstrap and rollback](spec/RUWAC_UPDATES.md). Prebuilt RPM delivery remains open.
+Fedora 44 updates: use the header's update icon or `ruwac update --check` and `ruwac update --install`. Automatic checks announce newer stable GitHub releases; per-user installations support source builds or explicitly selected testing bundles, retaining active sessions and the previous version. Bundle updates require `gh` to verify signed build provenance before installation. System installations use the release RPMs and DNF. See [prerequisites, bootstrap and rollback](spec/RUWAC_UPDATES.md).
 
 The native Files view supports SFTP and verified staged rsync copies of files and folders. See [SSH file transfers](spec/RUWAC_FILES.md) for authentication, replacement and cancellation behavior.
 

@@ -15,13 +15,17 @@ For unattended updates without local source compilation, install the release's
 Fedora testing bundle using its included installer, then explicitly opt in:
 
 ```sh
+sudo dnf install gh
 "$HOME/.local/bin/ruwac" update --testing-bundles on
 "$HOME/.local/bin/ruwac" update --auto-install on
 ```
 
 Checked bundle delivery validates the release commit, quality/privacy jobs, archive
-digest and immutable installation manifest. Published assets also have workflow
-provenance; the per-user updater does not yet automatically enforce that attestation.
+digest and immutable installation manifest. Before extraction or installation,
+GitHub CLI verifies the asset's signed workflow attestation against the exact
+repository, release workflow, source tag and commit, and hosted runner policy.
+Missing, ambiguous, invalid or timed-out attestations hold installation. Verification
+uses an isolated CLI configuration without the user's GitHub credentials.
 Running sessions are preserved. The source-build option below remains available.
 
 Install build prerequisites:
