@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v0.2.28 — 2026-10-13 — Stable source release
+
+- Generate signed GitHub build provenance for Fedora testing archives and verify the repository, workflow, ref and source commit before publication.
+
 ## v0.2.27 — 2026-10-13 — Stable source release
 
 - Install the OpenSSL command-line test prerequisite in the hosted Fedora testing-bundle job and verify its availability before compiling certificate fixtures.

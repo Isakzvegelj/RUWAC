@@ -80,6 +80,8 @@ jobs:
     permissions:
       contents: write
       actions: read
+      id-token: write
+      attestations: write
     steps:
       - name: Initialize isolated paths and remap build paths
         run: |
@@ -132,6 +134,26 @@ jobs:
               time.sleep(20)
           else:
               raise SystemExit('Testing assets held: exact-commit quality/privacy checks did not pass')
+          PYCODE
+      - name: Attest the exact tested Fedora archive
+        id: provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
+        with:
+          subject-path: ${{ runner.temp }}/bundles/*.tar.gz
+          show-summary: false
+      - name: Verify provenance identity and retain the signed bundle
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ATTESTATION_BUNDLE: ${{ steps.provenance.outputs.bundle-path }}
+        run: |
+          python3 - <<'PYCODE'
+          import os, shutil, subprocess
+          from pathlib import Path
+          archives = list((Path(os.environ['RUNNER_TEMP'])/'bundles').glob('*.tar.gz'))
+          assert len(archives) == 1
+          archive = archives[0]
+          subprocess.run(['gh','attestation','verify',str(archive),'--repo','w3fans/RUWAC','--signer-workflow','w3fans/RUWAC/.github/workflows/release.yml','--source-ref',os.environ['GITHUB_REF'],'--source-digest',os.environ['GITHUB_SHA'],'--deny-self-hosted-runners','--bundle',os.environ['ATTESTATION_BUNDLE']],check=True)
+          shutil.copyfile(os.environ['ATTESTATION_BUNDLE'],archive.with_name(archive.name+'.sigstore.json'))
           PYCODE
       - name: Attach immutable testing assets to the existing release
         env:
