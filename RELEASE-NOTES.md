@@ -1,18 +1,19 @@
-# RUWAC explicit SSH jump routing
+# RUWAC bounded desktop clipboard reads
 
-Configure an existing OpenSSH gateway alias in the native endpoint or network-group
-editor. Native SFTP, resumable files, rsync, SSH terminal and remote-agent launch
-use the explicit route. Existing descriptive gateway metadata remains metadata.
+Terminal text paste, PNG staging and RDP desktop clipboard reads share a five-second
+read deadline and focus/ownership cancellation. A stalled provider cannot leave the
+operation pending indefinitely or retain an incomplete staging file. Per-operation
+GIO reads are cancelled rather than waiting for the provider to deliver another
+chunk. Completion rechecks ownership; timers are removed when operations finish.
 
-Gateway key/agent authentication and strict trusted-host checks are independent
-of target identity, known-hosts and saved credentials. Native file transports use
-an anonymous socket pair and an owned OpenSSH child; no local listening port or
-shared SSH master is created. Direct-transfer recovery identities are preserved;
-a changed jump alias cannot silently resume an existing job.
+Actual GDK tests on an isolated Wayland compositor reproduce indefinitely pending
+baseline text/image reads. Six generated-provider cases verify deadline and focus
+cancellation for all readers, partial-file cleanup and a responsive main loop.
+Kernel-backed GIO tests verify that cancellation releases the pending operation
+and permits a fresh read. These tests use a same-process stalled provider; they
+are distinct from physical input and external RDP interoperability.
 
-Generated two-server fixtures exercise actual SSH, file integrity, cancellation,
-resume, recursive rsync, terminal commands and both authentication/trust boundaries.
-These do not establish external bastion, physical input or Windows display acceptance.
-Existing RDP, terminal and clipboard regressions remain release gates. The RSA
-advisory and signed Fedora RPM requirements remain open; publication is a source
-release, distinct from qualified binary distribution.
+Normal terminal/PNG and authenticated RDP clipboard regression tests remain release
+gates. Windows display/clipboard, physical input, RSA remediation and signed RPM
+qualification remain open. This is a source release with a Fedora testing bundle,
+not whole-product or security-qualified binary distribution.

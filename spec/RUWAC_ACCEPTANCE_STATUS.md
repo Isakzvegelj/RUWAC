@@ -12,6 +12,7 @@ receipts and original reports are archived privately outside Git.
 | Fedora RDP sign-in and bidirectional text/PNG clipboard | PASS | Authorized Fedora RDP host; GNOME Remote Desktop 50.2 / GDM 50.3; simulated local input |
 | Windows RDP authentication and framebuffer | PASS | Windows test host; single authenticated connection |
 | Windows dynamic display and external clipboard matrix | BLOCKED | Qualification incomplete |
+| Desktop clipboard deadlines and stalled-provider cancellation | PASS | Real GDK/GIO on owned Wayland; generated incomplete provider, kernel-stream recovery and partial-file cleanup |
 | SSH/SFTP integrity, progress, cancellation and persistence | PASS | Isolated authorized fixtures; generated files and keys |
 | Explicit SSH jump routing and separate gateway/target trust | PASS | Two disposable OpenSSH servers; eight actual transport groups and four native editor groups |
 | Remote agent image transport/consumption | PASS | External CLI route and native loopback route; complete external native launcher remains unqualified |

@@ -153,11 +153,15 @@ try:
    else:command('peer','set-png',file='fixture-2560.png')
    time.sleep(.1);focus('gui');seq=sequences['gui']+1;sequences['gui']=seq
    temp=root/'gui-request.tmp';temp.write_text(json.dumps({'seq':seq,'action':action,'delay_ms':100}));temp.replace(root/'gui-request.json');time.sleep(.05)
-   command('gui','cancel')
+   # Cancellation and the pending read may reply in one GTK iteration. The
+   # single response file can legitimately contain the read result before a
+   # synchronous waiter sees the cancel acknowledgment. Correlate the read.
+   cancel_seq=sequences['gui']+1;sequences['gui']=cancel_seq
+   temp=root/'gui-request.tmp';temp.write_text(json.dumps({'seq':cancel_seq,'action':'cancel'}));temp.replace(root/'gui-request.json')
    def cancelled():
     r=json.loads((root/'gui-response.json').read_text());return r['result'] if r['seq']==seq else None
    result=spike.eventually(cancelled,5);assert 'cancel' in result.get('error','').lower(),result
-   assert not list(stage.glob('transfer-*')), 'partial staging file leaked';return result
+   assert not list(stage.rglob('transfer-*.png')), 'partial staging file leaked';return result
   case('CLIP-stale-cancel',lambda:cancellation('read-text'))
   case('IMAGE-cancel-cleanup',lambda:cancellation('read-image'))
  if not a.no_clipboard:

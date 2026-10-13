@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v0.2.25 — 2026-10-13 — Stable source release
+
+- Bound text paste and PNG staging reads from stalled desktop clipboard providers, cancel blocked reads on focus/ownership changes, remove partial staging files and keep fresh clipboard reads usable after cancellation.
+
 ## v0.2.24 — 2026-10-13 — Stable source release
 
 - Add explicit SSH jump aliases for native SFTP, resumable transfers, rsync and terminal/remote-agent launch, with independent gateway trust and authentication, group inheritance and preserved direct-transfer recovery identities.

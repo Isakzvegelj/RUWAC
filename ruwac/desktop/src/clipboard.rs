@@ -3,8 +3,105 @@ use gtk::{gdk, gio, glib, prelude::*};
 use ruwac_clipboard::{
     ClipScope, FocusBroker, MAX_DESKTOP_TEXT, MAX_IMAGE_BYTES, TransferDirection, TransferState,
 };
-use std::{cell::RefCell, io::Write, path::PathBuf, rc::Rc};
+use std::{
+    cell::{Cell, RefCell},
+    io::Write,
+    path::PathBuf,
+    rc::Rc,
+    time::{Duration, Instant},
+};
 pub type Broker = Rc<RefCell<FocusBroker>>;
+const READ_DEADLINE: Duration = Duration::from_secs(5);
+const CANCEL_POLL: Duration = Duration::from_millis(25);
+
+/// Cover both selection negotiation and a provider stalled halfway through its stream.
+/// Dropping a selected-out GIO future cancels that operation's own Cancellable.
+struct ReadGuard {
+    cancel: gio::Cancellable,
+    timer: Option<glib::SourceId>,
+    timer_live: Rc<Cell<bool>>,
+    valid: Rc<dyn Fn() -> bool>,
+    deadline: Instant,
+}
+impl ReadGuard {
+    fn new(valid: impl Fn() -> bool + 'static) -> Self {
+        let cancel = gio::Cancellable::new();
+        let timer_live = Rc::new(Cell::new(true));
+        let valid: Rc<dyn Fn() -> bool> = Rc::new(valid);
+        let deadline = Instant::now() + READ_DEADLINE;
+        let (c, live, check) = (cancel.clone(), timer_live.clone(), valid.clone());
+        let timer = glib::timeout_add_local(CANCEL_POLL, move || {
+            if Instant::now() >= deadline || !check() {
+                live.set(false);
+                c.cancel();
+                glib::ControlFlow::Break
+            } else {
+                glib::ControlFlow::Continue
+            }
+        });
+        Self {
+            cancel,
+            timer: Some(timer),
+            timer_live,
+            valid,
+            deadline,
+        }
+    }
+    fn check(&self) -> Result<(), String> {
+        if !(self.valid)() {
+            return Err("Clipboard read cancelled: focus/owner changed".into());
+        }
+        if Instant::now() >= self.deadline {
+            return Err("Clipboard read deadline exceeded".into());
+        }
+        Ok(())
+    }
+    async fn wait<T>(&self, future: impl std::future::Future<Output = T>) -> Result<T, String> {
+        self.check()?;
+        let cancellation = async {
+            loop {
+                if let Err(error) = self.check() {
+                    return error;
+                }
+                glib::timeout_future(
+                    CANCEL_POLL.min(self.deadline.saturating_duration_since(Instant::now())),
+                )
+                .await;
+            }
+        };
+        match futures_util::future::select(Box::pin(future), Box::pin(cancellation)).await {
+            futures_util::future::Either::Left((value, _)) => {
+                self.check()?;
+                Ok(value)
+            }
+            futures_util::future::Either::Right((error, pending)) => {
+                drop(pending);
+                Err(error)
+            }
+        }
+    }
+}
+impl Drop for ReadGuard {
+    fn drop(&mut self) {
+        if self.timer_live.replace(false) {
+            if let Some(timer) = self.timer.take() {
+                timer.remove();
+            }
+        }
+        self.cancel.cancel();
+    }
+}
+
+fn transfer_guard(
+    broker: &Broker,
+    epoch: u64,
+    ticket: &ruwac_clipboard::DesktopTransfer,
+) -> ReadGuard {
+    let (broker, ticket) = (broker.clone(), ticket.clone());
+    ReadGuard::new(move || {
+        broker.borrow().epoch() == epoch && broker.borrow().transfer_valid(&ticket)
+    })
+}
 pub fn read_text(
     clip: &gdk::Clipboard,
     broker: Broker,
@@ -21,10 +118,12 @@ pub fn read_text(
         done(Err("No active clipboard view".into()));
         return;
     };
+    let guard = transfer_guard(&broker, epoch, &ticket);
+    let cancel = guard.cancel.clone();
     clip.read_async(
         &["text/plain;charset=utf-8", "text/plain"],
         glib::Priority::DEFAULT,
-        None::<&gio::Cancellable>,
+        Some(&cancel),
         move |result| {
             let (stream, mime) = match result {
                 Ok(v) => v,
@@ -32,7 +131,7 @@ pub fn read_text(
                     broker
                         .borrow_mut()
                         .finish_transfer(&ticket, 0, TransferState::Cancelled);
-                    done(Err(e.to_string()));
+                    done(Err(guard.check().err().unwrap_or_else(|| e.to_string())));
                     return;
                 }
             };
@@ -49,11 +148,11 @@ pub fn read_text(
                             return Err("Clipboard read cancelled: focus/owner changed".into());
                         }
                         if !delay.is_zero() {
-                            glib::timeout_future(delay).await;
+                            guard.wait(glib::timeout_future(delay)).await?;
                         }
-                        let chunk = stream
-                            .read_bytes_future(65536, glib::Priority::DEFAULT)
-                            .await
+                        let chunk = guard
+                            .wait(stream.read_bytes_future(65536, glib::Priority::DEFAULT))
+                            .await?
                             .map_err(|e| e.to_string())?;
                         if broker.borrow().epoch() != epoch
                             || !broker.borrow().transfer_valid(&ticket)
@@ -78,7 +177,10 @@ pub fn read_text(
                     Ok(text)
                 }
                 .await;
-                let _ = stream.close_future(glib::Priority::DEFAULT).await;
+                let _ = guard
+                    .wait(stream.close_future(glib::Priority::DEFAULT))
+                    .await;
+                let result = result.and_then(|value| guard.check().map(|()| value));
                 broker.borrow_mut().finish_transfer(
                     &ticket,
                     result.as_ref().map(|s| s.len()).unwrap_or(0),
@@ -117,10 +219,12 @@ pub fn ingest_png(
         done(Err("No active image view".into()));
         return;
     };
+    let guard = transfer_guard(&broker, epoch, &ticket);
+    let cancel = guard.cancel.clone();
     clip.read_async(
         &["image/png"],
         glib::Priority::DEFAULT,
-        None::<&gio::Cancellable>,
+        Some(&cancel),
         move |result| {
             let (stream, mime) = match result {
                 Ok(v) => v,
@@ -128,7 +232,7 @@ pub fn ingest_png(
                     broker
                         .borrow_mut()
                         .finish_transfer(&ticket, 0, TransferState::Cancelled);
-                    done(Err(e.to_string()));
+                    done(Err(guard.check().err().unwrap_or_else(|| e.to_string())));
                     return;
                 }
             };
@@ -154,11 +258,11 @@ pub fn ingest_png(
                             return Err("Image transfer cancelled on focus/owner change".into());
                         }
                         if !delay.is_zero() {
-                            glib::timeout_future(delay).await;
+                            guard.wait(glib::timeout_future(delay)).await?;
                         }
-                        let chunk = stream
-                            .read_bytes_future(65536, glib::Priority::DEFAULT)
-                            .await
+                        let chunk = guard
+                            .wait(stream.read_bytes_future(65536, glib::Priority::DEFAULT))
+                            .await?
                             .map_err(|e| e.to_string())?;
                         if broker.borrow().epoch() != epoch
                             || !broker.borrow().transfer_valid(&ticket)
@@ -181,7 +285,11 @@ pub fn ingest_png(
                     Ok(())
                 }
                 .await;
-                let _ = stream.close_future(glib::Priority::DEFAULT).await;
+                let _ = guard
+                    .wait(stream.close_future(glib::Priority::DEFAULT))
+                    .await;
+                let result = result.and_then(|value| guard.check().map(|()| value));
+                drop(guard);
                 if let Err(e) = result {
                     let _ = std::fs::remove_file(&temp);
                     broker
@@ -206,6 +314,11 @@ pub fn ingest_png(
                                 if let Ok(r) = result {
                                     let _ = std::fs::remove_file(r.path);
                                 }
+                                broker.borrow_mut().finish_transfer(
+                                    &ticket,
+                                    0,
+                                    TransferState::Cancelled,
+                                );
                                 done(Err("Image completion cancelled".into()));
                             } else {
                                 broker.borrow_mut().finish_transfer(
@@ -225,6 +338,11 @@ pub fn ingest_png(
                             glib::timeout_future(std::time::Duration::from_millis(10)).await
                         }
                         Err(_) => {
+                            broker.borrow_mut().finish_transfer(
+                                &ticket,
+                                0,
+                                TransferState::Cancelled,
+                            );
                             done(Err("Image worker stopped".into()));
                             break;
                         }
@@ -254,12 +372,13 @@ pub fn read_bytes(
         vec!["image/png"]
     };
     let view = broker.borrow().active().map(str::to_owned);
-    let started = std::time::Instant::now();
-    let cancel = gio::Cancellable::new();
-    let timeout_cancel = cancel.clone();
-    glib::timeout_add_local_once(std::time::Duration::from_secs(5), move || {
-        timeout_cancel.cancel()
+    let check_broker = broker.clone();
+    let check_view = view.clone();
+    let guard = ReadGuard::new(move || {
+        check_broker.borrow().epoch() == epoch
+            && check_broker.borrow().active() == check_view.as_deref()
     });
+    let cancel = guard.cancel.clone();
     clip.read_async(
         &types,
         glib::Priority::DEFAULT,
@@ -277,9 +396,9 @@ pub fn read_bytes(
                             {
                                 return Err("Clipboard owner/focus changed".into());
                             }
-                            let chunk = stream
-                                .read_bytes_future(65536, glib::Priority::DEFAULT)
-                                .await
+                            let chunk = guard
+                                .wait(stream.read_bytes_future(65536, glib::Priority::DEFAULT))
+                                .await?
                                 .map_err(|_| "Clipboard stream failed".to_string())?;
                             if broker.borrow().epoch() != epoch
                                 || broker.borrow().active() != view.as_deref()
@@ -296,24 +415,77 @@ pub fn read_bytes(
                         }
                     }
                     .await;
-                    let _ = stream.close_future(glib::Priority::DEFAULT).await;
+                    let _ = guard
+                        .wait(stream.close_future(glib::Priority::DEFAULT))
+                        .await;
                     result
                 };
-                let result = match futures_util::future::select(
-                    Box::pin(read),
-                    Box::pin(glib::timeout_future(
-                        std::time::Duration::from_secs(5).saturating_sub(started.elapsed()),
-                    )),
-                )
-                .await
-                {
-                    futures_util::future::Either::Left((r, _)) => r,
-                    futures_util::future::Either::Right(_) => {
-                        Err("Clipboard read deadline exceeded".into())
-                    }
-                };
+                let result = guard.wait(read).await.and_then(|r| r);
                 done(result);
             });
         },
     );
+}
+
+#[cfg(test)]
+mod stalled_stream_tests {
+    use super::*;
+    use std::{io::Write, os::unix::net::UnixStream, sync::Mutex};
+    static CONTEXT: Mutex<()> = Mutex::new(());
+
+    fn exercise(focus_cancel: bool) {
+        let _serial = CONTEXT.lock().unwrap();
+        let context = glib::MainContext::default();
+        let _owner = context.acquire().unwrap();
+        let (local, mut peer) = UnixStream::pair().unwrap();
+        let socket = gio::Socket::from_fd(local.into()).unwrap();
+        let connection = socket.connection_factory_create_connection();
+        let input = connection.input_stream();
+        let valid = Rc::new(Cell::new(true));
+        let check = valid.clone();
+        let guard = ReadGuard::new(move || check.get());
+        if focus_cancel {
+            glib::timeout_add_local_once(Duration::from_millis(100), move || valid.set(false));
+        }
+        let started = Instant::now();
+        let result =
+            context.block_on(guard.wait(input.read_bytes_future(65536, glib::Priority::DEFAULT)));
+        assert!(result.is_err());
+        assert!(
+            started.elapsed()
+                < if focus_cancel {
+                    Duration::from_secs(1)
+                } else {
+                    Duration::from_secs(6)
+                }
+        );
+        assert!(result.unwrap_err().contains(if focus_cancel {
+            "focus/owner"
+        } else {
+            "deadline"
+        }));
+        drop(guard);
+        // GIO's cancellation callback must release the pending-operation flag;
+        // otherwise a subsequent ordinary paste fails even after our callback returns.
+        let cleanup_limit = Instant::now() + Duration::from_secs(1);
+        while input.has_pending() {
+            assert!(Instant::now() < cleanup_limit);
+            context.iteration(false);
+        }
+        peer.write_all(b"generated recovery bytes").unwrap();
+        let recovery = ReadGuard::new(|| true);
+        let bytes = context
+            .block_on(recovery.wait(input.read_bytes_future(65536, glib::Priority::DEFAULT)))
+            .unwrap()
+            .unwrap();
+        assert_eq!(bytes.as_ref(), b"generated recovery bytes");
+    }
+    #[test]
+    fn focus_change_cancels_a_blocked_gio_read_and_allows_a_fresh_read() {
+        exercise(true);
+    }
+    #[test]
+    fn deadline_cancels_a_blocked_gio_read_and_allows_a_fresh_read() {
+        exercise(false);
+    }
 }
