@@ -57,20 +57,19 @@ fn stopped(cancel: &AtomicBool) -> Result<(), String> {
     }
 }
 pub(super) fn binding(p: &Profile) -> String {
-    format!(
-        "{:x}",
-        Sha256::digest(
-            serde_json::to_vec(&serde_json::json!([
-                p.id,
-                p.server,
-                p.username,
-                p.preferences.identity_file,
-                p.preferences.identity_secret_reference,
-                p.preferences.known_hosts
-            ]))
-            .unwrap()
-        )
-    )
+    // Preserve persisted direct-transfer identities from earlier releases.
+    let mut fields = vec![
+        &p.id,
+        &p.server,
+        &p.username,
+        &p.preferences.identity_file,
+        &p.preferences.identity_secret_reference,
+        &p.preferences.known_hosts,
+    ];
+    if !p.preferences.ssh_jump_alias.is_empty() {
+        fields.push(&p.preferences.ssh_jump_alias);
+    }
+    format!("{:x}", Sha256::digest(serde_json::to_vec(&fields).unwrap()))
 }
 pub(super) fn host_key(session: &ssh2::Session) -> Result<String, String> {
     let (key, _) = session.host_key().ok_or("SSH host identity unavailable")?;
@@ -852,4 +851,33 @@ pub fn discard(p: &Profile, id: &str, cancel: &AtomicBool) -> Result<(), String>
         }
     }
     journal.remove()
+}
+
+#[cfg(test)]
+mod jump_binding_tests {
+    use super::*;
+    #[test]
+    fn direct_recovery_identity_is_unchanged_but_routes_are_distinct() {
+        let mut p: Profile = serde_json::from_value(serde_json::json!({"id":"generated-endpoint","machine_id":"generated-machine","name":"Generated","group":"","protocol":"SSH","server":"localhost","username":"generated-user","secret_reference":"generated-reference","favorite":false,"last_used":0,"tags":[]})).unwrap();
+        let legacy = format!(
+            "{:x}",
+            Sha256::digest(
+                serde_json::to_vec(&serde_json::json!([
+                    p.id,
+                    p.server,
+                    p.username,
+                    p.preferences.identity_file,
+                    p.preferences.identity_secret_reference,
+                    p.preferences.known_hosts
+                ]))
+                .unwrap()
+            )
+        );
+        assert_eq!(binding(&p), legacy);
+        p.preferences.ssh_jump_alias = "generated-jump".into();
+        let routed = binding(&p);
+        assert_ne!(routed, legacy);
+        p.preferences.ssh_jump_alias = "generated-other".into();
+        assert_ne!(binding(&p), routed);
+    }
 }

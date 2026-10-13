@@ -13,6 +13,7 @@ receipts and original reports are archived privately outside Git.
 | Windows RDP authentication and framebuffer | PASS | Windows test host; single authenticated connection |
 | Windows dynamic display and external clipboard matrix | BLOCKED | Qualification incomplete |
 | SSH/SFTP integrity, progress, cancellation and persistence | PASS | Isolated authorized fixtures; generated files and keys |
+| Explicit SSH jump routing and separate gateway/target trust | PASS | Two disposable OpenSSH servers; eight actual transport groups and four native editor groups |
 | Remote agent image transport/consumption | PASS | External CLI route and native loopback route; complete external native launcher remains unqualified |
 | Physical GTK/Wayland mouse, keyboard and touchpad acceptance | BLOCKED | Isolated synthetic input does not qualify a physical desktop |
 | Fedora RPM, signing, provenance and binary security qualification | BLOCKED | Source releases are distinct from qualified binary distribution |

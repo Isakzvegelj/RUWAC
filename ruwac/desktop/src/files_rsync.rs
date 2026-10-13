@@ -444,7 +444,9 @@ pub fn recover(p: &Profile, id: &str, cancel: &AtomicBool) -> Result<String, Str
     if !job.eligible(p) {
         return Err("Recovery profile changed; restore original endpoint settings".into());
     }
-    if p.protocol != "SSH" || !p.preferences.gateway.is_empty() {
+    if p.protocol != "SSH"
+        || (!p.preferences.gateway.is_empty() && p.preferences.ssh_jump_alias.is_empty())
+    {
         return Err("Restore original SSH recovery profile".into());
     }
     if !job.upload {
@@ -747,9 +749,11 @@ fn ssh_path(path: &Path) -> Result<String, String> {
 }
 fn ssh_args(p: &Profile) -> Result<(Vec<String>, String), String> {
     p.validate()?;
-    if p.protocol != "SSH" || !p.preferences.gateway.is_empty() {
+    if p.protocol != "SSH"
+        || (!p.preferences.gateway.is_empty() && p.preferences.ssh_jump_alias.is_empty())
+    {
         return Err(
-            "Rsync requires a direct SSH endpoint; gateway routing is not configured".into(),
+            "Rsync requires SSH with a direct route or an explicit jump alias; gateway metadata alone is not a route".into(),
         );
     }
     let (host, port) = endpoint(&p.server, 22)?;
@@ -792,6 +796,15 @@ fn ssh_args(p: &Profile) -> Result<(Vec<String>, String), String> {
         "-o".into(),
         "LogLevel=ERROR".into(),
     ];
+    if !p.preferences.ssh_jump_alias.is_empty() {
+        args.extend([
+            "-o".into(),
+            format!(
+                "ProxyCommand={}",
+                crate::ssh_jump::proxy_command(&p.preferences.ssh_jump_alias, &host, port)?
+            ),
+        ]);
+    }
     if !p.preferences.identity_file.is_empty() {
         args.extend([
             "-i".into(),

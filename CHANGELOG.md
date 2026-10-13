@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v0.2.24 — 2026-10-13 — Stable source release
+
+- Add explicit SSH jump aliases for native SFTP, resumable transfers, rsync and terminal/remote-agent launch, with independent gateway trust and authentication, group inheritance and preserved direct-transfer recovery identities.
+
 ## v0.2.23 — 2026-10-13 — Stable source release
 
 - Handle monitor-layout notifications during activation and active sessions, advertise support independently of the graphics pipeline, and correct ClearCodec short-bar coordinates and terminal SRL zero chunks with conformance regressions.

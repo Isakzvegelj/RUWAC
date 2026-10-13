@@ -11,6 +11,8 @@ mod files_rsync;
 mod profiles;
 #[path = "../src/rdp_trust.rs"]
 mod rdp_trust;
+#[path = "../src/ssh_jump.rs"]
+mod ssh_jump;
 use std::{
     path::Path,
     sync::{
@@ -39,6 +41,10 @@ fn main() {
                 .map_err(|_| "cannot read fixture profile")?,
         )
         .map_err(|_| "invalid fixture profile")?;
+        p.validate()?;
+        if args[1] == "ssh-argv" {
+            return Ok(serde_json::json!({"argv": profiles::ssh_argv(&p)?}));
+        }
         if args[1] == "rsync-pending" {
             return serde_json::to_value(files_rsync::pending(&p)?)
                 .map_err(|_| "Cannot encode recovery jobs".into());

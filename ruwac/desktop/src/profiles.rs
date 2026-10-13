@@ -50,6 +50,8 @@ pub struct Preferences {
     pub label: String,
     pub network: String,
     pub gateway: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub ssh_jump_alias: String,
     pub clipboard: u32,
     pub display: String,
     pub zoom: f64,
@@ -71,6 +73,7 @@ impl Default for Preferences {
             label: String::new(),
             network: String::new(),
             gateway: String::new(),
+            ssh_jump_alias: String::new(),
             clipboard: 0,
             display: "fit".into(),
             zoom: 1.0,
@@ -167,6 +170,15 @@ pub fn ssh_argv(p: &Profile) -> Result<Vec<String>, String> {
     if !p.username.is_empty() {
         argv.extend(["-l".into(), p.username.clone()]);
     }
+    if !p.preferences.ssh_jump_alias.is_empty() {
+        let proxy = crate::ssh_jump::proxy_command(&p.preferences.ssh_jump_alias, &host, port)?;
+        argv.extend([
+            "-o".into(),
+            format!("ProxyCommand={proxy}"),
+            "-o".into(),
+            "ForwardAgent=no".into(),
+        ]);
+    }
     argv.extend(["--".into(), host]);
     Ok(argv)
 }
@@ -230,6 +242,7 @@ impl Profile {
                 &self.preferences.label,
                 &self.preferences.network,
                 &self.preferences.gateway,
+                &self.preferences.ssh_jump_alias,
                 &self.preferences.trust,
                 &self.preferences.identity_file,
                 &self.preferences.identity_secret_reference,
@@ -241,6 +254,9 @@ impl Profile {
             .any(|s| s.len() > 1024 || s.chars().any(char::is_control))
         {
             return Err("Invalid endpoint preferences".into());
+        }
+        if !self.preferences.ssh_jump_alias.is_empty() {
+            crate::ssh_jump::validate(&self.preferences.ssh_jump_alias)?;
         }
         Ok(())
     }
@@ -565,6 +581,7 @@ fn parse_library(b: &[u8]) -> Result<Vec<Profile>, String> {
                         &g.credential_profile,
                         &g.defaults.network,
                         &g.defaults.gateway,
+                        &g.defaults.ssh_jump_alias,
                         &g.defaults.identity_file,
                         &g.defaults.identity_secret_reference,
                         &g.defaults.known_hosts,
@@ -572,6 +589,8 @@ fn parse_library(b: &[u8]) -> Result<Vec<Profile>, String> {
                     ]
                     .iter()
                     .any(|v| v.len() > 1024 || v.chars().any(char::is_control))
+                    || (!g.defaults.ssh_jump_alias.is_empty()
+                        && crate::ssh_jump::validate(&g.defaults.ssh_jump_alias).is_err())
                     || g.defaults.clipboard > 4
                     || !["fit", "native", "stretch", "dynamic"]
                         .contains(&g.defaults.display.as_str())
@@ -651,6 +670,10 @@ fn resolve(profile: &Profile, groups: &[Group], accounts: &[Profile]) -> Result<
             }
             if p.preferences.gateway.is_empty() {
                 p.preferences.gateway = nearest(|g| &g.defaults.gateway).unwrap_or_default();
+            }
+            if p.protocol == "SSH" && p.preferences.ssh_jump_alias.is_empty() {
+                p.preferences.ssh_jump_alias =
+                    nearest(|g| &g.defaults.ssh_jump_alias).unwrap_or_default();
             }
             if p.preferences.known_hosts.is_empty() {
                 p.preferences.known_hosts =
@@ -1467,7 +1490,9 @@ pub fn sidebar(
             .find(|p| p.id == id)
             .ok_or("SSH profile no longer exists")?;
         let p = resolve(p, &s.groups, &s.items)?;
-        if p.protocol != "SSH" || !p.preferences.gateway.is_empty() {
+        if p.protocol != "SSH"
+            || (!p.preferences.gateway.is_empty() && p.preferences.ssh_jump_alias.is_empty())
+        {
             return Err("A direct registered SSH endpoint is required".into());
         }
         Ok(p)
@@ -1804,7 +1829,7 @@ fn editor(
     let actions = gtk::Box::new(gtk::Orientation::Horizontal, 4);
     grid.attach(&actions, 1, 20, 1, 1);
     let info = gtk::Label::new(Some(
-        "Endpoint ID is stable. Share a machine identity to add another endpoint. SSH verifies host keys; unknown keys prompt in the terminal. Gateway routing is not yet implemented.",
+        "Endpoint ID is stable. Share a machine identity to add another endpoint. SSH verifies host keys; unknown keys prompt in the terminal. SSH jump aliases use the gateway’s own SSH configuration and trusted key, independently of this endpoint. RDP gateways remain unsupported.",
     ));
     info.set_wrap(true);
     info.set_widget_name("profile-credential-status");
@@ -2183,6 +2208,11 @@ fn editor(
     for i in [5, 8, 10, 11, 12, 6, 7, 2] {
         form_row(&advanced, vals[i].0, &fields[i]);
     }
+    let ssh_jump = gtk::Entry::new();
+    ssh_jump.set_widget_name("ssh-jump-alias");
+    ssh_jump.set_text(&original.preferences.ssh_jump_alias);
+    ssh_jump.set_placeholder_text(Some("Existing SSH config alias; blank connects directly"));
+    form_row(&advanced, "SSH jump / bastion alias", &ssh_jump);
     form_row(&advanced, "RDP display mode", &display);
     form_row(&advanced, "Clipboard policy", &clipboard);
     form_row(&advanced, "Zoom", &zoom);
@@ -2237,7 +2267,7 @@ fn editor(
             let(s,id,machine_id,st,parent)=(store.clone(),original.id.clone(),original.machine_id.clone(),status.clone(),d.clone());confirm.connect_response(move|c,r|{if r==gtk::ResponseType::Accept {let mut s=s.borrow_mut();let old=s.items.clone();s.items.retain(|p|p.id!=id&&(!machine||p.machine_id!=machine_id));if let Err(e)=s.save(){s.items=old;st.set_text(&e);}else{drop(s);st.set_text("Metadata deleted; previous library retained for Undo");refresh_widgets(parent.transient_for().as_ref());parent.close();}}c.close();});confirm.present();return;
         }
         if response!=gtk::ResponseType::Accept && response!=gtk::ResponseType::Other(1) && response!=gtk::ResponseType::Other(3) && response!=gtk::ResponseType::Other(5){d.close();return;}
-        let mut p=original.clone();p.name=fields[0].text().into();p.group=fields[1].text().into();p.machine_id=fields[2].text().into();p.server=fields[3].text().into();p.username=fields[4].text().into();p.preferences.label=fields[5].text().into();p.preferences.network=fields[6].text().into();p.preferences.gateway=fields[7].text().into();p.tags=fields[8].text().split(',').map(str::trim).filter(|s|!s.is_empty()).map(str::to_owned).collect();p.secret_reference=fields[9].text().into();p.preferences.trust=fields[10].text().into();p.preferences.identity_file=fields[11].text().into();p.preferences.identity_secret_reference=identity_reference.text().into();p.preferences.known_hosts=fields[12].text().into();p.protocol=if protocol.selected()==1{"SSH"}else{"RDP"}.into();p.preferences.display=["fit","native","stretch","dynamic"][display.selected() as usize].into();p.preferences.clipboard=clipboard.selected();p.preferences.zoom=zoom.value();p.preferences.fullscreen=full.is_active();p.preferences.reconnect=retry.is_active();p.inherit=inherit.is_active();p.inherit_connection=inherit_connection.is_active();p.inherit_credential=inherit_credential.is_active();p.preferences.rdp_mode=["","gnome-remote-login","gnome-desktop-sharing"][rdp_mode.selected() as usize].into();p.preferences.gnome_auto_login=gnome_auto.is_active();p.preferences.gnome_username=gnome_user.text().into();p.preferences.gnome_secret_reference=if p.preferences.rdp_mode=="gnome-remote-login"||!original.preferences.gnome_secret_reference.is_empty(){gnome_ref.text().into()}else{String::new()};
+        let mut p=original.clone();p.name=fields[0].text().into();p.group=fields[1].text().into();p.machine_id=fields[2].text().into();p.server=fields[3].text().into();p.username=fields[4].text().into();p.preferences.label=fields[5].text().into();p.preferences.network=fields[6].text().into();p.preferences.gateway=fields[7].text().into();p.preferences.ssh_jump_alias=ssh_jump.text().into();p.tags=fields[8].text().split(',').map(str::trim).filter(|s|!s.is_empty()).map(str::to_owned).collect();p.secret_reference=fields[9].text().into();p.preferences.trust=fields[10].text().into();p.preferences.identity_file=fields[11].text().into();p.preferences.identity_secret_reference=identity_reference.text().into();p.preferences.known_hosts=fields[12].text().into();p.protocol=if protocol.selected()==1{"SSH"}else{"RDP"}.into();p.preferences.display=["fit","native","stretch","dynamic"][display.selected() as usize].into();p.preferences.clipboard=clipboard.selected();p.preferences.zoom=zoom.value();p.preferences.fullscreen=full.is_active();p.preferences.reconnect=retry.is_active();p.inherit=inherit.is_active();p.inherit_connection=inherit_connection.is_active();p.inherit_credential=inherit_credential.is_active();p.preferences.rdp_mode=["","gnome-remote-login","gnome-desktop-sharing"][rdp_mode.selected() as usize].into();p.preferences.gnome_auto_login=gnome_auto.is_active();p.preferences.gnome_username=gnome_user.text().into();p.preferences.gnome_secret_reference=if p.preferences.rdp_mode=="gnome-remote-login"||!original.preferences.gnome_secret_reference.is_empty(){gnome_ref.text().into()}else{String::new()};
         if response==gtk::ResponseType::Other(1){p.id=ruwac_protocol::id("endpoint");p.machine_id=ruwac_protocol::id("machine");p.secret_reference=p.id.clone();if !p.preferences.gnome_secret_reference.is_empty(){p.preferences.gnome_secret_reference=format!("{}.gnome",p.id);}p.name.push_str(" (copy)");}
         if response==gtk::ResponseType::Other(3){p.name=original.name.clone();p.group=original.group.clone();p.id=ruwac_protocol::id("endpoint");p.secret_reference=p.id.clone();if !p.preferences.gnome_secret_reference.is_empty(){p.preferences.gnome_secret_reference=format!("{}.gnome",p.id);}}
         if let Err(e)=p.validate(){info.set_text(&e);return;}
@@ -2335,6 +2365,10 @@ fn group_editor(button: &gtk::Button, store: Rc<RefCell<Store>>, status: gtk::La
         ("identity_secret_reference", "SSH key passphrase reference"),
         ("known_hosts", "SSH known-hosts file"),
         ("trust", "RDP CA file"),
+        (
+            "ssh_jump_alias",
+            "SSH jump / bastion alias (existing SSH config)",
+        ),
     ];
     let mut connection_fields = Vec::new();
     for (name, label) in names {
@@ -2396,6 +2430,7 @@ fn group_editor(button: &gtk::Button, store: Rc<RefCell<Store>>, status: gtk::La
                 &g.defaults.identity_secret_reference,
                 &g.defaults.known_hosts,
                 &g.defaults.trust,
+                &g.defaults.ssh_jump_alias,
             ]) {
                 entry.set_text(value);
             }
@@ -2501,8 +2536,15 @@ fn group_editor(button: &gtk::Button, store: Rc<RefCell<Store>>, status: gtk::La
             identity_secret_reference: connection_fields[4].text().into(),
             known_hosts: connection_fields[5].text().into(),
             trust: connection_fields[6].text().into(),
+            ssh_jump_alias: connection_fields[7].text().into(),
             ..Preferences::default()
         };
+        if !defaults.ssh_jump_alias.is_empty() {
+            if let Err(e) = crate::ssh_jump::validate(&defaults.ssh_jump_alias) {
+                info.set_text(&e);
+                return;
+            }
+        }
         let username = connection_fields[0].text().to_string();
         let credential_profile = account_ids
             .get(account.selected().saturating_sub(1) as usize)
@@ -3125,6 +3167,65 @@ mod inherited_tests {
             username: String::new(),
             credential_profile: String::new(),
         }
+    }
+    #[test]
+    fn explicit_jump_inherits_only_for_ssh_and_endpoint_override_wins() {
+        let mut p = profile();
+        p.inherit_connection = true;
+        let mut g = group("Network");
+        g.defaults.ssh_jump_alias = "generated-bastion".into();
+        let result = resolve(&p, &[g.clone()], &[]).unwrap();
+        assert_eq!(result.preferences.ssh_jump_alias, "generated-bastion");
+        assert!(p.preferences.ssh_jump_alias.is_empty());
+        p.preferences.ssh_jump_alias = "generated-override".into();
+        assert_eq!(
+            resolve(&p, &[g.clone()], &[])
+                .unwrap()
+                .preferences
+                .ssh_jump_alias,
+            "generated-override"
+        );
+        p.preferences.ssh_jump_alias.clear();
+        p.protocol = "RDP".into();
+        assert!(
+            resolve(&p, &[g], &[])
+                .unwrap()
+                .preferences
+                .ssh_jump_alias
+                .is_empty()
+        );
+    }
+    #[test]
+    fn legacy_gateway_metadata_does_not_enable_a_jump_route() {
+        let mut p = profile();
+        p.preferences.gateway = "stored-descriptive-metadata".into();
+        assert!(p.validate().is_ok());
+        assert!(p.preferences.ssh_jump_alias.is_empty());
+        assert!(
+            !serde_json::to_string(&p)
+                .unwrap()
+                .contains("ssh_jump_alias")
+        );
+        assert!(
+            !ssh_argv(&p)
+                .unwrap()
+                .iter()
+                .any(|v| v.starts_with("ProxyCommand="))
+        );
+        p.preferences.ssh_jump_alias = "generated-bastion".into();
+        assert!(
+            ssh_argv(&p)
+                .unwrap()
+                .iter()
+                .any(|v| v.starts_with("ProxyCommand="))
+        );
+        let round: Profile = serde_json::from_slice(&serde_json::to_vec(&p).unwrap()).unwrap();
+        assert_eq!(
+            round.preferences.ssh_jump_alias,
+            p.preferences.ssh_jump_alias
+        );
+        p.preferences.ssh_jump_alias = "-bad".into();
+        assert!(p.validate().is_err());
     }
     #[test]
     fn ancestors_fill_empty_fields_with_nearest_values_and_path_boundaries() {

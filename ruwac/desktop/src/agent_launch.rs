@@ -13,8 +13,11 @@ fn argv(
     binary: &str,
     socket: &str,
 ) -> Result<Vec<String>, String> {
-    if profile.protocol != "SSH" || !profile.preferences.gateway.is_empty() {
-        return Err("Choose a direct SSH endpoint for the Linux account".into());
+    if profile.protocol != "SSH"
+        || (!profile.preferences.gateway.is_empty()
+            && profile.preferences.ssh_jump_alias.is_empty())
+    {
+        return Err("Choose an SSH endpoint with a direct route or an explicit jump alias for the Linux account".into());
     }
     if binary.is_empty()
         || [binary, socket]

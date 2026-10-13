@@ -21,20 +21,34 @@ pub(super) fn error(_: impl std::fmt::Display) -> String {
 }
 pub(super) fn connect(p: &Profile) -> Result<Session, String> {
     let (host, port) = endpoint(&p.server, 22)?;
-    let addr = (host.as_str(), port)
-        .to_socket_addrs()
-        .map_err(error)?
-        .next()
-        .ok_or("SSH address unavailable")?;
-    let tcp = TcpStream::connect_timeout(&addr, Duration::from_secs(5)).map_err(error)?;
-    tcp.set_read_timeout(Some(Duration::from_secs(5)))
-        .map_err(error)?;
-    tcp.set_write_timeout(Some(Duration::from_secs(5)))
-        .map_err(error)?;
     let mut session = Session::new().map_err(error)?;
-    session.set_tcp_stream(tcp);
+    if p.preferences.ssh_jump_alias.is_empty() {
+        let addr = (host.as_str(), port)
+            .to_socket_addrs()
+            .map_err(error)?
+            .next()
+            .ok_or("SSH address unavailable")?;
+        let tcp = TcpStream::connect_timeout(&addr, Duration::from_secs(5)).map_err(error)?;
+        tcp.set_read_timeout(Some(Duration::from_secs(5)))
+            .map_err(error)?;
+        tcp.set_write_timeout(Some(Duration::from_secs(5)))
+            .map_err(error)?;
+        session.set_tcp_stream(tcp);
+        session.set_timeout(5000);
+    } else {
+        session.set_tcp_stream(crate::ssh_jump::open(
+            &p.preferences.ssh_jump_alias,
+            &host,
+            port,
+        )?);
+        session.set_timeout(15000);
+    }
+    session.handshake().map_err(|_| if p.preferences.ssh_jump_alias.is_empty() {
+        error("SSH handshake")
+    } else {
+        "SSH gateway or target handshake failed; verify gateway trust, key/agent and reachability".into()
+    })?;
     session.set_timeout(5000);
-    session.handshake().map_err(error)?;
     let (key, _) = session.host_key().ok_or("SSH host key unavailable")?;
     let path = if p.preferences.known_hosts.is_empty() {
         PathBuf::from(std::env::var_os("HOME").ok_or("Home unavailable")?).join(".ssh/known_hosts")

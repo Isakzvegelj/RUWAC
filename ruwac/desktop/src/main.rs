@@ -28,6 +28,7 @@ mod sessions;
 mod shell;
 mod shortcuts;
 mod sidebar_shell;
+mod ssh_jump;
 mod staging;
 mod terminal_style;
 mod tiles;
