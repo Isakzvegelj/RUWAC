@@ -119,6 +119,55 @@ class Updates(unittest.TestCase):
         self.assertEqual((prefix / 'bin/ruwac').resolve(), old)
         self.assertEqual(updates.rollback(prefix)['installed'], '0.0.2')
 
+    def test_rollback_revokes_install_consent_and_retains_check_preferences(self):
+        self.fixture_install('0.0.1'); self.fixture_install('0.0.2')
+        data = updates.preferences()
+        data.update(automatic_install=True, automatic_check=False, extension={'generated': True})
+        updates.save_preferences(data)
+        with patch.object(updates, 'run') as run:
+            result = updates.rollback(self.root / 'prefix')
+        run.assert_not_called()
+        self.assertFalse(result['automatic_install'])
+        self.assertFalse(updates.automatic_install_setting())
+        self.assertFalse(updates.automatic_setting())
+        self.assertEqual(updates.preferences()['extension'], {'generated': True})
+        with patch.object(sys, 'argv', ['updater', '--current', '0.0.1', '--install-auto']), patch.object(updates, 'api') as api, contextlib.redirect_stdout(io.StringIO()):
+            updates.main()
+        api.assert_not_called()
+
+    def test_failed_rollback_validation_does_not_revoke_consent(self):
+        self.fixture_install('0.0.1')
+        data = updates.preferences(); data['automatic_install'] = True; updates.save_preferences(data)
+        with self.assertRaisesRegex(ValueError, 'previous'): updates.rollback(self.root / 'prefix')
+        self.assertTrue(updates.automatic_install_setting())
+
+    def test_rollback_preference_write_failure_preserves_artifact_links(self):
+        self.fixture_install('0.0.1'); self.fixture_install('0.0.2')
+        base = self.root / 'prefix/lib/ruwac'
+        before = {name: (base / name).readlink() for name in ['current', 'previous']}
+        with patch.object(updates, 'save_preferences', side_effect=OSError('generated disk failure')):
+            with self.assertRaises(OSError): updates.rollback(self.root / 'prefix')
+        self.assertEqual({name: (base / name).readlink() for name in before}, before)
+
+    def test_rollback_preference_lock_contention_preserves_links(self):
+        self.fixture_install('0.0.1'); self.fixture_install('0.0.2')
+        prefix = self.root / 'prefix'
+        lock = updates.locked_file(updates.settings_path().parent / '.settings.lock')
+        try:
+            with self.assertRaisesRegex(ValueError, 'active'): updates.rollback(prefix)
+            self.assertEqual(updates.installed_version(prefix, '0.0.0'), '0.0.2')
+        finally:
+            os.close(lock)
+        self.assertEqual(updates.rollback(prefix)['installed'], '0.0.1')
+
+    def test_rollback_preserves_unknown_preference_schema(self):
+        self.fixture_install('0.0.1'); self.fixture_install('0.0.2')
+        path = updates.settings_path(); path.write_text('{"schema":2,"automatic_check":true}')
+        before = path.read_bytes()
+        with self.assertRaises(ValueError): updates.rollback(self.root / 'prefix')
+        self.assertEqual(path.read_bytes(), before)
+        self.assertEqual(updates.installed_version(self.root / 'prefix', '0.0.0'), '0.0.2')
+
     def test_tampered_previous_artifact_refuses_rollback(self):
         self.fixture_install('0.0.1'); self.fixture_install('0.0.2')
         base = self.root / 'prefix/lib/ruwac'

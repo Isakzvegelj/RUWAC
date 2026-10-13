@@ -338,10 +338,20 @@ def rollback(prefix):
             temp = base / ('.' + name + '-update')
             if temp.exists() or temp.is_symlink():
                 raise ValueError('Rollback conflict; preserve existing paths')
-        for name, target in [('previous', links[0][0]), ('current', links[1][0])]:
-            temp = base / ('.' + name + '-update')
-            temp.symlink_to(target); temp.replace(base / name)
-        return {'installed': links[1][1]['version'], 'previous': links[0][1]['version'], 'running_sessions': 'preserved'}
+        # A deliberate rollback must survive the next automatic timer expiry.
+        # Persist opt-out before swapping artifacts, while serializing consent
+        # changes. No service-manager availability is required for recovery.
+        preference_lock = locked_file(settings_path().parent / '.settings.lock')
+        try:
+            data = preferences()
+            data['automatic_install'] = False
+            save_preferences(data)
+            for name, target in [('previous', links[0][0]), ('current', links[1][0])]:
+                temp = base / ('.' + name + '-update')
+                temp.symlink_to(target); temp.replace(base / name)
+        finally:
+            os.close(preference_lock)
+        return {'installed': links[1][1]['version'], 'previous': links[0][1]['version'], 'automatic_install': False, 'running_sessions': 'preserved'}
     finally:
         os.close(lock)
 

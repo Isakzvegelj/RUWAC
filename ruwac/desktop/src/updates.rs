@@ -78,16 +78,32 @@ pub fn attach(header: &adw::HeaderBar, window: &adw::ApplicationWindow, automati
                 }); }
             });
         });
+        let auto_install = gtk::CheckButton::with_label("Install GitHub updates automatically (Fedora 44)");
+        let changing = Rc::new(Cell::new(false));
         let rollback = gtk::Button::with_label("Restore previous installation");
+        rollback.set_widget_name("update-rollback"); rollback.set_sensitive(false);
+        let rollback_auto = auto_install.downgrade();
+        let rollback_changing = changing.clone();
         let label = status.clone(); let busy_rollback = busy.clone();
         rollback.connect_clicked(move |button| {
+            if rollback_auto.upgrade().is_some_and(|check| !check.is_sensitive()) { return; }
             if busy_rollback.replace(true) { return; }
             button.set_sensitive(false);
+            if let Some(check) = rollback_auto.upgrade() { check.set_sensitive(false); }
             let label = label.downgrade(); let busy = busy_rollback.clone();
+            let rollback_auto = rollback_auto.clone(); let changing = rollback_changing.clone();
+            let rollback_button = button.downgrade();
             task(&["--rollback"], move |result| {
                 busy.set(false);
+                if let Some(button) = rollback_button.upgrade() { button.set_sensitive(true); }
+                if let Some(check) = rollback_auto.upgrade() { check.set_sensitive(true); }
+                if result.is_ok() {
+                    if let Some(check) = rollback_auto.upgrade() {
+                        changing.set(true); check.set_active(false); changing.set(false);
+                    }
+                }
                 if let Some(label) = label.upgrade() { label.set_text(&match result {
-                    Ok(value) => format!("Restored {}. Running windows and sessions remain unchanged.", value["installed"].as_str().unwrap_or("previous version")),
+                    Ok(value) => format!("Restored {}. Automatic installation disabled; re-enable it after resolving the regression. Running windows and sessions remain unchanged.", value["installed"].as_str().unwrap_or("previous version")),
                     Err(error) => format!("Rollback refused: {error}"),
                 }); }
             });
@@ -108,7 +124,6 @@ pub fn attach(header: &adw::HeaderBar, window: &adw::ApplicationWindow, automati
                 });
             }
         });
-        let auto_install = gtk::CheckButton::with_label("Install GitHub updates automatically (Fedora 44)");
         auto_install.set_widget_name("update-auto-install");
         auto_install.set_sensitive(false);
         content.append(&auto_install);
@@ -117,11 +132,12 @@ pub fn attach(header: &adw::HeaderBar, window: &adw::ApplicationWindow, automati
         content.append(&detail);
         let weak_auto = auto_install.downgrade();
         let update_status = status.downgrade();
+        let ready_rollback = rollback.downgrade();
         task(&["--auto-install", "status"], move |result| {
             if let (Some(check), Ok(value)) = (weak_auto.upgrade(), result) {
                 check.set_active(value["automatic_install"] == true);
                 check.set_sensitive(true);
-                let changing = Rc::new(Cell::new(false));
+                if let Some(button) = ready_rollback.upgrade() { button.set_sensitive(true); }
                 check.connect_toggled(move |check| {
                     if changing.get() { return; }
                     check.set_sensitive(false);
@@ -247,6 +263,10 @@ pub fn fixture(window: &adw::ApplicationWindow, command: &Value) -> Value {
             let automatic_install = find(dialog.upcast_ref(), "update-auto-install")
                 .and_then(|w| w.downcast::<gtk::CheckButton>().ok())
                 .map(|w| w.is_active());
+            let automatic_install_enabled =
+                find(dialog.upcast_ref(), "update-auto-install").is_some_and(|w| w.is_sensitive());
+            let rollback_enabled =
+                find(dialog.upcast_ref(), "update-rollback").is_some_and(|w| w.is_sensitive());
             let status = find(dialog.upcast_ref(), "update-status")
                 .and_then(|w| w.downcast::<gtk::Label>().ok())
                 .map(|label| label.text().to_string());
@@ -255,7 +275,7 @@ pub fn fixture(window: &adw::ApplicationWindow, command: &Value) -> Value {
             let automatic = find(dialog.upcast_ref(), "update-auto-check")
                 .and_then(|w| w.downcast::<gtk::CheckButton>().ok())
                 .map(|w| w.is_active());
-            let result = serde_json::json!({"dialog":true,"status":status,"install_enabled":install,"automatic":automatic,"automatic_install":automatic_install});
+            let result = serde_json::json!({"dialog":true,"status":status,"install_enabled":install,"automatic":automatic,"automatic_install":automatic_install,"automatic_install_enabled":automatic_install_enabled,"rollback_enabled":rollback_enabled});
             if command["operation"] == "close" {
                 dialog.close();
             }

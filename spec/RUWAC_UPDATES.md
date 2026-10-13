@@ -54,7 +54,12 @@ Opt-out prevents an in-progress automatic build from installing after the opt-ou
 has committed. Edited or unrelated unit files are preserved. If the user manager
 cannot disable the timer, the saved opt-out still prevents automatic installation.
 Manual installation and reversible rollback retain their existing lock and immutable
-artifact checks. Automatic update checks and automatic installation are independent
+artifact checks. A successful rollback disables unattended installation before
+switching versions, preventing the next timer expiry from undoing recovery. The
+timer may remain scheduled, but disabled checks perform no network or installation;
+re-enable installation explicitly after resolving the regression. Rollback works
+without a running user service manager and preserves notification preferences.
+Automatic update checks and automatic installation are independent
 settings; disabling notifications does not implicitly revoke installation consent.
 
 Implementation evidence: portable updater fault tests, real expiry of uniquely

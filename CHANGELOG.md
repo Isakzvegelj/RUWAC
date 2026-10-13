@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v0.2.21 — 2026-10-13 — Stable source release
+
+- Prevent unattended updates from undoing a deliberate rollback; preserve running sessions and notification settings, and refuse artifact changes if saving the recovery preference fails.
+
 ## v0.2.20 — 2026-10-13 — Stable source release
 
 - Add opt-in unattended Fedora source updates, a reversible per-user timer, exact-commit quality/privacy gates and a first-install bootstrap command while preserving running sessions.
