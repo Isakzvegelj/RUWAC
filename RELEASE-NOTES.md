@@ -1,21 +1,12 @@
-# RUWAC downloadable Fedora testing bundles and update delivery
+# Fedora testing-bundle prerequisite repair
 
-The existing tagged release workflow now compiles Fedora 44 x86_64 applications,
-retains dependency notices, scans the complete bundle and attaches the archive and
-checksum to the existing controller-created release. Publication waits for quality
-and privacy checks on that exact source commit. Retries never overwrite an existing
-asset with different bytes. Version assignment, commits and tags remain in the
-ordinary build/release workflow.
+Install the OpenSSL command-line utility alongside its development libraries in
+the existing hosted bundle job. Its three certificate fixtures require the utility;
+the preceding job passed 104 desktop tests but failed those fixtures with a missing
+executable. Verify availability before compiling. No test is skipped or downgraded.
 
-Updates adds an explicit Use Fedora testing bundles option. Source builds remain
-the default. Bundle delivery verifies the expected repository/tag/name, GitHub's
-SHA256 asset digest, bounded download/extraction, exact source commit and every
-manifest file before the existing immutable per-user installer executes. Missing
-assets or pending quality checks report a pending update; they do not claim success
-or silently start a local compilation. Switching delivery off during download
-preserves the current installation. Rollback continues disabling automatic installs.
-
-The archives are testing candidates, with the unresolved desktop RSA advisory
-visible in their manifests. They are not signed RPMs or security-qualified releases.
-Physical input and external Windows display/clipboard remain separate acceptance
-requirements. Existing terminal, profile, clipboard and RDP functionality is retained.
+Controller-owned source publication, exact-commit quality/privacy gates, immutable
+asset upload, notices and archive verification remain in the existing workflow.
+The previous published source reference is retained. Testing bundles remain unsigned
+and retain the unresolved RSA advisory; external Windows and physical-input
+qualification and signed RPM requirements remain open.

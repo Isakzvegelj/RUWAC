@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v0.2.27 — 2026-10-13 — Stable source release
+
+- Install the OpenSSL command-line test prerequisite in the hosted Fedora testing-bundle job and verify its availability before compiling certificate fixtures.
+
 ## v0.2.26 — 2026-10-13 — Stable source release
 
 - Publish Fedora testing bundles through the existing tagged release workflow and add explicit checked-bundle update delivery without local compilation, preserving source builds, rollback and running sessions.
