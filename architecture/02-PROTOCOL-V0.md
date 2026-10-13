@@ -41,3 +41,8 @@ Idempotency keys are bounded (1024-entry FIFO), daemon-lifetime, and scoped to e
 Grid cells are arrays `[text,wide_spacer,foreground,background,bold,inverse]`; colors are RGB triplets or indexed/named numbers. Capture strips trailing cell spaces and separates rows with newlines. Shared focus and minimum attached size are documented in the architecture; automation always names its target. Revision events coalesce output and mutations, not individual raw-byte delivery.
 
 Remote use can pipe a JSON request into `ssh EXISTING_HOST ruwac request` using existing authenticated SSH. The request body stays on stdin. Host selection, remote installation, transfer and disconnect behavior have not been tested on a second host; there is no custom TCP listener or implemented --host convenience flag.
+
+
+### Optional Codex process probe
+
+`agent.probe` takes `{"pane":"pane_ID"}` and returns `pane`, `adapter` (`codex`), `foreground_pid`, `process_detected` and `selected`. Discover support from `schema.methods`. This read-only operation reuses the bounded same-UID foreground-process-group check; it neither reads arguments/environment/terminal contents nor changes selection. Process presence does not establish login, model readiness, draft acceptance or image consumption. Extra fields, stale/wrong IDs and idempotency keys are rejected.

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v0.2.14 — 2026-10-13 — Stable source release
+
+- Add authenticated remote Codex pane discovery and selection, with a read-only bounded process probe for launcher wrappers and foreground PID checks before attachment.
+
 ## v0.2.13 — 2026-10-13 — Stable source release
 
 - Add native clipboard PNG attachment to a confirmed registered SSH/Codex destination, reusing profile credentials and the verified binary transfer with focus/profile cancellation and bounded workers.

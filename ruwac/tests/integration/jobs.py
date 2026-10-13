@@ -38,6 +38,9 @@ print("JOB_DONE",flush=True);sys.exit(23)
  results.append({'id':'JOBS-LIVE-FOREGROUND-PRIVACY-QUIET','status':'PASS','real_foreground_process_group':True})
  before=rpc('health')['revision'];page=rpc('job.list',{'query':'Job acceptance','limit':1});assert page['total']==1 and page['jobs'][0]['id']==s['pane']
  job(s['pane']);assert rpc('health')['revision']==before
+ probe=rpc('agent.probe',{'pane':s['pane']});assert not probe['process_detected'] and probe['foreground_pid']==j['foreground']['pid'] and set(probe)=={'pane','adapter','foreground_pid','process_detected','selected'}
+ assert rpc('health')['revision']==before
+ rpc('agent.probe',{'pane':s['pane'],'argv':True},error='INVALID_PARAMS');rpc('agent.probe',{'pane':'window_'+'a'*32},error='INVALID_ID');rpc('agent.probe',{'pane':'pane_'+'a'*32},error='STALE_ID');rpc('agent.probe',{'pane':s['pane']},key='stale-probe',error='INVALID_PARAMS')
  for params in [{'limit':0},{'limit':101},{'offset':129},{'query':'x'*257},{'argv':True}]:rpc('job.list',params,error='INVALID_PARAMS')
  rpc('job.query',{'pane':'window_'+'a'*32},error='INVALID_ID');rpc('job.query',{'pane':'pane_'+'a'*32},error='STALE_ID')
  rpc('job.query',{'pane':s['pane']},key='fresh-metadata',error='INVALID_PARAMS')

@@ -182,6 +182,7 @@ pub fn start_with_store(store: Option<Store>) -> std::io::Result<Handle> {
                             | "pane.list"
                             | "job.list"
                             | "job.query"
+                            | "agent.probe"
                             | "pane.history"
                             | "pane.history.freeze"
                             | "pane.history.release"
@@ -301,6 +302,7 @@ impl State {
                     | "client.input"
                     | "job.list"
                     | "job.query"
+                    | "agent.probe"
                     | "pane.history.freeze"
                     | "pane.history.release"
                     | "daemon.stop"
@@ -655,6 +657,7 @@ impl State {
             }
             "job.list" => self.job_list(v),
             "job.query" => self.job_query(v),
+            "agent.probe" => self.agent_probe(v),
             "pane.attachImage" => self.attach_image(v),
             "pane.list" => {
                 let s = target(v, "session", "session")?;
@@ -1077,7 +1080,7 @@ impl State {
     }
 }
 pub fn schema() -> Value {
-    json!({"protocol":0,"framing":"u32 big-endian byte length + UTF-8 JSON","max_frame_bytes":ruwac_protocol::MAX_FRAME,"methods":["job.list","job.query","health","version","capabilities","schema","describe","session.create","session.list","session.attach","session.detach","window.create","window.list","window.rename","window.select","window.cycle","window.previous","pane.create","pane.layout","pane.history","pane.history.freeze","pane.history.release","pane.close","pane.list","pane.select","pane.attachImage","pane.sendText","pane.sendKey","pane.capture","pane.wait","buffer.set","buffer.get","buffer.paste","client.resize","client.render","client.input","events.subscribe","daemon.checkpoint","daemon.stop"],"targets":{"session":"session_ + 32 hex","window":"window_ + 32 hex","pane":"pane_ + 32 hex"},"request":{"version":0,"id":"JSON request correlation value","method":"method name","params":"object","idempotency_key":"optional 1..128 byte daemon-lifetime key"}})
+    json!({"protocol":0,"framing":"u32 big-endian byte length + UTF-8 JSON","max_frame_bytes":ruwac_protocol::MAX_FRAME,"methods":["job.list","job.query","agent.probe","health","version","capabilities","schema","describe","session.create","session.list","session.attach","session.detach","window.create","window.list","window.rename","window.select","window.cycle","window.previous","pane.create","pane.layout","pane.history","pane.history.freeze","pane.history.release","pane.close","pane.list","pane.select","pane.attachImage","pane.sendText","pane.sendKey","pane.capture","pane.wait","buffer.set","buffer.get","buffer.paste","client.resize","client.render","client.input","events.subscribe","daemon.checkpoint","daemon.stop"],"targets":{"session":"session_ + 32 hex","window":"window_ + 32 hex","pane":"pane_ + 32 hex"},"request":{"version":0,"id":"JSON request correlation value","method":"method name","params":"object","idempotency_key":"optional 1..128 byte daemon-lifetime key"}})
 }
 
 fn primary_buffer(v: &Value) -> std::result::Result<bool, Error> {

@@ -44,6 +44,9 @@ try:
  def ready():
   text=rpc('pane.capture',{'pane':pane,'lines':100})['text'];(root/'consumer-screen.txt').write_text(text);return 'Ask Codex' in text and ('GPT-'in text or 'context left'in text)
  eventually(ready,30)
+ probe=rpc('agent.probe',{'pane':pane});assert probe['process_detected'] and probe['foreground_pid']>0 and set(probe)=={'pane','adapter','foreground_pid','process_detected','selected'}
+ assert not rpc('agent.probe',{'pane':other['pane']})['process_detected']
+ results.append({'id':'READ_ONLY_CODEX_PROCESS_PROBE_SUPPORTS_LAUNCHER','PASS':True,'private_arguments_excluded':True})
  image=Image.new('RGB',(640,240),'#16365a');ImageDraw.Draw(image).text((70,70),'729481',font=ImageFont.load_default(size=72),fill='white');image.save(root/'generated.png');(root/'generated.png').chmod(0o600);hash=hashlib.sha256((root/'generated.png').read_bytes()).hexdigest()
  command('gui','tab-select',tab=0);focus('peer');command('peer','set-png',file='generated.png');focus('gui');command('gui','focus-view',view=0)
  assert command('gui','remote-image-dialog',operation='show')['clicked']
@@ -57,6 +60,14 @@ try:
  stale=command('gui','remote-image-dialog',operation='send',socket=str(sock),pane=pane,directory=str(remote_stage),confirm=True)
  assert 'changed' in stale['status'] and '[Image #1]'not in rpc('pane.capture',{'pane':pane,'lines':100})['text']
  results.append({'id':'REMOTE_NATIVE_PROFILE_CHANGE_REQUIRES_REVIEW','PASS':True})
+ assert command('gui','remote-image-dialog',operation='discover',socket=str(sock),pane='')['clicked']
+ def discovered_ready():
+  value=command('gui','remote-image-dialog',operation='inspect');(e/'discovery-debug.json').write_text(json.dumps({'dialog':value,'jobs':rpc('job.list')},indent=2));return 'Choose a remote pane' in value['status']
+ eventually(discovered_ready,20)
+ assert not command('gui','remote-image-dialog',operation='choose',choice=other['pane'])['clicked']
+ assert command('gui','remote-image-dialog',operation='choose',choice=pane)['clicked']
+ assert '[Image #1]'not in rpc('pane.capture',{'pane':pane,'lines':100})['text']
+ results.append({'id':'REMOTE_NATIVE_AUTHENTICATED_PANE_DISCOVERY_AND_SELECTION','PASS':True,'ordinary_terminal_excluded':True,'input_sent_by_discovery':False})
  attachment_started=time.monotonic();command('gui','remote-image-dialog',operation='send',socket=str(sock),pane=pane,directory=str(remote_stage),confirm=True)
  eventually(lambda:'PNG attached to the verified remote' in command('gui','inspect')['status'],25)
  assert '[Image #1]' in rpc('pane.capture',{'pane':pane,'lines':100})['text']

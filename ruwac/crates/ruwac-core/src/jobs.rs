@@ -184,6 +184,16 @@ impl State {
             .ok_or_else(|| Error::new("STALE_ID", "pane does not exist"))?;
         Ok(metadata(p, self))
     }
+    pub(super) fn agent_probe(&self, v: &Value) -> Result<Value> {
+        let job = self.job_query(v)?;
+        let pid = job["foreground"]["pid"].as_u64();
+        let detected = pid
+            .and_then(|p| u32::try_from(p).ok())
+            .is_some_and(|p| ruwac_pty::attachment::validate_process(p).is_ok());
+        Ok(
+            json!({"pane":job["pane"],"adapter":"codex","foreground_pid":pid,"process_detected":detected,"selected":job["selected"]}),
+        )
+    }
     pub(super) fn job_list(&self, v: &Value) -> Result<Value> {
         let empty = serde_json::Map::new();
         let object = if v.is_null() {

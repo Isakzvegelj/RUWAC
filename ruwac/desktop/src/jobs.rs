@@ -97,6 +97,11 @@ pub fn control(
 // Read every byte-bounded page before publishing a native snapshot. Older
 // daemons may omit membership; strict cursor/count/identity guards still apply.
 fn fetch_jobs(rpc: &mut Rpc) -> std::io::Result<Vec<Value>> {
+    fetch_with(|method, params| rpc.call(method, params))
+}
+pub fn fetch_with(
+    mut call: impl FnMut(&str, Value) -> std::io::Result<Value>,
+) -> std::io::Result<Vec<Value>> {
     let invalid = || std::io::Error::other("Job membership or cursor changed; refresh again");
     let mut rows = Vec::new();
     let mut offset = 0u64;
@@ -104,7 +109,7 @@ fn fetch_jobs(rpc: &mut Rpc) -> std::io::Result<Vec<Value>> {
     let mut membership: Option<Value> = None;
     let mut ids = std::collections::HashSet::new();
     for _ in 0..128 {
-        let page = rpc.call("job.list", json!({"limit":100,"offset":offset}))?;
+        let page = call("job.list", json!({"limit":100,"offset":offset}))?;
         let total = page["total"]
             .as_u64()
             .filter(|n| *n <= 128)
