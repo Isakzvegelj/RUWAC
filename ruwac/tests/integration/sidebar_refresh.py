@@ -69,7 +69,7 @@ try:
         temp.chmod(0o600)
         temp.replace(store)
     replace_library({'schema': 1, 'items': [
-        {'id': 'external-one', 'machine_id': 'external-one', 'name': 'Other window EVF', 'server': 'localhost', 'protocol': 'RDP', 'username': 'fixture', 'secret_reference': '', 'group': '', 'tags': [], 'favorite': False, 'last_used': 0},
+        {'id': 'external-one', 'machine_id': 'external-one', 'name': 'Other window fedora.example.test', 'server': 'localhost', 'protocol': 'RDP', 'username': 'fixture', 'secret_reference': '', 'group': '', 'tags': [], 'favorite': False, 'last_used': 0},
         {'id': 'external-two', 'machine_id': 'external-two', 'name': 'Other window Windows', 'server': 'localhost', 'protocol': 'RDP', 'username': 'fixture', 'secret_reference': '', 'group': '', 'tags': [], 'favorite': False, 'last_used': 0}
     ], 'groups': []})
     eventually(lambda: inspect()['rows'] == 2, 10)

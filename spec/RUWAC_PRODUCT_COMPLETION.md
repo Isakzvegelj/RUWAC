@@ -16,13 +16,7 @@ or Escape reveals the remote screen; errors and timeouts also return manual cont
 Tab/focus/profile/transport changes retain the credential-target cancellation guards.
 Dynamic viewport requests wait until automatic sign-in completes or stops.
 
-Actual authorized Fedora acceptance completed GNOME service and user-desktop
-handovers with 44 GTK/XTest pointer motions and unchanged input epochs during the
-sequence, using dynamic display mode. Automatic bidirectional clipboard regression
-passed Unicode text and 64×64 / 2560×1440 PNGs in both directions. This is a real
-external Fedora login/CLIPRDR result with simulated local input, not physical input
-qualification. AVF's reported first-stage failure was identified by the owner as an
-incorrect host; no new AVF or MUC sign-in pass is claimed from that correction.
+Operational host details and troubleshooting are retained in private evidence. See [public acceptance status](RUWAC_ACCEPTANCE_STATUS.md) for current qualification and limitations.
 
 Native local RDP tests pass editor CRUD, a 480×520 dialog allocation without horizontal
 field clipping, basic/service/GNOME field ordering, cancellation without saving,
@@ -52,18 +46,7 @@ failed separately with the existing unsuppressed RSA finding.
 
 ## External SSH image consumption and ephemeral Codex verification
 
-After owner reauthentication, an authorized EVF integration passed RUWAC SSH
-PNG transport, independent remote SHA-256, private file/directory modes, real
-Codex draft attachment and actual generated-image consumption. A separate
-`codex exec --ephemeral` run on EVF Codex 0.162.1 correctly read the same generated
-image with exit zero and no new persisted session files. It ran noninteractively
-in the owned fixture directory with a read-only sandbox, preserving owner
-configuration and existing terminal sessions. These are actual external-host
-consumer results, distinct from the native registered-SSH route's earlier
-loopback acceptance. The complete native GTK→external EVF consumer journey,
-saved destination contexts and other provider adapters remain separate gates.
-Earlier expired-token results below describe their historical baseline; they
-are superseded for this verified external CLI consumer journey.
+Operational host details and troubleshooting are retained in private evidence. See [public acceptance status](RUWAC_ACCEPTANCE_STATUS.md) for current qualification and limitations.
 
 
 ## Automatic RDP clipboard delivery
@@ -174,7 +157,7 @@ Actual isolated GTK/PTY tests pass mixed terminal/RDP/Files restoration, preserv
 
 `ruwac --host SSH_HOST --socket REMOTE_SOCKET image-attach pane_ID LOCAL_PNG REMOTE_PRIVATE_DIRECTORY` transfers decoded/validated PNG bytes through the existing authenticated OpenSSH stdin channel. Host-key checks remain strict; credentials and agent forwarding are disabled. The image is outside the 1 MiB daemon JSON control frame. A bounded metadata header carries the explicit pane, initial foreground PID, destination, hash, dimensions and byte count. The remote receiver validates those fields and the PNG before sending its remote file path to the selected Codex draft. Source/destination receipts correlate; unexpected hashes, paths, modes, dimensions and fake consumption claims are rejected. No Enter or automatic turn submission is sent. Older remote daemons are preserved and receive an actionable compatibility error.
 
-Real authorized CVF→EVF acceptance verifies the PNG hash independently on the remote filesystem, 0600 file/0700 directory modes and acceptance by the real Codex 0.144.1 draft. **Remote image consumption remains blocked:** EVF's saved Codex access token could not be refreshed. Cached login status is insufficient proof of a usable account. No credentials are copied from CVF, no account logout occurs, and attachment is not reported as consumption. The owner has been asked to sign in on EVF. GTK attachment to an ordinary SSH foreground process still refuses; routing the GTK action to a registered remote agent remains an implementation gap.
+Operational host details and troubleshooting are retained in private evidence. See [public acceptance status](RUWAC_ACCEPTANCE_STATUS.md) for current qualification and limitations.
 
 Nine binary receiver refusal cases cover oversized metadata/payload, unknown fields, truncation, trailing bytes, hash/dimension mismatch, invalid target and nonprivate staging. Nine synthetic SSH receipt cases cover correlation/version, hash/mode/path/type, Unicode filename and fake-consumption rejection; these are distinct from the real-host test. Native staging now reserves space for both source and final PNG copies, enforcing the 256 MiB peak namespace bound. Uncertain queued files are retained for inspection; no blind retry is performed.
 
@@ -182,7 +165,7 @@ Nine binary receiver refusal cases cover oversized metadata/payload, unknown fie
 
 The terminal toolbar now offers **Attach PNG to Codex**. It reads actual GDK `image/png`, validates/decode-stages an owned 0600 file, binds delivery to the selected/focused terminal and foreground Codex process, and observes the current draft’s image marker. It never submits a turn. Old conversation markers and model output cannot acknowledge a new attachment. The current persistent engine is preserved: a checked fallback uses its existing authenticated input channel when the new attachment API is unavailable. No local path is offered to an SSH foreground process as a remote attachment.
 
-Real acceptance uses a separate Wayland GDK clipboard producer and authenticated Codex 0.162.1 on CVF. The actual compiled toolbar callback accepts the generated PNG, verifies its hash/mode, cancels a slow read on Wayland focus loss and refuses an ordinary terminal. Codex consumes the PNG after the frontend is closed and before the private daemon is stopped. Both the new engine and an isolated immutable 0.1.29 engine pass. Input/focus driving is synthetic on an isolated compositor; physical-seat acceptance remains separate. No owner clipboard, configuration or sessions are used by those fixtures.
+Operational host details and troubleshooting are retained in private evidence. See [public acceptance status](RUWAC_ACCEPTANCE_STATUS.md) for current qualification and limitations.
 
 Native image staging is bounded to 128 files and 256 MiB per frontend namespace, with 64 MiB input/decoded-image and 4096-pixel dimension caps. Agent files survive frontend close. Retained namespaces expire after 24 hours from their most recent attachment; active-frontends check expiry each minute and later startup reclaims expired closed namespaces. Live transfer files and unknown entries are preserved. Four filesystem tests cover frontend-close retention, expiry, symlink refusal and nonblocking FIFO refusal. Process traversal is globally bounded to 64 entries. Errors retain uncertain queued files and advise inspecting the draft before retrying; already transmitted input cannot be recalled.
 
@@ -212,56 +195,7 @@ Upstream origin: IronRDP commit `e4143f26306a6639a889d80c1c484ca69c365a8f` for E
 
 The full product is not yet complete. The stable source lane contains operational compiled code and exact regression evidence; it does not qualify the entire product or a Fedora binary distribution. Authorized Windows authentication/framebuffer decoding passes; Fedora GNOME service authentication, RDSTLS handover and actual GDM rendering are verified; Linux-user sign-in remains separate. Physical input, dependency security and the remaining terminal, files, agents, automation and distribution scope remain open.
 
-| Requirement | Current evidence | Status / remaining work |
-|---|---|---|
-| D-00 independent windows | Actual GTK/shared-daemon window close and independent private layouts | PASS bounded native fixture; first window owns default GUI automation endpoint; RDP transport transfer between processes remains |
-| RDP-06 GNOME dual login | Separate credentials, assisted input and opt-in recognized native login | Real authorized Fedora automatic Linux sign-in PASS; tab/missing-secret refusal PASS. Other layouts/locales, background tabs and wrong real GDM password remain open |
-| T-01 Screen commands | Nine real-PTY copy/chooser/prompt/configuration and 2–5 RUWAC nesting groups | PARTIAL: implemented bounded headless interaction; mixed GNU Screen/tmux 2–5 layers pass in scoped configurations; Screen arbitrary-control paste and physical input qualification remain |
-| T-02 startup input | 100 adversarial probes in headless suite | PASS fixture |
-| T-03 multiple PTYs and load | Independent PTYs, layout suite, actual 128-pane process/wire/native paging fixture | PASS bounded capacity; maximum-load terminal/checkpoint performance remains separate |
-| T-04 detach and reattach | Native crash/reattach and workspace same-PID tests | PASS daemon lifetime; no process resurrection claim |
-| T-05 stable IDs | Targeted routes, stale-ID negatives, concurrent clients | PASS |
-| T-06 VT/Unicode/applications | Native Vim/less/htop and actual fullscreen fzf Unicode/Alt navigation, canonical extended SGR/plain+palette recovery and native/Cairo output | PARTIAL: complete VT/application/Kitty/AltGr/IME and physical-input matrix |
-| T-07 mouse recovery | Native routing and disposable Bash raw-child exit | PARTIAL: physical touchpad gate blocked |
-| T-08 history/internal buffer | Canonical history, paged capture, independent internal/system clipboard tests | PASS bounded fixture |
-| T-09 SSH/nested terminals | Real authorized SSH remote-PTY detach/reattach and Unicode | PARTIAL: actual 2–5 mixed GNU Screen/tmux/RUWAC layers pass with both prefix modes; Screen arbitrary-control paste remains an upstream limitation |
-| T-10 performance | Retained matched 1/5/20/40-pane measurements | PARTIAL: current 30-trial matched measurements and per-block unrelated-load accounting implemented; observed desktop/IDE load blocks idle qualification |
-| A-01 negotiation/discovery | Existing v0 schema/capabilities/typed errors | PARTIAL: describe/local GUI targeting and typed RDP lifecycle over actual SSH implemented; read-only paged host inventory/list/query now passes native and authenticated SSH tests; named workspace save/open/restore now pass scoped GTK/PTY acceptance; native snapshot management and terminal session aliases implemented; real Fedora RDP restoration now passes five cycles with fresh frame responses; Windows restoration and nonterminal alias policies remain |
-| A-02 literal input | Unicode, quotes, shell metacharacters and separate Enter | PASS |
-| A-03 concurrent routes | Idempotency, focus changes, stale IDs | PASS |
-| A-04 non-TTY/SSH | Real --host JSON/file control and three SSH PTY cycles | PASS authorized SSH fixture; endpoint provisioning remains explicit |
-| A-05 capture/wait/events | Bounded capture, event subscription, revision and wait tests | PASS |
-| A-06 socket/backpressure | Owned daemon socket, malformed frames, concurrency limits | PARTIAL: same-UID peer verification and byte-bounded process metadata/all-page native guards validated; broader response bounds and fuzz/soak remain |
-| A-07 GUI control | Explicit unavailable response and independent headless graph | PARTIAL: independent permission-scoped focus/RDP lifecycle over actual SSH validated; bounded polling GUI metadata event subscriptions now pass native/authenticated-loopback acceptance; remote input and push-stream transport remain |
-| R-01 Windows | Authorized Windows 11 authentication and real 1280×720 framebuffer decoding | PASS bounded real-host login/frame; external clipboard, display/input and broader interoperability remain |
-| R-02 Fedora GNOME | Actual authorized service login, greeter/user-desktop handovers, automatic Linux sign-in and dynamic viewport | PARTIAL: supported English real-host path PASS; physical input, other locales/layouts, Windows clipboard and three external tabs remain open; real Fedora directional and automatic bidirectional text/PNG pass |
-| R-03 independent tabs | Three authenticated loopback tabs; 200 switches/450 inactive offers | PARTIAL: external-host qualification |
-| R-04 display modes | Actual Display Control/reactivation, viewport transforms and resize storm | PARTIAL: external server and physical pointer acceptance |
-| R-05 remote keys | Scancode mapping and send-key menu | PARTIAL: actual Windows/GNOME layouts, AltGr/IME/compositor restrictions |
-| R-06 pointer/touchpad | Synthetic routing, held-input release and reconnect | PARTIAL: physical input and external hosts |
-| R-07 HiDPI | Fractional transforms and actual 3K lossless bitmap frames | PARTIAL: real monitor moves/scales and external codec |
-| R-08 responsiveness | Frame timings, cadence and process samples in loopback | PARTIAL: matched authorized Remmina/FreeRDP comparison |
-| C-01/C-02 text interoperability | 60 bidirectional loopback transfers | PARTIAL: real authorized Fedora directional and automatic bidirectional text/PNG pass; Windows and three external tabs remain open |
-| C-03/C-04 PNG interoperability | 18 loopback PNG/DIBV5 transfers | PARTIAL: real authorized Fedora directional and automatic bidirectional text/PNG pass; Windows and three external tabs remain open |
-| C-05 ownership | Real GDK peer and three loopback RDP tabs; Files isolation | PASS owned compositor |
-| C-06 PRIMARY/internal separation | Independent internal/CLIPBOARD tests | PARTIAL: PRIMARY protocol and physical middle-click acceptance |
-| C-07 application paste | Real GDK peer, native applications, 10 KiB/1 MiB payloads | PASS owned compositor |
-| C-08 local agent image | Real native GDK → Codex draft and actual consumption, including frontend close and preserved legacy engine | PASS scoped local Codex 0.162.1; synthetic local input, physical-seat gate separate |
-| C-09 remote agent image | Real authenticated SSH PNG transport, independent remote hash/modes and Codex draft acceptance | PARTIAL: actual external EVF CLI transfer/draft/consumption now passes after owner reauthentication; ephemeral noninteractive consumption creates no persisted session files. Native registered SSH routing passes real authenticated loopback transfer/consumption; the complete native external-host journey remains separate |
-| C-10 transactions/errors | Epoch cancellation, policies, reconnect and limits | PASS bounded fixture; further malformed/slow-server soak remains |
-| C-11 unsupported format/consumer | Visible staging errors and no fake attachment claim | PARTIAL: final destination/consumer fallback UX |
-| F-01 import | Explicit read-only Remmina preview, 70 imports, metadata backup | PARTIAL: explicit-ID reviewed merge, policy preservation, stale/active guards and Undo validated; broader nonsecret mapping/skip reporting remains |
-| F-02 library | Native compact sidebar/panels, CRUD, groups, favorites, recents, 1,000-profile fixture | PARTIAL: native 50-row paging and all 1,000 endpoints/search validated; transactional canonical SQLite inventory and legacy recovery validated; inherited routes remain |
-| F-03 transfers | SFTP SHA-256, native pause/resume/discard, original-host binding, lost-rename recovery and encrypted keys through Secret Service; 14 new and six existing fixture groups | PARTIAL: native rsync file/folder copies, actual authorized SSH integrity and cancellation pass; client SIGKILL recovery and native/external verified backup handling pass; partial-data resume, broader implementations, remaining independent-actor races and remote power-loss durability remain |
-| F-04 agents | Ordinary terminal execution, bounded process metadata, native search/exact jump and private D-Bus exit delivery | PARTIAL: observed process layer validated; complete native external SSH image journey, other agent adapters, physical notification acceptance and optional structured adapters remain |
-| F-05 ordinary user/headless package | Independent graphical-free headless graph | PARTIAL: per-user installation implemented; RPM dependency/install qualification remains open |
-| F-06 install/upgrade/uninstall | Reversible private per-user installer and desktop entry | PARTIAL: per-user installer fixtures pass; Fedora RPM lifecycle remains open |
-| F-07 standard workflow | Existing build/release/controller and verified tagged source releases | PARTIAL: immutable binary/RPM publication remains unqualified |
-| F-08 public hygiene | Explicit permitted source inventory, outgoing-history checks | PASS for verified source publications |
-| Mixed workspace | Live mixed GTK trees and all-view checkpoints/crash restore | PASS bounded native fixture: persistent tab/view IDs, exact leaf focus, move/close and crash restoration; external-host/physical qualification remains separate |
-| Persistent metadata/history after daemon loss | Real SIGKILL and runtime-tree removal restore stable IDs, canonical active-screen tail/cells, layout and ended status; native copy passes | PARTIAL: 128 dense 100 by 200 dual-buffer PTYs checkpoint below the unchanged limit and preserve recorded cell styles/text after SIGKILL under a verified 1536 MiB service cap; full-scrollback saturation, arbitrary entropy and idle latency qualification remain |
-| Native accessibility and diagnostics | GTK controls, configurable keys and accessible visible RDP toolbar | PARTIAL: global Alt-number navigation and safe targeted doctor implemented; physical keyboard/accessibility matrix open |
-| Distribution/governance | Locked dependency license inventory and source release receipts | PARTIAL: Apache-2.0 and contributor/security/conduct/CODEOWNERS/templates implemented; pinned Fedora format/Clippy/unit/real headless/declaration checks and guarded labels added. BLOCKED desktop RSA advisory; hosted/live-label/branch-rule, broader nightly/fuzz/hardware CI and qualified package/signing/provenance remain |
+Operational host details and troubleshooting are retained in private evidence. See [public acceptance status](RUWAC_ACCEPTANCE_STATUS.md) for current qualification and limitations.
 
 Native endpoint-bound certificate review/pinning and changed/stale guards have four policy units and eight authenticated local native groups. Real Windows authentication/framebuffer decoding passes with an existing approved leaf; the Fedora SSH-attested leaf is verified and GNOME service authentication/handover/GDM rendering passes. Owner clipboard/keyring/session data are never synthetic fixtures; authorized external credential lookup is read-only. Optional browser/agent adapters and later macOS builds remain staged scope.
 
@@ -276,7 +210,7 @@ Owner requires automatic GNOME account selection and sign-in on Connect. The sup
 
 Attach PNG to remote Codex… uses an explicit registered SSH profile, absolute remote daemon socket, stable pane ID and existing private staging directory. Endpoint ID, resolved account/address and explicit confirmation bind the reviewed destination. Profile edits require a fresh review; focus/tab/local-pane/profile changes cancel ongoing delivery. Passwords and key passphrases use the existing Secret Service/libssh2 components, strict known-host verification and selected private key; unsupported gateways are refused. The shared binary PNG sender/receiver retains hash/dimensions/mode/path/correlation and remote foreground guards. Four remote workers and per-read/transfer deadlines bound work outside GTK; the local daemon worker continues serving input/rendering. Local staging reserves three copies for this route. No automatic submission or retry occurs.
 
-Actual isolated Wayland/GDK plus generated-key authenticated loopback SSH passes native confirmation, invalid target and changed-profile refusals, real Codex draft attachment, frontend-close retention and actual image consumption. Existing local focus cancellation and ordinary-terminal refusal also pass. This is real SSH protocol/provider integration on CVF, with synthetic local input; it is not an external EVF consumption or physical desktop pass. The explicit destination is held for one operation; saved remote contexts, pane discovery and other agent adapters remain open. Remote receiver files remain available for the draft and require managed cleanup in the chosen staging directory.
+Operational host details and troubleshooting are retained in private evidence. See [public acceptance status](RUWAC_ACCEPTANCE_STATUS.md) for current qualification and limitations.
 
 
 ## Remote Codex pane discovery

@@ -2310,7 +2310,7 @@ fn group_editor(button: &gtk::Button, store: Rc<RefCell<Store>>, status: gtk::La
     choose.set_widget_name("group-choice");
     content.append(&choose);
     let path = gtk::Entry::builder()
-        .placeholder_text("Full group path e.g. BASING/CIFRA/AHACIC")
+        .placeholder_text("Full group path e.g. Organization/Region/Team")
         .build();
     path.set_widget_name("group-path");
     content.append(&path);
@@ -2918,7 +2918,7 @@ mod workspace_tests {
         let id = items[0].id.clone();
         let machine = items[0].machine_id.clone();
         items[0].name = "Łódź ž 🦀".into();
-        items[0].group = "BASING/CIFRA/AHACIC".into();
+        items[0].group = "Organization/Region/Team".into();
         items[0].preferences.display = "native".into();
         items[0].preferences.zoom = 1.25;
         let bytes = serde_json::to_vec(&Library {
@@ -2941,7 +2941,7 @@ mod workspace_tests {
             "1000-profile migration/search/serialization {} ms",
             start.elapsed().as_millis()
         );
-        assert_eq!(saved.iter().filter(|p| p.matches("AHACIC")).count(), 1);
+        assert_eq!(saved.iter().filter(|p| p.matches("Team")).count(), 1);
     }
     fn preview_test() -> Profile {
         Profile {
@@ -3230,7 +3230,7 @@ mod inherited_tests {
     fn alias_network_and_protocol_search_use_unicode_lowercase() {
         let mut p = profile();
         p.preferences.label = "WínAlias".into();
-        p.preferences.network = "BASING/Živjo".into();
+        p.preferences.network = "Organization/Živjo".into();
         assert!(p.matches("WÍNALIAS"));
         assert!(p.matches("živjo"));
         assert!(p.matches("ssh"));
@@ -3263,7 +3263,7 @@ pub(crate) fn assist_profile_current(expected: &Profile) -> bool {
 mod dual_login_tests {
     use super::*;
     fn legacy() -> Profile {
-        serde_json::from_value(json!({"id":"endpoint_dual","machine_id":"machine_dual","name":"Fedora","group":"","protocol":"RDP","server":"localhost:3389","username":"denis","secret_reference":"service-ref","favorite":false,"last_used":0,"tags":[]})).unwrap()
+        serde_json::from_value(json!({"id":"endpoint_dual","machine_id":"machine_dual","name":"Fedora","group":"","protocol":"RDP","server":"localhost:3389","username":"service-user","secret_reference":"service-ref","favorite":false,"last_used":0,"tags":[]})).unwrap()
     }
     #[test]
     fn legacy_windows_roundtrip_has_no_second_credential() {
@@ -3278,15 +3278,15 @@ mod dual_login_tests {
     fn independent_gnome_credentials_roundtrip() {
         let mut p = legacy();
         p.preferences.rdp_mode = "gnome-remote-login".into();
-        p.preferences.gnome_username = "oclaw".into();
+        p.preferences.gnome_username = "linux-user".into();
         p.preferences.gnome_secret_reference = "endpoint_dual.gnome".into();
         p.preferences.gnome_auto_login = true;
         p.validate().unwrap();
         let copy: Profile = serde_json::from_str(&serde_json::to_string(&p).unwrap()).unwrap();
         assert!(copy.preferences.gnome_auto_login);
-        assert_eq!(copy.username, "denis");
+        assert_eq!(copy.username, "service-user");
         assert_eq!(copy.secret_reference, "service-ref");
-        assert_eq!(copy.preferences.gnome_username, "oclaw");
+        assert_eq!(copy.preferences.gnome_username, "linux-user");
         assert_eq!(
             copy.preferences.gnome_secret_reference,
             "endpoint_dual.gnome"
@@ -3309,12 +3309,12 @@ mod dual_login_tests {
     fn remmina_merge_keeps_second_stage_and_identity() {
         let mut p = legacy();
         p.preferences.rdp_mode = "gnome-remote-login".into();
-        p.preferences.gnome_username = "oclaw".into();
+        p.preferences.gnome_username = "linux-user".into();
         p.preferences.gnome_secret_reference = "endpoint_dual.gnome".into();
         let mut imported = legacy();
         imported.username = "different-service".into();
         let merged = merge_metadata(&p, &imported).unwrap();
-        assert_eq!(merged.preferences.gnome_username, "oclaw");
+        assert_eq!(merged.preferences.gnome_username, "linux-user");
         assert_eq!(
             merged.preferences.gnome_secret_reference,
             p.preferences.gnome_secret_reference

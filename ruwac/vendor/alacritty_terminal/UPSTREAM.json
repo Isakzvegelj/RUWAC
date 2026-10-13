@@ -30,8 +30,7 @@
     "src/tty/unix.rs": "5fe56fe9357942df3aecdfcd3b19228325b60f7e2dffc99fcb23d7a15b3033ac",
     "src/tty/windows/blocking.rs": "60121a65df120c4a227520d6672231c9e3c515cb75241241e6b37a0c5bc186ca",
     "src/tty/windows/child.rs": "4782f173c639bff6891f474b068fee64b6e2ad411edabdf496bbfe6554ceb32e",
-    "src/tty/windows/conpty.rs": "62abd7e72af144ae1f1c359538e18cceaa97741382efa94e001f397510eef416",
-    "src/tty/windows/mod.rs": "b08803dae0f192bc6737aff22992a37368ac505c7133554c495ffcacb4116733"
+    "src/tty/windows/conpty.rs": "62abd7e72af144ae1f1c359538e18cceaa97741382efa94e001f397510eef416"
   },
   "local_changes": {
     "src/term/mod.rs": "Add read-only primary_grid accessor only",
@@ -39,6 +38,11 @@
   },
   "patched_files_sha256": {
     "src/term/mod.rs": "812c1f63f8d5eb27eea2b1d89437a0f1d5a5f8de5a0fff6a502baf8ee10ed4f5",
-    "Cargo.toml": "3cf52a7871518d4c9b7babcdd9c9d48f907bc9af9544e89caef69b38b3b2d5c5"
-  }
+    "Cargo.toml": "3cf52a7871518d4c9b7babcdd9c9d48f907bc9af9544e89caef69b38b3b2d5c5",
+    "src/tty/windows/mod.rs": "39a6f88afaf9bf2db72c1e46a2be443625236331099af8b256d77641ceb7852f"
+  },
+  "original_patched_files_sha256": {
+    "src/tty/windows/mod.rs": "b08803dae0f192bc6737aff22992a37368ac505c7133554c495ffcacb4116733"
+  },
+  "privacy_patch": "Normalize two upstream example home paths in comments; executable behavior unchanged."
 }

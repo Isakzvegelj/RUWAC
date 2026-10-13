@@ -295,8 +295,8 @@ try:
  case('MACHINES-NATIVE-70',profiles)
  def profile_journey():
   command('gui','profiles',search='R5')
-  command('gui','profile-editor',operation='group',path='R5/BASING/CIFRA')
-  for group in ['R5/BASING/CIFRA','R5/AHACIC']:
+  command('gui','profile-editor',operation='group',path='R5/Organization/Region')
+  for group in ['R5/Organization/Region','R5/Team']:
    r=command('gui','profile-editor',operation='new',fields={'0':'R5 same server','1':group,'3':'127.0.0.1:3389','4':'fixture','13':0,'14':1,'15':3})
    assert r['applied'] and r['error'] is None,r
   items=[p for p in r['items'] if p['name']=='R5 same server'];assert len(items)==2 and items[0]['machine_id']!=items[1]['machine_id']

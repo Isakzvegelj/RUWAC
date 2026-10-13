@@ -1,19 +1,4 @@
 {
-  "environment": {
-    "before": {
-      "busy_fraction": 0.5428109854604201,
-      "loadavg": "3.30 3.23 2.81 9/1863 224717"
-    },
-    "cpus": 6,
-    "kernel": "7.2.9-200.fc44.x86_64",
-    "rust": "rustc 1.98.1 (48a229cea 2026-09-01) (Fedora 1.98.1-1.fc44)",
-    "tmux": "tmux 3.7c",
-    "binary_sha256": "c220bd4cb965cffd21dffe2e0395d30d384a37f02229ceb52a6b538b20e29685",
-    "after": {
-      "busy_fraction": 0.5427631578947368,
-      "loadavg": "4.49 3.49 2.90 4/2063 225983"
-    }
-  },
   "idle_qualified": false,
   "rows": [
     {
@@ -1026,7 +1011,6 @@
   "all_api_within_2x": true,
   "workspaces_display_files": {
     "baseline": "v0.1.3",
-    "environment": "Owned loopback and Weston/Xvfb on a busy VM; raw bitmap codec, not external or physical desktop qualification",
     "resize_requests": 20,
     "resize_ms": {
       "min": 84.33188399067149,
@@ -1044,20 +1028,12 @@
       "gtk": {
         "cpu_seconds": 61.17,
         "rss_mib": 155.015625
-      },
-      "server": {
-        "cpu_seconds": 5.66,
-        "rss_mib": 33.03125
       }
     },
     "processes_after": {
       "gtk": {
         "cpu_seconds": 64.35,
         "rss_mib": 177.67578125
-      },
-      "server": {
-        "cpu_seconds": 6.78,
-        "rss_mib": 40.34765625
       }
     },
     "resize_storm": {
@@ -1070,21 +1046,6 @@
     }
   },
   "usability_r6": {
-    "environment": {
-      "before": {
-        "busy_fraction": 0.2472266244057052,
-        "loadavg": "1.46 2.04 2.16 6/1477 356631"
-      },
-      "cpus": 6,
-      "kernel": "7.2.9-200.fc44.x86_64",
-      "rust": "rustc 1.98.1 (48a229cea 2026-09-01) (Fedora 1.98.1-1.fc44)",
-      "tmux": "tmux 3.7c",
-      "binary_sha256": "d17cb3a3374857c09f813e56d45aa019103846e110466a3a63c44aadfa755c75",
-      "after": {
-        "busy_fraction": 0.1955484896661367,
-        "loadavg": "1.51 2.03 2.16 1/1678 357732"
-      }
-    },
     "idle_qualified": false,
     "rows": [
       {
@@ -2097,21 +2058,6 @@
     "all_api_within_2x": true
   },
   "mixed_r7": {
-    "environment": {
-      "before": {
-        "busy_fraction": 0.2565359477124183,
-        "loadavg": "1.56 1.67 1.91 2/1467 376375"
-      },
-      "cpus": 6,
-      "kernel": "7.2.9-200.fc44.x86_64",
-      "rust": "rustc 1.98.1 (48a229cea 2026-09-01) (Fedora 1.98.1-1.fc44)",
-      "tmux": "tmux 3.7c",
-      "binary_sha256": "88d9dbced780379dcd4300e0bd5e13b6f3087b681184d0dcf639f6fa73c66089",
-      "after": {
-        "busy_fraction": 0.24528301886792447,
-        "loadavg": "1.51 1.66 1.90 2/1668 377462"
-      }
-    },
     "idle_qualified": false,
     "rows": [
       {
@@ -3184,5 +3130,11 @@
       "elapsed_ms": 1270.3967209963594
     },
     "scope": "Actual GTK fixture callback elapsed time across all pages; not physical-input or matched competitive benchmark"
+  },
+  "environment": {
+    "scope": "Isolated development VM; synthetic fixtures",
+    "rust": "1.98.1",
+    "os": "Fedora 44",
+    "hardware_identity": "not published"
   }
 }

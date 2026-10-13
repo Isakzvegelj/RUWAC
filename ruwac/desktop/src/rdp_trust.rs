@@ -204,16 +204,19 @@ mod tests {
     }
     #[test]
     fn saved_fingerprint_is_bound_to_host_and_port() {
-        let value = format!("{PREFIX}{}@3389:evf", "a1".repeat(32));
+        let value = format!("{PREFIX}{}@3389:fedora.example.test", "a1".repeat(32));
         assert!(matches!(
-            Trust::parse(Some(&value), "EVF.", 3389),
+            Trust::parse(Some(&value), "fedora.example.test.", 3389),
             Ok(Trust::Leaf(_))
         ));
-        assert!(Trust::parse(Some(&value), "racun7", 3389).is_err());
-        assert!(Trust::parse(Some(&value), "evf", 3390).is_err());
-        assert_eq!(Trust::parse(None, "evf", 3389).unwrap(), Trust::System);
+        assert!(Trust::parse(Some(&value), "windows.example.test", 3389).is_err());
+        assert!(Trust::parse(Some(&value), "fedora.example.test", 3390).is_err());
+        assert_eq!(
+            Trust::parse(None, "fedora.example.test", 3389).unwrap(),
+            Trust::System
+        );
         assert!(matches!(
-            Trust::parse(Some("root.pem"), "evf", 3389),
+            Trust::parse(Some("root.pem"), "fedora.example.test", 3389),
             Ok(Trust::CaFile(_))
         ));
     }
@@ -221,19 +224,29 @@ mod tests {
     fn malformed_pins_never_fall_back_to_unchecked_tls() {
         for value in [
             "pin-sha256:bad",
-            "pin-sha256:AA@3389:evf",
+            "pin-sha256:AA@3389:fedora.example.test",
             "pin-unknown:value",
         ] {
-            assert!(Trust::parse(Some(value), "evf", 3389).is_err());
+            assert!(Trust::parse(Some(value), "fedora.example.test", 3389).is_err());
         }
-        let value = format!("{PREFIX}{}@0:evf", "a1".repeat(32));
-        assert!(Trust::parse(Some(&value), "evf", 0).is_err());
+        let value = format!("{PREFIX}{}@0:fedora.example.test", "a1".repeat(32));
+        assert!(Trust::parse(Some(&value), "fedora.example.test", 0).is_err());
     }
     #[test]
     fn ipv6_pin_identity_is_canonical_and_certificate_input_is_bounded() {
         let value = format!("{PREFIX}{}@3389:::1", "a1".repeat(32));
         assert!(Trust::parse(Some(&value), "0:0:0:0:0:0:0:1", 3389).is_ok());
-        assert!(Review::from_der(&vec![0; 65537], "evf", 3389, &Trust::System).is_err());
-        assert!(Review::from_der(b"not a certificate", "evf", 3389, &Trust::System).is_err());
+        assert!(
+            Review::from_der(&vec![0; 65537], "fedora.example.test", 3389, &Trust::System).is_err()
+        );
+        assert!(
+            Review::from_der(
+                b"not a certificate",
+                "fedora.example.test",
+                3389,
+                &Trust::System
+            )
+            .is_err()
+        );
     }
 }

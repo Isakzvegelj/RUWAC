@@ -1,0 +1,13 @@
+[extend]
+useDefault = true
+
+# Audited false positives: these exact fields contain public source SHA-256
+# digests, not authentication material. Other rules/fields/files remain scanned.
+[[rules]]
+id = "generic-api-key"
+[[rules.allowlists]]
+description = "Canonical vendored source checksum entries"
+condition = "AND"
+paths = ['''(?:^|/)vendor/ironrdp-(?:connector|graphics)/UPSTREAM\.json$''']
+regexTarget = "line"
+regexes = ['''^\s*"src/(?:credssp|zgfx/api)\.rs": "[a-f0-9]{64}",?\s*$''']

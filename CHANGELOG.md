@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v0.2.19 — 2026-10-13 — Stable source release
+
+- Sanitize public operational evidence and synthetic examples; enforce privacy checks before publication and in CI while preserving historical release references.
+
 ## v0.2.18 — 2026-10-13 — Stable source release
 
 - Reformat the native machine editor with basic connection and login fields first, collapsible advanced settings and a bounded vertical scroll area.

@@ -1,10 +1,9 @@
 {
-  "baseline_commit": "39080ba6fce39f180fe24a9df04b72a61ffbc094",
-  "current_report": "spec/RUWAC_INTEGRATION_SPIKE.md",
-  "public_evidence": [
-    "architecture/acceptance-results.json",
-    "architecture/benchmark-results.json",
-    "architecture/dependency-licenses.json"
+  "public_reports": [
+    "../spec/RUWAC_ACCEPTANCE_STATUS.md",
+    "acceptance-results.json",
+    "benchmark-results.json"
   ],
-  "private_capsule": "profiles-r28: canonical extended styles, palette color identity/negative schema units, real Cairo pixels, actual PTY/TUI/fzf and native key/render/idle/SIGKILL groups, genuine six-field legacy schema3/4, stamped full regression and source publication"
+  "private_evidence": "Detailed operational evidence is retained outside Git. It is not a public artifact.",
+  "reproduction": "See the acceptance status for generated loopback fixture commands."
 }

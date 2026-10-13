@@ -207,8 +207,8 @@ mod test {
             ("C:\\Program Files\\", "\"C:\\Program Files\\\\\""),
             ("C:\\Program Files\\a.txt", "\"C:\\Program Files\\a.txt\""),
             (
-                r#"sh -c "cd /home/user; ARG='abc' \""'${SHELL:-sh}" -i -c '"'echo hello'""#,
-                r#""sh -c \"cd /home/user; ARG='abc' \\\"\"'${SHELL:-sh}\" -i -c '\"'echo hello'\"""#,
+                r#"sh -c "cd ${HOME}; ARG='abc' \""'${SHELL:-sh}" -i -c '"'echo hello'""#,
+                r#""sh -c \"cd ${HOME}; ARG='abc' \\\"\"'${SHELL:-sh}\" -i -c '\"'echo hello'\"""#,
             ),
         ];
 

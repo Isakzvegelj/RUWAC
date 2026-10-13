@@ -23,3 +23,13 @@ The control protocol uses private Unix sockets and same-UID peer checks; it is n
 The desktop lockfile includes `rsa 0.10.0-rc.18` through IronRDP's `picky`/`sspi` authentication dependencies. [RUSTSEC-2023-0071](https://rustsec.org/advisories/RUSTSEC-2023-0071.html) reports private-key recovery through network-observable timing and lists no patched version. The dependency scan remains failing and no advisory exception is configured. This is a stable-security qualification blocker; a source prerelease is not a claim that it is resolved. Current client configuration uses explicit username/password credentials; that observation is not proof that all affected dependency paths are unreachable. Broader authentication-provider reachability analysis and an upstream fix or reviewed alternative remain necessary.
 
 The scan also reports unmaintained `atomic-polyfill` and `rustls-pemfile` dependencies. Their presence is recorded for dependency maintenance; it is not treated as a clean advisory scan. The headless lockfile currently has no reported findings against the inspected advisory snapshot. New snapshots may change these results.
+
+
+Public infrastructure privacy is separate from secret scanning. Publication checks
+scan every candidate file and outgoing commit snapshot/message; deployment-specific
+policy is supplied through an owner-only file outside Git. CI runs the public rules
+and checksum-pinned Gitleaks against the current source. Scanner regression examples
+are generated at runtime, never copied from owner infrastructure. Raw matches and
+operational receipts must not be uploaded as CI artifacts or placed in issue reports.
+Historical disclosures require a separate, privately reviewed cleanup decision;
+cleaning the current tree does not remove old tags, clones or release descriptions.

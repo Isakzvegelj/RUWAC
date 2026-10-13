@@ -5,7 +5,7 @@ import argparse,ast,json,sys
 ROOT_FILES={'.gitignore','README.md','CHANGELOG.md','RELEASE-NOTES.md','LICENSE','CONTRIBUTING.md','SECURITY.md','CODE_OF_CONDUCT.md'}
 ARCH_FILES={f'{n:02}-{name}.md' for n,name in enumerate(['RUWAC-DECISION','ARCHITECTURE','PROTOCOL-V0','ACCEPTANCE-MATRIX','BENCHMARKS','OPEN-ISSUES','IMPLEMENTATION-ROADMAP','COMPONENTS-LICENSES'])}|{'evidence-index.json','dependency-licenses.json','benchmark-results.json','acceptance-results.json'}
 VENDOR_FILES={f'ruwac/desktop/vendor/ironrdp-connector/{name}' for name in ['README.md','LICENSE-APACHE','UPSTREAM.json','RUWAC-PATCH.md']}|{'ruwac/vendor/alacritty_terminal/'+name for name in ['Cargo.toml.orig','README.md','LICENSE-APACHE','UPSTREAM.json','RUWAC-PATCH.md']}
-SCRIPT_FILES={'public-files.py','install-user.py','dependency-check.py','update-user.py','gdm-recognize.py'}
+SCRIPT_FILES={'public-files.py','install-user.py','dependency-check.py','update-user.py','gdm-recognize.py','privacy-check.py','test-privacy-check.py','gitleaks.toml'}
 VENDOR_FILES |= {f'ruwac/desktop/vendor/ironrdp-{crate}/{name}' for crate in ['egfx','graphics','session'] for name in ['README.md','LICENSE-APACHE','LICENSE-MIT','UPSTREAM.json']}
 # Pinned upstream codec test vectors are source fixtures, not compiled artifacts.
 VENDOR_FILES |= {
@@ -59,13 +59,11 @@ def verify(root,paths):
  for name in paths:
   p=Path(name)
   if p not in allowed:bad.append(f'not allowlisted: {p}');continue
-  data=(root/p).read_bytes()
-  for marker in [b'/app/',b'/zDev/',b'/oclaw/']:
-   if p.as_posix()!='scripts/public-files.py' and marker in data:bad.append(f'machine-specific path: {p}')
-  if p.as_posix()=='scripts/public-files.py':continue
-  for marker in [b'BEGIN OPENSSH PRIVATE KEY',b'BEGIN RSA PRIVATE KEY']:
-   if marker in data:bad.append(f'private content marker: {p}')
  if bad:raise SystemExit('\n'.join(bad))
+ import runpy
+ privacy=runpy.run_path(str(root/'scripts/privacy-check.py'))
+ try:privacy['verify'](root,paths,privacy['private_terms'](root))
+ except ValueError as error:raise SystemExit(str(error))
  return len(paths)
 if __name__=='__main__':
  p=argparse.ArgumentParser();p.add_argument('--root',type=Path,default=Path(__file__).resolve().parents[1]);p.add_argument('--check',action='store_true');p.add_argument('--tracked',action='store_true');a=p.parse_args();root=a.root.resolve()
