@@ -1,5 +1,55 @@
 # RUWAC product completion audit
 
+## Machine editor, automatic sign-in and remote agent launcher
+
+The machine editor now puts name, host, connection type and service username/password
+before the optional GNOME username/password. Credential references and advanced
+connection settings are collapsible. Labels sit above fields; narrow dialogs scroll
+vertically with Cancel, Save and Save & Connect retained at the bottom. Existing
+profile identities, storage and separate Secret Service credentials are preserved.
+Save & Connect validates and saves before acquiring the ordinary connection lease.
+
+Automatic GNOME sign-in covers the greeter with a sign-in view while still decoding
+and recognizing the authenticated framebuffer. Pointer movement, clicks, scrolling,
+keyboard and paste input cannot compete with the automated field sequence. Cancel
+or Escape reveals the remote screen; errors and timeouts also return manual control.
+Tab/focus/profile/transport changes retain the credential-target cancellation guards.
+Dynamic viewport requests wait until automatic sign-in completes or stops.
+
+Actual authorized Fedora acceptance completed GNOME service and user-desktop
+handovers with 44 GTK/XTest pointer motions and unchanged input epochs during the
+sequence, using dynamic display mode. Automatic bidirectional clipboard regression
+passed Unicode text and 64×64 / 2560×1440 PNGs in both directions. This is a real
+external Fedora login/CLIPRDR result with simulated local input, not physical input
+qualification. AVF's reported first-stage failure was identified by the owner as an
+incorrect host; no new AVF or MUC sign-in pass is claimed from that correction.
+
+Native local RDP tests pass editor CRUD, a 480×520 dialog allocation without horizontal
+field clipping, basic/service/GNOME field ordering, cancellation without saving,
+Save & Connect for new and edited profiles with authenticated decoded frames, and
+input shielding/native cancellation. The remote agent dialog opens and cancels
+without creating a session. Its executable bootstrap passes an actual shell/Python
+process-boundary test with quoted executable/socket names and both agent plans.
+This test uses a disposable CLI peer, not a real external Codex/Claude launch.
+
+Open remote agent appears in Machines. Select a direct SSH endpoint for the Linux
+account and Codex/cx or Claude Code/cc. It starts/reuses the remote RUWAC daemon,
+creates a persistent session and attaches through an SSH terminal. Remote RUWAC,
+Python 3 and the agent must already be installed. Existing cx/cc aliases are used
+when available, otherwise the corresponding named application is selected. SSH
+uses a key or an interactive terminal password prompt; saved RDP passwords and
+Secret Service references are never embedded in the command. Remote provisioning,
+complete external launcher acceptance and saved agent contexts remain separate gates.
+
+Real Windows 11 authentication/framebuffer and mixed-workspace join preserved the
+transport and PTY. Dynamic resizing did not negotiate Display Control on that tested
+bitmap path and remains open; this is not a Windows dynamic-display pass. Authenticated
+read-only SMB enumeration confirmed the authorized data share. Windows clipboard,
+three external tabs, physical input and qualified Fedora package/distribution gates
+remain open. The previous GitHub quality job passed; its dependency-advisory job
+failed separately with the existing unsuppressed RSA finding.
+
+
 ## External SSH image consumption and ephemeral Codex verification
 
 After owner reauthentication, an authorized EVF integration passed RUWAC SSH
@@ -184,15 +234,15 @@ The full product is not yet complete. The stable source lane contains operationa
 | A-06 socket/backpressure | Owned daemon socket, malformed frames, concurrency limits | PARTIAL: same-UID peer verification and byte-bounded process metadata/all-page native guards validated; broader response bounds and fuzz/soak remain |
 | A-07 GUI control | Explicit unavailable response and independent headless graph | PARTIAL: independent permission-scoped focus/RDP lifecycle over actual SSH validated; bounded polling GUI metadata event subscriptions now pass native/authenticated-loopback acceptance; remote input and push-stream transport remain |
 | R-01 Windows | Authorized Windows 11 authentication and real 1280×720 framebuffer decoding | PASS bounded real-host login/frame; external clipboard, display/input and broader interoperability remain |
-| R-02 Fedora GNOME | Actual authorized service login, greeter/user-desktop handovers, automatic Linux sign-in and dynamic viewport | PARTIAL: supported English real-host path PASS; physical input, other locales/layouts and external clipboard remain open |
+| R-02 Fedora GNOME | Actual authorized service login, greeter/user-desktop handovers, automatic Linux sign-in and dynamic viewport | PARTIAL: supported English real-host path PASS; physical input, other locales/layouts, Windows clipboard and three external tabs remain open; real Fedora directional and automatic bidirectional text/PNG pass |
 | R-03 independent tabs | Three authenticated loopback tabs; 200 switches/450 inactive offers | PARTIAL: external-host qualification |
 | R-04 display modes | Actual Display Control/reactivation, viewport transforms and resize storm | PARTIAL: external server and physical pointer acceptance |
 | R-05 remote keys | Scancode mapping and send-key menu | PARTIAL: actual Windows/GNOME layouts, AltGr/IME/compositor restrictions |
 | R-06 pointer/touchpad | Synthetic routing, held-input release and reconnect | PARTIAL: physical input and external hosts |
 | R-07 HiDPI | Fractional transforms and actual 3K lossless bitmap frames | PARTIAL: real monitor moves/scales and external codec |
 | R-08 responsiveness | Frame timings, cadence and process samples in loopback | PARTIAL: matched authorized Remmina/FreeRDP comparison |
-| C-01/C-02 text interoperability | 60 bidirectional loopback transfers | BLOCKED: trust/credential profiles configured; external text/image acceptance remains open; Fedora GDM rendering is now implemented |
-| C-03/C-04 PNG interoperability | 18 loopback PNG/DIBV5 transfers | BLOCKED: trust/credential profiles configured; external text/image acceptance remains open; Fedora GDM rendering is now implemented |
+| C-01/C-02 text interoperability | 60 bidirectional loopback transfers | PARTIAL: real authorized Fedora directional and automatic bidirectional text/PNG pass; Windows and three external tabs remain open |
+| C-03/C-04 PNG interoperability | 18 loopback PNG/DIBV5 transfers | PARTIAL: real authorized Fedora directional and automatic bidirectional text/PNG pass; Windows and three external tabs remain open |
 | C-05 ownership | Real GDK peer and three loopback RDP tabs; Files isolation | PASS owned compositor |
 | C-06 PRIMARY/internal separation | Independent internal/CLIPBOARD tests | PARTIAL: PRIMARY protocol and physical middle-click acceptance |
 | C-07 application paste | Real GDK peer, native applications, 10 KiB/1 MiB payloads | PASS owned compositor |
@@ -203,7 +253,7 @@ The full product is not yet complete. The stable source lane contains operationa
 | F-01 import | Explicit read-only Remmina preview, 70 imports, metadata backup | PARTIAL: explicit-ID reviewed merge, policy preservation, stale/active guards and Undo validated; broader nonsecret mapping/skip reporting remains |
 | F-02 library | Native compact sidebar/panels, CRUD, groups, favorites, recents, 1,000-profile fixture | PARTIAL: native 50-row paging and all 1,000 endpoints/search validated; transactional canonical SQLite inventory and legacy recovery validated; inherited routes remain |
 | F-03 transfers | SFTP SHA-256, native pause/resume/discard, original-host binding, lost-rename recovery and encrypted keys through Secret Service; 14 new and six existing fixture groups | PARTIAL: native rsync file/folder copies, actual authorized SSH integrity and cancellation pass; client SIGKILL recovery and native/external verified backup handling pass; partial-data resume, broader implementations, remaining independent-actor races and remote power-loss durability remain |
-| F-04 agents | Ordinary terminal execution, bounded process metadata, native search/exact jump and private D-Bus exit delivery | PARTIAL: observed process layer validated; SSH image consumption, other agent adapters, physical notification acceptance and optional structured adapters remain |
+| F-04 agents | Ordinary terminal execution, bounded process metadata, native search/exact jump and private D-Bus exit delivery | PARTIAL: observed process layer validated; complete native external SSH image journey, other agent adapters, physical notification acceptance and optional structured adapters remain |
 | F-05 ordinary user/headless package | Independent graphical-free headless graph | PARTIAL: per-user installation implemented; RPM dependency/install qualification remains open |
 | F-06 install/upgrade/uninstall | Reversible private per-user installer and desktop entry | PARTIAL: per-user installer fixtures pass; Fedora RPM lifecycle remains open |
 | F-07 standard workflow | Existing build/release/controller and verified tagged source releases | PARTIAL: immutable binary/RPM publication remains unqualified |

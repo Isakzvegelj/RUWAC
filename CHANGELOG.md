@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## v0.2.18 — 2026-10-13 — Stable source release
+
+- Reformat the native machine editor with basic connection and login fields first, collapsible advanced settings and a bounded vertical scroll area.
+- Add Save & Connect for new and edited profiles using the existing credential and connection path.
+- Shield automatic GNOME sign-in from pointer input, hide the greeter until authenticated handover, add Cancel/Escape, and defer dynamic viewport resizing during sign-in.
+- Add Open remote agent for Codex/cx or Claude Code/cc in a persistent remote RUWAC session over a selected SSH endpoint.
+- Omit CLIPRDR negotiation when desktop clipboard integration is globally disabled.
+
 ## v0.2.17 — 2026-10-13 — Stable source release
 
 - Restore automatic RDP clipboard delivery after window focus and clipboard ownership changes, and receive the newest offer when it supersedes an in-flight read.

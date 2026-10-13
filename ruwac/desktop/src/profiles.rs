@@ -1069,7 +1069,10 @@ pub fn sidebar(
                 let edit = gtk::Button::with_label("Edit");
                 let (s, st) = (store.clone(), status.clone());
                 let id = p.id.clone();
-                edit.connect_clicked(move |b| editor(b, s.clone(), Some(id.clone()), st.clone()));
+                let cb = callback.clone();
+                edit.connect_clicked(move |b| {
+                    editor(b, s.clone(), Some(id.clone()), st.clone(), cb.clone())
+                });
                 row.append(&edit);
                 list.append(&row);
                 let s = store.clone();
@@ -1124,7 +1127,8 @@ pub fn sidebar(
     }
     root.append(&add);
     let (s, st) = (store.clone(), status.clone());
-    add.connect_clicked(move |b| editor(b, s.clone(), None, st.clone()));
+    let cb = callback.clone();
+    add.connect_clicked(move |b| editor(b, s.clone(), None, st.clone(), cb.clone()));
     let refresh_button = gtk::Button::with_label("Refresh machines");
     maintenance.append(&refresh_button);
     let r = refresh.clone();
@@ -1623,7 +1627,13 @@ mod special_file_tests {
     }
 }
 
-fn editor(button: &gtk::Button, store: Rc<RefCell<Store>>, id: Option<String>, status: gtk::Label) {
+fn editor(
+    button: &gtk::Button,
+    store: Rc<RefCell<Store>>,
+    id: Option<String>,
+    status: gtk::Label,
+    open: Rc<dyn Fn(Profile, PreferenceSink, ConnectionLease)>,
+) {
     let existing = id
         .as_ref()
         .and_then(|id| store.borrow().items.iter().find(|p| &p.id == id).cloned());
@@ -1649,17 +1659,13 @@ fn editor(button: &gtk::Button, store: Rc<RefCell<Store>>, id: Option<String>, s
     let dialog = gtk::Dialog::builder()
         .title("Machine / connection properties")
         .modal(true)
-        .default_width(560)
+        .default_width(540)
+        .default_height(620)
         .build();
     dialog.set_transient_for(parent.as_ref());
     dialog.add_button("Cancel", gtk::ResponseType::Cancel);
     dialog.add_button("Save", gtk::ResponseType::Accept);
-    if existing.is_some() {
-        dialog.add_button("Duplicate machine", gtk::ResponseType::Other(1));
-        dialog.add_button("Add endpoint", gtk::ResponseType::Other(3));
-        dialog.add_button("Delete endpoint…", gtk::ResponseType::Other(2));
-        dialog.add_button("Delete machine…", gtk::ResponseType::Other(4));
-    }
+    dialog.add_button("Save & Connect", gtk::ResponseType::Other(5));
     let grid = gtk::Grid::builder()
         .row_spacing(5)
         .column_spacing(8)
@@ -1670,7 +1676,8 @@ fn editor(button: &gtk::Button, store: Rc<RefCell<Store>>, id: Option<String>, s
         .build();
     let sc = gtk::ScrolledWindow::builder()
         .vexpand(true)
-        .min_content_height(440)
+        .hscrollbar_policy(gtk::PolicyType::Never)
+        .min_content_height(240)
         .child(&grid)
         .build();
     grid.set_widget_name("machine-editor-grid");
@@ -1707,7 +1714,13 @@ fn editor(button: &gtk::Button, store: Rc<RefCell<Store>>, id: Option<String>, s
     ];
     let mut fields = Vec::new();
     for (i, (label, value)) in vals.iter().enumerate() {
-        let e = gtk::Entry::builder().text(value).hexpand(true).build();
+        let e = gtk::Entry::builder()
+            .text(value)
+            .hexpand(true)
+            .width_chars(12)
+            .max_width_chars(24)
+            .build();
+        e.set_widget_name(&format!("machine-field-{i}"));
         grid.attach(&gtk::Label::new(Some(label)), 0, i as i32, 1, 1);
         grid.attach(&e, 1, i as i32, 1, 1);
         if i == 2 {
@@ -1716,8 +1729,10 @@ fn editor(button: &gtk::Button, store: Rc<RefCell<Store>>, id: Option<String>, s
         fields.push(e);
     }
     let protocol = gtk::DropDown::from_strings(&["RDP", "SSH"]);
+    protocol.set_widget_name("machine-field-13");
     protocol.set_selected(if original.protocol == "SSH" { 1 } else { 0 });
     let display = gtk::DropDown::from_strings(&["fit", "native", "stretch", "dynamic"]);
+    display.set_widget_name("machine-field-14");
     display.set_selected(
         ["fit", "native", "stretch", "dynamic"]
             .iter()
@@ -1732,6 +1747,7 @@ fn editor(button: &gtk::Button, store: Rc<RefCell<Store>>, id: Option<String>, s
         "Disabled",
     ]);
     clipboard.set_selected(original.preferences.clipboard);
+    clipboard.set_widget_name("machine-field-15");
     for (i, (label, widget)) in [
         ("Protocol", &protocol),
         ("RDP display mode", &display),
@@ -1744,26 +1760,32 @@ fn editor(button: &gtk::Button, store: Rc<RefCell<Store>>, id: Option<String>, s
         grid.attach(*widget, 1, 13 + i as i32, 1, 1);
     }
     let zoom = gtk::SpinButton::with_range(0.25, 4.0, 0.25);
+    zoom.set_widget_name("machine-field-16");
     zoom.set_value(original.preferences.zoom);
     grid.attach(&gtk::Label::new(Some("Zoom")), 0, 16, 1, 1);
     grid.attach(&zoom, 1, 16, 1, 1);
     let full = gtk::CheckButton::with_label("Fullscreen on connect");
+    full.set_widget_name("machine-field-17");
     full.set_active(original.preferences.fullscreen);
     grid.attach(&full, 1, 17, 1, 1);
     let retry = gtk::CheckButton::with_label("Reconnect after transient transport loss");
+    retry.set_widget_name("machine-field-18");
     retry.set_active(original.preferences.reconnect);
     grid.attach(&retry, 1, 18, 1, 1);
     let inherit = gtk::CheckButton::with_label(
         "Inherit RDP defaults from nearest network group (saved overrides retained)",
     );
     inherit.set_active(original.inherit);
+    inherit.set_widget_name("machine-field-22");
     grid.attach(&inherit, 0, 22, 2, 1);
     let inherit_connection =
         gtk::CheckButton::with_label("Fill empty connection fields from network groups");
     inherit_connection.set_active(original.inherit_connection);
+    inherit_connection.set_widget_name("machine-field-24");
     grid.attach(&inherit_connection, 0, 24, 2, 1);
     let inherit_credential = gtk::CheckButton::with_label("Use group's saved credential profile");
     inherit_credential.set_active(original.inherit_credential);
+    inherit_credential.set_widget_name("machine-field-25");
     inherit_credential.set_sensitive(original.inherit_connection);
     grid.attach(&inherit_credential, 0, 25, 2, 1);
     let ic = inherit_credential.clone();
@@ -2089,23 +2111,143 @@ fn editor(button: &gtk::Button, store: Rc<RefCell<Store>>, id: Option<String>, s
             });
         });
     }
+    // Stack labels above controls: long host names and credential references
+    // must not push the label column outside a narrow native dialog.
+    fn form_row(form: &gtk::Box, label: &str, widget: &impl IsA<gtk::Widget>) {
+        let title = gtk::Label::new(Some(label));
+        title.set_xalign(0.0);
+        title.set_wrap(true);
+        let row = gtk::Box::new(gtk::Orientation::Vertical, 4);
+        row.append(&title);
+        row.append(widget);
+        form.append(&row);
+    }
+    let mut old_children = Vec::new();
+    let mut child = grid.first_child();
+    while let Some(w) = child {
+        child = w.next_sibling();
+        let (col, row, _, _) = grid.query_child(&w);
+        old_children.push((col, row, w));
+    }
+    for (_, _, w) in &old_children {
+        grid.remove(w);
+    }
+    sc.set_child(gtk::Widget::NONE);
+    let form = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .spacing(12)
+        .margin_top(12)
+        .margin_bottom(12)
+        .margin_start(16)
+        .margin_end(16)
+        .build();
+    form.set_widget_name("machine-editor-form");
+    form_row(&form, "Machine name", &fields[0]);
+    form_row(&form, "Host / address and port", &fields[3]);
+    form_row(&form, "Connection type", &protocol);
+    let mode_row = gtk::Box::new(gtk::Orientation::Vertical, 4);
+    form_row(&mode_row, "RDP connection mode", &rdp_mode);
+    mode_row.set_visible(protocol.selected() == 0);
+    form.append(&mode_row);
+    let mr = mode_row.clone();
+    protocol.connect_selected_notify(move |p| mr.set_visible(p.selected() == 0));
+    // Keep username/password adjacent; implementation references are secondary.
+    for w in [
+        fields[9].upcast_ref::<gtk::Widget>(),
+        secret.upcast_ref(),
+        actions.upcast_ref(),
+    ] {
+        service.remove(w);
+    }
+    // Remove the old reference label before placing it beneath the password.
+    if let Some(label) = fields[4].next_sibling() {
+        service.remove(&label);
+    }
+    service.append(&secret);
+    service.append(&actions);
+    let service_reference = gtk::Expander::builder()
+        .label("Saved credential reference")
+        .child(&fields[9])
+        .build();
+    service.append(&service_reference);
+    form.append(&service);
+    gnome.remove(&gnome_ref);
+    let gnome_reference = gtk::Expander::builder()
+        .label("Saved GNOME credential reference")
+        .child(&gnome_ref)
+        .build();
+    gnome.append(&gnome_reference);
+    form.append(&gnome);
+    form_row(&form, "Group / nested path", &fields[1]);
+    let advanced = gtk::Box::new(gtk::Orientation::Vertical, 12);
+    for i in [5, 8, 10, 11, 12, 6, 7, 2] {
+        form_row(&advanced, vals[i].0, &fields[i]);
+    }
+    form_row(&advanced, "RDP display mode", &display);
+    form_row(&advanced, "Clipboard policy", &clipboard);
+    form_row(&advanced, "Zoom", &zoom);
+    for w in [
+        &full,
+        &retry,
+        &inherit,
+        &inherit_connection,
+        &inherit_credential,
+    ] {
+        if let Some(label) = w.child().and_downcast::<gtk::Label>() {
+            label.set_wrap(true);
+            label.set_xalign(0.0);
+        }
+        advanced.append(w);
+    }
+    form_row(
+        &advanced,
+        "SSH key passphrase reference",
+        &identity_reference,
+    );
+    advanced.append(&key_secret);
+    advanced.append(&key_actions);
+    for buttons in [&actions, &gnome_actions, &key_actions] {
+        buttons.set_orientation(gtk::Orientation::Vertical);
+    }
+    if existing.is_some() {
+        for (label, response) in [
+            ("Duplicate machine", 1),
+            ("Add endpoint", 3),
+            ("Delete endpoint…", 2),
+            ("Delete machine…", 4),
+        ] {
+            let b = gtk::Button::with_label(label);
+            let d = dialog.clone();
+            b.connect_clicked(move |_| d.response(gtk::ResponseType::Other(response)));
+            advanced.append(&b);
+        }
+    }
+    let expander = gtk::Expander::builder()
+        .label("Advanced connection settings")
+        .child(&advanced)
+        .build();
+    form.append(&expander);
+    info.set_xalign(0.0);
+    form.append(&info);
+    sc.set_child(Some(&form));
     dialog.connect_response(move|d,response|{
         if response==gtk::ResponseType::Other(2) || response==gtk::ResponseType::Other(4) {
             let machine=response==gtk::ResponseType::Other(4);if store.borrow().items.iter().any(|p|(p.id==original.id||(machine&&p.machine_id==original.machine_id))&&store.borrow().active.contains_key(&p.id)){info.set_text("This profile is used by an opened tab. Close all of its connection tabs before deleting it.");return;}
             let confirm=gtk::Dialog::builder().title("Delete endpoint metadata?").transient_for(d).modal(true).build();confirm.content_area().append(&gtk::Label::new(Some("Credentials remain in Secret Service. Undo restores metadata.")));confirm.add_button("Cancel",gtk::ResponseType::Cancel);confirm.add_button("Delete",gtk::ResponseType::Accept);
             let(s,id,machine_id,st,parent)=(store.clone(),original.id.clone(),original.machine_id.clone(),status.clone(),d.clone());confirm.connect_response(move|c,r|{if r==gtk::ResponseType::Accept {let mut s=s.borrow_mut();let old=s.items.clone();s.items.retain(|p|p.id!=id&&(!machine||p.machine_id!=machine_id));if let Err(e)=s.save(){s.items=old;st.set_text(&e);}else{drop(s);st.set_text("Metadata deleted; previous library retained for Undo");refresh_widgets(parent.transient_for().as_ref());parent.close();}}c.close();});confirm.present();return;
         }
-        if response!=gtk::ResponseType::Accept && response!=gtk::ResponseType::Other(1) && response!=gtk::ResponseType::Other(3){d.close();return;}
+        if response!=gtk::ResponseType::Accept && response!=gtk::ResponseType::Other(1) && response!=gtk::ResponseType::Other(3) && response!=gtk::ResponseType::Other(5){d.close();return;}
         let mut p=original.clone();p.name=fields[0].text().into();p.group=fields[1].text().into();p.machine_id=fields[2].text().into();p.server=fields[3].text().into();p.username=fields[4].text().into();p.preferences.label=fields[5].text().into();p.preferences.network=fields[6].text().into();p.preferences.gateway=fields[7].text().into();p.tags=fields[8].text().split(',').map(str::trim).filter(|s|!s.is_empty()).map(str::to_owned).collect();p.secret_reference=fields[9].text().into();p.preferences.trust=fields[10].text().into();p.preferences.identity_file=fields[11].text().into();p.preferences.identity_secret_reference=identity_reference.text().into();p.preferences.known_hosts=fields[12].text().into();p.protocol=if protocol.selected()==1{"SSH"}else{"RDP"}.into();p.preferences.display=["fit","native","stretch","dynamic"][display.selected() as usize].into();p.preferences.clipboard=clipboard.selected();p.preferences.zoom=zoom.value();p.preferences.fullscreen=full.is_active();p.preferences.reconnect=retry.is_active();p.inherit=inherit.is_active();p.inherit_connection=inherit_connection.is_active();p.inherit_credential=inherit_credential.is_active();p.preferences.rdp_mode=["","gnome-remote-login","gnome-desktop-sharing"][rdp_mode.selected() as usize].into();p.preferences.gnome_auto_login=gnome_auto.is_active();p.preferences.gnome_username=gnome_user.text().into();p.preferences.gnome_secret_reference=if p.preferences.rdp_mode=="gnome-remote-login"||!original.preferences.gnome_secret_reference.is_empty(){gnome_ref.text().into()}else{String::new()};
         if response==gtk::ResponseType::Other(1){p.id=ruwac_protocol::id("endpoint");p.machine_id=ruwac_protocol::id("machine");p.secret_reference=p.id.clone();if !p.preferences.gnome_secret_reference.is_empty(){p.preferences.gnome_secret_reference=format!("{}.gnome",p.id);}p.name.push_str(" (copy)");}
         if response==gtk::ResponseType::Other(3){p.name=original.name.clone();p.group=original.group.clone();p.id=ruwac_protocol::id("endpoint");p.secret_reference=p.id.clone();if !p.preferences.gnome_secret_reference.is_empty(){p.preferences.gnome_secret_reference=format!("{}.gnome",p.id);}}
         if let Err(e)=p.validate(){info.set_text(&e);return;}
-        let mut s=store.borrow_mut();let old=s.items.clone();
+        let saved_id=p.id.clone();let mut s=store.borrow_mut();let old=s.items.clone();
         if let Some(i)=s.items.iter().position(|x|x.id==p.id){for item in &mut s.items{if item.machine_id==p.machine_id{item.name=p.name.clone();item.group=p.group.clone();item.tags=p.tags.clone();}}s.items[i]=p;}else{if s.items.len()>=1000{info.set_text("Profile limit reached");return;}let new_machine=p.machine_id.clone();s.items.push(p);
             if response==gtk::ResponseType::Other(1){for endpoint in old.iter().filter(|x|x.machine_id==original.machine_id&&x.id!=original.id){if s.items.len()>=1000{s.items=old.clone();info.set_text("Profile limit reached");return;}let mut copy=endpoint.clone();copy.id=ruwac_protocol::id("endpoint");copy.secret_reference=copy.id.clone();if !copy.preferences.gnome_secret_reference.is_empty(){copy.preferences.gnome_secret_reference=format!("{}.gnome",copy.id);}copy.machine_id=new_machine.clone();copy.name.push_str(" (copy)");s.items.push(copy);}}
         }
         if let Err(e)=s.save(){s.items=old;info.set_text(&e);return;}
         status.set_text("Machine metadata saved; existing tabs retain their connection settings");drop(s);refresh_widgets(parent.as_ref().map(|w|w.upcast_ref::<gtk::Widget>()));d.close();
+        if response==gtk::ResponseType::Other(5){if let Some((profile,sink,lease))=acquire(&store,&status,&saved_id){open(profile,sink,lease);}}
     });
     dialog.present();
 }
@@ -2441,6 +2583,9 @@ pub fn fixture_editor(root: &gtk::Box, q: &serde_json::Value) -> serde_json::Val
                 return Some(b.clone());
             }
         }
+        if let Some(expander) = w.downcast_ref::<gtk::Expander>() {
+            return expander.child().and_then(|child| find(&child, label));
+        }
         let mut c = w.first_child();
         while let Some(w) = c {
             c = w.next_sibling();
@@ -2481,10 +2626,44 @@ pub fn fixture_editor(root: &gtk::Box, q: &serde_json::Value) -> serde_json::Val
         }
         let mut cells = Vec::new();
         let mut conflicts = 0;
+        let mut dialogs = Vec::new();
         for window in gtk::Window::list_toplevels() {
             inspect(&window, &mut cells, &mut conflicts);
+            if let Some(d) = window.downcast_ref::<gtk::Dialog>() {
+                if d.title().as_deref() == Some("Machine / connection properties") {
+                    fn bounds(
+                        w: &gtk::Widget,
+                        root: &gtk::Widget,
+                        rows: &mut Vec<serde_json::Value>,
+                    ) {
+                        if w.is_mapped()
+                            && (w.widget_name().starts_with("machine-field-")
+                                || matches!(
+                                    w.widget_name().as_str(),
+                                    "endpoint-username"
+                                        | "rdp-password"
+                                        | "gnome-username"
+                                        | "gnome-password"
+                                        | "rdp-connection-mode"
+                                ))
+                        {
+                            if let Some(b) = w.compute_bounds(root) {
+                                rows.push(json!({"widget":w.widget_name().as_str(),"x":b.x(),"y":b.y(),"width":b.width(),"height":b.height()}));
+                            }
+                        }
+                        let mut c = w.first_child();
+                        while let Some(child) = c {
+                            c = child.next_sibling();
+                            bounds(&child, root, rows);
+                        }
+                    }
+                    let mut rows = Vec::new();
+                    bounds(d.upcast_ref(), d.content_area().upcast_ref(), &mut rows);
+                    dialogs.push(json!({"width":d.content_area().width(),"height":d.content_area().height(),"fields":rows}));
+                }
+            }
         }
-        return json!({"cells":cells,"overlapping_grid_cells":conflicts});
+        return json!({"cells":cells,"overlapping_grid_cells":conflicts,"dialogs":dialogs});
     }
     if action == "group" {
         expand_sidebar_panel(root, "machines-tools-panel", true);
@@ -2513,16 +2692,44 @@ pub fn fixture_editor(root: &gtk::Box, q: &serde_json::Value) -> serde_json::Val
             if d.title().as_deref() != Some(title) {
                 continue;
             }
+            if let Some(size) = q["window_size"].as_array() {
+                if size.len() == 2 {
+                    d.set_default_size(
+                        size[0].as_i64().unwrap_or(540) as i32,
+                        size[1].as_i64().unwrap_or(620) as i32,
+                    );
+                }
+            }
             fn update(w: &gtk::Widget, q: &serde_json::Value) {
                 if let Some(e) = w.downcast_ref::<gtk::Entry>() {
-                    let row = match w.widget_name().as_str() {
+                    let widget_name = w.widget_name();
+                    let row = match widget_name.as_str() {
                         "endpoint-username" => Some("4"),
                         "endpoint-secret-reference" => Some("9"),
-                        _ => None,
+                        "ssh-key-passphrase-reference" => Some("29"),
+                        name => name.strip_prefix("machine-field-"),
                     };
                     if let Some(value) = row.and_then(|r| q["fields"][r].as_str()) {
                         e.set_text(value);
                     }
+                }
+                if let Some(row) = w.widget_name().strip_prefix("machine-field-") {
+                    if let Some(d) = w.downcast_ref::<gtk::DropDown>() {
+                        if let Some(value) = q["fields"][row].as_u64() {
+                            d.set_selected(value as u32);
+                        }
+                    }
+                    if let Some(c) = w.downcast_ref::<gtk::CheckButton>() {
+                        if let Some(value) = q["fields"][row].as_bool() {
+                            c.set_active(value);
+                        }
+                    }
+                }
+                if let Some(expander) = w.downcast_ref::<gtk::Expander>() {
+                    if let Some(child) = expander.child() {
+                        update(&child, q);
+                    }
+                    return;
                 }
                 if let Some(e) = w.downcast_ref::<gtk::Entry>() {
                     if let Some(v) = q["named"][w.widget_name().as_str()].as_str() {
@@ -2532,6 +2739,16 @@ pub fn fixture_editor(root: &gtk::Box, q: &serde_json::Value) -> serde_json::Val
                 if let Some(c) = w.downcast_ref::<gtk::CheckButton>() {
                     if let Some(v) = q["named"][w.widget_name().as_str()].as_bool() {
                         c.set_active(v);
+                    }
+                }
+                if let Some(d) = w.downcast_ref::<gtk::DropDown>() {
+                    if w.widget_name() == "rdp-connection-mode" {
+                        if let Some(v) = q["fields"]["26"].as_u64() {
+                            d.set_selected(v as u32);
+                        }
+                    }
+                    if let Some(v) = q["named"][w.widget_name().as_str()].as_u64() {
+                        d.set_selected(v as u32);
                     }
                 }
                 if let Some(e) = w.downcast_ref::<gtk::PasswordEntry>() {
@@ -2657,6 +2874,7 @@ pub fn fixture_editor(root: &gtk::Box, q: &serde_json::Value) -> serde_json::Val
             }
             let response = match q["response"].as_str().unwrap_or("save") {
                 "cancel" => gtk::ResponseType::Cancel,
+                "connect" => gtk::ResponseType::Other(5),
                 "duplicate" => gtk::ResponseType::Other(1),
                 "endpoint" => gtk::ResponseType::Other(3),
                 "delete" => gtk::ResponseType::Other(2),

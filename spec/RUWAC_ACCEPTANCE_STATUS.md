@@ -1,5 +1,55 @@
 # RUWAC acceptance status
 
+## Machine editor, automatic sign-in and remote agent launcher
+
+The machine editor now puts name, host, connection type and service username/password
+before the optional GNOME username/password. Credential references and advanced
+connection settings are collapsible. Labels sit above fields; narrow dialogs scroll
+vertically with Cancel, Save and Save & Connect retained at the bottom. Existing
+profile identities, storage and separate Secret Service credentials are preserved.
+Save & Connect validates and saves before acquiring the ordinary connection lease.
+
+Automatic GNOME sign-in covers the greeter with a sign-in view while still decoding
+and recognizing the authenticated framebuffer. Pointer movement, clicks, scrolling,
+keyboard and paste input cannot compete with the automated field sequence. Cancel
+or Escape reveals the remote screen; errors and timeouts also return manual control.
+Tab/focus/profile/transport changes retain the credential-target cancellation guards.
+Dynamic viewport requests wait until automatic sign-in completes or stops.
+
+Actual authorized Fedora acceptance completed GNOME service and user-desktop
+handovers with 44 GTK/XTest pointer motions and unchanged input epochs during the
+sequence, using dynamic display mode. Automatic bidirectional clipboard regression
+passed Unicode text and 64×64 / 2560×1440 PNGs in both directions. This is a real
+external Fedora login/CLIPRDR result with simulated local input, not physical input
+qualification. AVF's reported first-stage failure was identified by the owner as an
+incorrect host; no new AVF or MUC sign-in pass is claimed from that correction.
+
+Native local RDP tests pass editor CRUD, a 480×520 dialog allocation without horizontal
+field clipping, basic/service/GNOME field ordering, cancellation without saving,
+Save & Connect for new and edited profiles with authenticated decoded frames, and
+input shielding/native cancellation. The remote agent dialog opens and cancels
+without creating a session. Its executable bootstrap passes an actual shell/Python
+process-boundary test with quoted executable/socket names and both agent plans.
+This test uses a disposable CLI peer, not a real external Codex/Claude launch.
+
+Open remote agent appears in Machines. Select a direct SSH endpoint for the Linux
+account and Codex/cx or Claude Code/cc. It starts/reuses the remote RUWAC daemon,
+creates a persistent session and attaches through an SSH terminal. Remote RUWAC,
+Python 3 and the agent must already be installed. Existing cx/cc aliases are used
+when available, otherwise the corresponding named application is selected. SSH
+uses a key or an interactive terminal password prompt; saved RDP passwords and
+Secret Service references are never embedded in the command. Remote provisioning,
+complete external launcher acceptance and saved agent contexts remain separate gates.
+
+Real Windows 11 authentication/framebuffer and mixed-workspace join preserved the
+transport and PTY. Dynamic resizing did not negotiate Display Control on that tested
+bitmap path and remains open; this is not a Windows dynamic-display pass. Authenticated
+read-only SMB enumeration confirmed the authorized data share. Windows clipboard,
+three external tabs, physical input and qualified Fedora package/distribution gates
+remain open. The previous GitHub quality job passed; its dependency-advisory job
+failed separately with the existing unsuppressed RSA finding.
+
+
 ## External SSH image consumption and ephemeral Codex verification
 
 After owner reauthentication, an authorized EVF integration passed RUWAC SSH

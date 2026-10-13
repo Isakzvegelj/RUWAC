@@ -119,6 +119,7 @@ try:
     cli('rdp', 'open', '--profile', a.profile, '--activate', '--json')
     before = eventually(frame, 40)
     assert before['verified_tls_sha256'] and before['transport_id']
+    assert before['clipboard_channel_negotiated'] is False, 'Global clipboard isolation must omit CLIPRDR'
     baseline = pids()
     identities = {v['id'] for v in listing()['views']}
     command('rdp-switch', rdp=0)

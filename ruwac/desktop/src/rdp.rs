@@ -171,6 +171,7 @@ struct Profile {
     ca: Option<String>,
     reconnect: bool,
     graphics: bool,
+    clipboard: bool,
     handover: Option<Arc<crate::handover::Plan>>,
 }
 impl Profile {
@@ -244,6 +245,7 @@ struct State {
     frame: Option<Frame>,
     frames: u64,
     display_cap: Option<u64>,
+    clipboard_channel_negotiated: bool,
     display_request: Option<(u16, u16)>,
     reactivating: bool,
     cadence: std::collections::VecDeque<std::time::Instant>,
@@ -568,9 +570,14 @@ async fn run_session(
         if p.graphics {
             dynamic = dynamic.with_dynamic_channel(crate::gfx::Channel::new(gfx.clone()));
         }
-        let mut connector = connector::ClientConnector::new(config, addr)
-            .with_static_channel(CliprdrClient::new(Box::new(Backend::new(bridge))))
-            .with_static_channel(dynamic);
+        let mut connector =
+            connector::ClientConnector::new(config, addr).with_static_channel(dynamic);
+        // Global desktop isolation excludes CLIPRDR itself, not just its data.
+        // Live per-view policies still operate over enabled connections.
+        if p.clipboard {
+            connector =
+                connector.with_static_channel(CliprdrClient::new(Box::new(Backend::new(bridge))));
+        }
         let mut framed = ironrdp_tokio::TokioFramed::new(tcp);
         state.lock().unwrap().status = Some("RDP security negotiation…".into());
         let upgrade = ironrdp_tokio::connect_begin(&mut framed, &mut connector)
@@ -693,6 +700,7 @@ async fn run_session(
     let clip_channel = result
         .static_channels
         .get_channel_id_by_type::<CliprdrClient>();
+    state.lock().unwrap().clipboard_channel_negotiated = clip_channel.is_some();
     let dvc_channel = result
         .static_channels
         .get_channel_id_by_type::<ironrdp::dvc::DrdynvcClient>();
@@ -1477,6 +1485,7 @@ impl RdpView {
             if let Some(v) = w.upgrade() {
                 cr.set_source_rgb(0.03, 0.03, 0.04);
                 let _ = cr.paint();
+                let _ = cr.save();
                 if let Some(surface) = v.surface.borrow().as_ref() {
                     let (sx, sy, ox, oy) = v.geometry(width as f64, height as f64);
                     cr.translate(ox, oy);
@@ -1486,12 +1495,33 @@ impl RdpView {
                         v.rendered_generation.set(v.surface_generation.get());
                     }
                 }
+                let _ = cr.restore();
+                if v.auto_gdm.borrow().armed {
+                    // Keep decoding/recognizing the verified framebuffer, but
+                    // cover GDM until the authenticated desktop handover.
+                    cr.set_source_rgb(0.07, 0.07, 0.08);
+                    let _ = cr.paint();
+                    cr.set_source_rgb(0.9, 0.9, 0.9);
+                    cr.set_font_size(18.0);
+                    cr.move_to(24.0, height as f64 / 2.0);
+                    let _ = cr.show_text("Signing in to GNOME…");
+                    cr.set_font_size(13.0);
+                    cr.move_to(24.0, height as f64 / 2.0 + 28.0);
+                    let _ = cr
+                        .show_text("Remote input is paused. Cancel or press Escape to take over.");
+                }
             }
         });
         let key = gtk::EventControllerKey::new();
         let w = Rc::downgrade(&v);
         key.connect_key_pressed(move |_, k, code, modifiers| {
             if let Some(v) = w.upgrade() {
+                if v.auto_gdm.borrow().armed {
+                    if k == gdk::Key::Escape {
+                        v.auto_gdm_stop("Automatic sign-in cancelled; manual login available");
+                    }
+                    return glib::Propagation::Stop;
+                }
                 if k == gdk::Key::v && modifiers.contains(gdk::ModifierType::CONTROL_MASK) {
                     v.paste();
                 } else {
@@ -1503,6 +1533,11 @@ impl RdpView {
         let w = Rc::downgrade(&v);
         key.connect_key_released(move |_, k, code, _| {
             if let Some(v) = w.upgrade() {
+                if v.auto_gdm.borrow().armed
+                    || (k == gdk::Key::Escape && !v.held.borrow().contains(&(0x01, false)))
+                {
+                    return;
+                }
                 v.key(k, code, true);
             }
         });
@@ -1520,6 +1555,9 @@ impl RdpView {
         let w = Rc::downgrade(&v);
         click.connect_pressed(move |g, _, x, y| {
             if let Some(v) = w.upgrade() {
+                if v.auto_gdm.borrow().armed {
+                    return;
+                }
                 v.focus();
                 v.pointer(x, y, g.current_button(), false);
             }
@@ -1543,6 +1581,9 @@ impl RdpView {
         let weak = Rc::downgrade(&v);
         scroll.connect_scroll(move |controller, dx, dy| {
             if let Some(v) = weak.upgrade() {
+                if v.auto_gdm.borrow().armed {
+                    return glib::Propagation::Stop;
+                }
                 if controller
                     .current_event_state()
                     .contains(gdk::ModifierType::CONTROL_MASK)
@@ -1580,6 +1621,16 @@ impl RdpView {
             glib::Propagation::Stop
         });
         v.area.add_controller(scroll);
+        let cancel_auto = gtk::Button::with_label("Cancel automatic sign-in");
+        cancel_auto.set_widget_name("cancel-automatic-sign-in");
+        cancel_auto.set_visible(false);
+        v.root.insert_child_after(&cancel_auto, Some(&v.status));
+        let weak = Rc::downgrade(&v);
+        cancel_auto.connect_clicked(move |_| {
+            if let Some(v) = weak.upgrade() {
+                v.auto_gdm_stop("Automatic sign-in cancelled; manual login available");
+            }
+        });
         let w = Rc::downgrade(&v);
         glib::timeout_add_local(Duration::from_millis(16), move || {
             let Some(v) = w.upgrade() else {
@@ -1587,6 +1638,7 @@ impl RdpView {
             };
             v.update();
             v.auto_gdm_tick();
+            cancel_auto.set_visible(v.auto_gdm.borrow().armed);
             v.canvas();
             if v.preferences_due
                 .get()
@@ -1645,7 +1697,14 @@ impl RdpView {
                     "inactive tab; clipboard offers cached"
                 }
             ));
-            if v.mode.get() == Scale::Dynamic && cap.is_some() && v.root.is_mapped() {
+            // Let the recognized GDM form keep its framebuffer coordinates
+            // until sign-in finishes or stops. Our own viewport resize must not
+            // invalidate an in-flight credential target.
+            if v.mode.get() == Scale::Dynamic
+                && cap.is_some()
+                && v.root.is_mapped()
+                && !v.auto_gdm.borrow().armed
+            {
                 let scale = v
                     .area
                     .native()
@@ -1699,6 +1758,7 @@ impl RdpView {
                 reference: String::new(),
                 reconnect: true,
                 graphics: false,
+                clipboard: self.broker.borrow().desktop_enabled(),
                 handover: None,
                 ca: Some(ca.to_string_lossy().into_owned()),
             },
@@ -2054,6 +2114,7 @@ impl RdpView {
             user: user.into(),
             reference: reference.into(),
             reconnect: self.reconnect.get(),
+            clipboard: self.broker.borrow().desktop_enabled(),
             handover: None,
             graphics: self
                 .profile_metadata
@@ -2098,7 +2159,7 @@ impl RdpView {
             .as_ref()
             .map(|c| c.state.lock().unwrap().phase.clone())
             .unwrap_or_else(|| "disconnected".into());
-        serde_json::json!({"id":self.root.widget_name().as_str(),"phase":phase,"connection_stage":connection.as_ref().map(|c|c.state.lock().unwrap().connection_stage.clone()),"size":self.size.get(),"transport_id":connection.as_ref().map(|c|c.id.as_str()),"decoded_updates":connection.as_ref().map(|c|c.state.lock().unwrap().frames).unwrap_or(0),"clipboard_owner":self.broker.borrow().active()==Some(self.id.as_str()),"verified_tls_sha256":connection.as_ref().and_then(|c|c.state.lock().unwrap().verified_tls_sha256.clone()),"protocol_error":connection.as_ref().and_then(|c|c.state.lock().unwrap().protocol_error.clone()),"authentication_error":connection.as_ref().and_then(|c|c.state.lock().unwrap().authentication_error.clone()),"certificate_review":self.certificate.borrow().as_ref().map(|r|serde_json::json!({"sha256":r.fingerprint(),"changed":r.changed,"valid_now":r.valid_now})),"profile":self.profile_metadata.borrow().as_ref().map(|p|p.id.clone())})
+        serde_json::json!({"id":self.root.widget_name().as_str(),"phase":phase,"connection_stage":connection.as_ref().map(|c|c.state.lock().unwrap().connection_stage.clone()),"size":self.size.get(),"transport_id":connection.as_ref().map(|c|c.id.as_str()),"decoded_updates":connection.as_ref().map(|c|c.state.lock().unwrap().frames).unwrap_or(0),"clipboard_owner":self.broker.borrow().active()==Some(self.id.as_str()),"clipboard_channel_negotiated":connection.as_ref().is_some_and(|c|c.state.lock().unwrap().clipboard_channel_negotiated),"verified_tls_sha256":connection.as_ref().and_then(|c|c.state.lock().unwrap().verified_tls_sha256.clone()),"protocol_error":connection.as_ref().and_then(|c|c.state.lock().unwrap().protocol_error.clone()),"authentication_error":connection.as_ref().and_then(|c|c.state.lock().unwrap().authentication_error.clone()),"certificate_review":self.certificate.borrow().as_ref().map(|r|serde_json::json!({"sha256":r.fingerprint(),"changed":r.changed,"valid_now":r.valid_now})),"profile":self.profile_metadata.borrow().as_ref().map(|p|p.id.clone())})
     }
     pub fn connect_profile(&self) {
         fn find(w: &gtk::Widget) -> Option<gtk::Button> {
@@ -2217,6 +2278,9 @@ impl RdpView {
         self.command(Command::Copy(formats));
     }
     fn paste(&self) {
+        if self.auto_gdm.borrow().armed {
+            return;
+        }
         if self.allowed(false, true) {
             self.release_keys();
             self.pending_paste.set(true);
@@ -2493,6 +2557,9 @@ impl RdpView {
         }
     }
     fn send(&self, e: Vec<FastPathInputEvent>) {
+        if self.auto_gdm.borrow().armed {
+            return;
+        }
         self.assist_epoch.fetch_add(1, Ordering::AcqRel);
         if let Some(c) = self.connection.borrow().as_ref() {
             if let Err(e) = c.send(e) {
@@ -2602,6 +2669,9 @@ impl RdpView {
     }
 
     fn pointer(&self, x: f64, y: f64, button: u32, release: bool) {
+        if self.auto_gdm.borrow().armed {
+            return;
+        }
         let (sx, sy, ox, oy) = self.geometry(self.area.width() as f64, self.area.height() as f64);
         let (px, py) = ((x - ox) / sx, (y - oy) / sy);
         let (rw, rh) = self.size.get();
@@ -2671,6 +2741,17 @@ impl RdpView {
             crate::profiles::endpoint(&p.server, 3389).is_ok_and(|(h, _)| h == "127.0.0.1")
         }) {
             return serde_json::json!({"error":"Loopback profile required"});
+        }
+        if q["operation"] == "cancel-automatic" {
+            let mut child = self.root.first_child();
+            while let Some(w) = child {
+                child = w.next_sibling();
+                if w.widget_name() == "cancel-automatic-sign-in" {
+                    if let Some(b) = w.downcast_ref::<gtk::Button>() {
+                        b.emit_clicked();
+                    }
+                }
+            }
         }
         if q["operation"] == "open" {
             if let Some(p) = self
@@ -2763,6 +2844,7 @@ impl RdpView {
         a.fetching = false;
         self.assist_epoch.fetch_add(1, Ordering::AcqRel);
         self.status.set_text(reason);
+        self.area.queue_draw();
     }
     fn auto_gdm_tick(self: &Rc<Self>) {
         use crate::gdm::{Action, Step};
@@ -2858,6 +2940,7 @@ impl RdpView {
                 a.image = None;
                 a.pending = None;
                 self.status.set_text("GNOME sign-in completed");
+                self.area.queue_draw();
             }
             return;
         }
@@ -2876,14 +2959,24 @@ impl RdpView {
             }
             return;
         }
-        if self
+        let changed = self
             .auto_gdm
             .borrow()
             .binding
             .as_ref()
-            .is_some_and(|(t, g, e)| t != &transport || *g != generation || *e != epoch)
-        {
-            self.auto_gdm_stop("Automatic sign-in stopped: input or display generation changed");
+            .and_then(|(t, g, e)| {
+                if t != &transport {
+                    Some("Automatic sign-in stopped: connection changed")
+                } else if *e != epoch {
+                    Some("Automatic sign-in stopped: user input or focus changed")
+                } else if *g != generation {
+                    Some("Automatic sign-in stopped: remote display changed")
+                } else {
+                    None
+                }
+            });
+        if let Some(reason) = changed {
+            self.auto_gdm_stop(reason);
             return;
         }
         if self.auto_gdm.borrow().fetching {
@@ -3353,6 +3446,7 @@ mod tests {
             ca: None,
             reconnect: true,
             graphics: true,
+            clipboard: true,
             handover: Some(plan.clone()),
         };
         let redirected = profile.next_attempt();
@@ -3434,6 +3528,7 @@ mod tests {
                     reference: String::new(),
                     reconnect: true,
                     graphics: false,
+                    clipboard: true,
                     handover: None,
                     ca: if trusted {
                         Some(cert.to_string_lossy().into_owned())

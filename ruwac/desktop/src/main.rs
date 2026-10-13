@@ -1,3 +1,4 @@
+mod agent_launch;
 mod clipboard;
 mod cliprdr;
 mod credentials;
@@ -309,6 +310,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
   });
   let rv=rdp_views.clone();let t=tabs.clone();let b=broker.clone();let(sock,views)=(socket.clone(),all.clone());let fv=file_views.clone();
   let (sidebar,search,restore_profile,open_rdp_profile,host_inventory,image_profile)=profiles::sidebar(move|profile,persist,lease|{if profile.protocol=="RDP"{let v=rdp::RdpView::new(b.clone());let weak_tabs=t.downgrade();let root=v.root.downgrade();v.bind_selection(Rc::new(move||weak_tabs.upgrade().zip(root.upgrade()).is_some_and(|(t,r)|t.selected_page().is_some_and(|p|tiles::contains(&p.child(),&r)))));v.configure(&profile);v.set_preferences_sink(persist);v.set_trust_sink(lease.trust_sink());lease.bind(&v.root);let page=tiles::append(&t,&v.root);page.set_title(&format!("{} / {} · {}",profile.group,profile.name,profile.protocol));rv.borrow_mut().push(v.clone());t.set_selected_page(&page);v.focus();v.connect_profile();}else{let file_panel=files::panel(profile.clone());fv.borrow_mut().push((file_panel.clone(),profile.clone()));lease.fork().bind(&file_panel);let file_page=tiles::append(&t,&file_panel);file_page.set_title(&format!("{} / {} · Files",profile.group,profile.name));let socket=sock.clone();let name=profile.name.clone();let argv=profiles::ssh_argv(&profile);let(tx,rx)=std::sync::mpsc::sync_channel(1);std::thread::spawn(move||{let result=(||->Result<String,String>{let mut client=worker::Rpc::connect(&socket).map_err(|e|e.to_string())?;let reply=client.call("session.create",json!({"name":name,"argv":argv?})).map_err(|e|e.to_string())?;reply["session"].as_str().map(str::to_owned).ok_or("SSH session creation failed".into())})();let _=tx.send(result);});let(t,b,views,socket)=(t.clone(),b.clone(),views.clone(),sock.clone());let mut pending_lease=Some(lease);glib::timeout_add_local(Duration::from_millis(10),move||{match rx.try_recv(){Ok(Ok(session))=>{let v=View::new(socket.clone(),session,b.clone());if let Some(lease)=pending_lease.take(){lease.bind(&v.root);}let page=tiles::append(&t,&v.root);page.set_title(&format!("{} / {} · {}",profile.group,profile.name,profile.protocol));views.borrow_mut().push(v.clone());t.set_selected_page(&page);v.focus();glib::ControlFlow::Break},Ok(Err(_))|Err(std::sync::mpsc::TryRecvError::Disconnected)=>glib::ControlFlow::Break,Err(std::sync::mpsc::TryRecvError::Empty)=>glib::ControlFlow::Continue}});}});
+  sidebar.append(&agent_launch::button(&window,host_inventory.clone(),image_profile.clone(),tabs.clone(),all.clone(),socket.clone(),broker.clone()));
   tools.append(&remote_image::button(&window,all.clone(),tabs.clone(),stage.clone(),host_inventory.clone(),image_profile.clone()));
   let known_sessions:Rc<RefCell<std::collections::HashSet<String>>>=Rc::new(RefCell::new(available.as_array().into_iter().flatten().filter_map(|s|s["id"].as_str().map(str::to_owned)).collect()));
   let create_saved_view={
@@ -438,6 +440,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     "mixed-join"=>{reply(match tiles::join_focused(&tabs,q["tab"].as_i64().unwrap_or(-1)as i32,q["vertical"]==true,&focus_memory,&focus_view){Ok(())=>tiles::inspect(&tabs,&focus_memory),Err(e)=>json!({"error":e})});},
     "mixed-separate"=>{reply(match tiles::separate_focused(&tabs,&focus_memory,&focus_view){Ok(_)=>tiles::inspect(&tabs,&focus_memory),Err(e)=>json!({"error":e})});},
     "rdp-permission"=>{remote_consent.set_active(q["enabled"]==true);reply(json!({"rdp_lifecycle_control":remote_policy.get(),"native_checkbutton":true}));},
+    "agent-launch-dialog"=>{if q["operation"]=="show"{sessions::fixture(&window,"Open remote agent…");}reply(agent_launch::fixture(&q));},
     "remote-image-dialog"=>reply(remote_image::fixture(&window,&q)),
     "workspace-picker"=>{if q["operation"]=="show"{reply(json!({"clicked":sessions::fixture(&window,"Workspaces…")}));}else{reply(workspace_picker::fixture(q["operation"].as_str().unwrap_or("inspect"),q["value"].as_str()));}},
     "workspace-permission"=>{consent.set_active(q["enabled"]==true);reply(json!({"focus_control":control_policy.get(),"native_checkbutton":true}));},

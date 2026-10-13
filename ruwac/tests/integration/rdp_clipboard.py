@@ -310,6 +310,57 @@ try:
   assert (stored.parent/'machines.previous.json').stat().st_mode&0o777==0o600
   return {'native_dialogs':True,'cancel_duplicate_confirmed_delete':True,'stable_identity_after_rename_move':True,'multi_endpoint_machine':True,'same_leaf_distinct_machines':True,'persisted_schema':1}
  case('MACHINES-NATIVE-EDITOR',profile_journey)
+ def editor_layout():
+  command('gui','profile-editor',operation='new',response='keep',window_size=[480,520],fields={'0':'Generated narrow editor','3':'127.0.0.1:3389'},named={'rdp-connection-mode':1})
+  def geometry():
+   r=command('gui','profile-editor',operation='layout')
+   return r if r['dialogs'] and r['dialogs'][0]['fields'] and r['dialogs'][0]['width']>0 else False
+  time.sleep(.5);r=spike.eventually(geometry,5);d=r['dialogs'][0];rows={x['widget']:x for x in d['fields']}
+  order=['machine-field-0','machine-field-3','machine-field-13','rdp-connection-mode','endpoint-username','rdp-password','gnome-username','gnome-password']
+  assert all(n in rows for n in order),(order,rows)
+  assert all(rows[a]['y']+rows[a]['height']<=rows[b]['y'] for a,b in zip(order,order[1:])),rows
+  assert d['width']<=540,d
+  assert all(x['x']>=0 and x['x']+x['width']<=d['width']+1 for x in d['fields']),d
+  assert not any(n in rows for n in ['machine-field-2','machine-field-7','machine-field-10']),rows
+  subprocess.run(['import','-display',env['RUWAC_XTEST_DISPLAY'],'-window','root',str(root/'machine-editor-narrow.png')],env=env,check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+  cancelled=command('gui','profile-editor',operation='inspect',response='cancel');assert not any(p['name']=='Generated narrow editor'for p in cancelled['items'])
+  return {'actual_GTK_dialog':d,'basic_credentials_order':order,'advanced_collapsed':True,'cancel_preserved_library':True,'screenshot':'machine-editor-narrow.png','physical_desktop':False}
+ case('MACHINES-NATIVE-EDITOR-LAYOUT',editor_layout)
+ def agent_launcher():
+  before=command('gui','inspect')
+  opened=command('gui','agent-launch-dialog',operation='show');assert opened['dialog_visible'] and opened['agents']==['Codex (cx)','Claude Code (cc)'],opened
+  command('gui','agent-launch-dialog',operation='cancel')
+  after=command('gui','inspect');assert before['tabs']==after['tabs']
+  return {'native_dialog':True,'explicit_agents':opened['agents'],'cancel_creates_no_session':True,'SSH_profiles':opened['SSH_profiles'],'external_agent_launch':'not performed in this UI fixture'}
+ case('MACHINES-REMOTE-AGENT-LAUNCHER',agent_launcher)
+ def save_connect():
+  extra=root/'save-connect-server';extra.mkdir(mode=0o700)
+  for name in ['cert.pem','key.pem']:(extra/name).write_bytes((root/name).read_bytes());(extra/name).chmod(0o600)
+  start([a.server,str(extra)],'save-connect-server');spike.eventually(lambda:(extra/'server-ready.json').exists(),10);port=json.loads((extra/'server-ready.json').read_text())['ports'][0]
+  ref='generated-save-connect-'+root.name
+  subprocess.run(['secret-tool','store','--label=RUWAC disposable save-connect fixture','application','RUWAC','profile',ref],input=b'generated-local-only',env=env,check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=10)
+  transports=[command('gui','rdp-inspect',rdp=i)['transport_id']for i in range(3)]
+  saved=command('gui','profile-editor',operation='new',response='connect',fields={'0':'Generated Save Connect','3':'127.0.0.1:'+str(port),'4':'fixture','9':ref,'10':str(root/'cert.pem'),'13':0},named={'rdp-connection-mode':1,'gnome-username':'generated-linux-user','gnome-auto-login':True})
+  item=next(p for p in saved['items']if p['name']=='Generated Save Connect')
+  frame=spike.eventually(lambda:r if (r:=command('gui','rdp-inspect',rdp=3)).get('size')==[320,180] and r['status'].startswith('Connected') else False,20)
+  assert [command('gui','rdp-inspect',rdp=i)['transport_id']for i in range(3)]==transports
+  assert frame['gnome_auto']['armed'],frame
+  epoch=frame['gnome_auto']['input_epoch']
+  for x in range(600,610):subprocess.run(['xdotool','mousemove',str(x),'450'],env={**env,'DISPLAY':env['RUWAC_XTEST_DISPLAY']},check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+  time.sleep(.2);shield=command('gui','rdp-inspect',rdp=3);assert shield['gnome_auto']['armed']and shield['gnome_auto']['input_epoch']==epoch,shield
+  subprocess.run(['import','-display',env['RUWAC_XTEST_DISPLAY'],'-window','root',str(root/'gnome-sign-in-shield.png')],env=env,check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+  command('gui','rdp-assist',rdp=3,operation='cancel-automatic');cancelled=command('gui','rdp-inspect',rdp=3);assert not cancelled['gnome_auto']['armed']and cancelled['status'].startswith('Automatic sign-in cancelled'),cancelled
+  command('gui','close-rdp',rdp=3);time.sleep(.2)
+  command('gui','profiles',search='Generated Save Connect')
+  edited=command('gui','profile-editor',operation='edit',response='connect',fields={'0':'Generated Save Connect edited'},named={'gnome-auto-login':False})
+  assert next(p for p in edited['items']if p['id']==item['id'])['name'].endswith('edited')
+  spike.eventually(lambda:r if (r:=command('gui','rdp-inspect',rdp=3)).get('size')==[320,180] and r['status'].startswith('Connected') else False,20)
+  command('gui','close-rdp',rdp=3);time.sleep(.2)
+  command('gui','profiles',search='Generated Save Connect')
+  removed=command('gui','profile-editor',operation='edit',response='delete',confirm=True);assert not any(p['id']==item['id']for p in removed['items'])
+  subprocess.run(['secret-tool','clear','application','RUWAC','profile',ref],env=env,check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=10)
+  return {'new_and_edited_profile_saved_before_connect':True,'real_loopback_CredSSP_frame':[320,180],'neighbor_transports_preserved':True,'existing_credential_acquisition_path':True,'owner_credentials_accessed':False,'GNOME_input_shield':{'actual_GTK_motion_epoch_preserved':True,'native_cancel_reveals_frame':True,'screenshot':'gnome-sign-in-shield.png','GDM_authentication':'separate real-host evidence'}}
+ case('MACHINES-SAVE-CONNECT',save_connect)
  def resize():
   focus('gui');command('gui','rdp-switch',rdp=0)
   def process_metrics():
