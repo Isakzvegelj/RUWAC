@@ -20,7 +20,8 @@ receipts and original reports are archived privately outside Git.
 | PRIMARY and native middle-click dispatch | PASS | Real GDK/Mutter protocol, generated text, synthetic click dispatch, SGR routing and Shift bypass; physical input remains separate |
 | Physical GTK/Wayland mouse, keyboard and touchpad acceptance | BLOCKED | Owner confirms Alt+1–0 on 0.2.23; selection, paste, touchpad and newer-version physical checks remain unqualified |
 | Upstream Fedora testing RPM payloads and private transactions | PASS | Actual separate core/desktop packages, executable versions, launcher/notices and prior-release upgrade/removal; private RPM database uses host libraries and --nodeps |
-| Clean Fedora DNF lifecycle, RPM signing/repository and binary security qualification | BLOCKED | Testing RPMs and workflow attestations are distinct from complete distribution qualification |
+| Clean Fedora desktop DNF install/upgrade/rollback/remove | PASS | Fresh pinned Fedora 44 RAM filesystem, actual published RPMs, real dependency resolution without --nodeps; daemon, PTY child and generated private configuration survive |
+| RPM signing/repository and complete binary security qualification | BLOCKED | Workflow provenance is distinct from a signed Fedora repository; desktop RSA advisory remains open |
 | Desktop RSA dependency advisory | FAIL | RUSTSEC-2023-0071 remains unsuppressed |
 
 These results describe the published implementation baseline. In-progress codec

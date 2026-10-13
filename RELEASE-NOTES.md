@@ -1,19 +1,20 @@
-# RUWAC Fedora testing RPM publication repair
+# RUWAC Fedora lifecycle and remote launcher compatibility
 
-The existing release workflow now supplies an explicit checksum manifest containing
-exactly the archive and both matching core/desktop RPMs to the attestation action.
-Missing, extra, symlinked or mixed-version artifacts are refused before signing.
-Every downloaded artifact remains subject to repository, workflow, source tag and
-commit verification before publication.
+Fresh Fedora 44 testing now covers actual DNF dependency resolution, installation,
+matching core/desktop upgrade, rollback to a genuine prior build and removal.
+The daemon and raw-receiver PTY survive upgrade/rollback; generated private
+configuration is preserved. A reusable opt-in driver runs in a bounded disposable
+RAM filesystem and removes its own containers/mount without touching the host
+package database, homes, desktop or RDP sessions.
 
-The previous source tag is preserved. Its hosted build compiled and tested the
-applications and assembled both RPMs, but signed only the archive; verification
-correctly held all asset uploads. This repair changes the project workflow and
-does not alter the shared release controller or invent a version.
+Remote Codex launch preserves an existing cx alias/function. Without one, a
+read-only help probe chooses the supported agents browser or the ordinary TUI
+without a positional prompt. Actual process-boundary regressions cover both CLI
+variants, command precedence and unavailable Codex; quoted bootstrap targets
+remain supported. Tests do not open interactive external agent threads.
 
-The separate Fedora 44 testing RPMs preserve headless independence, dependency
-notices, existing sessions and private configuration. System RPM updates use DNF;
-per-user automatic installation/rollback is refused for an RPM installation.
-These unsigned testing RPMs carry GitHub provenance and remain distinct from
-an official signed Fedora repository or complete security qualification.
-The desktop RSA advisory remains unsuppressed.
+System RPM updates use DNF. Per-user checked bundles retain opt-in unattended
+updates; the two installation modes remain separate. Physical input, Windows
+interoperability, complete external interactive launcher acceptance, a signed
+RPM repository and desktop RSA remediation remain open. These testing artifacts
+do not establish whole-product security/stability qualification.

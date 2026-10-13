@@ -1,8 +1,28 @@
 # Fedora 44 installation and automatic updates
 
-RUWAC currently ships tested source releases. This installation compiles the native
-GTK frontend and independent terminal engine locally. Qualified RPMs and downloadable
-binary bundles remain separate distribution gates.
+Published releases include source, Fedora 44 x86_64 testing RPMs and checked per-user
+binary bundles. Full security qualification and a signed Fedora repository remain
+separate gates. Choose the installation mode that matches your update needs.
+
+For system installation, download the matching core and desktop RPMs from the
+same release and install them with DNF. Open /usr/bin/ruwac gui if a prior per-user
+installation is also present. The RPM update dialog opens the release downloads;
+system installation, updates and rollback use DNF. Unattended RPM installation is
+not yet implemented. The application refuses per-user update operations that would
+silently shadow a system RPM installation.
+
+For unattended updates without local source compilation, install the release's
+Fedora testing bundle using its included installer, then explicitly opt in:
+
+```sh
+"$HOME/.local/bin/ruwac" update --testing-bundles on
+"$HOME/.local/bin/ruwac" update --auto-install on
+```
+
+Checked bundle delivery validates the release commit, quality/privacy jobs, archive
+digest and immutable installation manifest. Published assets also have workflow
+provenance; the per-user updater does not yet automatically enforce that attestation.
+Running sessions are preserved. The source-build option below remains available.
 
 Install build prerequisites:
 

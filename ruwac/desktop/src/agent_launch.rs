@@ -7,6 +7,19 @@ use std::{cell::RefCell, path::PathBuf, rc::Rc, time::Duration};
 fn quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
 }
+fn agent_command(agent: u32) -> Result<(&'static str, &'static str), String> {
+    Ok(match agent {
+        0 => (
+            "Codex",
+            "if type cx >/dev/null 2>&1; then cx; elif command -v codex >/dev/null 2>&1; then if codex agents --help 2>/dev/null | grep -Eq '^Usage: codex agents([[:space:]]|$)'; then exec codex agents --no-alt-screen; else exec codex --no-alt-screen; fi; else printf 'Codex is not installed on this SSH host.\\n' >&2; exit 127; fi",
+        ),
+        1 => (
+            "Claude Code",
+            "if type cc >/dev/null 2>&1 && alias cc >/dev/null 2>&1; then cc; else exec claude --resume; fi",
+        ),
+        _ => return Err("Choose Codex or Claude Code".into()),
+    })
+}
 fn argv(
     profile: &profiles::Profile,
     agent: u32,
@@ -26,17 +39,7 @@ fn argv(
     {
         return Err("Invalid remote RUWAC executable or socket".into());
     }
-    let (name, command) = match agent {
-        0 => (
-            "Codex",
-            "if type cx >/dev/null 2>&1; then cx; else exec codex agents --no-alt-screen; fi",
-        ),
-        1 => (
-            "Claude Code",
-            "if type cc >/dev/null 2>&1 && alias cc >/dev/null 2>&1; then cc; else exec claude --resume; fi",
-        ),
-        _ => return Err("Choose Codex or Claude Code".into()),
-    };
+    let (name, command) = agent_command(agent)?;
     let cli = json!([binary]).to_string();
     let socket = if socket.is_empty() {
         vec![]
@@ -163,6 +166,59 @@ pub fn fixture(q: &serde_json::Value) -> serde_json::Value {
 mod tests {
     use super::*;
     use std::{fs, os::unix::fs::PermissionsExt, process::Command};
+    #[test]
+    fn codex_launch_is_prompt_free_across_cli_versions_and_keeps_user_aliases() {
+        let root = std::env::temp_dir().join(ruwac_protocol::id("launch"));
+        fs::create_dir(&root).unwrap();
+        let binary = root.join("codex");
+        let receipt = root.join("args.json");
+        let command = agent_command(0).unwrap().1;
+        for modern in [true, false] {
+            fs::write(&binary, format!("#!/usr/bin/python3\nimport json,sys\nfrom pathlib import Path\nif '--help' in sys.argv:\n print({:?})\nelse: Path({:?}).write_text(json.dumps(sys.argv[1:]))\n", if modern { "Usage: codex agents [OPTIONS]" } else { "Usage: codex [OPTIONS] [PROMPT]" }, receipt.to_str().unwrap())).unwrap();
+            fs::set_permissions(&binary, fs::Permissions::from_mode(0o700)).unwrap();
+            let output = Command::new("/usr/bin/bash")
+                .arg("-c")
+                .arg(command)
+                .env("PATH", format!("{}:/usr/bin:/bin", root.display()))
+                .output()
+                .unwrap();
+            assert!(output.status.success());
+            let args: Vec<String> = serde_json::from_slice(&fs::read(&receipt).unwrap()).unwrap();
+            assert_eq!(
+                args,
+                if modern {
+                    vec!["agents", "--no-alt-screen"]
+                } else {
+                    vec!["--no-alt-screen"]
+                }
+            );
+        }
+        fs::remove_file(&receipt).unwrap();
+        let user = root.join("user-choice");
+        let shell = format!(
+            "cx() {{ printf chosen > {}; }}; {}",
+            quote(user.to_str().unwrap()),
+            command
+        );
+        let output = Command::new("/usr/bin/bash")
+            .arg("-c")
+            .arg(shell)
+            .env("PATH", format!("{}:/usr/bin:/bin", root.display()))
+            .output()
+            .unwrap();
+        assert!(output.status.success() && user.exists() && !receipt.exists());
+        fs::remove_file(&binary).unwrap();
+        let output = Command::new("/usr/bin/bash")
+            .arg("-c")
+            .arg(command)
+            .env("PATH", &root)
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(127));
+        assert!(String::from_utf8_lossy(&output.stderr).contains("Codex is not installed"));
+        fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn bootstrap_survives_shell_quoting_and_detaches_without_agent_input() {
         let root = std::env::temp_dir().join(ruwac_protocol::id("launch"));

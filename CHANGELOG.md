@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v0.2.33 — 2026-10-13 — Stable source release
+
+- Qualify clean Fedora desktop RPM dependency resolution and rollback while preserving the daemon, PTY child and private configuration; select the supported Codex browser or prompt-free TUI without overriding user cx commands.
+
 ## v0.2.32 — 2026-10-13 — Stable source release
 
 - Bind the archive and both Fedora testing RPMs to one explicit checksum subject manifest, refusing incomplete or mixed-version artifact sets before signing.

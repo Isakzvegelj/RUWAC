@@ -223,3 +223,28 @@ The native list excludes ordinary/ended processes and displays session/window na
 ## Bounded GUI metadata event feed
 
 Authenticated subscribe/poll/unsubscribe now cover coalesced tab/focus/layout/RDP state observations, with four typed filters, monotonic per-instance cursors, actor UID binding,64-subscription and256-event bounds,60-second idle expiry and explicit overflow/resynchronization. Metadata reads do not enable focus/lifecycle/input permissions. Four actual GTK/PTY/authenticated-loopback RDP groups plus component actor/filter/expiry/capacity/gap/instance tests pass. Local controls are synthetic; no physical or external-host pass is implied. The documented feed polls100ms observations and excludes clipboard/terminal/credential/agent content. Exact-transition journaling, push streaming and remote input remain separate scope.
+
+## Clean Fedora RPM lifecycle and launcher compatibility
+
+Actual published Fedora 44 core/desktop RPMs pass DNF installation, matching-pair
+upgrade, downgrade to a genuine prior source-release build and removal in a fresh
+pinned Fedora filesystem. GTK/libadwaita, image and OCR runtime dependencies are
+resolved by DNF; --nodeps is not used. The same daemon and raw-receiver PTY survive
+upgrade and rollback, and generated private configuration remains unchanged.
+The bounded RAM filesystem and owned containers are removed after testing; the
+host package database, user homes, desktop and RDP sessions are never mounted.
+This is clean-container dependency/lifecycle evidence, not physical laptop GNOME,
+RPM repository signing or complete security qualification.
+
+The reproducible opt-in driver is ruwac/tests/integration/rpm_dnf_lifecycle.py.
+It requires a cached pinned Fedora image, matching current/prior RPM pairs and
+explicit --run-owned-fixture; its RAM filesystem and container each have a 2 GiB
+limit. Preserve its private receipts outside the source tree.
+
+The remote Codex launcher first preserves an existing cx alias/function. Otherwise,
+a read-only help probe checks whether the installed CLI supports the agents browser.
+Supported versions open that browser without a prompt; older versions open the
+ordinary TUI without a positional message. Process-boundary tests verify both
+variants, user-command precedence, unavailable Codex and quoted RUWAC/socket names.
+Read-only help checks on authorized systems do not create interactive agent threads.
+The complete external interactive launcher remains a separate acceptance gate.
