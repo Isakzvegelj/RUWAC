@@ -15,21 +15,48 @@ pub fn attach(
     directory: &str,
     call: &impl Fn(&Request) -> io::Result<Value>,
 ) -> io::Result<Value> {
-    let job = call(&request("job.query", json!({"pane":pane})))?;
-    let pid = job["result"]["foreground"]["pid"]
+    let initial = call(&request("job.query", json!({"pane":pane})))?;
+    let expected = initial["result"]["foreground"]["pid"]
         .as_u64()
         .ok_or_else(|| io::Error::other("live explicit foreground required"))?;
-    let screen = call(&request("pane.capture", json!({"pane":pane,"lines":100})))?;
-    let before = highest_image(screen["result"]["text"].as_str().unwrap_or(""));
     let staged = ruwac_clipboard::stage_png(Path::new(input), Path::new(directory))
         .map_err(io::Error::other)?;
+    attach_staged(pane, staged, Some(expected), call)
+}
+pub fn attach_staged(
+    pane: &str,
+    staged: ruwac_clipboard::Receipt,
+    expected_pid: Option<u64>,
+    call: &impl Fn(&Request) -> io::Result<Value>,
+) -> io::Result<Value> {
+    let preflight = (|| -> io::Result<(u64, u64)> {
+        let job = call(&request("job.query", json!({"pane":pane})))?;
+        let pid = job["result"]["foreground"]["pid"]
+            .as_u64()
+            .ok_or_else(|| io::Error::other("live explicit foreground required"))?;
+        if expected_pid.is_some_and(|expected| expected != pid) {
+            return Err(io::Error::other("Image target changed during SSH transfer"));
+        }
+        let screen = call(&request("pane.capture", json!({"pane":pane,"lines":100})))?;
+        let before = highest_image(screen["result"]["text"].as_str().unwrap_or(""));
+        Ok((pid, before))
+    })();
+    let (pid, before) = match preflight {
+        Ok(v) => v,
+        Err(error) => {
+            let _ = std::fs::remove_file(&staged.path);
+            return Err(error);
+        }
+    };
     let queued = call(&request(
         "pane.attachImage",
         json!({"pane":pane,"path":staged.path,"foreground_pid":pid}),
     ));
     if let Err(error) = queued {
-        let _ = std::fs::remove_file(&staged.path);
-        return Err(error);
+        return Err(io::Error::other(format!(
+            "{error}; staged PNG retained at {}, inspect the draft before retrying",
+            staged.path.display()
+        )));
     }
     let end = Instant::now() + Duration::from_secs(3);
     let mut observed = false;
@@ -47,7 +74,7 @@ pub fn attach(
     }
     // Keep the staged file: Codex reads it when the user explicitly submits their draft.
     Ok(
-        json!({"pane":pane,"path":staged.path,"sha256":staged.sha256,"bytes":staged.bytes,"queued":true,"draft_attachment_observed":observed,"consumed":false,"submitted":false,"adapter":"codex"}),
+        json!({"pane":pane,"path":staged.path,"sha256":staged.sha256,"bytes":staged.bytes,"width":staged.width,"height":staged.height,"file_mode":384,"directory_mode":448,"queued":true,"draft_attachment_observed":observed,"consumed":false,"submitted":false,"adapter":"codex"}),
     )
 }
 

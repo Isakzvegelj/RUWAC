@@ -118,7 +118,7 @@ pub fn highest_image(screen: &str) -> u64 {
     };
     let composer = lines[start..]
         .iter()
-        .take_while(|line| !model_ready(line))
+        .take_while(|line| line.trim_start().starts_with('›') || !model_ready(line))
         .copied()
         .collect::<Vec<_>>()
         .join("\n");
@@ -144,6 +144,7 @@ mod tests {
             highest_image("› [Image #9] old turn\n  › [Image #1] new draft\nGPT-6.1-Sol"),
             1
         );
+        assert_eq!(highest_image("› [Image #1] Explain GPT-5\nGPT-6.1-Sol"), 1);
         assert_eq!(
             highest_image("› [Image #1] wrapped\n  [Image #2]\nGPT-6.1-Sol"),
             2

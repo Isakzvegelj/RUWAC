@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v0.2.9 — 2026-10-13 — Stable source release
+
+- Add verified PNG attachment over authenticated SSH to an explicit remote Codex pane, reject malformed transfer receipts, and include temporary source/final copies in the native staging peak quota.
+
 ## v0.2.8 — 2026-10-13 — Stable source release
 
 - Add native clipboard PNG attachment to the selected Codex draft, preserve existing daemons through checked legacy input, and retain bounded staged images across frontend close with expiry and honest attachment receipts.

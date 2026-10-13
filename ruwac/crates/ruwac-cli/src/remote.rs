@@ -71,7 +71,15 @@ impl Remote {
         c
     }
     fn exchange(&self, command: &[&str], input: Vec<u8>) -> io::Result<Value> {
-        if input.len() > MAX_FRAME {
+        self.exchange_bounded(command, input, MAX_FRAME)
+    }
+    fn exchange_bounded(
+        &self,
+        command: &[&str],
+        input: Vec<u8>,
+        input_cap: usize,
+    ) -> io::Result<Value> {
+        if input.len() > input_cap {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "request exceeds 1 MiB",
@@ -145,6 +153,13 @@ impl Remote {
             write?;
         }
         Ok(value)
+    }
+    pub fn image_transfer(&self, input: Vec<u8>) -> io::Result<Value> {
+        self.exchange_bounded(
+            &["image-receive"],
+            input,
+            ruwac_clipboard::MAX_IMAGE_BYTES + 8196,
+        )
     }
     pub fn rpc(&self, request: &Request) -> io::Result<Value> {
         let value = self.exchange(&["request"], serde_json::to_vec(request)?)?;

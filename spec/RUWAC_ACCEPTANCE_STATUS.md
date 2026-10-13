@@ -1,5 +1,13 @@
 # RUWAC acceptance status
 
+## Verified SSH PNG attachment
+
+`ruwac --host SSH_HOST --socket REMOTE_SOCKET image-attach pane_ID LOCAL_PNG REMOTE_PRIVATE_DIRECTORY` transfers decoded/validated PNG bytes through the existing authenticated OpenSSH stdin channel. Host-key checks remain strict; credentials and agent forwarding are disabled. The image is outside the 1 MiB daemon JSON control frame. A bounded metadata header carries the explicit pane, initial foreground PID, destination, hash, dimensions and byte count. The remote receiver validates those fields and the PNG before sending its remote file path to the selected Codex draft. Source/destination receipts correlate; unexpected hashes, paths, modes, dimensions and fake consumption claims are rejected. No Enter or automatic turn submission is sent. Older remote daemons are preserved and receive an actionable compatibility error.
+
+Real authorized CVF→EVF acceptance verifies the PNG hash independently on the remote filesystem, 0600 file/0700 directory modes and acceptance by the real Codex 0.144.1 draft. **Remote image consumption remains blocked:** EVF's saved Codex access token could not be refreshed. Cached login status is insufficient proof of a usable account. No credentials are copied from CVF, no account logout occurs, and attachment is not reported as consumption. The owner has been asked to sign in on EVF. GTK attachment to an ordinary SSH foreground process still refuses; routing the GTK action to a registered remote agent remains an implementation gap.
+
+Nine binary receiver refusal cases cover oversized metadata/payload, unknown fields, truncation, trailing bytes, hash/dimension mismatch, invalid target and nonprivate staging. Nine synthetic SSH receipt cases cover correlation/version, hash/mode/path/type, Unicode filename and fake-consumption rejection; these are distinct from the real-host test. Native staging now reserves space for both source and final PNG copies, enforcing the 256 MiB peak namespace bound. Uncertain queued files are retained for inspection; no blind retry is performed.
+
 ## Native clipboard-to-Codex attachment
 
 The terminal toolbar now offers **Attach PNG to Codex**. It reads actual GDK `image/png`, validates/decode-stages an owned 0600 file, binds delivery to the selected/focused terminal and foreground Codex process, and observes the current draft’s image marker. It never submits a turn. Old conversation markers and model output cannot acknowledge a new attachment. The current persistent engine is preserved: a checked fallback uses its existing authenticated input channel when the new attachment API is unavailable. No local path is offered to an SSH foreground process as a remote attachment.
@@ -10,11 +18,11 @@ Native image staging is bounded to 128 files and 256 MiB per frontend namespace,
 
 This qualifies the supported local Codex image journey. SSH image transport/consumption, other agent adapters/models, physical input, external RDP clipboard and qualified Fedora packages remain open. Publication uses the existing build/release scripts and controller-managed numbering.
 
-## Codex image attachment — candidate implementation
+## Previous CLI-only image baseline — source release 0.2.7
 
 The CLI now supports `ruwac --socket PRIVATE_SOCKET image-attach pane_ID PNG PRIVATE_DIRECTORY`. It stages a validated PNG as an owned 0600 file in an owned 0700 directory, then invokes the installed Codex terminal’s documented image-path paste behavior. The authenticated daemon binds delivery to the explicit selected pane and foreground process group, requires a live same-user Codex executable, an observed supported model-ready footer and bracketed paste, and refuses stale targets, ordinary processes, unsafe paths, symlinks, hard links and public staging permissions. It sends no Enter and does not submit a turn. The CLI distinguishes queuing from observation of a new image marker; neither is reported as model consumption. Keep the staged file until the user submits or discards the draft.
 
-Real local Codex 0.162.1 accepted the attachment and correctly read a generated image after a separate explicit test submission. Seven owned-PTY refusal cases pass, including a forged Codex title on an ordinary process. This is local CLI acceptance; the native clipboard button still only stages PNG, and separate-host SSH consumption remains open. The existing persistent daemon is preserved; the new operation requires a daemon exposing `pane.attachImage` and does not restart an older daemon automatically.
+Real local Codex 0.162.1 accepted the attachment and correctly read a generated image after a separate explicit test submission. Seven owned-PTY refusal cases pass, including a forged Codex title on an ordinary process. This is local CLI acceptance; at that baseline the native clipboard button only staged PNG; the later native and SSH evidence is recorded above. The existing persistent daemon is preserved; the new operation requires a daemon exposing `pane.attachImage` and does not restart an older daemon automatically.
 
 ## Automatic GNOME sign-in — compiled package 0.2.6
 

@@ -20,7 +20,7 @@ fn now() -> u64 {
         .unwrap_or_default()
         .as_secs()
 }
-/// Bound the native attachment namespace, including pending PNG transfers.
+/// Reserve room for both the incoming source file and its validated final copy.
 pub fn available(path: &Path) -> io::Result<usize> {
     if !owned_dir(path) {
         return Err(io::Error::other("Private image namespace required"));
@@ -48,7 +48,7 @@ pub fn available(path: &Path) -> io::Result<usize> {
             "Image staging quota reached; discard old drafts before staging more",
         ));
     }
-    Ok((MAX_STAGE_BYTES - bytes).min(ruwac_clipboard::MAX_IMAGE_BYTES as u64) as usize)
+    Ok(((MAX_STAGE_BYTES - bytes) / 2).min(ruwac_clipboard::MAX_IMAGE_BYTES as u64) as usize)
 }
 /// Keep attachment files across frontend close: Codex reads them when the user submits.
 /// A later frontend startup reclaims the owned namespace after 24 hours.
@@ -248,6 +248,36 @@ impl Drop for Stage {
 #[cfg(test)]
 mod attachment_tests {
     use super::*;
+    #[test]
+    fn source_and_final_copy_share_the_peak_byte_quota() {
+        let base = std::env::temp_dir().join(ruwac_protocol::id("stage-test"));
+        fs::DirBuilder::new().mode(0o700).create(&base).unwrap();
+        let stage = Stage::new(&base).unwrap();
+        let existing = stage.path.join("existing.png");
+        let file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&existing)
+            .unwrap();
+        file.set_len(192 * 1024 * 1024).unwrap();
+        let cap = available(&stage.path).unwrap();
+        assert_eq!(cap, 32 * 1024 * 1024);
+        for name in ["transfer-pending.png", "final.png"] {
+            OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(0o600)
+                .open(stage.path.join(name))
+                .unwrap()
+                .set_len(cap as u64)
+                .unwrap();
+        }
+        assert!(available(&stage.path).is_err());
+        drop(file);
+        drop(stage);
+        fs::remove_dir(base).unwrap();
+    }
     #[test]
     fn draft_survives_frontend_close_and_expired_namespace_is_reclaimed() {
         let base = std::env::temp_dir().join(ruwac_protocol::id("stage-test"));

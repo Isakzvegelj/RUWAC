@@ -1,5 +1,13 @@
 # RUWAC product completion audit
 
+## Verified SSH PNG attachment
+
+`ruwac --host SSH_HOST --socket REMOTE_SOCKET image-attach pane_ID LOCAL_PNG REMOTE_PRIVATE_DIRECTORY` transfers decoded/validated PNG bytes through the existing authenticated OpenSSH stdin channel. Host-key checks remain strict; credentials and agent forwarding are disabled. The image is outside the 1 MiB daemon JSON control frame. A bounded metadata header carries the explicit pane, initial foreground PID, destination, hash, dimensions and byte count. The remote receiver validates those fields and the PNG before sending its remote file path to the selected Codex draft. Source/destination receipts correlate; unexpected hashes, paths, modes, dimensions and fake consumption claims are rejected. No Enter or automatic turn submission is sent. Older remote daemons are preserved and receive an actionable compatibility error.
+
+Real authorized CVF→EVF acceptance verifies the PNG hash independently on the remote filesystem, 0600 file/0700 directory modes and acceptance by the real Codex 0.144.1 draft. **Remote image consumption remains blocked:** EVF's saved Codex access token could not be refreshed. Cached login status is insufficient proof of a usable account. No credentials are copied from CVF, no account logout occurs, and attachment is not reported as consumption. The owner has been asked to sign in on EVF. GTK attachment to an ordinary SSH foreground process still refuses; routing the GTK action to a registered remote agent remains an implementation gap.
+
+Nine binary receiver refusal cases cover oversized metadata/payload, unknown fields, truncation, trailing bytes, hash/dimension mismatch, invalid target and nonprivate staging. Nine synthetic SSH receipt cases cover correlation/version, hash/mode/path/type, Unicode filename and fake-consumption rejection; these are distinct from the real-host test. Native staging now reserves space for both source and final PNG copies, enforcing the 256 MiB peak namespace bound. Uncertain queued files are retained for inspection; no blind retry is performed.
+
 ## Native clipboard-to-Codex attachment
 
 The terminal toolbar now offers **Attach PNG to Codex**. It reads actual GDK `image/png`, validates/decode-stages an owned 0600 file, binds delivery to the selected/focused terminal and foreground Codex process, and observes the current draft’s image marker. It never submits a turn. Old conversation markers and model output cannot acknowledge a new attachment. The current persistent engine is preserved: a checked fallback uses its existing authenticated input channel when the new attachment API is unavailable. No local path is offered to an SSH foreground process as a remote attachment.
@@ -69,7 +77,7 @@ The full product is not yet complete. The stable source lane contains operationa
 | C-06 PRIMARY/internal separation | Independent internal/CLIPBOARD tests | PARTIAL: PRIMARY protocol and physical middle-click acceptance |
 | C-07 application paste | Real GDK peer, native applications, 10 KiB/1 MiB payloads | PASS owned compositor |
 | C-08 local agent image | Real native GDK → Codex draft and actual consumption, including frontend close and preserved legacy engine | PASS scoped local Codex 0.162.1; synthetic local input, physical-seat gate separate |
-| C-09 remote agent image | SFTP integrity transport is available | OPEN: destination staging, receipt and separate-host consumer acceptance |
+| C-09 remote agent image | Real authenticated SSH PNG transport, independent remote hash/modes and Codex draft acceptance | PARTIAL: actual consumption blocked by expired EVF Codex authentication; GTK remote routing also remains |
 | C-10 transactions/errors | Epoch cancellation, policies, reconnect and limits | PASS bounded fixture; further malformed/slow-server soak remains |
 | C-11 unsupported format/consumer | Visible staging errors and no fake attachment claim | PARTIAL: final destination/consumer fallback UX |
 | F-01 import | Explicit read-only Remmina preview, 70 imports, metadata backup | PARTIAL: explicit-ID reviewed merge, policy preservation, stale/active guards and Undo validated; broader nonsecret mapping/skip reporting remains |
