@@ -951,7 +951,8 @@ fn create_gcc_blocks<'a>(
                             | ClientEarlyCapabilityFlags::SUPPORT_ERR_INFO_PDU
                             | ClientEarlyCapabilityFlags::STRONG_ASYMMETRIC_KEYS
                             | ClientEarlyCapabilityFlags::SUPPORT_NET_CHAR_AUTODETECT
-                            | ClientEarlyCapabilityFlags::SUPPORT_SKIP_CHANNELJOIN;
+                            | ClientEarlyCapabilityFlags::SUPPORT_SKIP_CHANNELJOIN
+                            | ClientEarlyCapabilityFlags::SUPPORT_MONITOR_LAYOUT_PDU;
 
                     // TODO(#136): support for ClientEarlyCapabilityFlags::SUPPORT_STATUS_INFO_PDU
 

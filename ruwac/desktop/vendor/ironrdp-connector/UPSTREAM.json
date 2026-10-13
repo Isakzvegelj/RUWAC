@@ -8,6 +8,7 @@
   "license": "MIT OR Apache-2.0",
   "modified_files": [
     "src/connection.rs",
+    "src/connection_finalization.rs",
     "src/lib.rs"
   ],
   "files": {
@@ -16,9 +17,9 @@
     "README.md": "e7708a2b586be3fda1c2afb79ec3f37eceaf43c5a48d56ede5e274e0f3e7415c",
     "RUWAC-PATCH.md": "099a918e73949008011cc3c94fede25137b77fb9627fe55093c7a6447efa2b5a",
     "src/channel_connection.rs": "8ddf602adfcfcc61788f1ed8394ce6053ec6b02c9611c328c5fa675db665586e",
-    "src/connection.rs": "c4e34d9b4b2b3aeed381e79001f98cb87d6442790a93029c3f1e122045e2a8d3",
+    "src/connection.rs": "f409c5c1d8747daa2f08a6ae7c3454a34e00ba61379ecc193f672864e4702206",
     "src/connection_activation.rs": "bf78b48e03cbac0f2ae7317486780ece0fc5f2b47fd837277ee9fb1d44083c06",
-    "src/connection_finalization.rs": "6723c67ee163b4904c0fa22a93da6e0d9ef2cec62aecbc53e6fcc113f0f5a8f7",
+    "src/connection_finalization.rs": "d2437add042d2aa4b95256dd85dd177751e79a437d372938c34a0ccf44857e71",
     "src/credssp.rs": "18fa602cd29c98ce53d245c39377ddb5f21aef77ad113cb863138113e3072e11",
     "src/lib.rs": "d9c0de71d5fa8636ccadc8cfb3258c96805558c1deccbd33b8f9b7e29a30cbbe",
     "src/license_exchange.rs": "f8aee6d84c4f2ba8d9b16a6cc1a771c499c4351ca9e4fa7503a9bb26cc536536",

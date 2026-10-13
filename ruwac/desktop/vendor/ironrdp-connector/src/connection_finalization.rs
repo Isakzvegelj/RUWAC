@@ -245,6 +245,10 @@ impl Sequence for ConnectionFinalizationSequence {
                             }
                         }
                     }
+                    ShareDataPdu::MonitorLayout(_) => {
+                        // A layout notification is not activation completion.
+                        ConnectionFinalizationState::WaitForResponse
+                    }
                     ShareDataPdu::FontMap(_) => {
                         // https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/023f1e69-cfe8-4ee6-9ee0-7e759fb4e4ee
                         //

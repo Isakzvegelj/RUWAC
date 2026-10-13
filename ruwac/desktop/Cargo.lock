@@ -1832,8 +1832,6 @@ dependencies = [
 [[package]]
 name = "ironrdp-pdu"
 version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4ccd1179a4d106df1930347701388b5c79bc3725fa7dab4438d57db0d9d19347"
 dependencies = [
  "bit_field",
  "bitflags 2.13.2",
@@ -3040,7 +3038,7 @@ checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
 
 [[package]]
 name = "ruwac-clipboard"
-version = "0.2.22"
+version = "0.2.23"
 dependencies = [
  "libc",
  "png",
@@ -3050,7 +3048,7 @@ dependencies = [
 
 [[package]]
 name = "ruwac-desktop"
-version = "0.2.22"
+version = "0.2.23"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3083,7 +3081,7 @@ dependencies = [
 
 [[package]]
 name = "ruwac-protocol"
-version = "0.2.22"
+version = "0.2.23"
 dependencies = [
  "serde",
  "serde_json",

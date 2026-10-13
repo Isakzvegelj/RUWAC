@@ -3711,3 +3711,7 @@ mod resize_stability_tests {
         assert_eq!(stable_resize((200, 200), (0, 0)), (200, 200));
     }
 }
+
+#[cfg(test)]
+#[path = "rdp_protocol_tests.rs"]
+mod protocol_conformance;

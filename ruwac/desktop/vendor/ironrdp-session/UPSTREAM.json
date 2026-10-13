@@ -17,8 +17,8 @@
     "src/palette.rs": "24839cabc0d7985a684271bc8fdcbea079cad29d95899d35109234d4319cffd4",
     "src/pointer.rs": "d587fdfa00e0eca80f0ac7c67e68ec3532fedfddca371480d3879436afa22620",
     "src/rfx.rs": "aa49df5cd1cac0a5c23af97e48565f6402888afd58ce4fbd808e5f7db40b4c5b",
-    "src/x224/mod.rs": "2f45a8303ace30e3dfd2985e0542d24a87031aa155aa7f15a479b497b69539da"
+    "src/x224/mod.rs": "302c51560d211a80b795a1616d9d3a9b2fc116af0a3d8e47fd58d931c08bdb87"
   },
-  "patch": "Expose validated RGBA tile application independently of QOI while preserving cursor layering; redact SaveSessionInfo diagnostics containing reconnect cookies",
+  "patch": "Expose validated RGBA tile application independently of QOI while preserving cursor layering; redact SaveSessionInfo diagnostics containing reconnect cookies; accept monitor layout notifications without replacing canonical pixels",
   "registry_archive_sha256": "3f1a5a20c24d8ebf47477f9f513201aeb894e7c7f779ea633ece65e42a9f0652"
 }

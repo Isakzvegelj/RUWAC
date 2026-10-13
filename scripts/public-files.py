@@ -6,7 +6,7 @@ ROOT_FILES={'.gitignore','README.md','CHANGELOG.md','RELEASE-NOTES.md','LICENSE'
 ARCH_FILES={f'{n:02}-{name}.md' for n,name in enumerate(['RUWAC-DECISION','ARCHITECTURE','PROTOCOL-V0','ACCEPTANCE-MATRIX','BENCHMARKS','OPEN-ISSUES','IMPLEMENTATION-ROADMAP','COMPONENTS-LICENSES'])}|{'evidence-index.json','dependency-licenses.json','benchmark-results.json','acceptance-results.json'}
 VENDOR_FILES={f'ruwac/desktop/vendor/ironrdp-connector/{name}' for name in ['README.md','LICENSE-APACHE','UPSTREAM.json','RUWAC-PATCH.md']}|{'ruwac/vendor/alacritty_terminal/'+name for name in ['Cargo.toml.orig','README.md','LICENSE-APACHE','UPSTREAM.json','RUWAC-PATCH.md']}
 SCRIPT_FILES={'public-files.py','install-user.py','dependency-check.py','update-user.py','gdm-recognize.py','privacy-check.py','test-privacy-check.py','gitleaks.toml','bundle-user.py','license-sources.json'}
-VENDOR_FILES |= {f'ruwac/desktop/vendor/ironrdp-{crate}/{name}' for crate in ['egfx','graphics','session'] for name in ['README.md','LICENSE-APACHE','LICENSE-MIT','UPSTREAM.json']}
+VENDOR_FILES |= {f'ruwac/desktop/vendor/ironrdp-{crate}/{name}' for crate in ['egfx','graphics','session','pdu'] for name in ['README.md','LICENSE-APACHE','LICENSE-MIT','UPSTREAM.json']}
 # Pinned upstream codec test vectors are source fixtures, not compiled artifacts.
 VENDOR_FILES |= {
     'ruwac/desktop/vendor/ironrdp-graphics/src/rdp6/test_assets/32x64_rgb_raw.bin',

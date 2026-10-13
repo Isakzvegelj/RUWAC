@@ -1,7 +1,7 @@
 [package]
 license = "Apache-2.0"
 name = "ruwac-desktop"
-version = "0.2.22"
+version = "0.2.23"
 edition = "2024"
 publish = false
 [workspace]
@@ -40,6 +40,7 @@ debug = 0
 strip = true
 
 [patch.crates-io]
+ironrdp-pdu = { path = "vendor/ironrdp-pdu" }
 ironrdp-connector = { path = "vendor/ironrdp-connector" }
 ironrdp-egfx = { path = "vendor/ironrdp-egfx" }
 ironrdp-graphics = { path = "vendor/ironrdp-graphics" }

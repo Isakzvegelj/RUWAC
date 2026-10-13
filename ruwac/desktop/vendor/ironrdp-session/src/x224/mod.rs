@@ -151,6 +151,10 @@ impl Processor {
         match io_channel {
             ironrdp_pdu::rdp::headers::IoChannelPdu::Data(ctx) => {
                 match ctx.pdu {
+                    ShareDataPdu::MonitorLayout(_) => {
+                        // Metadata only: activation / EGFX reset defines pixels.
+                        Ok(Vec::new())
+                    }
                     ShareDataPdu::SaveSessionInfo(_session_info) => {
                         debug!("Got Session Save Info PDU");
                         Ok(Vec::new())

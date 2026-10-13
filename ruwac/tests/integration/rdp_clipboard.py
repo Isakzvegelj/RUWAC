@@ -205,6 +205,8 @@ try:
 
 
  def reconnect():
+  # This case can run independently of the policy case that uses the same file.
+  (root/'policy-local.txt').write_bytes(b'POLICY-LOCAL-SENTINEL')
   focus('gui');command('gui','rdp-switch',rdp=0);started=time.perf_counter();command('server-0','disconnect')
   spike.eventually(lambda:'Reconnecting' in command('gui','rdp-inspect',rdp=0)['status'],8)
   r=spike.eventually(lambda:r if (r:=command('gui','rdp-inspect',rdp=0))['status'].startswith('Connected') and r['size']==[320,180] else False,15)

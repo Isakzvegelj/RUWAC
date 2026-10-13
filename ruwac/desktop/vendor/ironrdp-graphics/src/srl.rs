@@ -52,7 +52,7 @@ pub struct SrlDecoder<'a> {
 }
 
 impl<'a> SrlDecoder<'a> {
-    /// Create a decoder for an SRL stream, excluding its required trailing zero byte.
+    /// Create a decoder for an SRL stream including its required trailing zero byte.
     pub fn new(data: &'a [u8]) -> Result<Self, SrlError> {
         let Some((&terminator, payload)) = data.split_last() else {
             return Err(SrlError::MissingTerminator);
@@ -90,40 +90,32 @@ impl<'a> SrlDecoder<'a> {
                 continue;
             }
 
-            self.zero_run_remaining = self.decode_zero_run()?;
-            self.nonzero_pending = true;
+            let (zeros, followed_by_nonzero) = self.decode_zero_run()?;
+            self.zero_run_remaining = zeros;
+            self.nonzero_pending = followed_by_nonzero;
         }
 
         Ok(output)
     }
 
-    fn decode_zero_run(&mut self) -> Result<usize, SrlError> {
-        let mut zeros = 0usize;
-
-        loop {
-            let k = self.kp / 8;
-
-            if self.reader.read_bit()? {
-                let tail = usize::try_from(self.reader.read_bits(k)?).map_err(|_| SrlError::ZeroRunTooLong)?;
-                self.kp = self.kp.saturating_sub(6);
-
-                let zeros = zeros.checked_add(tail).ok_or(SrlError::ZeroRunTooLong)?;
-                return (zeros <= MAX_ZERO_RUN).then_some(zeros).ok_or(SrlError::ZeroRunTooLong);
-            }
-
-            let chunk = 1usize << k;
-            zeros = zeros.checked_add(chunk).ok_or(SrlError::ZeroRunTooLong)?;
-            if zeros > MAX_ZERO_RUN {
-                return Err(SrlError::ZeroRunTooLong);
-            }
-
+    fn decode_zero_run(&mut self) -> Result<(usize, bool), SrlError> {
+        let k = self.kp / 8;
+        if self.reader.read_bit()? {
+            let tail = usize::try_from(self.reader.read_bits(k)?).map_err(|_| SrlError::ZeroRunTooLong)?;
+            Ok((tail, true))
+        } else {
+            // MS-RDPEGFX 3.1.8.1.5.1: a zero bit is a complete zero chunk,
+            // not a promise that a unary/nonzero code will follow. The last
+            // chunk can finish a component at the end of its stream.
             self.kp = self.kp.saturating_add(4).min(MAX_KP);
+            Ok((1usize << k, false))
         }
     }
 
     fn decode_nonzero(&mut self, num_bits: u8) -> Result<i16, SrlError> {
         let maximum = max_magnitude(num_bits)?;
         let sign = self.reader.read_bit()?;
+        self.kp = self.kp.saturating_sub(6);
         let mut zero_count = 0u16;
 
         while zero_count + 1 < maximum {
@@ -345,6 +337,23 @@ mod tests {
     use super::*;
 
     #[test]
+    fn complete_zero_chunks_do_not_require_a_following_unary_code() {
+        // Eight zero bits describe chunks 2,2,4,4,8,8,16,16 = 60 zeros.
+        assert_eq!(decode_srl(&[0x00, 0x00], 60, 1), Ok(vec![0; 60]));
+        let mut decoder = SrlDecoder::new(&[0x00, 0x00]).unwrap();
+        assert_eq!(decoder.decode(1, 1), Ok(vec![0]));
+        assert_eq!(decoder.decode(59, 1), Ok(vec![0; 59]));
+        assert_eq!(decoder.decode(1, 1), Err(SrlError::Truncated));
+    }
+
+    #[test]
+    fn rejects_missing_required_padding_and_bounds_zero_chunks() {
+        assert_eq!(decode_srl(&[0x84], 1, 4), Err(SrlError::MissingTerminator));
+        assert_eq!(decode_srl(&[], 1, 4), Err(SrlError::MissingTerminator));
+        assert_eq!(decode_srl(&[0x00, 0x00], 61, 1), Err(SrlError::Truncated));
+    }
+
+    #[test]
     fn decodes_initial_kp_and_unary_magnitude() {
         // MS-RDPEGFX 3.1.8.1.5.1 initializes KP to 8, so K is one.
         // The wire bits are zero run 0 (10), positive sign (0), magnitude 3 (001).
@@ -370,11 +379,6 @@ mod tests {
     #[test]
     fn rejects_truncated_stream() {
         assert_eq!(decode_srl(&[0x80, 0x00], 1, 4), Err(SrlError::Truncated));
-    }
-
-    #[test]
-    fn rejects_missing_terminator() {
-        assert_eq!(decode_srl(&[0x84], 1, 4), Err(SrlError::MissingTerminator));
     }
 
     #[test]

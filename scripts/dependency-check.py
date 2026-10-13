@@ -36,11 +36,11 @@ def verify_vendor():
  return {'crate':d['crate'],'version':d['version'],'registry_archive_sha256':d['registry_archive_sha256'],'verified_library_files':len(expected),'patch':'Read-only canonical primary_grid accessor; no parser/mutation replacement'}
 def main():
  p=argparse.ArgumentParser();p.add_argument('--output',type=Path,required=True);a=p.parse_args()
- result={'connector_source':verify_connector(),'graphics_sources':verify_graphics(),'terminal_library_source':verify_vendor(),'headless':inspect('headless',ROOT/'ruwac/Cargo.toml'),'desktop':inspect('desktop',ROOT/'ruwac/desktop/Cargo.toml'),'scope':'Locked declaration/checksum and graphical-dependency exclusion checks; not legal approval, binary notice clearance or a vulnerability scan'}
+ result={'connector_source':verify_connector(),'pdu_source':verify_pdu(),'graphics_sources':verify_graphics(),'terminal_library_source':verify_vendor(),'headless':inspect('headless',ROOT/'ruwac/Cargo.toml'),'desktop':inspect('desktop',ROOT/'ruwac/desktop/Cargo.toml'),'scope':'Locked declaration/checksum and graphical-dependency exclusion checks; not legal approval, binary notice clearance or a vulnerability scan'}
  a.output.parent.mkdir(parents=True,exist_ok=True);a.output.write_text(json.dumps(result,indent=2)+'\n');print('Dependency declarations and headless graph PASS',flush=True)
 def verify_connector():
  base=ROOT/'ruwac/desktop/vendor/ironrdp-connector';d=json.loads((base/'UPSTREAM.json').read_text())
- if d['crate']!='ironrdp-connector' or d['version']!='0.10.0' or d['modified_files']!=['src/connection.rs','src/lib.rs']:raise ValueError('Unexpected connector patch provenance')
+ if d['crate']!='ironrdp-connector' or d['version']!='0.10.0' or d['modified_files']!=['src/connection.rs','src/connection_finalization.rs','src/lib.rs']:raise ValueError('Unexpected connector patch provenance')
  for name,digest in d['files'].items():
   path=base/name
   if not path.resolve().is_relative_to(base.resolve()) or path.is_symlink() or hashlib.sha256(path.read_bytes()).hexdigest()!=digest:raise ValueError('Connector source checksum changed: '+name)
@@ -57,4 +57,13 @@ def verify_graphics():
    if not path.resolve().is_relative_to(base.resolve())or path.is_symlink()or hashlib.sha256(path.read_bytes()).hexdigest()!=digest:raise ValueError('Graphics source checksum changed: '+file)
   result.append({'crate':d['crate'],'version':version,'commit':commit,'verified_files':len(actual),'patch':d['patch']})
  return result
+def verify_pdu():
+ base=ROOT/'ruwac/desktop/vendor/ironrdp-pdu';d=json.loads((base/'UPSTREAM.json').read_text())
+ if d['crate']!='ironrdp-pdu' or d['version']!='0.9.0' or d['registry_archive_sha256']!='4ccd1179a4d106df1930347701388b5c79bc3725fa7dab4438d57db0d9d19347' or d['modified_files']!=['src/codecs/clearcodec/bands.rs']:raise ValueError('Unexpected PDU patch provenance')
+ actual={str(p.relative_to(base))for p in base.rglob('*')if p.is_file()and p.name!='UPSTREAM.json'}
+ if actual!=set(d['files']):raise ValueError('PDU source inventory changed')
+ for name,value in d['files'].items():
+  p=base/name
+  if p.is_symlink()or not p.resolve().is_relative_to(base.resolve())or hashlib.sha256(p.read_bytes()).hexdigest()!=value:raise ValueError('PDU source checksum changed')
+ return {'crate':d['crate'],'version':d['version'],'registry_archive_sha256':d['registry_archive_sha256'],'verified_files':len(actual),'modified_files':d['modified_files'],'scope':'Short V-bar coordinate bit correction; other selected registry source unchanged'}
 if __name__=='__main__':main()

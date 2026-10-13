@@ -1,16 +1,18 @@
-# RUWAC Fedora testing-bundle preparation
+# RUWAC RDP monitor and codec conformance fixes
 
-Add a product-owned candidate bundle assembler and Git-free per-user installation.
-Every bundled file is hashed before artifact execution. Symlinks, unexpected files,
-wrong architectures, stale license provenance and modified registry license texts
-are rejected. Immutable previous releases and running sessions are preserved.
+Advertise monitor-layout support independently of the graphics pipeline. Monitor
+notifications before FontMap keep activation waiting; active notifications no
+longer disconnect the session or replace canonical pixels. Truncated packets
+retain decode failures.
 
-Dependency notice generation retains original texts for the Linux runtime/build
-closure and supplements omitted texts from their pinned upstream VCS commits.
-Candidate archive headers are normalized and private-content/standard-secret checks
-are mandatory. The assembler does not allocate versions or publish artifacts.
+Correct ClearCodec short-bar coordinate bits against Microsoft's Example 4 and
+SRL decoding when complete zero chunks end a component. Required SRL padding and
+stream bounds remain enforced. Pinned PDU source, dependency notices and modified
+file checksums accompany the codec patch.
 
-This remains a source release. Candidate bundles are not signed RPMs, publisher
-attestations or stable security qualification. RUSTSEC-2023-0071 remains unresolved.
-Windows dynamic display, physical input and qualified Fedora packaging remain open.
-See spec/RUWAC_BUNDLES.md and spec/RUWAC_UPDATES.md for installation and limits.
+Generated conformance packets and isolated authenticated RDP/native regressions
+remain distinct from real Windows acceptance. The Windows graphics experiment is
+preserved separately; the existing published connection defaults are retained.
+No new login to an owner's active Windows session is used as evidence. Windows
+dynamic display, physical input, RSA remediation and signed RPM qualification
+remain open. Source and testing bundles do not imply whole-product qualification.

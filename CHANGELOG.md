@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v0.2.23 — 2026-10-13 — Stable source release
+
+- Handle monitor-layout notifications during activation and active sessions, advertise support independently of the graphics pipeline, and correct ClearCodec short-bar coordinates and terminal SRL zero chunks with conformance regressions.
+
 ## v0.2.22 — 2026-10-13 — Stable source release
 
 - Add deterministic Fedora testing-bundle assembly with preserved dependency notices, private-content checks and a Git-free installer that verifies every file before running an artifact.
