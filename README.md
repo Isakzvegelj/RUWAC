@@ -2,7 +2,7 @@
 
 A Rust remote workspace with persistent terminals: one daemon owns PTYs; replaceable TUI and JSON clients control sessions, windows and stable panes.
 
-Implemented: persistent daemon-owned children, shared focus, nested horizontal/vertical splits, zoom, paged scrollback, private Unix IPC and a separate compiled GTK desktop. The desktop supports keyboard marking/search, real GDK clipboard transport, private PNG staging and an embedded IronRDP client. Physical desktop/PRIMARY and authenticated remote-host acceptance remain unqualified; image attachment remains open; private ended-history recovery after daemon loss is implemented with the limits below.
+Implemented: persistent daemon-owned children, shared focus, nested horizontal/vertical splits, zoom, paged scrollback, private Unix IPC and a separate compiled GTK desktop. The desktop supports keyboard marking/search, real GDK clipboard transport, private PNG staging and an embedded IronRDP client. Targeted real Windows authentication/framebuffer and Fedora GNOME service/login/display tests pass; saved mixed layouts can preserve a live Fedora RDP transport. Local and authenticated SSH Codex PNG draft attachment is implemented. Physical input/PRIMARY, external clipboard, broader interoperability and qualified Fedora packaging remain open; see the completion matrix for exact acceptance scope. Private ended-history recovery after daemon loss is implemented with the limits below.
 
 Build with Rust/Cargo in your chosen build workspace. Keep build output and generated evidence outside the source tree:
 

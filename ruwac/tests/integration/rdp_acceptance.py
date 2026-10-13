@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail-closed real-host acceptance scaffold; no network backend is installed."""
+"""Manual cross-platform/physical-input acceptance matrix; this scaffold executes no network tests."""
 import argparse,json
 from pathlib import Path
 parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--plan',action='store_true');parser.add_argument('--evidence',type=Path);args=parser.parse_args()
@@ -11,7 +11,7 @@ cases=[
  ('RDP-DISPLAY','1440p and 3K; fit/stretch/dynamic resolution/fullscreen; FPS and latency'),
  ('RDP-MOUSE','Physical touchpad, wheel, pointer-scale transforms and pane boundaries'),
  ('RDP-EXIT','Disconnect/focus loss/abnormal exit releases modifiers and cancels clipboard transfers')]
-report={'status':'BLOCKED','reason':'No embedded backend or authorized real-host fixture; no connection attempted','cases':[{'id':key,'status':'BLOCKED','requires':detail} for key,detail in cases]}
+report={'status':'BLOCKED','reason':'This manual matrix has not been executed. The embedded backend exists; opt-in workspace_rdp.py verifies real authorized RDP layout restoration separately, not this full physical-input/clipboard matrix.','cases':[{'id':key,'status':'BLOCKED','requires':detail} for key,detail in cases]}
 if args.evidence:
  if not args.evidence.is_dir():parser.error('Use an existing private evidence directory')
  (args.evidence/'rdp-acceptance.json').write_text(json.dumps(report,indent=2)+'\n')

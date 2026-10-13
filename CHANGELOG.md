@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v0.2.12 — 2026-10-13 — Stable source release
+
+- Add opt-in real-host RDP workspace acceptance proving repeated restoration preserves authenticated transport and receives fresh display frames; correct outdated backend/readiness descriptions.
+
 ## v0.2.11 — 2026-10-13 — Stable source release
 
 - Add a native saved-workspace picker and restore reopened terminal sessions through their current view identities without restarting shells or enabling automation access.
