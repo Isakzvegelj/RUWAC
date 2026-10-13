@@ -16,6 +16,7 @@ receipts and original reports are archived privately outside Git.
 | SSH/SFTP integrity, progress, cancellation and persistence | PASS | Isolated authorized fixtures; generated files and keys |
 | Explicit SSH jump routing and separate gateway/target trust | PASS | Two disposable OpenSSH servers; eight actual transport groups and four native editor groups |
 | Remote agent image transport/consumption | PASS | External CLI route and native loopback route; complete external native launcher remains unqualified |
+| PRIMARY and native middle-click dispatch | PASS | Real GDK/Mutter protocol, generated text, synthetic click dispatch, SGR routing and Shift bypass; physical input remains separate |
 | Physical GTK/Wayland mouse, keyboard and touchpad acceptance | BLOCKED | Isolated synthetic input does not qualify a physical desktop |
 | Fedora RPM, signing, provenance and binary security qualification | BLOCKED | Source releases are distinct from qualified binary distribution |
 | Desktop RSA dependency advisory | FAIL | RUSTSEC-2023-0071 remains unsuppressed |
@@ -43,3 +44,17 @@ Build and publication use the existing `build.sh` and `release.sh` adapters; the
 installed controller assigns versions. GitHub source archives contain source,
 not a claim of qualified Fedora binaries. Historical references are audited
 separately and remain unchanged pending owner approval.
+
+Reproduce PRIMARY and click dispatch with test-only Mutter, D-Bus and Python GObject dependencies:
+
+```sh
+python3 ruwac/tests/integration/primary_wayland.py \
+  --binary "$CARGO_TARGET_DIR/release/ruwac" \
+  --gui "$CARGO_TARGET_DIR/release/ruwac-desktop" \
+  --evidence "$EVIDENCE_DIR" --spawn-owned-display
+```
+
+The fixture creates and stops its own compositor and child processes. Its
+`--owned-display` mode refuses the normal user desktop runtime and requires an
+explicitly named test display. Synthetic callbacks qualify protocol and dispatch
+behavior, not physical mouse or touchpad operation.

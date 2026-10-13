@@ -1,13 +1,16 @@
-# Verified build provenance for Fedora testing archives
+# RUWAC native PRIMARY and click acceptance
 
-The existing hosted release job now generates a signed build attestation for the
-exact tested archive using the commit-pinned official GitHub action. Publication
-verifies the artifact digest, repository, signer workflow, tag ref, source commit
-and hosted-runner identity with GitHub CLI. The signed bundle is retained beside
-the archive for offline verification. Quality/privacy gates, immutable assets and
-controller-owned versioning remain in the existing workflow.
+The compiled GTK frontend now has a separate test-only click-dispatch action,
+so native middle-click behavior can be exercised without bypassing the click
+handler. Existing low-level terminal mouse fixtures remain available.
 
-Provenance establishes build origin under the GitHub/Sigstore trust model. It does
-not clear the unresolved RSA advisory, qualify physical or external Windows input,
-or replace signed Fedora RPM acceptance. Existing updater hash/manifest checks
-remain unchanged; downloaded attestations support an additional verification step.
+A reproducible fixture creates its own headless Mutter display and private
+D-Bus, runtime, profiles and clipboard state. It tests real Wayland PRIMARY
+copy/paste, native middle-click handler paste, application SGR press/release,
+Shift bypass, disabled mouse routing and separation of CLIPBOARD and the
+internal Screen buffer. Generated input remains synthetic; physical input and
+Windows resize/clipboard qualification remain separate acceptance gates.
+
+Build and publication use the existing scripts and controller-managed version.
+Fedora testing bundles remain distinct from qualified RPM distribution.
+RUSTSEC-2023-0071 remains visible and unsuppressed.

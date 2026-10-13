@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v0.2.29 — 2026-10-13 — Stable source release
+
+- Qualify native PRIMARY copy and middle-click dispatch on a disposable Mutter display, including SGR application mouse routing, Shift bypass and independent desktop/Screen buffers.
+
 ## v0.2.28 — 2026-10-13 — Stable source release
 
 - Generate signed GitHub build provenance for Fedora testing archives and verify the repository, workflow, ref and source commit before publication.
