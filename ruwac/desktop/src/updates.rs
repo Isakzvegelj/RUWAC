@@ -68,11 +68,84 @@ pub fn attach(header: &adw::HeaderBar, window: &adw::ApplicationWindow, automati
         content.append(&status);
         if std::env::current_exe().is_ok_and(|exe| ruwac_protocol::managed_rpm_installation(&exe)) {
             status.set_text("Checking GitHub for RPM updates…");
-            let detail = gtk::Label::new(Some("Installed with RPM. Download the verified Fedora RPMs and install them with DNF. Per-user automatic updates and rollback do not manage this system installation; running sessions remain open."));
+            let detail = gtk::Label::new(Some("Installed with RPM. System updates verify the GitHub release build before using DNF. These are upstream testing packages; the known dependency advisory remains open. Administrator authorization is required to install or enable updates. Running sessions remain open."));
             detail.set_wrap(true); content.append(&detail);
             content.append(&gtk::LinkButton::with_label("https://github.com/w3fans/RUWAC/releases/latest", "Open RPM releases"));
+            let install = gtk::Button::with_label("Install verified RPM update…");
+            install.set_widget_name("update-install"); install.set_sensitive(false);
+            content.append(&install);
+            let auto = gtk::CheckButton::with_label("Automatically install verified upstream testing RPMs");
+            auto.set_widget_name("update-auto-install"); auto.set_sensitive(false);
+            content.append(&auto);
+            let changing = Rc::new(Cell::new(false));
+            let initial_guard = changing.clone();
+            let weak_auto = auto.downgrade(); let weak_status = status.downgrade();
+            task(&["--auto-install", "status"], move |result| {
+                if let Some(auto) = weak_auto.upgrade() {
+                    match result {
+                        Ok(value) => { initial_guard.set(true); auto.set_active(value["automatic_install"] == true); initial_guard.set(false); auto.set_sensitive(true); }
+                        Err(error) => { if let Some(status) = weak_status.upgrade() { status.set_text(&error); } }
+                    }
+                }
+            });
+            let switch_guard = changing.clone(); let weak_status = status.downgrade();
+            auto.connect_toggled(move |auto| {
+                if switch_guard.replace(true) { return; }
+                let enabled = auto.is_active(); let weak_auto = auto.downgrade();
+                let guard = switch_guard.clone(); let weak_status = weak_status.clone();
+                auto.set_sensitive(false);
+                task(if enabled { &["--auto-install", "on"] } else { &["--auto-install", "off"] }, move |result| {
+                    if let Err(error) = &result {
+                        if let Some(status) = weak_status.upgrade() { status.set_text(error); }
+                        task(&["--auto-install", "status"], move |saved| {
+                            if let Some(auto) = weak_auto.upgrade() {
+                                if let Ok(value) = saved {
+                                    auto.set_active(value["automatic_install"] == true);
+                                    auto.set_sensitive(true);
+                                } else {
+                                    auto.set_tooltip_text(Some("Unable to determine saved system update state"));
+                                }
+                            }
+                            guard.set(false);
+                        });
+                        return;
+                    }
+                    if let Some(auto) = weak_auto.upgrade() {
+                        match &result {
+                            Ok(value) => { auto.set_active(value["automatic_install"] == true); }
+                            Err(_) => { auto.set_active(!enabled); }
+                        }
+                        auto.set_sensitive(true);
+                    }
+                    if let Some(status) = weak_status.upgrade() {
+                        status.set_text(match &result {
+                            Ok(_) if enabled => "System RPM updates enabled. Checks every six hours; running sessions are preserved.",
+                            Ok(_) => "System RPM automatic updates disabled.",
+                            Err(error) => error,
+                        });
+                    }
+                    guard.set(false);
+                });
+            });
+            let weak_status = status.downgrade();
+            install.connect_clicked(move |button| {
+                button.set_sensitive(false); let weak_button = button.downgrade();
+                let weak_status = weak_status.clone();
+                task(&["--install"], move |result| {
+                    if let Some(status) = weak_status.upgrade() {
+                        status.set_text(&match result {
+                            Ok(value) if value["installed"].is_string() => format!("Installed RPM {}. Existing sessions remain open; restart the frontend when ready.", value["installed"].as_str().unwrap_or("update")),
+                            Ok(value) => value["skipped"].as_str().unwrap_or("The system RPM installation is current.").into(),
+                            Err(error) => error,
+                        });
+                    }
+                    if let Some(button) = weak_button.upgrade() { button.set_sensitive(true); }
+                });
+            });
             let label = status.downgrade();
+            let weak_install = install.downgrade();
             task(&["--check"], move |result| {
+                if let Some(install) = weak_install.upgrade() { install.set_sensitive(result.as_ref().is_ok_and(|value| value["available"] == true)); }
                 if let Some(label) = label.upgrade() {
                     label.set_text(&match result {
                         Ok(value) if value["available"] == true => format!("RPM update {} is available. Open the release to download it.", value["latest"].as_str().unwrap_or("latest")),

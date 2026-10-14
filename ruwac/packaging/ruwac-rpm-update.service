@@ -1,0 +1,16 @@
+[Unit]
+Description=Install verified upstream RUWAC testing RPM updates
+Wants=network-online.target
+After=network-online.target
+ConditionPathExists=/usr/share/ruwac/rpm-update.py
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 -I /usr/share/ruwac/rpm-update.py --install-auto
+TimeoutStartSec=20min
+UMask=0077
+PrivateTmp=yes
+ProtectHome=yes
+NoNewPrivileges=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+

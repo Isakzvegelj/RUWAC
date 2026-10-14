@@ -75,15 +75,26 @@ def main():
         for mode in [['--install'], ['--rollback'], ['--auto-install', 'on'], ['--auto-check', 'on'], ['--testing-bundles', 'on']]:
             refusal = subprocess.run([str(core), 'update', *mode], env=env, capture_output=True, text=True)
             assert refusal.returncode != 0 and 'RPM installation is managed by DNF' in refusal.stdout
-        for mode in [['--auto-install', 'status'], ['--auto-check', 'status'], ['--testing-bundles', 'status'], ['--install-auto'], ['--check-auto']]:
+        for mode in [['--auto-check', 'status'], ['--testing-bundles', 'status'], ['--install-auto'], ['--check-auto']]:
             response = subprocess.run([str(core), 'update', *mode], env=env, capture_output=True, text=True)
             assert response.returncode == 0 and json.loads(response.stdout)['distribution'] == 'rpm'
         assert not Path(env['HOME']).exists() and not Path(env['XDG_CONFIG_HOME']).exists() and not Path(env['XDG_CACHE_HOME']).exists()
         # A process from an earlier package must remain managed after an upgrade.
         changed = json.loads(marker.read_text()); changed['version'] = 'generated-newer-stamp'
         marker.write_text(json.dumps(changed))
-        response = subprocess.run([str(core), 'update', '--auto-install', 'status'], env=env, capture_output=True, text=True)
-        assert response.returncode == 0 and json.loads(response.stdout)['distribution'] == 'rpm'
+        # Extracted payloads cannot authorize a root helper. Its canonical system
+        # path is deliberately absent here; real installed-root status/enable and
+        # DNF transactions are covered by the separate owned OS fixture.
+        if (unpacked / 'usr/share/ruwac/rpm-update.py').exists():
+            assert not Path('/usr/bin/ruwac-rpm-update').exists(), 'Use an isolated host without an installed system updater for extracted-payload checks'
+            response = subprocess.run([str(core), 'update', '--auto-install', 'status'], env=env, capture_output=True, text=True)
+            assert response.returncode != 0 and 'RPM installation is managed by DNF' in response.stdout
+            assert (unpacked / 'usr/lib/systemd/system/ruwac-rpm-update.timer').is_file()
+            assert (unpacked / 'usr/lib/systemd/system/ruwac-rpm-update.service').is_file()
+            checks.append('extracted-payload-cannot-substitute-for-canonical-root-updater')
+        else:
+            response = subprocess.run([str(core), 'update', '--auto-install', 'status'], env=env, capture_output=True, text=True)
+            assert response.returncode == 0 and json.loads(response.stdout)['distribution'] == 'rpm'
         checks.append('rpm-updater-refuses-shadow-install-and-preserves-private-settings')
     if a.run_owned_transaction:
         assert not a.query_only and a.previous_rpms, 'Real upgrade requires genuine prior packages'

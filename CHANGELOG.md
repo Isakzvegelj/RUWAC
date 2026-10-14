@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Named terminal shortcut: `ruwac -S NAME` creates or reconnects to an exact session name, with duplicate-name and noninteractive safeguards.
+
+## v0.2.38 — 2026-10-14 — Stable source release
+
+- Add administrator-authorized native RPM update controls and a disabled-by-default system timer; verify all installed component assets before one DNF upgrade, preserve sessions and refresh saved opt-out state after timer failures.
+
 ## v0.2.37 — 2026-10-14 — Stable source release
 
 - Enforce signed hosted-workflow provenance before extracting or installing compiled updates; hold missing or invalid attestations without changing running sessions.

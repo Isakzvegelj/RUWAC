@@ -67,6 +67,10 @@ def packages(root, output, desktop=True, require_private=False, require_tag=Fals
         for name in applications:
             shutil.copy2(root / 'target/release' / name, payload / 'target/release' / name)
         shutil.copy2(root / 'LICENSE', payload / 'LICENSE')
+        for name in ['rpm-update.py', 'update-user.py']:
+            shutil.copy2(root / 'scripts' / name, payload / name)
+        for name in ['ruwac-rpm-update.service', 'ruwac-rpm-update.timer']:
+            shutil.copy2(root / 'ruwac/packaging' / name, payload / name)
         (payload / 'TESTING.txt').write_text(
             'RUWAC upstream Fedora 44 testing candidate\n'
             'Installing, updating or removing these packages does not restart daemons or windows, '

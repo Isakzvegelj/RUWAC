@@ -75,6 +75,8 @@ Private configuration may set RUWAC_SCROLLBACK_LINES (default 50000) and RUWAC_S
 
 Use Machines → New machine / endpoint or Network groups / defaults, and Edit beside an endpoint. Add endpoint retains the machine identity; duplicate creates new identities and credential references. Set/replace/forget credentials use system Secret Service. Metadata Undo restores the previous private library. RDP connects inside its tab; SSH opens a persistent terminal plus a native Files tab. Files verifies known_hosts before authentication and offers navigation, upload/download, explicit overwrite and progress. Pause transfer retains a private journal and partial; Pending transfers… resumes or explicitly discards the selected job. Resume verifies the original host, source and retained prefix before continuing and verifies the complete staged file before commit. Original files remain protected during overwrite and interrupted rename recovery. For encrypted SSH keys, configure the key file and the separate SSH key passphrase reference, then use Set / replace key passphrase; only the Secret Service reference is saved. Transfers currently handle individual regular files up to 32 GiB, with 128 pending jobs; recursive transfer and rsync remain open. Dynamic RDP uses negotiated Display Control; fit/native/stretch, zoom, fullscreen and Pan viewport remain available. See the current acceptance report for fixture evidence and remaining defects.
 
+To create or reconnect to a named terminal session, run `ruwac -S d` in an interactive terminal. Exact duplicate names require an explicit session ID. The same shortcut works with `ruwac --host SSH_HOST -S d`.
+
 ## Install and open the workspace
 
 Use the existing build workflow after a controller-assigned release:
@@ -187,8 +189,10 @@ stays under the configured external build workspace. Repeated outputs are preser
 These upstream RPMs are unsigned RPM packages with GitHub workflow provenance;
 they are not Fedora repository or complete security qualification. Verify the
 published hashes and attestation before installation. Updates to system RPMs use
-DNF and the release's RPM files. The RPM UI opens the release downloads and refuses
-per-user automatic installation or rollback that would shadow the system package.
+DNF or the verified system updater. The RPM UI supports administrator-authorized
+installation and explicit opt-in to a system update timer. It refuses per-user
+installation or rollback that would shadow the system package.
 Per-user source/testing-bundle updates remain available for separately installed
-per-user builds. RPM auto-installation and a signed package repository are not yet
-implemented. The desktop RSA advisory remains unsuppressed.
+per-user builds. System updates remain disabled until an administrator enables them;
+see [setup and opt-out](spec/RUWAC_UPDATES.md). A signed Fedora package repository
+remains unfinished. The desktop RSA advisory remains unsuppressed.

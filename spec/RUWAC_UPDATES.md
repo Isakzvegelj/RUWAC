@@ -6,10 +6,41 @@ separate gates. Choose the installation mode that matches your update needs.
 
 For system installation, download the matching core and desktop RPMs from the
 same release and install them with DNF. Open /usr/bin/ruwac gui if a prior per-user
-installation is also present. The RPM update dialog opens the release downloads;
-system installation, updates and rollback use DNF. Unattended RPM installation is
-not yet implemented. The application refuses per-user update operations that would
-silently shadow a system RPM installation.
+installation is also present. The RPM update dialog supports verified installation
+and an explicit administrator opt-in to automatic upstream testing updates.
+The application refuses per-user update operations that would silently shadow a
+system RPM installation.
+
+Enable system RPM updates in the desktop's Updates dialog, or as an administrator:
+
+```sh
+sudo /usr/bin/ruwac-rpm-update --enable-testing
+/usr/bin/ruwac-rpm-update --status
+```
+
+The disabled-by-default system timer checks after activation and every six hours
+with a randomized delay. It requires the exact release commit's quality/privacy
+checks, all installed component assets, checksums, signed workflow provenance and
+matching RPM headers before one DNF upgrade. It does not add the desktop to a
+headless installation, restart sessions or modify user profiles/credentials.
+The separate dependency advisory remains open; this explicit opt-in accepts upstream
+testing packages, not complete security or signed Fedora repository qualification.
+
+Manual installation and opt-out also support the desktop authorization agent:
+
+```sh
+/usr/bin/ruwac update --install
+/usr/bin/ruwac update --auto-install off
+```
+
+Without a desktop authorization agent use `sudo /usr/bin/ruwac-rpm-update --install`
+or `--disable`. Disable the timer before removing the packages. DNF handles rollback;
+disable automatic updates before deliberately downgrading. During downloads opt-out
+prevents installation; an already started DNF transaction finishes before disable
+returns. Failed timer-stop requests still persist opt-out, and the GUI refreshes the
+saved state. Updater configuration and private transaction diagnostics are stored
+separately from user profiles. The updater preserves DNF's signature policy and uses
+[upgrade without dependency downgrades](https://dnf5.readthedocs.io/en/latest/commands/upgrade.8.html).
 
 For unattended updates without local source compilation, install the release's
 Fedora testing bundle using its included installer, then explicitly opt in:

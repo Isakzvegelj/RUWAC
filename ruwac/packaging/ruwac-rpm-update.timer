@@ -1,0 +1,12 @@
+[Unit]
+Description=Check for verified upstream RUWAC testing RPM updates
+ConditionPathExists=/usr/share/ruwac/rpm-update.py
+
+[Timer]
+OnActiveSec=5min
+OnUnitActiveSec=6h
+RandomizedDelaySec=5min
+Unit=ruwac-rpm-update.service
+
+[Install]
+WantedBy=timers.target

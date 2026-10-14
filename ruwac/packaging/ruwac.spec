@@ -1,5 +1,6 @@
 # Upstream testing RPMs use the version already assigned by the release controller.
 %global debug_package %{nil}
+%global ruwac_unitdir %{_prefix}/lib/systemd/system
 %bcond_without desktop
 Name: ruwac
 Version: %{ruwac_version}
@@ -11,6 +12,9 @@ Source0: ruwac-testing-payload.tar.gz
 ExclusiveArch: x86_64
 Requires: python3
 Requires: openssh-clients
+Requires: gh >= 2.97.0
+Requires: dnf5
+Requires: systemd
 
 %description
 Persistent daemon-owned terminals and authenticated command-line control.
@@ -30,6 +34,7 @@ Requires: sqlite-libs
 Requires: python3-pillow
 Requires: tesseract
 Requires: tesseract-langpack-eng
+Requires: polkit
 
 %description desktop
 Native GTK workspace, authenticated RDP, desktop clipboard and file transfers.
@@ -47,6 +52,11 @@ The known desktop RSA advisory remains unresolved; see the installed testing not
 %install
 install -D -m 0755 target/release/ruwac %{buildroot}%{_bindir}/ruwac
 install -D -m 0644 source.json %{buildroot}%{_datadir}/ruwac/rpm-installation.json
+install -D -m 0755 rpm-update.py %{buildroot}%{_datadir}/ruwac/rpm-update.py
+install -D -m 0644 update-user.py %{buildroot}%{_datadir}/ruwac/update-user.py
+ln -s ../share/ruwac/rpm-update.py %{buildroot}%{_bindir}/ruwac-rpm-update
+install -D -m 0644 ruwac-rpm-update.service %{buildroot}%{ruwac_unitdir}/ruwac-rpm-update.service
+install -D -m 0644 ruwac-rpm-update.timer %{buildroot}%{ruwac_unitdir}/ruwac-rpm-update.timer
 %if %{with desktop}
 install -D -m 0755 target/release/ruwac-desktop %{buildroot}%{_bindir}/ruwac-desktop
 install -D -m 0644 ruwac.desktop %{buildroot}%{_datadir}/applications/si.z4.ruwac.desktop
@@ -58,6 +68,11 @@ install -D -m 0644 ruwac.desktop %{buildroot}%{_datadir}/applications/si.z4.ruwa
 %{_bindir}/ruwac
 %dir %{_datadir}/ruwac
 %{_datadir}/ruwac/rpm-installation.json
+%{_datadir}/ruwac/rpm-update.py
+%{_datadir}/ruwac/update-user.py
+%{_bindir}/ruwac-rpm-update
+%{ruwac_unitdir}/ruwac-rpm-update.service
+%{ruwac_unitdir}/ruwac-rpm-update.timer
 
 %if %{with desktop}
 %files desktop

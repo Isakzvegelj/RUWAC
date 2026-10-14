@@ -84,6 +84,7 @@ jobs:
         run: |
           python3 ruwac/tests/integration/test_bundle_updates.py
           python3 ruwac/tests/integration/test_update_provenance.py
+          python3 ruwac/tests/integration/test_rpm_updates.py
       - name: Fail-closed local GDM recognition fixtures
         run: python3 ruwac/tests/integration/test_gdm_recognition.py
       - name: Rust formatting

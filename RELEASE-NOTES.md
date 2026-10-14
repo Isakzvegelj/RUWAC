@@ -1,20 +1,30 @@
-# RUWAC compiled-update provenance enforcement
+# RUWAC verified system RPM updates
 
-Per-user Fedora testing-bundle updates now verify the signed build attestation
-before archive extraction or execution of the installer. Verification binds the
-actual bytes to the RUWAC repository, release workflow, exact source tag/commit
-and hosted-runner identity. Missing, ambiguous, invalid or timed-out attestations
-hold installation. GitHub CLI uses isolated configuration without owner tokens.
-Install gh through DNF before enabling compiled bundle updates.
+RPM-installed workspaces now have native installation controls and an explicit
+administrator opt-in to automatic upstream testing updates. The system timer is
+disabled by default. Updates require exact-source quality/privacy checks, all
+installed component assets, hashes, signed workflow provenance and matching RPM
+headers before one DNF upgrade. A core-only installation remains headless.
 
-Generated verifier-process faults check identity arguments, credential isolation,
-invalid metadata and rejection before unpack/install. A genuine published archive
-and attestation also exercise the production verification and immutable installer.
-Existing opt-out, locks, rollback and session-preservation behavior remain intact.
-The CI quality job runs the new regressions explicitly.
+Configuration and staged artifacts are separate from private user profiles.
+Opt-out during download prevents installation; already started transactions finish
+before disable returns. The GUI refreshes saved state after failed timer operations.
+Existing daemons, PTY children, profiles and running RDP windows are preserved.
+The root helper accepts only fixed operations, checks installed-file ownership,
+uses no owner GitHub credentials, and refuses unsafe locks, directories and logs.
 
-Fedora 44 core and desktop testing RPMs continue through the normal tagged build
-and publication workflow. System RPM updates still use DNF; unattended RPM updates
-and a signed Fedora repository remain unfinished. The RSA advisory is unsuppressed.
-External Windows display/clipboard and physical desktop acceptance remain separate
-from owned fixture passes. No remote system or live owner connection is changed.
+Generated root-update and bridge regressions, genuine signed RPM verification,
+disposable Fedora DNF upgrade/rollback/remove, and real GTK worker tests cover the
+implementation. Evidence distinguishes cached API/quality replay from live release
+checks and real system timer execution. Physical GNOME authorization/input and
+external Windows display/clipboard acceptance remain separate gates.
+
+These remain upstream testing RPMs. Workflow provenance is distinct from a signed
+Fedora repository or complete security qualification; the RSA advisory is open.
+Build, versions and publication remain owned by the existing scripts/controller.
+
+Named terminal sessions now support `ruwac -S NAME`: create or reconnect by exact
+name, with ambiguous-name rejection and an interactive-terminal requirement.
+Real PTY tests verify creation, rendering, detachment and reconnecting to the same
+session. The remote shortcut reuses the existing SSH transport; its end-to-end
+remote acceptance remains separate.

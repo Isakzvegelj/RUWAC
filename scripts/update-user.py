@@ -218,7 +218,7 @@ def unpack_bundle(archive, destination, release):
 SHA256 = re.compile(r'[0-9a-f]{64}\Z')
 
 
-def verify_bundle_provenance(release, asset, archive, root):
+def verify_release_provenance(release, asset, archive, root, component=None):
     """Verify the downloaded bytes against their hosted release-build identity."""
     verifier = shutil.which('gh')
     if verifier is None:
@@ -230,7 +230,12 @@ def verify_bundle_provenance(release, asset, archive, root):
     if (data.get('tag_name') != release['tag'] or data.get('draft') is not False
             or data.get('prerelease') is not False):
         raise ValueError('Unexpected testing bundle attestation release')
-    expected_name = 'ruwac-' + release['latest'] + '-fedora44-x86_64-testing.tar.gz'
+    if component is None:
+        expected_name = 'ruwac-' + release['latest'] + '-fedora44-x86_64-testing.tar.gz'
+    elif component in {'ruwac', 'ruwac-desktop'}:
+        expected_name = component + '-' + release['latest'] + '-1.fc44.x86_64.rpm'
+    else:
+        raise ValueError('Unexpected release component')
     expected_url = 'https://github.com/w3fans/RUWAC/releases/download/' + release['tag'] + '/' + expected_name
     if asset.get('name') != expected_name or asset.get('browser_download_url') != expected_url:
         raise ValueError('Unexpected attestation subject')
@@ -262,6 +267,37 @@ def verify_bundle_provenance(release, asset, archive, root):
         raise ValueError('Testing bundle attestation verifier unavailable or timed out; installation held') from None
     if verified.returncode != 0:
         raise ValueError('Testing bundle attestation verification failed; installation held')
+
+
+def verify_bundle_provenance(release, asset, archive, root):
+    return verify_release_provenance(release, asset, archive, root)
+
+
+def rpm_operation(operation):
+    helper = Path('/usr/bin/ruwac-rpm-update')
+    if not helper.exists() or helper.resolve() != Path('/usr/share/ruwac/rpm-update.py'):
+        raise ValueError('RPM installation is managed by DNF; install a release with the verified system updater first')
+    info = helper.resolve().lstat()
+    if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
+        raise ValueError('Unsafe system RPM updater; installation held')
+    for directory in [Path('/usr'), Path('/usr/bin'), Path('/usr/share'), helper.resolve().parent]:
+        info = directory.lstat()
+        if not stat.S_ISDIR(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
+            raise ValueError('Unsafe system RPM updater directory; installation held')
+    commands = {'status': '--status', 'on': '--enable-testing', 'off': '--disable', 'install': '--install'}
+    if operation not in commands:
+        raise ValueError('Unsupported system RPM update operation')
+    args = [str(helper), commands[operation]]
+    if operation != 'status' and os.geteuid() != 0:
+        args.insert(0, '/usr/bin/pkexec')
+    result = subprocess.run(args, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                            text=True, timeout=2200)
+    if result.returncode or len(result.stdout) > 32768:
+        raise ValueError('Administrator authorization or verified RPM update failed; running sessions remain open')
+    value = json.loads(result.stdout)
+    if not isinstance(value, dict) or value.get('distribution') != 'rpm':
+        raise ValueError('Unexpected system RPM updater response')
+    return value
 
 
 def install_testing_bundle(release, asset, prefix, cache, automatic):
@@ -626,15 +662,19 @@ def main():
         parser.error('--current is required except for bootstrap installation')
     version(args.current)
     if args.managed_rpm:
-        if args.check:
+        if args.auto_install:
+            result = rpm_operation(args.auto_install)
+        elif args.install:
+            result = rpm_operation('install')
+        elif args.check:
             result = latest(args.current)
             result.update(distribution='rpm', running=args.current,
-                          update_method='Download verified RPM assets and install with DNF',
+                          delivery='testing-rpm', update_method='Verified system updater or DNF',
                           updates_url='https://github.com/w3fans/RUWAC/releases/tag/' + result['tag'])
         elif args.check_auto or args.install_auto:
             result = {'distribution': 'rpm', 'available': False, 'automatic_install': False,
                       'automatic_check': False, 'skipped': 'RPM updates are managed by DNF'}
-        elif args.auto_install == 'status' or args.auto_check == 'status' or args.testing_bundles == 'status':
+        elif args.auto_check == 'status' or args.testing_bundles == 'status':
             result = {'distribution': 'rpm', 'automatic_install': False,
                       'automatic_check': False, 'testing_bundles': False}
         else:
