@@ -205,7 +205,7 @@ impl Raw {
                 term_handler: th,
                 int_handler: ih,
             };
-            io::stdout().write_all(b"\x1b[?1049h\x1b[?2004h\x1b[?25l")?;
+            io::stdout().write_all(b"\x1b[22;0t\x1b[?1049h\x1b[?2004h\x1b[?25l")?;
             io::stdout().flush()?;
             Ok(guard)
         }
@@ -213,7 +213,7 @@ impl Raw {
 }
 impl Drop for Raw {
     fn drop(&mut self) {
-        let _=io::stdout().write_all(b"\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?1004l\x1b[?2004l\x1b[?25h\x1b[0m\x1b[?1049l");
+        let _=io::stdout().write_all(b"\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?1004l\x1b[?2004l\x1b[?25h\x1b[0m\x1b[?1049l\x1b[23;0t");
         let _ = io::stdout().flush();
         unsafe {
             libc::tcsetattr(0, libc::TCSANOW, &self.term);
@@ -242,7 +242,34 @@ fn call(s: &mut UnixStream, m: &str, v: Value) -> io::Result<Value> {
     if let Some(e) = r.get("error") {
         return Err(io::Error::other(e.to_string()));
     }
-    Ok(r["result"].clone())
+    let mut result = r["result"].clone();
+    if m == "client.render" && result["unchanged"] != true && result.get("session_name").is_none() {
+        if let Ok(sessions) = call(s, "session.list", json!({})) {
+            if let Some(session) = sessions
+                .as_array()
+                .and_then(|rows| rows.iter().find(|row| row["id"] == result["session"]))
+            {
+                result["session_name"] = session["name"].clone();
+                result["rows"] = session["rows"].clone();
+                result["cols"] = session["cols"].clone();
+            }
+        }
+        if let Ok(windows) = call(s, "window.list", json!({"session":result["session"]})) {
+            if let Some(rows) = windows.as_array() {
+                result["window_index"] =
+                    json!(rows.iter().position(|row| row["id"] == result["window"]));
+                result["windows"] = json!(
+                    rows.iter()
+                        .enumerate()
+                        .map(
+                            |(index, row)| json!({"id":row["id"],"index":index,"name":row["name"]})
+                        )
+                        .collect::<Vec<_>>()
+                );
+            }
+        }
+    }
+    Ok(result)
 }
 fn sgr(c: &Value, fg: bool) -> String {
     let base = if fg { 38 } else { 48 };
@@ -250,10 +277,14 @@ fn sgr(c: &Value, fg: bool) -> String {
         format!("{base};2;{};{};{}", a[0], a[1], a[2])
     } else {
         let n = c.as_u64().unwrap_or(256);
-        if n < 256 {
+        if n < 8 {
+            format!("{}", if fg { 30 } else { 40 } + n)
+        } else if n < 16 {
+            format!("{}", if fg { 90 } else { 100 } + n - 8)
+        } else if n < 256 {
             format!("{base};5;{n}")
-        } else if n >= 264 && n <= 271 {
-            format!("{base};5;{}", n - 264)
+        } else if n >= 259 && n <= 266 {
+            format!("{base};5;{}", n - 259)
         } else {
             if fg { "39" } else { "49" }.into()
         }
@@ -262,8 +293,57 @@ fn sgr(c: &Value, fg: bool) -> String {
 fn safe(s: &str) -> String {
     s.chars().filter(|c| !c.is_control()).collect()
 }
+fn window_identity(v: &Value) -> String {
+    format!(
+        "{} · {}:{}",
+        safe(v["session_name"].as_str().unwrap_or("session")),
+        v["window_index"].as_u64().unwrap_or(0),
+        safe(v["name"].as_str().unwrap_or("shell"))
+    )
+}
+fn status_line(v: &Value, size: (u16, u16), status: &str) -> String {
+    let windows = v["windows"]
+        .as_array()
+        .map(|rows| {
+            rows.iter()
+                .map(|w| {
+                    format!(
+                        "{}:{}{}",
+                        w["index"].as_u64().unwrap_or(0),
+                        safe(w["name"].as_str().unwrap_or("shell")),
+                        if w["id"] == v["window"] { "*" } else { "" }
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(" ")
+        })
+        .unwrap_or_default();
+    let rows = v["rows"].as_u64().unwrap_or(size.0 as u64);
+    let cols = v["cols"].as_u64().unwrap_or(size.1 as u64);
+    let shared = if rows != size.0 as u64 || cols != size.1 as u64 {
+        format!(" · shared PTY {cols}×{rows}; view {}×{}", size.1, size.0)
+    } else {
+        String::new()
+    };
+    let line = if status.trim().is_empty() {
+        format!("RUWAC {}{} · {}", window_identity(v), shared, windows)
+    } else {
+        format!(
+            "RUWAC {} · {}{} · {}",
+            safe(status),
+            window_identity(v),
+            shared,
+            windows
+        )
+    };
+    copy::clip(&line, size.1 as usize)
+}
+
 fn draw(v: &Value, size: (u16, u16), status: &str) -> io::Result<()> {
-    let mut out = String::from("\x1b[?25l\x1b[0m\x1b[H\x1b[2J");
+    let mut out = format!(
+        "\x1b]2;RUWAC {}\x07\x1b[?25l\x1b[0m\x1b[H\x1b[2J",
+        window_identity(v).chars().take(160).collect::<String>()
+    );
 
     let active = v["active_pane"].as_str().unwrap_or("");
     let mut cursor = None;
@@ -340,21 +420,7 @@ fn draw(v: &Value, size: (u16, u16), status: &str) -> io::Result<()> {
     out.push_str(&format!(
         "\x1b[{};1H\x1b[0;7m{}\x1b[0m\x1b[K",
         size.0 + 1,
-        safe(&format!(
-            "RUWAC {}  ^A c/n/p/d/a S Tab [ ] ?  {}",
-            v["name"].as_str().unwrap_or(""),
-            if v["panes"].as_array().is_some_and(|a| a
-                .iter()
-                .any(|p| p["id"] == v["active_pane"] && p["ended"] == true))
-            {
-                "process ended · history is read-only"
-            } else {
-                status
-            }
-        ))
-        .chars()
-        .take(size.1 as usize)
-        .collect::<String>()
+        status_line(v, size, status)
     ));
     out.push_str(if mouse {
         "\x1b[?1000h\x1b[?1006h"
@@ -372,6 +438,7 @@ fn draw(v: &Value, size: (u16, u16), status: &str) -> io::Result<()> {
 struct Config {
     prefix: u8,
     remaps: std::collections::HashMap<char, char>,
+    double_prefix_previous: bool,
 }
 impl Config {
     fn load() -> io::Result<Self> {
@@ -382,6 +449,17 @@ impl Config {
         if let Ok(value) = std::env::var("RUWAC_SHORTCUTS") {
             let map: std::collections::HashMap<String, String> =
                 serde_json::from_str(&value).map_err(io::Error::other)?;
+            if let Some(action) = map.get("double_prefix") {
+                c.double_prefix_previous = match action.as_str() {
+                    "literal" => false,
+                    "previous" => true,
+                    _ => {
+                        return Err(io::Error::other(
+                            "double_prefix must be literal or previous",
+                        ));
+                    }
+                };
+            }
             if let Some(prefix) = map.get("prefix") {
                 let letter = prefix
                     .strip_prefix("<Control>")
@@ -413,7 +491,7 @@ impl Config {
                             io::Error::other("TUI remaps require one implemented prefix command")
                         })?
                     };
-                    if !"acnpdS|\t[]\"?:z0123456789".contains(to) {
+                    if !"acnpodS|\t[]\"?:z0123456789".contains(to) {
                         return Err(io::Error::other("Unsupported TUI prefix remap"));
                     }
                     c.remaps.insert(from, to);
@@ -703,7 +781,7 @@ fn draw_mode(
             }
             Mode::Help(offset) => {
                 let text = format!(
-                    "RUWAC Screen controls (prefix {})\nc new window; n/p next/previous; double prefix previous window\na literal configured prefix; d detach; 0–9 select window\nS horizontal split; | vertical split; Tab change pane; z zoom\n[ copy/search; ] internal paste; \" window chooser; : command\nCopy: arrows/hjkl; g/G and Home/End; 0/^/$; w/b/e\nPage Up/Down or Ctrl+B/F; Ctrl+U/D half page; H/M/L viewport\nSpace or Enter first mark; move then mark again to copy\n/ forward search; ? reverse; n/N repeat; searches wrap\nv rectangular selection; c/C left/right margins; Esc cancel\nCounts before movement; Unicode graphemes stay intact\nInternal copy buffer is separate from desktop clipboard\nCopy snapshot: newest 8 MiB/50,000 rows; selection cap 256 KiB\nCommands: new, next, prev, other, select N, rename NAME\nsplit horizontal/vertical, zoom, copy, paste, windows, help, detach\nRUWAC_SHORTCUTS prefix: <Control>a through <Control>z\nRUWAC_KEYMAP remaps one prefix key to an implemented key\nCtrl/arrow escape sequences go to applications outside modals\nModal paste/mouse cannot reach a child; search/prompt paste is text\nEsc/Enter close help; arrows/Page Up/Down scroll",
+                    "RUWAC Screen controls (prefix {})\nc new window; n/p next/previous; double prefix forwards to nested terminal; o previous window\na literal configured prefix; d detach; 0–9 select window\nS horizontal split; | vertical split; Tab change pane; z zoom\n[ copy/search; ] internal paste; \" window chooser; : command\nCopy: arrows/hjkl; g/G and Home/End; 0/^/$; w/b/e\nPage Up/Down or Ctrl+B/F; Ctrl+U/D half page; H/M/L viewport\nSpace or Enter first mark; move then mark again to copy\n/ forward search; ? reverse; n/N repeat; searches wrap\nv rectangular selection; c/C left/right margins; Esc cancel\nCounts before movement; Unicode graphemes stay intact\nInternal copy buffer is separate from desktop clipboard\nCopy snapshot: newest 8 MiB/50,000 rows; selection cap 256 KiB\nCommands: new, next, prev, other, select N, rename NAME\nsplit horizontal/vertical, zoom, copy, paste, windows, help, detach\nRUWAC_SHORTCUTS prefix: <Control>a through <Control>z\nRUWAC_KEYMAP remaps one prefix key to an implemented key\nCtrl/arrow escape sequences go to applications outside modals\nModal paste/mouse cannot reach a child; search/prompt paste is text\nEsc/Enter close help; arrows/Page Up/Down scroll",
                     config.label()
                 );
                 let lines: Vec<_> = text.lines().collect();
@@ -781,6 +859,32 @@ pub fn attach(socket: &Path, session: &str) -> io::Result<()> {
     STOP.store(false, Ordering::Relaxed);
     let config = Config::load()?;
     let mut s = verified_connect(socket)?;
+    let panes = call(&mut s, "pane.list", json!({"session":session}))?;
+    let mut ancestor = std::process::id();
+    for _ in 0..128 {
+        if panes.as_array().is_some_and(|rows| {
+            rows.iter()
+                .any(|p| p["ended"] != true && p["pid"].as_u64() == Some(ancestor as u64))
+        }) {
+            return Err(io::Error::other(
+                "Cannot attach a session from inside its own pane; use -S with a different session name for nesting",
+            ));
+        }
+        let Ok(stat) = std::fs::read_to_string(format!("/proc/{ancestor}/stat")) else {
+            break;
+        };
+        let Some(parent) = stat
+            .rsplit_once(") ")
+            .and_then(|(_, tail)| tail.split_whitespace().nth(1))
+            .and_then(|p| p.parse::<u32>().ok())
+        else {
+            break;
+        };
+        if parent == 0 || parent == ancestor {
+            break;
+        }
+        ancestor = parent;
+    }
     let _raw = Raw::enter()?;
     let mut size = dimensions();
     call(
@@ -1036,11 +1140,19 @@ pub fn attach(socket: &Path, session: &str) -> io::Result<()> {
                                         status.clear();
                                         if matches!(&key,copy::Key::Char(c)if *c as u32==config.prefix as u32)
                                         {
-                                            call(
-                                                &mut s,
-                                                "window.previous",
-                                                json!({"session":session}),
-                                            )?;
+                                            if config.double_prefix_previous {
+                                                call(
+                                                    &mut s,
+                                                    "window.previous",
+                                                    json!({"session":session}),
+                                                )?;
+                                            } else {
+                                                call(
+                                                    &mut s,
+                                                    "client.input",
+                                                    json!({"pane":snapshot["active_pane"],"kind":"keyboard","text":(config.prefix as char).to_string()}),
+                                                )?;
+                                            }
                                         } else {
                                             let copy::Key::Char(mut binding) = key else {
                                                 return Err(io::Error::other(
@@ -1066,6 +1178,13 @@ pub fn attach(socket: &Path, session: &str) -> io::Result<()> {
                                                     call(
                                                         &mut s,
                                                         "window.create",
+                                                        json!({"session":session}),
+                                                    )?;
+                                                }
+                                                'o' => {
+                                                    call(
+                                                        &mut s,
+                                                        "window.previous",
                                                         json!({"session":session}),
                                                     )?;
                                                 }
@@ -1283,6 +1402,37 @@ mod tests {
         assert_eq!(
             d.feed(b"\x1b]11;rgb:ffff/0000/0000\x07x"),
             vec![Input::Keyboard(b"x".to_vec())]
+        );
+    }
+}
+
+#[cfg(test)]
+mod display_identity_tests {
+    use super::*;
+    #[test]
+    fn colors_preserve_native_ansi_bright_indexed_and_rgb_semantics() {
+        assert_eq!(sgr(&json!(1), true), "31");
+        assert_eq!(sgr(&json!(9), true), "91");
+        assert_eq!(sgr(&json!(1), false), "41");
+        assert_eq!(sgr(&json!(9), false), "101");
+        assert_eq!(sgr(&json!(123), true), "38;5;123");
+        assert_eq!(sgr(&json!([1, 2, 3]), true), "38;2;1;2;3");
+        assert_eq!(sgr(&json!(256), true), "39");
+        assert_eq!(sgr(&json!(257), false), "49");
+        assert_eq!(sgr(&json!(260), true), "38;5;1");
+    }
+    #[test]
+    fn selected_window_identity_and_shared_size_remain_visible_and_safe() {
+        let v = json!({"session_name":"d\u{1b}\u{7}","window_index":1,"window":"b","name":"editor","rows":23,"cols":80,"windows":[{"id":"a","name":"shell","index":0},{"id":"b","name":"editor","index":1}]});
+        let line = status_line(&v, (30, 160), "");
+        assert!(line.starts_with("RUWAC d · 1:editor"));
+        assert!(line.contains("1:editor*"));
+        assert!(line.contains("shared PTY 80×23"));
+        assert!(!window_identity(&v).contains('\u{1b}'));
+        assert!(!window_identity(&v).contains('\u{7}'));
+        assert!(
+            status_line(&v, (23, 80), "Window choice cancelled")
+                .contains("Window choice cancelled")
         );
     }
 }

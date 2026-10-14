@@ -6,6 +6,10 @@ receipts and original reports are archived privately outside Git.
 
 | Area | Result | Scope |
 | --- | --- | --- |
+| Named CLI creation/reattachment, window titles and concurrent clients | PASS | Actual generated local PTYs; exact-name and recursion safeguards; two simultaneous clients |
+| Nested prefix routing | PASS | Two through five real RUWAC layers and native GTK with actual tmux; synthetic GTK callbacks |
+| Remmina default discovery | PASS | Generated native/legacy/Flatpak profiles; read-only source and explicit metadata import; credentials excluded |
+| Verified opt-in system RPM updates | PASS | Official signed workflow provenance, actual Fedora DNF, generated fault tests, native GTK controls and isolated system timer; physical authorization remains separate |
 | Persistent terminal daemon, CLI, Screen navigation and history | PASS | Rust units and real generated PTY fixtures |
 | Independent attached-client selection, zoom and input | PASS | Disposable daemon, two real TUI clients, generated raw receivers; shared PTY sizing, closed-target repair and scoped/global deduplication |
 | Native GTK profiles, SQLite migration and credential separation | PASS | Generated profiles, disposable Secret Service, isolated compositor |
@@ -20,7 +24,7 @@ receipts and original reports are archived privately outside Git.
 | Explicit SSH jump routing and separate gateway/target trust | PASS | Two disposable OpenSSH servers; eight actual transport groups and four native editor groups |
 | Remote agent image transport/consumption | PASS | External CLI route and native loopback route; complete external native launcher remains unqualified |
 | PRIMARY and native middle-click dispatch | PASS | Real GDK/Mutter protocol, generated text, synthetic click dispatch, SGR routing and Shift bypass; physical input remains separate |
-| Physical GTK/Wayland mouse, keyboard and touchpad acceptance | BLOCKED | Owner confirms Alt+1–0 on 0.2.23; selection, paste, touchpad and newer-version physical checks remain unqualified |
+| Physical GTK/Wayland mouse, keyboard and touchpad acceptance | BLOCKED | Owner confirms Alt+1–0 on 0.2.23; owner also reports local desktop selection/Shift+drag copying (version unspecified); middle-click, touchpad and complete newer-version physical checks remain unqualified |
 | Upstream Fedora testing RPM payloads and private transactions | PASS | Actual separate core/desktop packages, executable versions, launcher/notices and prior-release upgrade/removal; private RPM database uses host libraries and --nodeps |
 | Clean Fedora desktop DNF install/upgrade/rollback/remove | PASS | Fresh pinned Fedora 44 RAM filesystem, actual published RPMs, real dependency resolution without --nodeps; daemon, PTY child and generated private configuration survive |
 | RPM signing/repository and complete binary security qualification | BLOCKED | Workflow provenance is distinct from a signed Fedora repository; desktop RSA advisory remains open |
@@ -64,3 +68,7 @@ The fixture creates and stops its own compositor and child processes. Its
 `--owned-display` mode refuses the normal user desktop runtime and requires an
 explicitly named test display. Synthetic callbacks qualify protocol and dispatch
 behavior, not physical mouse or touchpad operation.
+
+One combined RDP stress run timed out during reconnect and resize. Isolated and
+repeated combined tests passed. The cause of that intermittent failure has not
+been established; it remains recorded in private qualification evidence.

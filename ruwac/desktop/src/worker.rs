@@ -70,7 +70,30 @@ impl Rpc {
         if let Some(e) = v.get("error") {
             return Err(io::Error::other(e.to_string()));
         }
-        Ok(v["result"].clone())
+        let mut result = v["result"].clone();
+        if method == "client.render"
+            && result["unchanged"] != true
+            && result.get("session_name").is_none()
+        {
+            if let Ok(sessions) = self.call("session.list", json!({})) {
+                if let Some(session) = sessions
+                    .as_array()
+                    .and_then(|rows| rows.iter().find(|row| row["id"] == result["session"]))
+                {
+                    result["session_name"] = session["name"].clone();
+                    result["rows"] = session["rows"].clone();
+                    result["cols"] = session["cols"].clone();
+                }
+            }
+            if let Ok(windows) = self.call("window.list", json!({"session":result["session"]})) {
+                if let Some(rows) = windows.as_array() {
+                    result["window_index"] =
+                        json!(rows.iter().position(|row| row["id"] == result["window"]));
+                    result["windows"]=json!(rows.iter().enumerate().map(|(index,row)|json!({"id":row["id"],"index":index,"name":row["name"]})).collect::<Vec<_>>());
+                }
+            }
+        }
+        Ok(result)
     }
 }
 fn paste(rpc: &mut Rpc, pane: &str, text: &str, atomic: bool, halt: &AtomicBool) -> io::Result<()> {

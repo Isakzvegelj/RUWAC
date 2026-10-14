@@ -5,7 +5,7 @@ from pathlib import Path
 from spike import Client,Tui,eventually
 p=argparse.ArgumentParser();p.add_argument('--binary',required=True);p.add_argument('--evidence',required=True);a=p.parse_args()
 binary=Path(a.binary).resolve();root=Path(tempfile.mkdtemp(prefix='screen-previous-',dir=a.evidence));root.chmod(0o700)
-sock=root/'control.sock';archive=root/'history.json';env={**os.environ,'RUWAC_STATE_FILE':str(archive)};server=None;tui=None;owned=[];results=[]
+sock=root/'control.sock';archive=root/'history.json';env={**os.environ,'RUWAC_STATE_FILE':str(archive),'RUWAC_SHORTCUTS':json.dumps({'double_prefix':'previous'})};server=None;tui=None;owned=[];results=[]
 def rpc(method,params=None,error=None):
  with Client(sock) as c:return c.call(method,params,error=error)
 def start():
@@ -21,7 +21,7 @@ try:
  rpc('pane.wait',{'pane':first['pane'],'contains':'RUWAC_RECEIVER_READY','timeout_ms':5000})
  second=rpc('window.create',{'session':session});third=rpc('window.create',{'session':session})
  owned.extend(x['pid'] for x in rpc('pane.list',{'session':session})if x['pid'] not in owned)
- tui=Tui(binary,sock,session,root/'tui.bin');eventually(lambda:b'RUWAC' in tui.data)
+ os.environ['RUWAC_SHORTCUTS']=json.dumps({'double_prefix':'previous'});tui=Tui(binary,sock,session,root/'tui.bin');eventually(lambda:b'RUWAC' in tui.data)
  tui.send(b'\x01\x01');eventually(lambda:rpc('session.list')[0]['active_window']==second['window'])
  tui.send(b'\x01\x01');eventually(lambda:rpc('session.list')[0]['active_window']==third['window'])
  tui.send(b'\x010');eventually(lambda:rpc('session.list')[0]['active_window']==first['window'])

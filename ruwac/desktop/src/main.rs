@@ -124,6 +124,19 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         i += 1;
     }
+    let app = adw::Application::builder()
+        .application_id("si.z4.ruwac")
+        .flags(if fixture.is_some() || new_instance {
+            gtk::gio::ApplicationFlags::NON_UNIQUE
+        } else {
+            gtk::gio::ApplicationFlags::FLAGS_NONE
+        })
+        .build();
+    app.register(None::<&gtk::gio::Cancellable>)?;
+    if app.is_remote() {
+        app.activate();
+        return Ok(());
+    }
     workspace::configure_window(&window_id)?;
     let socket = socket.ok_or("--socket required")?;
     let mut rpc = worker::Rpc::connect(&socket)?;
@@ -158,24 +171,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             );
         }
         if sessions.is_empty() {
-            if let Some(id) = available
-                .as_array()
-                .filter(|_| window_id.is_empty())
-                .and_then(|rows| rows.first())
-                .and_then(|r| r["id"].as_str())
-            {
-                sessions.push(id.into());
-            } else {
-                sessions.push(
-                    rpc.call(
-                        "session.create",
-                        json!({"name":"Terminal","argv":shell::default_argv()?}),
-                    )?["session"]
-                        .as_str()
-                        .ok_or("no session ID")?
-                        .into(),
-                );
-            }
+            sessions.push(
+                rpc.call(
+                    "session.create",
+                    json!({"name":"Terminal","argv":shell::default_argv()?}),
+                )?["session"]
+                    .as_str()
+                    .ok_or("no session ID")?
+                    .into(),
+            );
         }
     }
     let session_names: std::collections::HashMap<String, String> = available
@@ -214,14 +218,6 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
     let stage_guard = stage.as_ref().map(|p| staging::Stage::new(p)).transpose()?;
     stage = stage_guard.as_ref().map(|s| s.path.clone());
-    let app = adw::Application::builder()
-        .application_id("si.z4.ruwac")
-        .flags(if fixture.is_some() || new_instance {
-            gtk::gio::ApplicationFlags::NON_UNIQUE
-        } else {
-            gtk::gio::ApplicationFlags::FLAGS_NONE
-        })
-        .build();
     let views: Rc<RefCell<Vec<Rc<View>>>> = Rc::new(RefCell::new(Vec::new()));
     let all = views.clone();
     let services: Rc<RefCell<Vec<(ipc::Server, glib::SourceId)>>> =

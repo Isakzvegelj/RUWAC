@@ -114,7 +114,7 @@ jobs:
           cargo build --locked --manifest-path ruwac/Cargo.toml
           python3 ruwac/tests/integration/atomic_paste.py --binary "$CARGO_TARGET_DIR/debug/ruwac" --evidence "$RUNNER_TEMP"
           mkdir -p "$RUNNER_TEMP/ruwac-evidence"
-          for test in spike desktop_state client_focus jobs jobs_capacity recovery screen_previous screen_copy history_snapshot primary_history checkpoint_validation terminal_styles_apps mixed_nesting; do
+          for test in spike desktop_state client_focus jobs jobs_capacity recovery screen_previous screen_copy history_snapshot primary_history checkpoint_validation terminal_styles_apps mixed_nesting terminal_usability; do
             python3 "ruwac/tests/integration/$test.py" --binary "$CARGO_TARGET_DIR/debug/ruwac" --evidence "$RUNNER_TEMP/ruwac-evidence"
           done
 

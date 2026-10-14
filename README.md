@@ -75,7 +75,7 @@ Private configuration may set RUWAC_SCROLLBACK_LINES (default 50000) and RUWAC_S
 
 Use Machines → New machine / endpoint or Network groups / defaults, and Edit beside an endpoint. Add endpoint retains the machine identity; duplicate creates new identities and credential references. Set/replace/forget credentials use system Secret Service. Metadata Undo restores the previous private library. RDP connects inside its tab; SSH opens a persistent terminal plus a native Files tab. Files verifies known_hosts before authentication and offers navigation, upload/download, explicit overwrite and progress. Pause transfer retains a private journal and partial; Pending transfers… resumes or explicitly discards the selected job. Resume verifies the original host, source and retained prefix before continuing and verifies the complete staged file before commit. Original files remain protected during overwrite and interrupted rename recovery. For encrypted SSH keys, configure the key file and the separate SSH key passphrase reference, then use Set / replace key passphrase; only the Secret Service reference is saved. Transfers currently handle individual regular files up to 32 GiB, with 128 pending jobs; recursive transfer and rsync remain open. Dynamic RDP uses negotiated Display Control; fit/native/stretch, zoom, fullscreen and Pan viewport remain available. See the current acceptance report for fixture evidence and remaining defects.
 
-To create or reconnect to a named terminal session, run `ruwac -S d` in an interactive terminal. Exact duplicate names require an explicit session ID. The same shortcut works with `ruwac --host SSH_HOST -S d`.
+To create or reconnect to a named terminal session, run `ruwac -S d` in an interactive terminal. Use `ruwac -r d` to reattach without creating a missing session. Multiple clients can attach simultaneously, with independent selected windows and panes. Double Ctrl+A forwards the prefix into a nested terminal; Ctrl+A then o toggles the previous RUWAC window. Exact duplicate names require an explicit session ID. The same shortcut works with `ruwac --host SSH_HOST -S d`.
 
 ## Install and open the workspace
 
@@ -196,3 +196,7 @@ Per-user source/testing-bundle updates remain available for separately installed
 per-user builds. System updates remain disabled until an administrator enables them;
 see [setup and opt-out](spec/RUWAC_UPDATES.md). A signed Fedora package repository
 remains unfinished. The desktop RSA advisory remains unsuppressed.
+
+A fresh GTK workspace creates its own terminal session instead of borrowing an unrelated CLI session. Explicitly attaching the same session shares its PTY size: the smallest attached viewport governs it, and the status bar shows the shared size. Closing or detaching the smaller view allows it to expand. Remmina import discovers native, legacy and Flatpak profile directories, previews the selected metadata, and requires an explicit import; custom file selection remains available. [Remmina documents its profile locations](https://remmina.org/how-to-install-remmina/).
+
+To retain the legacy Screen double-prefix previous-window action, set `RUWAC_SHORTCUTS='{"double_prefix":"previous"}'` when launching the client. Literal prefix forwarding remains available through Ctrl+A then a.

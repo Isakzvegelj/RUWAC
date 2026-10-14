@@ -87,8 +87,8 @@ try:
    ui=Tui(binary,nodes[0][0],sessions[0]['session'],nodes[0][1]/'outer.pty');tuis.append(ui)
    eventually(lambda:'RUWAC_RECEIVER_READY'in rpc(nodes[0][0],'pane.capture',{'pane':sessions[0]['pane']})['text'],15)
    ui.send(b'\x01'+b'a'*depth);eventually(lambda:out.read_bytes()==b'\x01',10)
-   ui.send(b'\x01'+b'a'*(depth-1)+b'c');eventually(lambda:len(rpc(nodes[-1][0],'window.list',{'session':sessions[-1]['session']}))==2,10)
-   ui.send(b'\x01'+b'a'*(depth-1)+b'0');eventually(lambda:rpc(nodes[-1][0],'session.list')[0]['active_window']==sessions[-1]['window'],10)
+   ui.send(b'\x01'*(2**(depth-1))+b'c');eventually(lambda:len(rpc(nodes[-1][0],'window.list',{'session':sessions[-1]['session']}))==2,10)
+   ui.send(b'\x01'*(2**(depth-1))+b'0');eventually(lambda:rpc(nodes[-1][0],'session.list')[0]['active_window']==sessions[-1]['window'],10)
    ui.send(b'/paste-on/');eventually(lambda:out.read_bytes()==b'\x01/paste-on/',10);time.sleep(.25)
    payload='nested Živjo 🧪 '.encode()+b'\x01d';ui.send(b'\x1b[200~'+payload+b'\x1b[201~')
    eventually(lambda:out.read_bytes()==b'\x01/paste-on/\x1b[200~'+payload+b'\x1b[201~',10)
@@ -96,7 +96,7 @@ try:
    assert next(p for p in rpc(nodes[-1][0],'pane.list',{'session':sessions[-1]['session']})if p['id']==sessions[-1]['pane'])['pid']==pid
    ui=Tui(binary,nodes[0][0],sessions[0]['session'],nodes[0][1]/'reattach.pty');tuis.append(ui);eventually(lambda:b'RUWAC'in ui.data)
    ui.send(b'REATTACH');eventually(lambda:out.read_bytes().endswith(b'REATTACH'),10);ui.finish();tuis.remove(ui)
-   return {'real_RUWAC_layers':depth,'literal_meta_prefix':True,'deep_window_selection':True,'single_bracketed_paste_pair':True,'same_receiver_pid_after_detach_reattach':pid,'termios_restored':True}
+   return {'real_RUWAC_layers':depth,'literal_meta_prefix':True,'double_prefix_deep_navigation':True,'deep_window_selection':True,'single_bracketed_paste_pair':True,'same_receiver_pid_after_detach_reattach':pid,'termios_restored':True}
   case(f'TUI-NESTED-{depth}',nested)
 finally:
  for ui in reversed(tuis):

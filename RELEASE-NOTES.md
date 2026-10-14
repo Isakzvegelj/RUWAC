@@ -1,30 +1,29 @@
-# RUWAC verified system RPM updates
+# RUWAC named sessions and nested terminal usability
 
-RPM-installed workspaces now have native installation controls and an explicit
-administrator opt-in to automatic upstream testing updates. The system timer is
-disabled by default. Updates require exact-source quality/privacy checks, all
-installed component assets, hashes, signed workflow provenance and matching RPM
-headers before one DNF upgrade. A core-only installation remains headless.
+Create and enter a persistent terminal session with `ruwac -S NAME`; reconnect to an
+existing exact name with `ruwac -r NAME`. Multiple simultaneous clients retain their
+own selected windows/panes. Duplicate names require an explicit ID, noninteractive
+shortcuts are refused, and recursive self-attachment is rejected before raw mode.
 
-Configuration and staged artifacts are separate from private user profiles.
-Opt-out during download prevents installation; already started transactions finish
-before disable returns. The GUI refreshes saved state after failed timer operations.
-Existing daemons, PTY children, profiles and running RDP windows are preserved.
-The root helper accepts only fixed operations, checks installed-file ownership,
-uses no owner GitHub credentials, and refuses unsafe locks, directories and logs.
+The TUI status bar lists windows and marks the selected one. The terminal title
+shows the session and current window and restores the surrounding title on detach.
+Double Ctrl+A forwards the prefix to a nested terminal in TUI and GTK. Ctrl+A then o
+selects the previous window; the legacy Screen double-prefix action is configurable.
+Real PTY nesting tests include two through five RUWAC layers, and native GTK tests
+exercise actual tmux with generated sessions. GTK keyboard callbacks are synthetic.
 
-Generated root-update and bridge regressions, genuine signed RPM verification,
-disposable Fedora DNF upgrade/rollback/remove, and real GTK worker tests cover the
-implementation. Evidence distinguishes cached API/quality replay from live release
-checks and real system timer execution. Physical GNOME authorization/input and
-external Windows display/clipboard acceptance remain separate gates.
+Fresh GTK workspaces create a separate terminal instead of borrowing an unrelated
+CLI session. Shared sessions retain one canonical PTY size, governed by the smallest
+attached view. Status text exposes that size. A single terminal no longer draws a
+pane edge border. ANSI encoding and bold ANSI colors preserve terminal semantics;
+indexed and RGB colors remain intact.
 
-These remain upstream testing RPMs. Workflow provenance is distinct from a signed
-Fedora repository or complete security qualification; the RSA advisory is open.
-Build, versions and publication remain owned by the existing scripts/controller.
+Remmina import discovers standard native, legacy and Flatpak profile directories
+without asking for a filename. Selection previews metadata; explicit import remains
+required. Credentials and private key paths are excluded, source files remain
+unchanged, and custom file selection is retained.
 
-Named terminal sessions now support `ruwac -S NAME`: create or reconnect by exact
-name, with ambiguous-name rejection and an interactive-terminal requirement.
-Real PTY tests verify creation, rendering, detachment and reconnecting to the same
-session. The remote shortcut reuses the existing SSH transport; its end-to-end
-remote acceptance remains separate.
+Verified opt-in system RPM updates remain available. Existing build/release scripts
+and controller own versions and publication. These are upstream Fedora testing
+RPMs; signed Fedora repository distribution, dependency-security qualification and
+complete external/physical acceptance remain separate. Advisories are unsuppressed.

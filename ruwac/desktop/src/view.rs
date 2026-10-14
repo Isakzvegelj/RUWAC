@@ -293,7 +293,7 @@ impl View {
             if let Some(v) = w.upgrade() {
                 v.release_mouse();
                 if v.prefix.replace(false) {
-                    v.input("\x01");
+                    v.input(&v.literal_prefix());
                 }
             }
         });
@@ -416,6 +416,21 @@ impl View {
             );
         }
     }
+    fn literal_prefix(&self) -> String {
+        let binding = self
+            .shortcuts
+            .get("prefix")
+            .map(String::as_str)
+            .unwrap_or("<Control>a");
+        gtk::accelerator_parse(binding)
+            .and_then(|(key, flags)| {
+                key.to_unicode().filter(|c| {
+                    flags.contains(gdk::ModifierType::CONTROL_MASK) && c.is_ascii_alphabetic()
+                })
+            })
+            .map(|c| ((c.to_ascii_lowercase() as u8 & 31) as char).to_string())
+            .unwrap_or_else(|| "\x01".into())
+    }
     fn binding(&self, key: gdk::Key, mods: gdk::ModifierType, name: &str, default: &str) -> bool {
         let text = self
             .shortcuts
@@ -438,7 +453,7 @@ impl View {
     }
     fn show_help(&self) {
         let text = format!(
-            "Prefix: {}\nDesktop copy: {}\nDesktop paste: {}\n\nPrefix commands: double prefix previous window · c new · n/p windows · 0–9 select · \" chooser · S horizontal / | vertical split · Tab pane · z zoom/restore · [ copy/search · ] internal paste · : command · d detach · a literal prefix.\n\nCopy mode: arrows/hjkl, Page Up/Down, g/G, Space mark, Enter save internally, / search, Escape exit. Drag dividers to resize. Shift+drag overrides application mouse.\n\nCustom prefix command mappings: {}",
+            "Prefix: {}\nDesktop copy: {}\nDesktop paste: {}\n\nPrefix commands: double prefix forwards to nested terminal · o previous window · c new · n/p windows · 0–9 select · \" chooser · S horizontal / | vertical split · Tab pane · z zoom/restore · [ copy/search · ] internal paste · : command · d detach · a literal prefix.\n\nCopy mode: arrows/hjkl, Page Up/Down, g/G, Space mark, Enter save internally, / search, Escape exit. Drag dividers to resize. Shift+drag overrides application mouse.\n\nCustom prefix command mappings: {}",
             self.shortcuts
                 .get("prefix")
                 .map(String::as_str)
@@ -821,9 +836,21 @@ impl View {
                     Some(p) if p["ended"] == true => "Process ended · history remains available",
                     _ => "Ctrl+A prefix · Shift+drag selects · PTYs persist",
                 };
+                let rows = frame["rows"].as_u64();
+                let cols = frame["cols"].as_u64();
+                let viewport_rows = (self.area.height() as f64 / CH).floor() as u64;
+                let viewport_cols = (self.area.width() as f64 / CW).floor() as u64;
+                let shared = match (rows, cols) {
+                    (Some(rows), Some(cols)) if rows < viewport_rows || cols < viewport_cols => {
+                        format!(" · shared PTY {cols}×{rows}; view {viewport_cols}×{viewport_rows}")
+                    }
+                    _ => String::new(),
+                };
                 self.status.set_text(&format!(
-                    "{} — {state}",
-                    frame["name"].as_str().unwrap_or("Terminal")
+                    "{} · {}:{} — {state}{shared}",
+                    frame["session_name"].as_str().unwrap_or("Terminal"),
+                    frame["window_index"].as_u64().unwrap_or(0),
+                    frame["name"].as_str().unwrap_or("shell")
                 ));
             }
             if self.navigation.get() {
@@ -1187,10 +1214,18 @@ impl View {
         let ch = key.to_unicode();
         if self.prefix.replace(false) {
             if self.binding(key, mods, "prefix", "<Control>a") {
-                if self.worker.state.lock().unwrap().supports_previous_window {
-                    self.navigate("window.previous", json!({"session":self.session}));
+                if self
+                    .shortcuts
+                    .get("double_prefix")
+                    .is_some_and(|v| v == "previous")
+                {
+                    if self.worker.state.lock().unwrap().supports_previous_window {
+                        self.navigate("window.previous", json!({"session":self.session}));
+                    } else {
+                        self.warn("Previous-window navigation requires a newer daemon; the active session is preserved");
+                    }
                 } else {
-                    self.warn("Previous-window navigation requires a newer daemon; the active session is preserved");
+                    self.input(&self.literal_prefix());
                 }
                 return;
             }
@@ -1207,7 +1242,8 @@ impl View {
                     "window.cycle",
                     json!({"session":self.session,"previous":binding=="p"}),
                 ),
-                "a" => self.input("\x01"),
+                "a" => self.input(&self.literal_prefix()),
+                "o" => self.navigate("window.previous", json!({"session":self.session})),
                 "S" | "|" => self.split(binding == "|"),
                 "[" => self.open_history(),
                 "]" => self.command("buffer.get", json!({"session":self.session})),
@@ -1238,7 +1274,7 @@ impl View {
                 _ => {
                     self.status
                         .set_text("Unknown prefix command forwarded to application");
-                    self.input("\x01");
+                    self.input(&self.literal_prefix());
                     self.key(key, mods);
                 }
             }
@@ -1300,7 +1336,7 @@ impl View {
     pub fn close(&self) {
         self.release_mouse();
         if self.prefix.replace(false) {
-            self.input("\x01");
+            self.input(&self.literal_prefix());
         }
         *self.selection.borrow_mut() = None;
         self.detached.set(true);
@@ -1332,14 +1368,16 @@ impl View {
             );
             let y = 0.0;
             let g = &p["grid"];
-            cr.set_source_rgb(0.30, 0.38, 0.48);
-            cr.rectangle(
-                0.0,
-                0.0,
-                g["cols"].as_f64().unwrap_or(0.0) * CW,
-                g["rows"].as_f64().unwrap_or(0.0) * CH,
-            );
-            let _ = cr.stroke();
+            if panes.len() > 1 {
+                cr.set_source_rgb(0.30, 0.38, 0.48);
+                cr.rectangle(
+                    0.0,
+                    0.0,
+                    g["cols"].as_f64().unwrap_or(0.0) * CW,
+                    g["rows"].as_f64().unwrap_or(0.0) * CH,
+                );
+                let _ = cr.stroke();
+            }
             if let Some(rows) = g["cells"].as_array() {
                 for (r, row) in rows.iter().enumerate() {
                     if let Some(cells) = row.as_array() {
@@ -1365,7 +1403,7 @@ impl View {
                                 let mut fg = if cell[5] == true {
                                     color(&cell[3], false)
                                 } else {
-                                    color(&cell[2], true)
+                                    foreground(cell)
                                 };
                                 if cell[6]["dim"] == true {
                                     fg = (fg.0 * 0.65, fg.1 * 0.65, fg.2 * 0.65);
@@ -1431,6 +1469,14 @@ impl View {
         self.stack.set_visible_child_name("copy");
     }
 }
+fn foreground(cell: &Value) -> (f64, f64, f64) {
+    if cell[4] == true {
+        if let Some(index) = cell[2].as_u64().filter(|i| *i < 8) {
+            return color(&json!(index + 8), true);
+        }
+    }
+    color(&cell[2], true)
+}
 fn color(v: &Value, fg: bool) -> (f64, f64, f64) {
     if let Some(a) = v.as_array() {
         return (
@@ -1466,4 +1512,28 @@ fn color(v: &Value, fg: bool) -> (f64, f64, f64) {
         ((rgb >> 8) & 255) as f64 / 255.0,
         (rgb & 255) as f64 / 255.0,
     )
+}
+
+#[cfg(test)]
+mod palette_tests {
+    use super::*;
+    #[test]
+    fn bold_ansi_uses_bright_palette_without_changing_indexed_or_truecolor() {
+        assert_eq!(
+            foreground(&json!(["x", false, 2, 257, true, false])),
+            color(&json!(10), true)
+        );
+        assert_eq!(
+            foreground(&json!(["x", false, 123, 257, true, false])),
+            color(&json!(123), true)
+        );
+        assert_eq!(
+            foreground(&json!(["x", false, [13, 27, 49], 257, true, false])),
+            color(&json!([13, 27, 49]), true)
+        );
+        assert_eq!(
+            foreground(&json!(["x", false, 2, 257, false, false])),
+            color(&json!(2), true)
+        );
+    }
 }

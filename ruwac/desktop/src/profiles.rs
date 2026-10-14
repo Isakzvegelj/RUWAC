@@ -274,6 +274,49 @@ fn merge_metadata(current: &Profile, imported: &Profile) -> Result<Profile, Stri
     merged.validate()?;
     Ok(merged)
 }
+/// Standard native, legacy and Flatpak profile directories; discovery never imports.
+fn discover_remmina(home: &Path, data: &Path) -> Vec<(PathBuf, String)> {
+    let mut found = Vec::new();
+    for directory in [
+        data.join("remmina"),
+        home.join(".remmina"),
+        home.join(".var/app/org.remmina.Remmina/data/remmina"),
+    ] {
+        let Ok(meta) = std::fs::symlink_metadata(&directory) else {
+            continue;
+        };
+        if !meta.is_dir() || meta.file_type().is_symlink() {
+            continue;
+        }
+        let Ok(entries) = std::fs::read_dir(&directory) else {
+            continue;
+        };
+        for entry in entries.take(1001).flatten() {
+            if found.len() >= 1000 {
+                break;
+            }
+            let path = entry.path();
+            if path.extension().is_none_or(|v| v != "remmina")
+                || entry.file_type().is_ok_and(|v| !v.is_file())
+            {
+                continue;
+            }
+            if let Ok(profile) = preview(&path) {
+                found.push((
+                    path,
+                    format!(
+                        "{} / {} · {}",
+                        profile.group, profile.name, profile.protocol
+                    ),
+                ));
+            }
+        }
+    }
+    found.sort_by(|a, b| a.1.cmp(&b.1).then_with(|| a.0.cmp(&b.0)));
+    found.dedup_by(|a, b| a.0 == b.0);
+    found
+}
+
 /// This parser deliberately ignores credentials, certificates and key paths.
 pub fn preview(path: &Path) -> Result<Profile, String> {
     use std::os::unix::fs::OpenOptionsExt;
@@ -1232,13 +1275,71 @@ pub fn sidebar(
     root.append(&import_panel);
     let selected = Rc::new(RefCell::new(None::<Profile>));
     let path = gtk::Entry::builder()
-        .placeholder_text("Choose Remmina file explicitly")
+        .placeholder_text("Optional custom Remmina file")
         .build();
     path.set_widget_name("machines-import-path");
     import_controls.append(&path);
     let preview_button = gtk::Button::with_label("Preview selected Remmina file");
     preview_button.set_widget_name("machines-import-preview");
     import_controls.append(&preview_button);
+    let discovered_model = gtk::StringList::new(&["Finding saved Remmina profiles…"]);
+    let discovered = gtk::DropDown::new(Some(discovered_model.clone()), None::<gtk::Expression>);
+    discovered.set_enable_search(true);
+    discovered.set_widget_name("machines-import-discovered");
+    import_controls.append(&discovered);
+    let discovered_paths = Rc::new(RefCell::new(Vec::<PathBuf>::new()));
+    let (entry, paths, preview_action) = (
+        path.clone(),
+        discovered_paths.clone(),
+        preview_button.clone(),
+    );
+    discovered.connect_selected_notify(move |list| {
+        let index = list.selected() as usize;
+        if let Some(file) = index
+            .checked_sub(1)
+            .and_then(|i| paths.borrow().get(i).cloned())
+        {
+            entry.set_text(&file.to_string_lossy());
+            preview_action.emit_clicked();
+        }
+    });
+    let (tx, rx) = std::sync::mpsc::sync_channel(1);
+    std::thread::spawn(move || {
+        let found = std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .map(|home| {
+                let data = std::env::var_os("XDG_DATA_HOME")
+                    .map(PathBuf::from)
+                    .filter(|p| p.is_absolute())
+                    .unwrap_or_else(|| home.join(".local/share"));
+                discover_remmina(&home, &data)
+            })
+            .unwrap_or_default();
+        let _ = tx.send(found);
+    });
+    let list = discovered.downgrade();
+    gtk::glib::timeout_add_local(std::time::Duration::from_millis(20), move || {
+        let Some(list) = list.upgrade() else {
+            return gtk::glib::ControlFlow::Break;
+        };
+        match rx.try_recv() {
+            Ok(found) => {
+                let mut labels = vec![if found.is_empty() {
+                    "No saved Remmina profiles found; choose a custom file"
+                } else {
+                    "Select a saved Remmina profile"
+                }];
+                labels.extend(found.iter().map(|(_, label)| label.as_str()));
+                *discovered_paths.borrow_mut() =
+                    found.iter().map(|(path, _)| path.clone()).collect();
+                discovered_model.splice(0, discovered_model.n_items(), &labels);
+                list.set_selected(0);
+                gtk::glib::ControlFlow::Break
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => gtk::glib::ControlFlow::Continue,
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => gtk::glib::ControlFlow::Break,
+        }
+    });
     let conflict = gtk::DropDown::from_strings(&[
         "Skip duplicate endpoint",
         "Import duplicate as new identity",
@@ -3047,6 +3148,14 @@ pub fn fixture_library(
             button.emit_clicked();
         }
     }
+    if let Some(index) = q["discovered_index"].as_u64() {
+        expand_sidebar_panel(root, "machines-import-panel", true);
+        if let Some(dropdown) = find(root.upcast_ref(), "machines-import-discovered")
+            .and_then(|w| w.downcast::<gtk::DropDown>().ok())
+        {
+            dropdown.set_selected(index.saturating_add(1).min(u32::MAX as u64) as u32);
+        }
+    }
     if let Some(expanded) = q["import_expanded"].as_bool() {
         expand_sidebar_panel(root, "machines-import-panel", expanded);
     }
@@ -3073,6 +3182,7 @@ pub fn fixture_library(
     let name = match action {
         "next" => "machines-page-next",
         "previous" => "machines-page-previous",
+        "import" => "machines-import-apply",
         "review" => "machines-merge-review",
         "undo" => "machines-undo",
         _ => "",
@@ -3117,7 +3227,12 @@ pub fn fixture_library(
     let list_height = find(root.upcast_ref(), "machines-list-scroll")
         .map(|w| w.height())
         .unwrap_or(0);
-    json!({"import_expanded":panel("machines-import-panel"),"tools_expanded":panel("machines-tools-panel"),"list_height":list_height,"sidebar_height":root.height(),"page":text("machines-page-label"),"previous":sensitive("machines-page-previous"),"next":sensitive("machines-page-next"),"status":text("machines-status"),"review_text":review_text,"visible":fixture(root,None,None,false,false)})
+    let discovered_count = find(root.upcast_ref(), "machines-import-discovered")
+        .and_then(|w| w.downcast::<gtk::DropDown>().ok())
+        .and_then(|w| w.model())
+        .map(|m| m.n_items().saturating_sub(1))
+        .unwrap_or(0);
+    json!({"discovered_count":discovered_count,"import_enabled":sensitive("machines-import-apply"),"import_expanded":panel("machines-import-panel"),"tools_expanded":panel("machines-tools-panel"),"list_height":list_height,"sidebar_height":root.height(),"page":text("machines-page-label"),"previous":sensitive("machines-page-previous"),"next":sensitive("machines-page-next"),"status":text("machines-status"),"review_text":review_text,"visible":fixture(root,None,None,false,false)})
 }
 #[cfg(test)]
 mod merge_tests {
@@ -3446,5 +3561,39 @@ mod cross_stage_library_tests {
             )
             .is_err()
         );
+    }
+}
+
+#[cfg(test)]
+mod discovery_tests {
+    use super::*;
+    #[test]
+    fn native_legacy_flatpak_discovery_is_read_only_and_excludes_links() {
+        use std::os::unix::fs::symlink;
+        let root =
+            std::env::temp_dir().join(format!("ruwac-remmina-discovery-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let home = root.join("home");
+        let data = root.join("data");
+        let dirs = [
+            data.join("remmina"),
+            home.join(".remmina"),
+            home.join(".var/app/org.remmina.Remmina/data/remmina"),
+        ];
+        let text = "[remmina]\nname=Generated profile\nprotocol=RDP\nserver=127.0.0.1\npassword=GENERATED-NOT-IMPORTED\n";
+        for (i, dir) in dirs.iter().enumerate() {
+            std::fs::create_dir_all(dir).unwrap();
+            std::fs::write(dir.join(format!("{i}.remmina")), text).unwrap();
+        }
+        symlink(dirs[0].join("0.remmina"), dirs[0].join("linked.remmina")).unwrap();
+        std::fs::write(dirs[0].join("bad.remmina"), "invalid").unwrap();
+        let found = discover_remmina(&home, &data);
+        assert_eq!(found.len(), 3);
+        for (path, _) in found {
+            assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
+            let p = preview(&path).unwrap();
+            assert!(p.secret_reference.is_empty());
+        }
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

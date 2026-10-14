@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## v0.2.39 — 2026-10-14 — Stable source release
+
+- Add `ruwac -r NAME`, independent concurrent attachments, explicit session/window titles and a window status list.
+- Forward double Ctrl+A into nested terminals in both TUI and GTK; retain previous-window navigation through Ctrl+A then o and the legacy configurable action.
+- Prevent recursive self-attachment and stop new GTK workspaces from silently borrowing CLI sessions.
+- Remove the single-pane edge border and preserve ANSI/bold color behavior; report shared viewport dimensions.
+- Discover standard Remmina profile locations and preserve explicit, credential-free metadata import.
+
 - Named terminal shortcut: `ruwac -S NAME` creates or reconnects to an exact session name, with duplicate-name and noninteractive safeguards.
 
 ## v0.2.38 — 2026-10-14 — Stable source release
