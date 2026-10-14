@@ -200,3 +200,34 @@ remains unfinished. The desktop RSA advisory remains unsuppressed.
 A fresh GTK workspace creates its own terminal session instead of borrowing an unrelated CLI session. Explicitly attaching the same session shares its PTY size: the smallest attached viewport governs it, and the status bar shows the shared size. Closing or detaching the smaller view allows it to expand. Remmina import discovers native, legacy and Flatpak profile directories, previews the selected metadata, and requires an explicit import; custom file selection remains available. [Remmina documents its profile locations](https://remmina.org/how-to-install-remmina/).
 
 To retain the legacy Screen double-prefix previous-window action, set `RUWAC_SHORTCUTS='{"double_prefix":"previous"}'` when launching the client. Literal prefix forwarding remains available through Ctrl+A then a.
+
+
+### Screen command aliases
+
+`ruwac -ls` (`-list`) prints a readable session table; add `--json` for automation.
+`ruwac -S work` starts or shares the named session in one command. `-r work`
+and `-x work` attach to it without creating a missing session. `-R work` attaches
+or creates it; `-dmS work` creates it detached. Concurrent attachments retain their
+own selected window and use the canonical shared PTY size.
+
+`ruwac -S work -X screen [NAME]`, `title NAME`, `windows`, `next`, `prev`,
+`other`, and `select N` control an existing exact named session. Explicit `-X kill`
+closes the current window's programs; `-X quit` closes all programs in that session.
+These destructive automation commands do not prompt.
+
+In TUI and GTK, Ctrl+A then Space selects the next window; Backspace selects the
+previous one; `w` opens the window chooser; `A` prompts for a title; Escape enters
+copy mode; `k` asks before killing the window. Existing `c`, `n`, `p`, `d`, digits,
+`S`, `|`, Tab, `[`, `]`, `?`, and `:` remain available. Double Ctrl+A forwards a
+literal prefix into a nested terminal. Use Ctrl+A then `o` for the other window.
+Command prompts accept `screen`, `title`, `windowlist`, `split -v`, and `focus`.
+`only` maximizes the current pane without discarding the other persistent panes.
+TUI `quit` requires confirmation; GTK window close preserves terminal sessions.
+Screen configuration files, logging, multiuser ACLs, serial terminals and its full
+command language are not implemented; unsupported commands report an error.
+
+Workspace actions and RDP controls are collapsed behind centered disclosure arrows.
+Hover previews the controls; click keeps them open. RDP status and resolution share
+one compact row, with further display details in its tooltip. Remmina discovery is
+read-only; selecting a profile previews metadata, then **Import selected profile**
+imports it explicitly. Passwords are never imported.

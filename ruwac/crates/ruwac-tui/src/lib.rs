@@ -517,6 +517,10 @@ enum Mode {
         typed: String,
     },
     Prompt(String),
+    Confirm {
+        panes: Vec<String>,
+        label: String,
+    },
     Help(usize),
 }
 fn history(s: &mut UnixStream, pane: &str) -> io::Result<copy::Copy> {
@@ -648,7 +652,14 @@ fn command(
     let (name, arg) = trimmed
         .split_once(char::is_whitespace)
         .unwrap_or((trimmed, ""));
-    let arg = arg.trim();
+    let name = ruwac_protocol::screen_command(name);
+    let arg = if name == "split" && arg.trim() == "-v" {
+        "vertical"
+    } else if name == "split" && arg.trim().is_empty() {
+        "horizontal"
+    } else {
+        arg.trim()
+    };
     if !arg.is_empty() && !matches!(name, "select" | "rename" | "split") {
         return Err(io::Error::other("This command takes no arguments"));
     }
@@ -698,11 +709,11 @@ fn command(
                 json!({"window":snapshot["window"],"orientation":arg}),
             )?;
         }
-        "zoom" => {
+        "zoom" | "only" => {
             call(
                 s,
                 "pane.layout",
-                json!({"window":snapshot["window"],"zoom":snapshot["zoom"]!=true}),
+                json!({"window":snapshot["window"],"zoom":name == "only" || snapshot["zoom"]!=true}),
             )?;
         }
         "copy" => {
@@ -715,6 +726,40 @@ fn command(
         }
         "paste" => {
             call(s, "buffer.paste", json!({"pane":snapshot["active_pane"]}))?;
+        }
+        "kill" | "quit" => {
+            let rows = call(s, "pane.list", json!({"session":session}))?;
+            let panes = rows
+                .as_array()
+                .ok_or_else(|| io::Error::other("Pane list unavailable"))?
+                .iter()
+                .filter(|p| name == "quit" || p["window"] == snapshot["window"])
+                .filter_map(|p| p["id"].as_str().map(str::to_owned))
+                .collect();
+            *mode = Mode::Confirm {
+                panes,
+                label: if name == "quit" {
+                    "Close ALL windows in this session"
+                } else {
+                    "Kill this window and its programs"
+                }
+                .into(),
+            };
+        }
+        "focus" => {
+            let panes = snapshot["panes"]
+                .as_array()
+                .filter(|p| !p.is_empty())
+                .ok_or_else(|| io::Error::other("Pane list empty"))?;
+            let i = panes
+                .iter()
+                .position(|p| p["id"] == snapshot["active_pane"])
+                .unwrap_or(0);
+            call(
+                s,
+                "pane.select",
+                json!({"pane":panes[(i+1)%panes.len()]["id"]}),
+            )?;
         }
         "windows" => *mode = windows(s, session, &snapshot["window"])?,
         "help" => *mode = Mode::Help(0),
@@ -767,6 +812,16 @@ fn draw_mode(
                             "WINDOWS · arrows/digits, Enter select, Esc cancel · {}",
                             status
                         ),
+                        columns
+                    )
+                ));
+            }
+            Mode::Confirm { label, .. } => {
+                out.push_str(&format!(
+                    "\x1b[{};1H\x1b[7m{}\x1b[0m",
+                    height + 1,
+                    copy::clip(
+                        &format!("{label}? y confirms; any other key cancels"),
                         columns
                     )
                 ));
@@ -986,6 +1041,23 @@ pub fn attach(socket: &Path, session: &str) -> io::Result<()> {
                         let mut refresh = false;
                         let result = (|| -> io::Result<()> {
                             match &mut mode {
+                                Mode::Confirm { panes, .. } => {
+                                    if matches!(key, copy::Key::Char('y' | 'Y')) {
+                                        for pane in std::mem::take(panes) {
+                                            call(&mut s, "pane.close", json!({"pane":pane}))?;
+                                        }
+                                        if call(&mut s, "session.list", json!({}))?
+                                            .as_array()
+                                            .is_none_or(|rows| {
+                                                !rows.iter().any(|r| r["id"] == session)
+                                            })
+                                        {
+                                            STOP.store(true, Ordering::Relaxed);
+                                        }
+                                    }
+                                    mode = Mode::Live;
+                                    refresh = true;
+                                }
                                 Mode::Copy(c) => match c.key(&key, size.0 as usize) {
                                     copy::Action::Cancel => {
                                         mode = Mode::Live;
@@ -1154,18 +1226,25 @@ pub fn attach(socket: &Path, session: &str) -> io::Result<()> {
                                                 )?;
                                             }
                                         } else {
+                                            let key = if key.escape() {
+                                                copy::Key::Char('\x1b')
+                                            } else {
+                                                key
+                                            };
                                             let copy::Key::Char(mut binding) = key else {
                                                 return Err(io::Error::other(
                                                     "Unsupported prefix key; ? opens help",
                                                 ));
                                             };
+                                            binding = ruwac_protocol::screen_key(binding);
                                             if binding != '\t'
                                                 && (1..=26).contains(&(binding as u32))
                                             {
                                                 binding = (binding as u8 + b'a' - 1) as char;
                                             }
-                                            binding =
-                                                *config.remaps.get(&binding).unwrap_or(&binding);
+                                            binding = ruwac_protocol::screen_key(
+                                                *config.remaps.get(&binding).unwrap_or(&binding),
+                                            );
                                             match binding {
                                                 'a' => {
                                                     call(
@@ -1174,6 +1253,10 @@ pub fn attach(socket: &Path, session: &str) -> io::Result<()> {
                                                         json!({"pane":snapshot["active_pane"],"kind":"keyboard","text":(config.prefix as char).to_string()}),
                                                     )?;
                                                 }
+                                                'k' => command(
+                                                    &mut s, session, &snapshot, "kill", &mut mode,
+                                                )?,
+                                                'A' => mode = Mode::Prompt("rename ".into()),
                                                 'c' => {
                                                     call(
                                                         &mut s,

@@ -1,3 +1,25 @@
+/// GNU Screen names for operations supported by both RUWAC clients.
+pub fn screen_command(name: &str) -> &str {
+    match name {
+        "screen" => "new",
+        "title" => "rename",
+        "previous" => "prev",
+        "prev" => "prev",
+        "windowlist" => "windows",
+        "focus" => "focus",
+        _ => name,
+    }
+}
+/// Screen's alternative default keys; double prefix remains a nested literal.
+pub fn screen_key(key: char) -> char {
+    match key {
+        ' ' => 'n',
+        '\x08' | '\x7f' => 'p',
+        'w' => '"',
+        '\x1b' => '[',
+        _ => key,
+    }
+}
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::io::{self, Read, Write};

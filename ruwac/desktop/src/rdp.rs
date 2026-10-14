@@ -1119,7 +1119,7 @@ impl RdpView {
         toolbar.append(&gtk::Image::from_icon_name("computer-symbolic"));
         toolbar.append(&title);
         toolbar.append(&menu);
-        root.append(&toolbar);
+
         quick_action(
             &toolbar,
             "reconnect",
@@ -1141,7 +1141,7 @@ impl RdpView {
         status.set_ellipsize(gtk::pango::EllipsizeMode::End);
         status.add_css_class("dim-label");
         status.set_max_width_chars(80);
-        root.append(&status);
+        crate::compact::toolbar(&root, &toolbar, "rdp-tools", Some(&status));
         let review_certificate = gtk::Button::with_label("Review RDP certificate…");
         review_certificate.set_widget_name("rdp-review-certificate");
         review_certificate.set_halign(gtk::Align::Start);
@@ -1160,7 +1160,10 @@ impl RdpView {
         root.append(&scroll);
         let display_info = gtk::Label::new(None);
         display_info.set_wrap(true);
-        root.append(&display_info);
+        display_info.set_visible(false);
+        let summary = status.clone();
+        let detail = display_info.clone();
+        display_info.connect_label_notify(move |_| summary.set_tooltip_text(Some(&detail.text())));
         let assist = gtk::Button::with_label("Assisted GNOME Sign-in");
         assist.set_widget_name("assisted-gnome-sign-in");
         controls.attach(&assist, 0, 4, 2, 1);
@@ -1774,11 +1777,20 @@ impl RdpView {
         self.focus();
     }
     pub fn fixture_toolbar(&self, action: Option<&str>) -> serde_json::Value {
-        let Some(toolbar) = self
-            .root
-            .first_child()
-            .and_then(|w| w.downcast::<gtk::Box>().ok())
-        else {
+        fn find(w: &gtk::Widget) -> Option<gtk::Box> {
+            if w.widget_name() == "rdp-toolbar" {
+                return w.clone().downcast().ok();
+            }
+            let mut child = w.first_child();
+            while let Some(c) = child {
+                if let Some(found) = find(&c) {
+                    return Some(found);
+                }
+                child = c.next_sibling();
+            }
+            None
+        }
+        let Some(toolbar) = find(self.root.upcast_ref()) else {
             return serde_json::json!({"error":"toolbar unavailable"});
         };
         let mut controls = Vec::new();

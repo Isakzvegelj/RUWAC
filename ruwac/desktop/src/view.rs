@@ -541,6 +541,9 @@ impl View {
         }
     }
     fn show_prompt(self: &Rc<Self>) {
+        self.show_prompt_seed("");
+    }
+    fn show_prompt_seed(self: &Rc<Self>, seed: &str) {
         let dialog = gtk::Dialog::builder()
             .title("RUWAC command")
             .modal(true)
@@ -550,6 +553,8 @@ impl View {
             dialog.set_transient_for(Some(&p));
         }
         let entry = gtk::Entry::new();
+        entry.set_text(seed);
+        entry.set_position(-1);
         entry.set_placeholder_text(Some("new · next · prev · select N · split horizontal/vertical · zoom · copy · paste · detach · help"));
         dialog.content_area().append(&entry);
         dialog.add_button("Cancel", gtk::ResponseType::Cancel);
@@ -569,14 +574,59 @@ impl View {
         dialog.present();
         entry.grab_focus();
     }
+    fn confirm_close_window(self: &Rc<Self>) {
+        let Some(frame) = self.frame.borrow().clone() else {
+            return;
+        };
+        let panes: Vec<_> = frame["panes"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|p| p["id"].as_str().map(str::to_owned))
+            .collect();
+        let dialog = gtk::Dialog::builder()
+            .title("Kill this terminal window?")
+            .modal(true)
+            .build();
+        if let Some(parent) = self.parent() {
+            dialog.set_transient_for(Some(&parent));
+        }
+        dialog.content_area().append(&gtk::Label::new(Some(
+            "All programs in this terminal window will be closed.",
+        )));
+        dialog.add_button("Cancel", gtk::ResponseType::Cancel);
+        dialog.add_button("Kill window", gtk::ResponseType::Accept);
+        dialog.set_default_response(gtk::ResponseType::Cancel);
+        let weak = Rc::downgrade(self);
+        dialog.connect_response(move |dialog, response| {
+            if response == gtk::ResponseType::Accept {
+                if let Some(view) = weak.upgrade() {
+                    for pane in &panes {
+                        view.command("pane.close", json!({"pane":pane}));
+                    }
+                }
+            }
+            dialog.close();
+        });
+        dialog.present();
+    }
     pub fn run_command(self: &Rc<Self>, command: &str) {
-        let words: Vec<_> = command.split_whitespace().collect();
+        let mut words: Vec<_> = command.split_whitespace().collect();
+        if let Some(name) = words.first_mut() {
+            *name = ruwac_protocol::screen_command(name);
+        }
         match words.as_slice(){
             ["new"]=>self.navigate("window.create",json!({"session":self.session})),
             ["next"]|["prev"]=>self.navigate("window.cycle",json!({"session":self.session,"previous":words[0]=="prev"})),
             ["select",n]=>match n.parse::<usize>(){Ok(n)=>{self.window_index.set(Some(n));self.command("window.list",json!({"session":self.session}));},Err(_)=>self.status.set_text("select requires a nonnegative window index")},
-            ["split"]|["split","horizontal"]=>self.split(false),["split","vertical"]=>self.split(true),
+            ["split"]|["split","horizontal"]=>self.split(false),["split","vertical"]|["split","-v"]=>self.split(true),
+            ["only"]=>{if let Some(f)=self.frame.borrow().as_ref(){self.command("pane.layout",json!({"window":f["window"],"zoom":true}));}},
             ["zoom"]=>self.zoom(),["copy"]=>self.open_history(),["paste"]=>self.command("buffer.get",json!({"session":self.session})),
+            ["kill"]=>self.confirm_close_window(),
+            ["rename", rest @ ..] if !rest.is_empty()=>{if let Some(f)=self.frame.borrow().as_ref(){self.command("window.rename",json!({"window":f["window"],"name":rest.join(" ")}));}},
+            ["other"]=>self.navigate("window.previous",json!({"session":self.session})),
+            ["windows"]=>self.command("window.list",json!({"session":self.session})),
+            ["focus"]=>{self.prefix.set(true);self.key(gdk::Key::Tab,gdk::ModifierType::empty());},
             ["detach"]=>self.close(),["help"]=>self.show_help(),
             _=>self.warn("Unknown command. Use: new, next, prev, select N, split horizontal/vertical, zoom, copy, paste, detach, help"),
         }
@@ -1235,7 +1285,16 @@ impl View {
                 ch.map(|c| c.to_string()).unwrap_or_default()
             };
             let binding = self.remaps.get(&binding).cloned().unwrap_or(binding);
+            let binding = if key == gdk::Key::Escape {
+                "[".into()
+            } else if binding.chars().count() == 1 {
+                ruwac_protocol::screen_key(binding.chars().next().unwrap()).to_string()
+            } else {
+                binding
+            };
             match binding.as_str() {
+                "k" => self.confirm_close_window(),
+                "A" => self.show_prompt_seed("title "),
                 "d" => self.close(),
                 "c" => self.navigate("window.create", json!({"session":self.session})),
                 "n" | "p" => self.navigate(

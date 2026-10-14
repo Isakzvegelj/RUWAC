@@ -21,10 +21,37 @@ try:
  sessions=eventually(lambda:rpc('session.list'));assert len(sessions)==1 and sessions[0]['name']=='d';sid=sessions[0]['id']
  eventually(lambda:b'RUWAC d'in one.data);assert b'\x1b]2;RUWAC d'in one.data
  checks.append('single-command-start-create-attach-title')
+ listed=subprocess.run([str(binary),'--socket',str(sock),'-ls'],env=env,capture_output=True,text=True,timeout=10)
+ assert listed.returncode==0 and 'NAME' in listed.stdout and sid in listed.stdout and 'running' in listed.stdout and not listed.stdout.startswith('{')
+ machine=subprocess.run([str(binary),'--socket',str(sock),'-list','--json'],env=env,capture_output=True,text=True,timeout=10)
+ assert machine.returncode==0 and json.loads(machine.stdout)['result'][0]['name']=='d'
+ checks.append('human-readable-and-json-screen-session-list')
+
  finish(one);assert len(rpc('session.list'))==1
  missing=ui(['-r','absent'],'missing');eventually(lambda:missing.p.poll()is not None);assert missing.p.returncode!=0
  assert len(rpc('session.list'))==1;missing.finish('kill');uis.remove(missing)
  checks.append('reattach-missing-name-never-creates')
+ detached=subprocess.run([str(binary),'--socket',str(sock),'-dmS','compat'],env=env,capture_output=True,text=True,timeout=10)
+ assert detached.returncode==0 and 'Detached session compat' in detached.stdout
+ compat=next(row['id'] for row in rpc('session.list') if row['name']=='compat')
+ control=subprocess.run([str(binary),'--socket',str(sock),'-S','compat','-X','title','first'],env=env,capture_output=True,text=True,timeout=10)
+ assert control.returncode==0 and rpc('window.list',{'session':compat})[0]['name']=='first'
+ view=ui(['-x','compat'],'screen-aliases');eventually(lambda:b'RUWAC compat' in view.data)
+ def cmd(text): view.send(b'\x01:'+text.encode()+b'\r');time.sleep(.15)
+ cmd('screen');eventually(lambda:len(rpc('window.list',{'session':compat}))==2)
+ cmd('title second');eventually(lambda:rpc('window.list',{'session':compat})[1]['name']=='second')
+ view.send(b'\x01 ');eventually(lambda:b'0:first' in view.data)
+ view.send(b'\x01\x08');eventually(lambda:b'1:second' in view.data)
+ cmd('split -v');eventually(lambda:len(rpc('pane.list',{'session':compat}))==3)
+ cmd('only');cmd('only')
+ view.send(b'\x01k');time.sleep(.15);view.send(b'n');time.sleep(.15);assert len(rpc('window.list',{'session':compat}))==2
+ cmd('windowlist');view.send(b'\x1b');time.sleep(.15)
+ view.send(b'\x01\x1b');time.sleep(.15);view.send(b'\x1b');time.sleep(.15)
+ finish(view)
+ for pane in rpc('pane.list',{'session':compat}):rpc('pane.close',{'pane':pane['id']})
+ assert len(rpc('session.list'))==1
+ checks.append('screen-detached-multiattach-command-and-key-aliases')
+
  one=ui(['-r','d'],'one');two=ui(['-r','d'],'two');eventually(lambda:b'0:d'in one.data and b'0:d'in two.data)
  assert len(rpc('session.list'))==1 and rpc('session.list')[0]['id']==sid
  one.send(b'\x01c');eventually(lambda:len(rpc('window.list',{'session':sid}))==2)

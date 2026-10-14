@@ -40,14 +40,20 @@ try:
  daemon=start([str(a.binary),'--socket',str(sock),'serve'],'daemon');eventually(sock.exists)
  admin=Client(sock);session=admin.call('session.create',{'name':'Generated CLI view','argv':['/bin/cat']})
  admin.call('session.attach',{'session':session['session'],'rows':32,'cols':137})
- first=gui();inspect=eventually(lambda:command('inspect').get('target'),20)
+ first=gui('--show-machines');inspect=eventually(lambda:command('inspect').get('target'),20)
  assert inspect!=session['pane'] and len(rpc('session.list'))==2
  assert (admin.call('client.render')['panes'][0]['grid']['rows'],admin.call('client.render')['panes'][0]['grid']['cols'])==(32,137)
  checks.append('default-GTK-creates-own-session-and-preserves-attached-CLI-size')
+ controls=command('compact-controls');assert controls['found'] and not controls['open']
+ command('compact-controls',open=True,width=800,height=600)
+ eventually(lambda:command('compact-controls')['open'])
+ command('compact-controls',open=False)
+ eventually(lambda:not command('compact-controls')['open'])
+ checks.append('native-centered-controls-collapse-and-expand-at-small-window-size')
  command('profiles-control',import_expanded=True)
  eventually(lambda:command('profiles-control')['discovered_count']==3)
  preview=command('profiles-control',discovered_index=0)
- assert 'Generated Remmina 0'in preview['status'] and preview['import_enabled']
+ assert 'Generated Remmina 0'in preview['status'] and preview['import_enabled'] and preview['import_outside_scroll']
  command('profiles-control',operation='import')
  saved=Path(env['XDG_CONFIG_HOME'])/'RUWAC/machines.json'
  def imported():

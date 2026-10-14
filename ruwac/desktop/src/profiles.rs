@@ -958,7 +958,7 @@ pub fn sidebar(
         .child(&list)
         .build();
     scroll.set_widget_name("machines-list-scroll");
-    scroll.set_min_content_height(120);
+    scroll.set_min_content_height(64);
     root.append(&scroll);
     let page = Rc::new(Cell::new(0usize));
     let pager = gtk::Box::new(gtk::Orientation::Horizontal, 4);
@@ -1266,12 +1266,15 @@ pub fn sidebar(
     let import_controls = gtk::Box::new(gtk::Orientation::Vertical, 6);
     let import_scroll = gtk::ScrolledWindow::builder()
         .child(&import_controls)
+        .hscrollbar_policy(gtk::PolicyType::Never)
         .propagate_natural_height(true)
-        .max_content_height(280)
+        .max_content_height(160)
         .build();
     let import_panel = gtk::Expander::new(Some("Import from Remmina"));
     import_panel.set_widget_name("machines-import-panel");
-    import_panel.set_child(Some(&import_scroll));
+    let import_box = gtk::Box::new(gtk::Orientation::Vertical, 6);
+    import_box.append(&import_scroll);
+    import_panel.set_child(Some(&import_box));
     root.append(&import_panel);
     let selected = Rc::new(RefCell::new(None::<Profile>));
     let path = gtk::Entry::builder()
@@ -1381,13 +1384,28 @@ pub fn sidebar(
     review_merge.set_widget_name("machines-merge-review");
     review_merge.set_sensitive(false);
     import_controls.append(&review_merge);
-    let import = gtk::Button::with_label("Import preview metadata");
+    let import = gtk::Button::with_label("Import selected profile");
     import.set_widget_name("machines-import-apply");
     import.set_sensitive(false);
-    import_controls.append(&import);
+    import_box.append(&import);
+    status.set_wrap(true);
+    status.set_max_width_chars(24);
     root.append(&status);
     let choose = gtk::Button::with_label("Choose file…");
     import_controls.append(&choose);
+    let mut child = import_controls.first_child();
+    while let Some(widget) = child {
+        widget.set_hexpand(true);
+        if let Ok(button) = widget.clone().downcast::<gtk::Button>() {
+            if let Some(label) = button.child().and_then(|w| w.downcast::<gtk::Label>().ok()) {
+                label.set_wrap(true);
+                label.set_max_width_chars(24);
+            }
+        }
+        child = widget.next_sibling();
+    }
+    discovered.set_factory(Some(&factory));
+    conflict.set_factory(Some(&factory));
     let entry = path.clone();
     choose.connect_clicked(move |b| {
         let dialog = gtk::FileDialog::new();
@@ -3227,12 +3245,23 @@ pub fn fixture_library(
     let list_height = find(root.upcast_ref(), "machines-list-scroll")
         .map(|w| w.height())
         .unwrap_or(0);
+    let import_outside_scroll =
+        find(root.upcast_ref(), "machines-import-apply").is_some_and(|button| {
+            let mut parent = button.parent();
+            while let Some(w) = parent {
+                if w.is::<gtk::ScrolledWindow>() {
+                    return false;
+                }
+                parent = w.parent();
+            }
+            true
+        });
     let discovered_count = find(root.upcast_ref(), "machines-import-discovered")
         .and_then(|w| w.downcast::<gtk::DropDown>().ok())
         .and_then(|w| w.model())
         .map(|m| m.n_items().saturating_sub(1))
         .unwrap_or(0);
-    json!({"discovered_count":discovered_count,"import_enabled":sensitive("machines-import-apply"),"import_expanded":panel("machines-import-panel"),"tools_expanded":panel("machines-tools-panel"),"list_height":list_height,"sidebar_height":root.height(),"page":text("machines-page-label"),"previous":sensitive("machines-page-previous"),"next":sensitive("machines-page-next"),"status":text("machines-status"),"review_text":review_text,"visible":fixture(root,None,None,false,false)})
+    json!({"import_outside_scroll":import_outside_scroll,"discovered_count":discovered_count,"import_enabled":sensitive("machines-import-apply"),"import_expanded":panel("machines-import-panel"),"tools_expanded":panel("machines-tools-panel"),"list_height":list_height,"sidebar_height":root.height(),"page":text("machines-page-label"),"previous":sensitive("machines-page-previous"),"next":sensitive("machines-page-next"),"status":text("machines-status"),"review_text":review_text,"visible":fixture(root,None,None,false,false)})
 }
 #[cfg(test)]
 mod merge_tests {

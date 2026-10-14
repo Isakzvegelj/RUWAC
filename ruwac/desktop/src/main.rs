@@ -1,6 +1,7 @@
 mod agent_launch;
 mod clipboard;
 mod cliprdr;
+mod compact;
 mod credentials;
 mod files;
 mod files_resume;
@@ -227,7 +228,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
   app.style_manager().set_color_scheme(theme);
   if let Some(window)=app.active_window(){window.present();return;}
   let window=adw::ApplicationWindow::builder().application(app).title(format!("RUWAC {}", env!("CARGO_PKG_VERSION"))).default_width(1040).default_height(780).build();
-  let box_=gtk::Box::new(gtk::Orientation::Vertical,0);let header=adw::HeaderBar::new();box_.append(&header);let tabs=adw::TabView::new();let focus_memory:tiles::FocusMemory=Rc::new(RefCell::new(std::collections::HashMap::new()));tabs.set_vexpand(true);let bar=adw::TabBar::builder().view(&tabs).autohide(false).build();box_.append(&bar);let tools=gtk::Box::new(gtk::Orientation::Horizontal,6);tools.set_margin_start(6);tools.set_margin_end(6);tools.set_margin_top(4);tools.set_margin_bottom(4);box_.append(&tools);
+  let box_=gtk::Box::new(gtk::Orientation::Vertical,0);let header=adw::HeaderBar::new();box_.append(&header);let tabs=adw::TabView::new();let focus_memory:tiles::FocusMemory=Rc::new(RefCell::new(std::collections::HashMap::new()));tabs.set_vexpand(true);let bar=adw::TabBar::builder().view(&tabs).autohide(false).build();box_.append(&bar);let tools=gtk::Box::new(gtk::Orientation::Horizontal,6);tools.set_margin_start(6);tools.set_margin_end(6);tools.set_margin_top(4);tools.set_margin_bottom(4);compact::toolbar(&box_,&tools,"workspace-tools",None);
   updates::attach(&header,&window,fixture.is_none());
   if let Some(message)=workspace_warning.as_ref(){box_.append(&gtk::Label::new(Some(message)));}
   let new_window=gtk::Button::from_icon_name("window-new-symbolic");new_window.set_widget_name("new-workspace-window");new_window.set_tooltip_text(Some("New RUWAC window — independent tabs, same persistent daemon"));header.pack_start(&new_window);
@@ -420,6 +421,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
   glib::timeout_add_local(Duration::from_millis(16),move||{
    tick.set(tick.get()+1);let now=Instant::now();max_gap.set(max_gap.get().max(now.duration_since(last.replace(now)).as_millis()));for v in vv.borrow().iter(){v.update();}
    if let Some(dir)=fixture.as_ref(){let request=dir.join("gui-request.json");if let Ok(bytes)=std::fs::read(&request){if let Ok(q)=serde_json::from_slice::<Value>(&bytes){let seq=q["seq"].as_u64().unwrap_or(0);if seq>sequence.get(){sequence.set(seq);let index=q["view"].as_u64().unwrap_or(0)as usize;let view=vv.borrow().get(index).cloned();let reply_dir=dir.clone();let reply=move|result:Value|{let path=reply_dir.join("gui-response.json");let temp=reply_dir.join("gui-response.tmp");let _=std::fs::write(&temp,json!({"seq":seq,"result":result}).to_string());let _=std::fs::rename(temp,path);};if view.is_none(){match q["action"].as_str().unwrap_or(""){
+    "compact-controls"=>reply(compact::fixture(window.upcast_ref(),&q)),
     "inspect"=>reply(json!({"display":gtk::prelude::WidgetExt::display(&window).type_().name(),"active":window.is_active(),"tabs":tabs.n_pages(),"selected_tab":tabs.selected_page().map(|p|tabs.page_position(&p)),"dark":app.style_manager().is_dark(),"focused_view":tiles::focused_id(&tabs,&focus_memory),"clipboard_owner":broker.borrow().active(),"terminal_views":0,"rdp_views":rdp_views.borrow().len(),"panes":[],"ticks":tick.get()})),
     "new-terminal"=>reply(json!({"clicked":sessions::fixture(&window,"New terminal")})),
     "workspace-close"=>{reply(json!({"closing":true}));window.close();},
@@ -487,6 +489,7 @@ v.fixture_display(q["mode"].as_str().unwrap_or("fit"),q["zoom"].as_f64().unwrap_
     "grid-copy"=>{v.select_grid_fixture();v.copy_clipboard(false);reply(json!({"offered":true}));},
     "cancel"=>{v.broker.borrow_mut().local_copy();reply(json!({"epoch":v.broker.borrow().epoch()}));},
     "snapshot"=>{if let Some(clock)=window.frame_clock(){let paint=gtk::WidgetPaintable::new(Some(&window));let window=window.clone();let dir=dir.clone();let slot=Rc::new(RefCell::new(None));let owned=slot.clone();let attempts=Rc::new(Cell::new(0u8));window.queue_draw();let id=clock.connect_after_paint(move|clock|{attempts.set(attempts.get()+1);let snap=gtk::Snapshot::new();paint.snapshot(&snap,window.width()as f64,window.height()as f64);let node=snap.to_node();let renderer=window.renderer();let mut saved=false;if let(Some(node),Some(renderer))=(&node,&renderer){let texture=renderer.render_texture(node,None);saved=texture.save_to_png(dir.join("native-rust.png")).is_ok();}if saved||attempts.get()>=5{if let Some(id)=owned.borrow_mut().take(){clock.disconnect(id);}reply(json!({"image":"native-rust.png","saved":saved,"mapped":window.is_mapped(),"width":window.width(),"height":window.height(),"node":node.is_some(),"renderer":renderer.is_some(),"after_paint":true}));}else{window.queue_draw();}});*slot.borrow_mut()=Some(id);}else{reply(json!({"saved":false,"error":"Frame clock unavailable"}));}},
+    "compact-controls"=>reply(compact::fixture(window.upcast_ref(),&q)),
     "inspect"=>reply(json!({"display":v.area.display().type_().name(),"active":window.is_active(),"tabs":tabs.n_pages(),"selected_tab":tabs.selected_page().map(|p|tabs.page_position(&p)),"dark":app.style_manager().is_dark(),"focused_view":tiles::focused_id(&tabs,&focus_memory),"clipboard_owner":broker.borrow().active(),"layout":v.frame.borrow().as_ref().map(|f|f["layout"].clone()),"zoom":v.frame.borrow().as_ref().map(|f|f["zoom"].clone()),"target":*v.target.borrow(),"drawn":vv.borrow().iter().map(|v|v.drawn.get()).collect::<Vec<_>>(),"panes":vv.borrow().iter().map(|v|v.frame.borrow().as_ref().and_then(|f|f["panes"].as_array()).map(|a|a.len()).unwrap_or(0)).collect::<Vec<_>>(),"ticks":tick.get(),"max_tick_gap_ms":max_gap.get(),"acknowledgements":v.worker.state.lock().unwrap().acknowledgements,"status":v.status.text().to_string()})),
     "quit"=>{for v in vv.borrow().iter(){v.close();}for path in owned.borrow_mut().drain(..){let _=std::fs::remove_file(path);}reply(json!({"detached":true}));app.quit();return glib::ControlFlow::Break;},
     _=>reply(json!({"error":"unknown fixture action"}))

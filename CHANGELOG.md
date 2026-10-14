@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## v0.2.40 — 2026-10-14 — Stable source release
+
+- Add readable Screen-style session listing, detached/shared attachment and explicit session control aliases.
+- Add Screen title, chooser, navigation, copy and confirmed window-kill shortcuts; preserve nested literal-prefix routing.
+- Collapse workspace/RDP controls behind centered disclosures and keep RDP status in one row.
+- Keep the Remmina import action outside scrolling options and wrap narrow-sidebar controls.
+
 ## v0.2.39 — 2026-10-14 — Stable source release
 
 - Add `ruwac -r NAME`, independent concurrent attachments, explicit session/window titles and a window status list.
