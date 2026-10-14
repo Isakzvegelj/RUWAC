@@ -231,3 +231,17 @@ Hover previews the controls; click keeps them open. RDP status and resolution sh
 one compact row, with further display details in its tooltip. Remmina discovery is
 read-only; selecting a profile previews metadata, then **Import selected profile**
 imports it explicitly. Passwords are never imported.
+
+
+Both workspace and RDP toolbars are unmeasured overlays: opening, hovering or
+pinning them does not change terminal or RDP viewport dimensions. Their collapsed
+center arrows leave the remote desktop corners available. RDP status and resolution
+appear with the expanded RDP controls.
+
+Use **Machines → Import from Remmina → Import all Remmina profiles…** to review
+and import metadata from the discovered native, legacy and Flatpak locations.
+Confirm **Import all** to save the batch. Existing profiles are retained, matching
+duplicates are skipped, unreadable/unsupported files are counted, and changed files
+or a changed library require a fresh review. Import excludes passwords, certificates
+and private key paths; source Remmina files are read-only. The 1000-profile limit is
+checked before writing any of the batch.

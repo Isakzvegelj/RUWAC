@@ -915,6 +915,26 @@ fn acquire(
 
     Some((p, sink, lease))
 }
+fn bulk_import_plan(existing: &[Profile], incoming: &[Profile]) -> Result<Vec<Profile>, String> {
+    let mut result = existing.to_vec();
+    for profile in incoming {
+        if result.iter().any(|p| {
+            p.group == profile.group
+                && p.name == profile.name
+                && p.server == profile.server
+                && p.protocol == profile.protocol
+        }) {
+            continue;
+        }
+        if result.len() >= 1000 {
+            return Err("Import exceeds the 1000-profile limit; no profiles imported".into());
+        }
+        let mut profile = profile.clone();
+        profile.identify();
+        result.push(profile);
+    }
+    Ok(result)
+}
 pub fn sidebar(
     open: impl Fn(Profile, PreferenceSink, ConnectionLease) + 'static,
 ) -> (
@@ -1289,7 +1309,7 @@ pub fn sidebar(
     let discovered = gtk::DropDown::new(Some(discovered_model.clone()), None::<gtk::Expression>);
     discovered.set_enable_search(true);
     discovered.set_widget_name("machines-import-discovered");
-    import_controls.append(&discovered);
+    import_controls.prepend(&discovered);
     let discovered_paths = Rc::new(RefCell::new(Vec::<PathBuf>::new()));
     let (entry, paths, preview_action) = (
         path.clone(),
@@ -1320,6 +1340,8 @@ pub fn sidebar(
             .unwrap_or_default();
         let _ = tx.send(found);
     });
+    let bulk_model = discovered_model.clone();
+    let bulk_paths = discovered_paths.clone();
     let list = discovered.downgrade();
     gtk::glib::timeout_add_local(std::time::Duration::from_millis(20), move || {
         let Some(list) = list.upgrade() else {
@@ -1342,6 +1364,58 @@ pub fn sidebar(
             Err(std::sync::mpsc::TryRecvError::Empty) => gtk::glib::ControlFlow::Continue,
             Err(std::sync::mpsc::TryRecvError::Disconnected) => gtk::glib::ControlFlow::Break,
         }
+    });
+    let bulk = gtk::Button::with_label("Import all Remmina profiles…");
+    bulk.set_widget_name("machines-import-all");
+    if let Some(label) = bulk.child().and_then(|w| w.downcast::<gtk::Label>().ok()) {
+        label.set_wrap(true);
+        label.set_max_width_chars(24);
+    }
+    bulk.set_sensitive(false);
+    import_box.prepend(&bulk);
+    let available = bulk_model;
+    let enabled = bulk.clone();
+    available
+        .connect_items_changed(move |model, _, _, _| enabled.set_sensitive(model.n_items() > 1));
+    let (paths, state, message, refresh_all) =
+        (bulk_paths, store.clone(), status.clone(), refresh.clone());
+    bulk.connect_clicked(move |button| {
+        let paths = paths.borrow().clone();
+        let mut reviewed = Vec::new();
+        let mut unreadable = 0;
+        for path in paths { match preview(&path) { Ok(profile) => reviewed.push((path, profile)), Err(_) => unreadable += 1 } }
+        if reviewed.is_empty() { message.set_text("No readable supported Remmina profiles to import"); return; }
+        let before = state.borrow().items.clone();
+        let incoming: Vec<_> = reviewed.iter().map(|(_,p)|p.clone()).collect();
+        let planned = match bulk_import_plan(&before, &incoming) { Ok(p) => p, Err(e) => { message.set_text(&e); return; } };
+        let added = planned.len()-before.len();
+        let duplicates = incoming.len()-added;
+        let dialog = gtk::Dialog::builder().title("Import all Remmina profiles").modal(true).default_width(520).build();
+        dialog.set_widget_name("machines-import-all-dialog");
+        dialog.set_transient_for(button.root().and_then(|r|r.downcast::<gtk::Window>().ok()).as_ref());
+        let label = gtk::Label::new(Some(&format!("{} new profiles · {} duplicates skipped · {} unreadable/unsupported files skipped\n\nImport metadata only. Existing endpoints and credentials are preserved. Remmina passwords, certificates and key files are excluded.",added,duplicates,unreadable)));
+        label.set_wrap(true);dialog.content_area().append(&label);
+        dialog.add_button("Cancel",gtk::ResponseType::Cancel);
+        dialog.add_button("Import all",gtk::ResponseType::Accept);
+        dialog.set_default_response(gtk::ResponseType::Cancel);
+        let (state,message,refresh_all)=(state.clone(),message.clone(),refresh_all.clone());
+        dialog.connect_response(move |dialog,response| {
+            if response == gtk::ResponseType::Accept {
+                let unchanged = reviewed.iter().all(|(path,p)|preview(path).ok().is_some_and(|current|serde_json::to_value(current).ok()==serde_json::to_value(p).ok()));
+                let mut state=state.borrow_mut();
+                if !unchanged || serde_json::to_value(&state.items).ok()!=serde_json::to_value(&before).ok() {
+                    message.set_text("Profiles changed after review; review Import all again");dialog.close();return;
+                }
+                state.items=planned.clone();
+                match state.save() {
+                    Ok(())=>message.set_text(&format!("Imported {added} profiles · skipped {duplicates} duplicates and {unreadable} unreadable files")),
+                    Err(error)=>{state.items=before.clone();message.set_text(&error);}
+                }
+                drop(state);refresh_all();
+            }
+            dialog.close();
+        });
+        dialog.present();
     });
     let conflict = gtk::DropDown::from_strings(&[
         "Skip duplicate endpoint",
@@ -3104,6 +3178,28 @@ mod workspace_tests {
         );
         assert_eq!(saved.iter().filter(|p| p.matches("Team")).count(), 1);
     }
+    #[test]
+    fn bulk_metadata_import_is_idempotent_and_enforces_the_limit() {
+        let mut saved = preview_test();
+        saved.identify();
+        saved.secret_reference = "generated-existing-reference".into();
+        let mut second = preview_test();
+        second.name = "Generated second".into();
+        let plan =
+            bulk_import_plan(&[saved.clone()], &[preview_test(), second.clone(), second]).unwrap();
+        assert_eq!(plan.len(), 2);
+        assert_eq!(plan[0].id, saved.id);
+        assert_eq!(plan[0].secret_reference, saved.secret_reference);
+        assert_eq!(plan[1].secret_reference, plan[1].id);
+        let many: Vec<_> = (0..1001)
+            .map(|i| {
+                let mut p = preview_test();
+                p.name = format!("Generated {i}");
+                p
+            })
+            .collect();
+        assert!(bulk_import_plan(&[], &many).is_err());
+    }
     fn preview_test() -> Profile {
         Profile {
             id: String::new(),
@@ -3201,6 +3297,7 @@ pub fn fixture_library(
         "next" => "machines-page-next",
         "previous" => "machines-page-previous",
         "import" => "machines-import-apply",
+        "import-all" => "machines-import-all",
         "review" => "machines-merge-review",
         "undo" => "machines-undo",
         _ => "",
@@ -3223,6 +3320,19 @@ pub fn fixture_library(
                     .map(|l| l.text().to_string());
                 if action == "apply" || action == "cancel" {
                     dialog.response(if action == "apply" {
+                        gtk::ResponseType::Accept
+                    } else {
+                        gtk::ResponseType::Cancel
+                    });
+                }
+            }
+        }
+    }
+    if let Some(response) = q["bulk_response"].as_str() {
+        for window in gtk::Window::list_toplevels() {
+            if let Ok(dialog) = window.downcast::<gtk::Dialog>() {
+                if dialog.widget_name() == "machines-import-all-dialog" {
+                    dialog.response(if response == "import" {
                         gtk::ResponseType::Accept
                     } else {
                         gtk::ResponseType::Cancel

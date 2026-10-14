@@ -1116,6 +1116,7 @@ impl RdpView {
         title.set_xalign(0.0);
         title.set_hexpand(true);
         title.add_css_class("heading");
+        title.set_visible(false);
         toolbar.append(&gtk::Image::from_icon_name("computer-symbolic"));
         toolbar.append(&title);
         toolbar.append(&menu);
@@ -1141,7 +1142,7 @@ impl RdpView {
         status.set_ellipsize(gtk::pango::EllipsizeMode::End);
         status.add_css_class("dim-label");
         status.set_max_width_chars(80);
-        crate::compact::toolbar(&root, &toolbar, "rdp-tools", Some(&status));
+        let viewport_overlay = crate::compact::toolbar(&root, &toolbar, "rdp-tools", Some(&status));
         let review_certificate = gtk::Button::with_label("Review RDP certificate…");
         review_certificate.set_widget_name("rdp-review-certificate");
         review_certificate.set_halign(gtk::Align::Start);
@@ -1157,7 +1158,7 @@ impl RdpView {
             .vexpand(true)
             .child(&area)
             .build();
-        root.append(&scroll);
+        viewport_overlay.set_child(Some(&scroll));
         let display_info = gtk::Label::new(None);
         display_info.set_wrap(true);
         display_info.set_visible(false);
@@ -1632,7 +1633,7 @@ impl RdpView {
         let cancel_auto = gtk::Button::with_label("Cancel automatic sign-in");
         cancel_auto.set_widget_name("cancel-automatic-sign-in");
         cancel_auto.set_visible(false);
-        v.root.insert_child_after(&cancel_auto, Some(&v.status));
+        toolbar.append(&cancel_auto);
         let weak = Rc::downgrade(&v);
         cancel_auto.connect_clicked(move |_| {
             if let Some(v) = weak.upgrade() {

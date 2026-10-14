@@ -64,6 +64,29 @@ try:
  assert 'GENERATED-DO-NOT-IMPORT'not in saved.read_text()
  assert all(path.read_bytes()==before[str(path)] for path in paths)
  checks.append('GTK-discovers-native-legacy-flatpak-and-imports-reviewed-metadata-only')
+ command('profiles-control',operation='import-all');command('profiles-control',bulk_response='cancel');assert len(imported())==1
+ command('profiles-control',operation='import-all')
+ paths[1].write_text(paths[1].read_text().replace('Generated Remmina 1','Changed during review'))
+ command('profiles-control',bulk_response='import');assert len(imported())==1
+ paths[1].write_bytes(before[str(paths[1])])
+ command('profiles-control',operation='import-all');command('profiles-control',bulk_response='import')
+ eventually(lambda:len(imported())==3)
+ identities=[p['id'] for p in imported()]
+ command('profiles-control',operation='import-all');command('profiles-control',bulk_response='import');assert [p['id'] for p in imported()]==identities
+ assert 'GENERATED-DO-NOT-IMPORT' not in saved.read_text() and all(path.read_bytes()==before[str(path)] for path in paths)
+ checks.append('native-bulk-import-confirm-cancel-stale-review-duplicate-and-credential-separation')
+ command('compact-controls',open=False);baseline=command('compact-controls')['viewport']
+ for i in range(20):
+  sample=command('compact-controls',open=i%2==0);assert sample['viewport']==baseline
+ command('compact-controls',open=False,hover=True);eventually(lambda:command('compact-controls')['open']);assert command('compact-controls')['viewport']==baseline
+ command('compact-controls',hover=False);eventually(lambda:not command('compact-controls')['open'])
+ command('rdp-open');command('compact-controls',name='rdp-tools',open=False)
+ remote=eventually(lambda:r if (r:=command('compact-controls',name='rdp-tools')).get('viewport') and min(r['viewport'])>0 else False)
+ for i in range(20):
+  assert command('compact-controls',name='rdp-tools',open=i%2==0)['viewport']==remote['viewport']
+  assert command('compact-controls',open=i%2==0)['viewport']==baseline
+ checks.append('both-unmeasured-native-overlays-preserve-terminal-and-RDP-viewport')
+
  terminate(first)
  tmux=root/'tmux.sock';conf=root/'tmux.conf';conf.write_text('set -g prefix C-a\nbind C-a send-prefix\nset -g status off\nset -g set-clipboard off\nset -g default-shell /bin/sh\n')
  receiver=Path(__file__).resolve().parents[1]/'fixtures/receiver.py';output=root/'received.bin'
@@ -81,10 +104,13 @@ try:
  checks.append('GTK-double-Control-A-routes-to-real-nested-tmux-without-outer-window-change')
  # The caller runs this suite in its own D-Bus session: a repeated normal GUI
  # invocation activates this fixture's primary application without another PTY.
- primary=start([str(a.gui),'--socket',str(sock)],'primary-application')
+ primary_session=rpc('session.create',{'name':'Generated primary application','argv':['/bin/cat']})
  count=len(rpc('session.list'))
- eventually(lambda:len(rpc('session.list'))>count,10)
- count=len(rpc('session.list'))
+ primary=start([str(a.gui),'--socket',str(sock),'--session',primary_session['session']],'primary-application')
+ def primary_ready():
+  query=subprocess.run(['gdbus','call','--session','--dest','si.z4.ruwac','--object-path','/si/z4/ruwac','--method','org.freedesktop.DBus.Peer.Ping'],env=env,capture_output=True,text=True,timeout=3)
+  return query.returncode==0 and primary.poll()is None
+ eventually(primary_ready,10)
  repeat=subprocess.run([str(a.gui),'--socket',str(sock)],env=env,capture_output=True,text=True,timeout=10)
  assert repeat.returncode==0 and len(rpc('session.list'))==count and primary.poll()is None
  checks.append('repeated-GTK-launch-reuses-primary-without-an-orphan-session')

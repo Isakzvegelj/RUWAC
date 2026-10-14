@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## v0.2.41 — 2026-10-15 — Stable source release
+
+- Make both auto-hide toolbars unmeasured overlays, preserving terminal and RDP viewport dimensions when controls appear.
+- Add reviewed bulk import from discovered Remmina profiles with duplicate skipping, stale-review checks and credential separation.
+
 ## v0.2.40 — 2026-10-14 — Stable source release
 
 - Add readable Screen-style session listing, detached/shared attachment and explicit session control aliases.

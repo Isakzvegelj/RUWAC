@@ -388,6 +388,14 @@ try:
    r=command('gui','rdp-inspect',rdp=0)
    return r if r['size']==r['requested_size'] and min(r['size'])>=200 and r['status'].startswith('Connected') else False
   storm=spike.eventually(settled,15);count=storm['metrics']['decoded_updates'];time.sleep(.8);stable=settled();assert stable and stable['size']==storm['size'],stable
+  # Both overlays must leave negotiated framebuffer and resize metrics unchanged.
+  baseline=command('gui','rdp-inspect',rdp=0)
+  for i in range(20):
+   command('gui','compact-controls',open=i%2==0)
+   command('gui','compact-controls',name='rdp-tools',open=i%2==0)
+  time.sleep(.8);overlay=command('gui','rdp-inspect',rdp=0)
+  assert overlay['viewport']==baseline['viewport'] and overlay['requested_size']==baseline['requested_size'] and overlay['size']==baseline['size'],(baseline,overlay)
+  assert overlay['metrics']==baseline['metrics'],'Toolbar overlays triggered remote activity'
   for mode in ['native','stretch','fit']:
    r=command('gui','rdp-display',rdp=0,mode=mode,zoom=1.25);assert r['zoom']==1.25
   command('gui','rdp-display',rdp=0,mode='fit',zoom=1.0)

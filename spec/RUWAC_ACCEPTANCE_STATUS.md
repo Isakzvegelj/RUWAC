@@ -6,6 +6,8 @@ receipts and original reports are archived privately outside Git.
 
 | Area | Result | Scope |
 | --- | --- | --- |
+| Bulk Remmina metadata import | PASS | Generated native/legacy/Flatpak profiles; confirmation, cancellation, changed-file refusal, duplicate skipping and credential exclusion |
+| Auto-hide toolbar overlays | PASS | Actual GTK allocations remain unchanged across repeated toggles and hover callbacks; authenticated RDP resize regression is required before publication |
 | Screen CLI aliases and readable session list | PASS | Seven real PTY groups including detached/shared sessions, automation title, control-key navigation and kill cancellation; full GNU Screen language remains unsupported |
 | Compact GTK controls and reachable Remmina import | PASS | Five actual owned-Wayland groups, small-window disclosure toggling and import outside option scroll; generated profiles and synthetic callbacks |
 | Current automatic GDM sign-in | BLOCKED | Owner reports failure in older running GUI; current recognition regressions pass, but no new real-host login claimed in this batch |
