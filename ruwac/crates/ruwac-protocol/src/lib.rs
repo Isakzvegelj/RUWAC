@@ -33,6 +33,53 @@ pub fn valid_id(s: &str, kind: &str) -> bool {
     s.strip_prefix(&format!("{kind}_"))
         .is_some_and(|x| x.len() == 32 && x.bytes().all(|b| b.is_ascii_hexdigit()))
 }
+/// Live clients close completed split PTYs when a live sibling remains. Use the
+/// established pane.close operation so old daemons and all attached clients
+/// share the same layout/focus repair. Final-session and restored history stay.
+/// Closing a split has the same history semantics as an explicit pane close.
+pub fn client_call(
+    method: &str,
+    params: Value,
+    mut call: impl FnMut(&str, Value) -> io::Result<Value>,
+) -> io::Result<Value> {
+    let mut frame = call(method, params)?;
+    if method != "client.render" || frame["unchanged"] == true {
+        return Ok(frame);
+    }
+    let Some(panes) = frame["panes"].as_array() else {
+        return Ok(frame);
+    };
+    if !panes
+        .iter()
+        .any(|p| p["ended"] == false && p["restored"] != true)
+    {
+        return Ok(frame);
+    }
+    let ended: Vec<String> = panes
+        .iter()
+        .filter(|p| p["ended"] == true && p["restored"] != true)
+        .filter_map(|p| p["id"].as_str())
+        .filter(|id| valid_id(id, "pane"))
+        .take(128)
+        .map(str::to_owned)
+        .collect();
+    for id in &ended {
+        if let Err(error) = call("pane.close", json!({"pane":id})) {
+            // Another attached client may already have closed this exact ID.
+            // Transport, authentication and unrelated errors must propagate.
+            let stale = serde_json::from_str::<Value>(&error.to_string())
+                .is_ok_and(|e| e["code"] == "STALE_ID");
+            if !stale {
+                return Err(error);
+            }
+        }
+    }
+    if !ended.is_empty() {
+        frame = call("client.render", json!({}))?;
+    }
+    Ok(frame)
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Request {
@@ -177,4 +224,77 @@ pub fn managed_rpm_installation(executable: &std::path::Path) -> bool {
         .ok()
         .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
         .is_some_and(|value| value["kind"] == "fedora-testing-rpm")
+}
+
+#[cfg(test)]
+mod split_exit_tests {
+    use super::*;
+    fn mixed(dead: &str, live: &str) -> Value {
+        json!({"panes":[{"id":dead,"ended":true,"restored":false},{"id":live,"ended":false,"restored":false}]})
+    }
+    #[test]
+    fn another_client_can_finish_the_same_close() {
+        let dead = id("pane");
+        let live = id("pane");
+        let mut calls = Vec::new();
+        let result = client_call("client.render", json!({}), |method, params| {
+            calls.push(method.to_owned());
+            match calls.len() {
+                1 => Ok(mixed(&dead, &live)),
+                2 => {
+                    assert_eq!(method, "pane.close");
+                    assert_eq!(params["pane"], dead);
+                    Err(io::Error::other(
+                        json!({"code":"STALE_ID","message":"Closed by another client"}).to_string(),
+                    ))
+                }
+                3 => Ok(json!({"active_pane":live,"panes":[{"id":live,"ended":false}]})),
+                _ => panic!("Unbounded repair requests"),
+            }
+        })
+        .unwrap();
+        assert_eq!(result["active_pane"], live);
+        assert_eq!(calls, ["client.render", "pane.close", "client.render"]);
+    }
+    #[test]
+    fn unrelated_errors_cannot_be_disguised_as_a_stale_close() {
+        for code in ["ACCESS_DENIED", "NOT_ATTACHED", "VERSION"] {
+            let mut count = 0;
+            let result = client_call("client.render", json!({}), |_, _| {
+                count += 1;
+                match count {
+                    1 => Ok(mixed(&id("pane"), &id("pane"))),
+                    2 => Err(io::Error::other(
+                        json!({"code":code,"message":"STALE_ID appears only in text"}).to_string(),
+                    )),
+                    _ => panic!("Failure must propagate before another request"),
+                }
+            })
+            .unwrap_err();
+            assert_eq!(
+                serde_json::from_str::<Value>(&result.to_string()).unwrap()["code"],
+                code
+            );
+            assert_eq!(count, 2);
+        }
+    }
+    #[test]
+    fn final_session_and_restored_history_are_not_closed() {
+        let dead = id("pane");
+        let live = id("pane");
+        for frame in [
+            json!({"panes":[{"id":dead,"ended":true,"restored":false}]}),
+            json!({"panes":[{"id":dead,"ended":true,"restored":true},{"id":live,"ended":false}]}),
+        ] {
+            let mut count = 0;
+            let result = client_call("client.render", json!({}), |method, _| {
+                count += 1;
+                assert_eq!(method, "client.render");
+                assert_eq!(count, 1);
+                Ok(frame.clone())
+            })
+            .unwrap();
+            assert_eq!(result, frame);
+        }
+    }
 }

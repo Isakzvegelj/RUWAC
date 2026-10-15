@@ -6,6 +6,7 @@ receipts and original reports are archived privately outside Git.
 
 | Area | Result | Scope |
 | --- | --- | --- |
+| Split-pane exit collapse | PASS | Twelve real PTY/native GTK groups against current and isolated older daemons: two concurrent TUIs, GTK-only cases, full viewport, repaired focus, exact input bytes, nested survivors and attachment after exit. Completed split history follows ordinary pane-close semantics; final-session and restored history remain inspectable. |
 | Terminal shell startup and exit | PASS | Real PTYs, native GTK and an isolated older daemon: explicit login-shell argv in new tabs/windows/splits, real Bash profile/rc, live-window fallback, last-view closure and retained ended history |
 | GTK Ctrl+A routing | PASS | Real tmux configured with Ctrl+A receives a single prefix; local RUWAC GTK prefix is Ctrl+Alt+A; CLI prefix remains Ctrl+A |
 | CLI status controls | PASS | Actual bottom-row SGR clicks select windows; lowercase horizontal and vertical split shortcuts create persistent panes; nine CLI regression groups |
@@ -48,6 +49,7 @@ receipts and original reports are archived privately outside Git.
 | Upstream Fedora testing RPM payloads and private transactions | PASS | Actual separate core/desktop packages, executable versions, launcher/notices and prior-release upgrade/removal; private RPM database uses host libraries and --nodeps |
 | Clean Fedora desktop DNF install/upgrade/rollback/remove | PASS | Fresh pinned Fedora 44 RAM filesystem, actual published RPMs, real dependency resolution without --nodeps; daemon, PTY child and generated private configuration survive |
 | RPM signing/repository and complete binary security qualification | BLOCKED | Workflow provenance is distinct from a signed Fedora repository; desktop RSA advisory remains open |
+| Desktop rustls security patch | UPDATED | Lockfile pins upstream-patched 0.23.46 for RUSTSEC-2026-0346 through RUSTSEC-2026-0349; authenticated TLS, clipboard and certificate regressions are mandatory release gates. The independent RSA finding is not suppressed. |
 | Desktop RSA dependency advisory | FAIL | RUSTSEC-2023-0071 remains unsuppressed |
 
 These results describe the published implementation baseline. In-progress codec

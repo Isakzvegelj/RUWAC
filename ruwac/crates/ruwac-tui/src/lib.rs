@@ -239,7 +239,7 @@ fn dimensions() -> (u16, u16) {
     (rows.saturating_sub(1).clamp(4, 100), cols.clamp(10, 200))
 }
 
-fn call(s: &mut UnixStream, m: &str, v: Value) -> io::Result<Value> {
+fn raw_call(s: &mut UnixStream, m: &str, v: Value) -> io::Result<Value> {
     let sent = request(m, v);
     write_frame(s, &sent)?;
     let r = read_frame(s)?;
@@ -249,7 +249,10 @@ fn call(s: &mut UnixStream, m: &str, v: Value) -> io::Result<Value> {
     if let Some(e) = r.get("error") {
         return Err(io::Error::other(e.to_string()));
     }
-    let mut result = r["result"].clone();
+    Ok(r["result"].clone())
+}
+fn call(s: &mut UnixStream, m: &str, v: Value) -> io::Result<Value> {
+    let mut result = ruwac_protocol::client_call(m, v, |m, v| raw_call(s, m, v))?;
     if m == "client.render" && result["unchanged"] != true && result.get("session_name").is_none() {
         if let Ok(sessions) = call(s, "session.list", json!({})) {
             if let Some(session) = sessions

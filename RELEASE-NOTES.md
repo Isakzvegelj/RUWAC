@@ -1,11 +1,7 @@
-# RUWAC terminal usability and connection controls
+# RUWAC split exit and TLS security fixes
 
-GTK terminals pass Ctrl+A directly to applications; Ctrl+Alt+A opens local RUWAC commands. New windows and splits explicitly use the login shell even with an older running daemon. Existing shells retain their original startup flags.
+Exiting a shell in a split now closes that completed pane and expands the surviving layout. CLI and GTK share the same policy and use the existing authenticated pane-close operation, including with older running daemons. Surviving shell processes and concurrent attachments remain running. A closed split has ordinary pane-close history semantics; the final ended session and restored history remain inspectable.
 
-Live clients close when the last shell exits; ended history remains available. CLI window labels accept mouse clicks, and lowercase s / vertical-bar split commands are supported. GTK uses its full allocated terminal height and up to 200 columns; unmapped tabs wait before attaching.
+The desktop lockfile updates rustls to 0.23.46, the upstream patch for RUSTSEC-2026-0346 through RUSTSEC-2026-0349. The unrelated RSA advisory remains unsuppressed. This remains a testing distribution with separate external Windows/Fedora and physical-input acceptance gates.
 
-RDP reconnects retain decoded desktop dimensions. Right-click a tab for connection/display controls. Concise tab titles, status icons and a centered reconnect action clarify connection state. These changes require native and authenticated loopback acceptance; external server window placement remains a separate gate.
-
-The native About / Support dialog includes version/license information and a QR link to the dedicated RUWAC support page. No payment secrets are included.
-
-Installing updates leaves the running process unchanged. GUI restart still interrupts RDP transports; persistent terminals survive. Seamless RDP process handoff is not implemented. Existing dependency advisories and physical-input/external-host acceptance limitations remain unsuppressed.
+Installing an update leaves running windows unchanged. Restarting the frontend still reconnects its RDP transports; persistent terminal processes survive. The release does not claim seamless RDP process handoff.

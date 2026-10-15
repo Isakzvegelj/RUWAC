@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## v0.4.3 — 2026-10-15 — Stable source release
+
+- Collapse completed split panes in CLI and GTK through the established pane-close operation, repairing focus and expanding the surviving layout without restarting shells or daemons. Keep final-session and restored history inspectable.
+- Update the desktop TLS lockfile to rustls 0.23.46 for RUSTSEC-2026-0346 through RUSTSEC-2026-0349. Keep the independent RSA advisory unsuppressed.
+
+
 ## v0.4.2 — 2026-10-15 — Stable source release
 
 - Forward plain Ctrl+A to GTK terminal applications; use Ctrl+Alt+A for local multiplexer commands. Load the login shell explicitly in new GUI windows and splits with older daemons.

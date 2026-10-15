@@ -60,7 +60,7 @@ impl Rpc {
         }
         Ok(Self(s))
     }
-    pub fn call(&mut self, method: &str, params: Value) -> io::Result<Value> {
+    fn request(&mut self, method: &str, params: Value) -> io::Result<Value> {
         let r = request(method, params);
         write_frame(&mut self.0, &r)?;
         let v = read_frame(&mut self.0)?;
@@ -70,7 +70,10 @@ impl Rpc {
         if let Some(e) = v.get("error") {
             return Err(io::Error::other(e.to_string()));
         }
-        let mut result = v["result"].clone();
+        Ok(v["result"].clone())
+    }
+    pub fn call(&mut self, method: &str, params: Value) -> io::Result<Value> {
+        let mut result = ruwac_protocol::client_call(method, params, |m, v| self.request(m, v))?;
         if method == "client.render"
             && result["unchanged"] != true
             && result.get("session_name").is_none()
