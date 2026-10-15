@@ -249,6 +249,51 @@ def unwind_index_data(content, address, frame_address, frames, executable):
     return bytearray(content[:4]) + bytearray(len(content) - 4)
 
 
+def indexed_branch_slots(data, records):
+    """Recognize a bounded x86_64 relative branch table emitted by LLVM.
+
+    This deliberately handles only one fully checked instruction form. Unknown
+    forms remain ordinary scanned data. The index is checked as index-1 < count;
+    every slot, including the unused zero slot, must target executable bytes.
+    No text/section-name allowlist or private matching value is involved.
+    """
+    executable = [(s[3], s[3] + s[5]) for s in records if s[2] & 4]
+    slots = set()
+    # lea -1(%rcx),%rax; cmp $count,%rax; jae fallback;
+    # lea table(%rip),%rax; movslq (%rax,%rcx,4),%rcx;
+    # add %rax,%rcx; jmp *%rcx
+    pattern = re.compile(rb'\x48\x8d\x41\xff\x48\x83\xf8(.)\x0f\x83(.{4})'
+                         rb'\x48\x8d\x05(.{4})\x48\x63\x0c\x88\x48\x01\xc1\xff\xe1', re.S)
+    for section in records:
+        if not section[2] & 4:
+            continue
+        start, size = section[4:6]
+        if start + size > len(data):
+            raise ValueError('Executable section exceeds artifact bounds')
+        for match in pattern.finditer(data[start:start + size]):
+            count = match[1][0]
+            if not 1 <= count <= 127:  # cmp imm8 is sign extended.
+                continue
+            pc = section[3] + match.start()
+            fallback = pc + 14 + struct.unpack('<i', match[2])[0]
+            table = pc + 21 + struct.unpack('<i', match[3])[0]
+            length = (count + 1) * 4
+            candidates = [s for s in records if s[1] == 1 and s[2] & 2
+                          and not s[2] & 5 and s[3] <= table
+                          and table + length <= s[3] + s[5]]
+            if len(candidates) != 1 or not any(a <= fallback < b for a, b in executable):
+                continue
+            source = candidates[0]
+            offset = source[4] + table - source[3]
+            if offset + length > len(data):
+                raise ValueError('Indexed branch table exceeds artifact bounds')
+            targets = [table + struct.unpack_from('<i', data, offset + i * 4)[0]
+                       for i in range(count + 1)]
+            if all(any(a <= target < b for a, b in executable) for target in targets):
+                slots.update(range(table, table + length, 4))
+    return slots
+
+
 def binary_data(path):
     """Read bounded non-executable ELF sections, retaining constants and symbols."""
     data = path.read_bytes()
@@ -259,6 +304,7 @@ def binary_data(path):
     if header[2] != 62 or width != 64 or not 0 < count < 4096 or offset + width * count > len(data):
         raise ValueError('Invalid x86_64 ELF section table')
     records = [struct.unpack_from('<IIQQQQIIQQ', data, offset + index * width) for index in range(count)]
+    branch_slots = indexed_branch_slots(data, records)
     relocations = set()
     for section in records:
         if section[1] not in {4, 9}:  # SHT_RELA / SHT_REL: ABI numeric records.
@@ -302,6 +348,10 @@ def binary_data(path):
                 if address <= pointer and pointer + 8 <= address + size:
                     at = pointer - address
                     content[at:at + 8] = bytes(8)
+            for pointer in branch_slots:
+                if address <= pointer and pointer + 4 <= address + size:
+                    at = pointer - address
+                    content[at:at + 4] = bytes(4)
         sections.append(bytes(content))
     return data, sections
 

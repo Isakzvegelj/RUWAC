@@ -102,39 +102,15 @@ fn argv(
         "direct" => return ssh_command(profile, format!("exec bash -lic {}", quote(command))),
         _ => return Err("Unknown remote session backend".into()),
     }
-    let cli = json!([binary]).to_string();
-    let socket = if socket.is_empty() {
-        vec![]
-    } else {
-        vec!["--socket", socket]
-    };
     let script = format!(
-        r#"import json,os,shutil,subprocess,sys
-cli=json.loads({cli:?})+json.loads({socket:?})
-exe=shutil.which(cli[0])
-if not exe and cli[0]=='ruwac':
- candidate=os.path.expanduser('~/.local/bin/ruwac')
- if os.path.isfile(candidate) and os.access(candidate,os.X_OK):exe=candidate
-if not exe:sys.exit('Install the RUWAC CLI on this machine before launching a persistent agent.')
-cli[0]=exe
-subprocess.run(cli+['start'],check=True,stdout=subprocess.DEVNULL)
-params={{'name':{name:?},'argv':['bash','-lic',{command:?}]}}
-reply=json.loads(subprocess.check_output(cli+['rpc','session.create','--params',json.dumps(params)],text=True))
-sid=reply.get('result',{{}}).get('session')
-if not isinstance(sid,str) or not sid.startswith('session_'):sys.exit('Remote RUWAC session creation failed.')
-print('Persistent '+{name:?}+' session: '+sid,flush=True)
-print('Closing this view detaches; the remote agent keeps running.',flush=True)
-os.execv(exe,cli+['attach','--session',sid])
-"#,
-        socket = serde_json::to_string(&socket).unwrap()
+        "python3 -c {} {} {} {} {}",
+        quote(include_str!("../../../scripts/remote-agent.py")),
+        quote(binary),
+        quote(socket),
+        quote(name),
+        quote(command)
     );
-    ssh_command(
-        profile,
-        format!(
-            "bash -lc {}",
-            quote(&format!("python3 -c {}", quote(&script)))
-        ),
-    )
+    ssh_command(profile, format!("bash -lc {}", quote(&script)))
 }
 
 /// Called only by explicit machine actions. No remote probe or agent starts on list refresh.
@@ -325,11 +301,12 @@ mod tests {
     fn bootstrap_survives_shell_quoting_and_detaches_without_agent_input() {
         let root = std::env::temp_dir().join(ruwac_protocol::id("launch"));
         fs::create_dir(&root).unwrap();
+        fs::set_permissions(&root, fs::Permissions::from_mode(0o700)).unwrap();
         let binary = root.join("remote ' executable");
         let receipt = root.join("receipt.json");
         // A disposable remote CLI process verifies the real shell/Python
         // boundary. It never starts Codex, Claude or an owner daemon.
-        fs::write(&binary,format!("#!/usr/bin/python3\nimport json,sys\nfrom pathlib import Path\na=sys.argv\nif 'session.create' in a:\n Path({:?}).write_text(a[a.index('--params')+1])\n print(json.dumps({{'result':{{'session':'session_generated'}}}}))\n",receipt.to_str().unwrap())).unwrap();
+        fs::write(&binary,format!("#!/usr/bin/python3\nimport json,sys\nfrom pathlib import Path\na=sys.argv\nif 'session.list' in a:\n print(json.dumps({{'result':[]}}))\nif 'session.create' in a:\n Path({:?}).write_text(a[a.index('--params')+1])\n print(json.dumps({{'result':{{'session':'session_generated'}}}}))\n",receipt.to_str().unwrap())).unwrap();
         fs::set_permissions(&binary, fs::Permissions::from_mode(0o700)).unwrap();
         let p = profiles::Profile {
             id: "endpoint_generated".into(),
@@ -353,7 +330,7 @@ mod tests {
                 &p,
                 agent,
                 binary.to_str().unwrap(),
-                "/generated/socket ' quote",
+                root.join("socket ' quote").to_str().unwrap(),
             )
             .unwrap();
             assert!(!args.join(" ").contains(&p.secret_reference));

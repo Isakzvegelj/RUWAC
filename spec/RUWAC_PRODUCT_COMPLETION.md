@@ -248,3 +248,23 @@ ordinary TUI without a positional message. Process-boundary tests verify both
 variants, user-command precedence, unavailable Codex and quoted RUWAC/socket names.
 Read-only help checks on authorized systems do not create interactive agent threads.
 The complete external interactive launcher remains a separate acceptance gate.
+
+
+## Persistent remote agent reattachment
+
+The RUWAC backend in the machine agent launcher reuses the exact named `codex`
+or `claude` session. A daemon-bound private launch lock serializes concurrent
+SSH launches, including on older running engines; no protocol upgrade or restart
+is required. Different agents use separate sessions. A changed command preference
+applies only when creating a new session and is never typed into an existing one.
+Ended sessions remain available for inspection and are not silently restarted.
+Duplicate names from earlier launches are refused: use `ruwac -ls` and
+`ruwac attach --session session_ID` to choose explicitly.
+
+`ruwac/tests/integration/agent_session.py` executes real authenticated loopback
+OpenSSH and PTYs with generated keys and a disposable agent process. It covers
+concurrent creation, shared input, detach and reattach with the same process,
+separate agent sessions, ended sessions, duplicate names and unsafe lock paths.
+This qualifies the transport and persistence, not a provider login or external
+agent account. Private locks contain no commands or credentials; malformed or
+nonprivate lock paths are refused.

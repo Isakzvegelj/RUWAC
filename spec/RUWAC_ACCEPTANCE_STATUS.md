@@ -14,6 +14,7 @@ receipts and original reports are archived privately outside Git.
 | Screen CLI aliases and readable session list | PASS | Eight real PTY groups including full-width bottom status through normal and beyond-limit physical resizes, detached/shared sessions, automation title, control-key navigation and kill cancellation; full GNU Screen language remains unsupported |
 | Desktop appearance and font metrics | PASS | Six actual rendered background pixel checks, saved schema-2 preferences and PTY dimensions changed by font size; unavailable fonts fall back to Monospace |
 | Remote agent launch configuration | PASS | Native SSH profile saves commands/backend; generated command/quoting tests; no real agent account or external remote installation claimed |
+| Persistent remote agent session reuse | PASS | Seven actual loopback SSH/PTY groups: concurrent creation, shared input, detach, same-process reattach, independent agents, ended sessions, duplicate/unsafe-lock refusals; generated agent only |
 | Remote CLI installation and external agent launch | BLOCKED | Explicit installer/launcher implemented; external host prerequisites and agent login remain separate acceptance |
 | Weston popup-after-resize compatibility | BLOCKED | Weston 15.0.1 exited in popup positioning on two owned displays; Mutter qualification is recorded separately; no physical desktop pass inferred |
 | Strict warnings-as-errors desktop lint | BLOCKED | Local Clippy component unavailable; existing GTK deprecation/dead-code warnings remain; ordinary hosted lint is a separate quality gate |

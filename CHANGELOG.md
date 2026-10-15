@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## v0.4.1 — 2026-10-15 — Stable source release
+
+- Validate compiler-generated bounded relative branch tables during artifact privacy scans; retain rejection of private literals and unknown instruction forms.
+- Reattach remote Codex/Claude buttons to their existing RUWAC sessions, serialize simultaneous SSH launches, preserve the running command and refuse ambiguous duplicate names.
+
 ## v0.4.0 — 2026-10-15 — Stable source release
 
 - Deliver the compact desktop, scrollable machine library, remote-agent launch configuration, dynamic RDP defaults, fullscreen/local-focus shortcuts and visible CLI status bar as the minor release.

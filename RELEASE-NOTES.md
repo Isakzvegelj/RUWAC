@@ -1,5 +1,7 @@
 # RUWAC compact desktop and machine workspaces
 
+Remote Codex/Claude buttons now share existing named RUWAC sessions. Concurrent SSH launches create one session; reconnects preserve its process and do not run changed command preferences. Existing duplicate names are refused with CLI recovery instructions. Seven actual authenticated loopback SSH/PTY tests use a generated agent process; provider login and external-host agent execution remain separate acceptance gates.
+
 This batch introduces a compact single-row header, contextual Controls with optional
 docking, six live color schemes and configurable terminal font/spacing. Machine
 profiles are scrollable without pagination and groups remember their collapse state.
@@ -17,3 +19,5 @@ Known limitation: Weston 15.0.1 popup-after-resize compatibility remains unquali
 
 The CLI status bar fills the bottom row and remains there across large-terminal
 resizes, showing session/window identity before shortcut hints.
+
+Artifact privacy scanning now recognizes one validated compiler-generated relative branch-table form. All table targets must resolve into executable sections; adjacent literals, unchecked instruction forms and invalid targets retain the ordinary scan. Twenty-six synthetic archive/privacy tests pass. No private matching values enter source or reports.

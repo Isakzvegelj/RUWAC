@@ -107,6 +107,8 @@ jobs:
           fixture_uid="$(id -u generated-ssh-test)"
           install -d -m 700 -o generated-ssh-test -g generated-ssh-test "/run/user/$fixture_uid" "$RUNNER_TEMP/ssh-jump-evidence"
           runuser -u generated-ssh-test -- python3 ruwac/tests/integration/ssh_jump.py --driver "$CARGO_TARGET_DIR/debug/examples/files-fixture" --evidence "$RUNNER_TEMP/ssh-jump-evidence"
+          cargo build --locked --manifest-path ruwac/Cargo.toml
+          runuser -u generated-ssh-test -- python3 ruwac/tests/integration/agent_session.py --binary "$CARGO_TARGET_DIR/debug/ruwac" --evidence "$RUNNER_TEMP/ssh-jump-evidence" --run-owned-fixture
       - name: Locked declarations and independent headless graph
         run: python3 scripts/dependency-check.py --output "$RUNNER_TEMP/dependencies.json"
       - name: Real headless protocol and persistence fixtures

@@ -214,6 +214,44 @@ class Bundles(unittest.TestCase):
         checker = runpy.run_path(str(ROOT / 'scripts/privacy-check.py'))
         self.assertTrue(bundles.artifact_findings(self.relocation_elf(b'toy\x00'), checker, ['toy'])[0])
 
+    def branch_elf(self, literal=b'generated fixture', bad_target=False, unchecked=False):
+        # The generated relative address happens to encode a short identifier.
+        table, dispatch = 0x3000, 0x1000
+        target = table + int.from_bytes(b'toy\0', 'little')
+        code = (b'\x48\x8d\x41\xff\x48\x83\xf8\x02\x0f\x83'
+                + struct.pack('<i', 0) + b'\x48\x8d\x05'
+                + struct.pack('<i', table - dispatch - 21)
+                + b'\x48\x63\x0c\x88\x48\x01\xc1\xff\xe1')
+        if unchecked:
+            code = b'\x90' + code[1:]
+        numbers = b'toy\0' * 3
+        if bad_target:
+            numbers = numbers[:8] + struct.pack('<i', -1)
+        payloads = [code, b'\x90\xc3', numbers + literal]
+        header = struct.pack('<16sHHIQQQIHHHHHH', b'\x7fELF\x02\x01' + bytes(10),
+                             3, 62, 1, 0, 0, 64, 0, 64, 0, 0, 64, 4, 0)
+        records = bytes(64)
+        offset = 64 + 4 * 64
+        for address, flags, content in zip([dispatch, target, table], [6, 6, 2], payloads):
+            records += struct.pack('<IIQQQQIIQQ', 0, 1, flags, address, offset, len(content), 0, 0, 1, 0)
+            offset += len(content)
+        path = self.root / 'generated-branch-elf'
+        path.write_bytes(header + records + b''.join(payloads))
+        return path
+
+    def test_validated_relative_branch_addresses_are_numeric(self):
+        checker = runpy.run_path(str(ROOT / 'scripts/privacy-check.py'))
+        self.assertFalse(bundles.artifact_findings(self.branch_elf(), checker, ['toy'])[0])
+
+    def test_private_literal_beside_branch_table_is_rejected(self):
+        checker = runpy.run_path(str(ROOT / 'scripts/privacy-check.py'))
+        self.assertTrue(bundles.artifact_findings(self.branch_elf(b'toy\0'), checker, ['toy'])[0])
+
+    def test_unchecked_or_invalid_branch_targets_retain_full_scan(self):
+        checker = runpy.run_path(str(ROOT / 'scripts/privacy-check.py'))
+        for options in [{'unchecked': True}, {'bad_target': True}]:
+            self.assertTrue(bundles.artifact_findings(self.branch_elf(**options), checker, ['toy'])[0])
+
     def unwind_elf(self, literal=b'generated fixture', invalid_range=False):
         path = self.root / 'unwind-elf'
         cie_body = struct.pack('<I', 0) + b'\x01zR\x00\x01\x78\x10\x01\x1b\x0c\x07\x08'
