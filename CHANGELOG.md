@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## v0.4.5 — 2026-10-16 — Stable source release
+
+- Use advertised terminal size limits up to 512 rows, 1024 columns and 262144 cells, with explicit bounded large-render replies and versioned checkpoint support. Preserve running older daemons.
+- Keep clipped Unicode window labels clickable, reveal the selected window and navigate hidden windows through status-bar arrows.
+- Avoid redundant large-frame copies and repeated blank-glyph layout work in the native terminal renderer.
+
 ## v0.4.4 — 2026-10-16 — Stable source release
 
 - Load the selected login shell for CLI-created sessions, Screen control aliases and TUI windows/splits, including with preserved older daemons. Resolve remote defaults at the authenticated SSH endpoint; leave custom raw RPC argv literal.

@@ -1,5 +1,5 @@
 mod copy;
-use ruwac_protocol::{MAX_TEXT, read_frame, request, write_frame};
+use ruwac_protocol::{MAX_TEXT, request, write_frame};
 use serde_json::{Value, json};
 use std::{
     io::{self, Read, Write},
@@ -234,22 +234,34 @@ fn terminal_dimensions() -> (u16, u16) {
         )
     }
 }
-fn dimensions() -> (u16, u16) {
+fn dimensions(limits: ruwac_protocol::TerminalLimits) -> (u16, u16) {
     let (rows, cols) = terminal_dimensions();
-    (rows.saturating_sub(1).clamp(4, 100), cols.clamp(10, 200))
+    limits.clamp(rows.saturating_sub(1), cols)
 }
 
 fn raw_call(s: &mut UnixStream, m: &str, v: Value) -> io::Result<Value> {
     let sent = request(m, v);
     write_frame(s, &sent)?;
-    let r = read_frame(s)?;
+    s.set_read_timeout(Some(Duration::from_secs(if m == "client.render" {
+        15
+    } else {
+        5
+    })))?;
+    let mut r = ruwac_protocol::read_frame_with_limit(
+        s,
+        if m == "client.render" {
+            ruwac_protocol::MAX_RENDER_FRAME
+        } else {
+            ruwac_protocol::MAX_FRAME
+        },
+    )?;
     if r["version"] != 0 || r["id"] != sent.id {
         return Err(io::Error::other("Protocol/correlation rejected"));
     }
     if let Some(e) = r.get("error") {
         return Err(io::Error::other(e.to_string()));
     }
-    Ok(r["result"].clone())
+    Ok(r["result"].take())
 }
 fn call(s: &mut UnixStream, m: &str, mut v: Value) -> io::Result<Value> {
     if matches!(m, "session.create" | "window.create" | "pane.create") && v.get("argv").is_none() {
@@ -309,77 +321,154 @@ fn safe(s: &str) -> String {
 fn window_identity(v: &Value) -> String {
     format!(
         "{} · {}:{}",
-        safe(v["session_name"].as_str().unwrap_or("session")),
+        elide(&safe(v["session_name"].as_str().unwrap_or("session")), 48),
         v["window_index"].as_u64().unwrap_or(0),
-        safe(v["name"].as_str().unwrap_or("shell"))
+        elide(&safe(v["name"].as_str().unwrap_or("shell")), 96)
     )
 }
-fn status_line(v: &Value, size: (u16, u16), status: &str) -> String {
-    let windows = v["windows"]
-        .as_array()
-        .map(|rows| {
-            rows.iter()
-                .map(|w| {
-                    format!(
-                        "{}:{}{}",
-                        w["index"].as_u64().unwrap_or(0),
-                        safe(w["name"].as_str().unwrap_or("shell")),
-                        if w["id"] == v["window"] { "*" } else { "" }
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join(" ")
-        })
-        .unwrap_or_default();
-    let rows = v["rows"].as_u64().unwrap_or(size.0 as u64);
-    let cols = v["cols"].as_u64().unwrap_or(size.1 as u64);
-    let shared = if rows != size.0 as u64 || cols != size.1 as u64 {
-        format!(" · shared PTY {cols}×{rows}; view {}×{}", size.1, size.0)
+struct StatusLayout {
+    text: String,
+    hits: Vec<(usize, usize, String)>,
+}
+fn elide(text: &str, columns: usize) -> String {
+    if copy::width(text) <= columns {
+        text.into()
+    } else if columns == 0 {
+        String::new()
+    } else {
+        format!("{}…", copy::clip(text, columns - 1))
+    }
+}
+fn status_layout(v: &Value, size: (u16, u16), status: &str) -> StatusLayout {
+    let columns = size.1 as usize;
+    let rows = v["windows"].as_array().map(Vec::as_slice).unwrap_or(&[]);
+    let shared = if v["rows"].as_u64().unwrap_or(size.0 as u64) != size.0 as u64
+        || v["cols"].as_u64().unwrap_or(size.1 as u64) != size.1 as u64
+    {
+        format!(
+            " · shared PTY {}×{}; view {}×{}",
+            v["cols"], v["rows"], size.1, size.0
+        )
     } else {
         String::new()
     };
-    let line = if status.trim().is_empty() {
-        format!("RUWAC {}{} · {}", window_identity(v), shared, windows)
+    let identity = window_identity(v);
+    let prefix_limit = if rows.is_empty() {
+        columns
     } else {
-        format!(
-            "RUWAC {} · {}{} · {}",
-            copy::clip(&window_identity(v), (size.1 as usize / 3).max(1)),
-            safe(status),
-            shared,
-            windows
-        )
+        (columns * 2 / 3).min(columns.saturating_sub(10))
     };
-    copy::clip(&line, size.1 as usize)
-}
-
-fn status_window_at(v: &Value, size: (u16, u16), status: &str, column: usize) -> Option<String> {
-    let rows = v["windows"].as_array()?;
-    let labels: Vec<String> = rows
+    let prefix = if status.trim().is_empty() {
+        format!("RUWAC {identity}{shared}")
+    } else {
+        // Preserve the actual notice before spending the remaining prefix
+        // space on identity; the dedicated window list still shows selection.
+        let notice = elide(&safe(status), prefix_limit.saturating_sub(15));
+        let identity = elide(
+            &identity,
+            prefix_limit.saturating_sub(9 + copy::width(&notice)),
+        );
+        format!("RUWAC {identity} · {notice}{shared}")
+    };
+    let prefix = elide(&prefix, prefix_limit);
+    let mut layout = StatusLayout {
+        text: prefix,
+        hits: Vec::new(),
+    };
+    if rows.is_empty() || columns.saturating_sub(copy::width(&layout.text)) < 4 {
+        return layout;
+    }
+    layout.text.push_str(" · ");
+    let base = copy::width(&layout.text);
+    let available = columns.saturating_sub(base);
+    let cap = (available / rows.len().min(4)).max(1);
+    let active = rows
         .iter()
-        .map(|w| {
+        .position(|r| r["id"] == v["window"])
+        .unwrap_or(0);
+    let labels: Vec<_> = rows
+        .iter()
+        .map(|r| {
+            let selected = r["id"] == v["window"];
+            let raw = format!(
+                "{}:{}",
+                r["index"].as_u64().unwrap_or(0),
+                safe(r["name"].as_str().unwrap_or("shell"))
+            );
             format!(
-                "{}:{}{}",
-                w["index"].as_u64().unwrap_or(0),
-                safe(w["name"].as_str().unwrap_or("shell")),
-                if w["id"] == v["window"] { "*" } else { "" }
+                "{}{}",
+                elide(&raw, cap.saturating_sub(usize::from(selected))),
+                if selected { "*" } else { "" }
             )
         })
         .collect();
-    let joined = labels.join(" ");
-    if joined.is_empty() {
-        return None;
-    }
-    let line = status_line(v, size, status);
-    let at = line.rfind(&joined)?;
-    let mut left = copy::width(&line[..at]);
-    for (row, label) in rows.iter().zip(labels) {
-        let right = left + copy::width(&label);
-        if left <= column && column < right {
-            return row["id"].as_str().map(str::to_owned);
+    let span = |start: usize, end: usize| {
+        labels[start..=end]
+            .iter()
+            .map(|l| copy::width(l))
+            .sum::<usize>()
+            + end
+            - start
+    };
+    let mut start = 0;
+    if span(0, rows.len() - 1) > available {
+        start = active;
+        while start > 0
+            && span(start - 1, active)
+                + usize::from(start > 1) * 2
+                + usize::from(active + 1 < rows.len()) * 2
+                <= available
+        {
+            start -= 1;
         }
-        left = right + 1;
     }
-    None
+    let mut used = 0;
+    if start > 0 {
+        layout.text.push_str("‹ ");
+        if let Some(id) = rows[start - 1]["id"].as_str() {
+            layout.hits.push((base, base + 2, id.into()));
+        }
+        used = 2;
+    }
+    let mut i = start;
+    while i < rows.len() {
+        let space = usize::from(i > start);
+        let reserve = usize::from(i + 1 < rows.len()) * 2;
+        let room = available.saturating_sub(used + space + reserve);
+        if room == 0 {
+            break;
+        }
+        if space > 0 {
+            layout.text.push(' ');
+            used += 1;
+        }
+        let label = elide(&labels[i], room);
+        let width = copy::width(&label);
+        if let Some(id) = rows[i]["id"].as_str() {
+            layout
+                .hits
+                .push((base + used, base + used + width, id.into()));
+        }
+        layout.text.push_str(&label);
+        used += width;
+        i += 1;
+    }
+    if i < rows.len() && used + 2 <= available {
+        layout.text.push_str(" ›");
+        if let Some(id) = rows[i]["id"].as_str() {
+            layout.hits.push((base + used, base + used + 2, id.into()));
+        }
+    }
+    layout
+}
+fn status_line(v: &Value, size: (u16, u16), status: &str) -> String {
+    status_layout(v, size, status).text
+}
+fn status_window_at(v: &Value, size: (u16, u16), status: &str, column: usize) -> Option<String> {
+    status_layout(v, size, status)
+        .hits
+        .into_iter()
+        .find_map(|(left, right, id)| (left <= column && column < right).then_some(id))
 }
 fn status_mouse(
     v: &Value,
@@ -1019,9 +1108,11 @@ pub fn attach(socket: &Path, session: &str) -> io::Result<()> {
         }
         ancestor = parent;
     }
+    let limits =
+        ruwac_protocol::TerminalLimits::advertised(&call(&mut s, "capabilities", json!({}))?);
     let _raw = Raw::enter()?;
     let mut screen_size = terminal_dimensions();
-    let mut size = dimensions();
+    let mut size = dimensions(limits);
     call(
         &mut s,
         "session.attach",
@@ -1514,7 +1605,7 @@ pub fn attach(socket: &Path, session: &str) -> io::Result<()> {
             screen_size = new_screen_size;
             dirty = true;
         }
-        let newsize = dimensions();
+        let newsize = dimensions(limits);
         if newsize != size {
             size = newsize;
             call(
@@ -1613,6 +1704,49 @@ mod tests {
 mod display_identity_tests {
     use super::*;
     #[test]
+    fn long_unicode_window_labels_have_exact_visible_click_ranges() {
+        let rows:Vec<_>=(0..18).map(|n|json!({"index":n,"id":format!("window-{n}"),"name":"界é👩‍💻-long-window-label".repeat(8)})).collect();
+        for active in [0, 7, 17] {
+            let v = json!({"session_name":"long session title".repeat(8),"name":"active title".repeat(8),"window_index":active,"window":format!("window-{active}"),"windows":rows,"rows":40,"cols":120});
+            for columns in [20, 37, 80, 240] {
+                let layout = status_layout(
+                    &v,
+                    (40, columns),
+                    "prefix · an arbitrarily long diagnostic "
+                        .repeat(12)
+                        .as_str(),
+                );
+                assert!(copy::width(&layout.text) <= columns as usize);
+                assert!(
+                    layout
+                        .hits
+                        .iter()
+                        .any(|(_, _, id)| id == &format!("window-{active}")),
+                    "active window must stay visible: {}",
+                    layout.text
+                );
+                for (left, right, id) in &layout.hits {
+                    assert!(left < right && *right <= columns as usize);
+                    for col in *left..*right {
+                        assert_eq!(
+                            status_window_at(
+                                &v,
+                                (40, columns),
+                                "prefix · an arbitrarily long diagnostic "
+                                    .repeat(12)
+                                    .as_str(),
+                                col
+                            )
+                            .as_deref(),
+                            Some(id.as_str())
+                        );
+                    }
+                }
+                assert!(status_window_at(&v, (40, columns), "", columns as usize).is_none());
+            }
+        }
+    }
+    #[test]
     fn colors_preserve_native_ansi_bright_indexed_and_rgb_semantics() {
         assert_eq!(sgr(&json!(1), true), "31");
         assert_eq!(sgr(&json!(9), true), "91");
@@ -1635,6 +1769,12 @@ mod display_identity_tests {
         assert!(!window_identity(&v).contains('\u{7}'));
         assert!(
             status_line(&v, (23, 80), "Window choice cancelled")
+                .contains("Window choice cancelled")
+        );
+        let mut renamed = v.clone();
+        renamed["name"] = json!("Unicode ž ; $HOME");
+        assert!(
+            status_line(&renamed, (23, 80), "^A · Window choice cancelled")
                 .contains("Window choice cancelled")
         );
     }

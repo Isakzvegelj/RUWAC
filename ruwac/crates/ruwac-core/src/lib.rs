@@ -275,6 +275,15 @@ fn num(v: &Value, k: &str, default: u64, min: u64, max: u64) -> Result<u16> {
     }
     Ok(n as u16)
 }
+fn terminal_dimensions(v: &Value) -> Result<(u16, u16)> {
+    let limits = ruwac_protocol::TerminalLimits::CURRENT;
+    let rows = num(v, "rows", 23, 4, limits.rows as u64)?;
+    let cols = num(v, "cols", 80, 10, limits.cols as u64)?;
+    if !limits.valid(rows, cols) {
+        return Err(Error::new("LIMIT", "terminal grid exceeds the cell budget"));
+    }
+    Ok((rows, cols))
+}
 fn argv(v: &Value) -> Result<Vec<String>> {
     match v.get("argv") {
         None => ruwac_pty::shell::default_argv().map_err(|e| Error::new("INVALID_SHELL", e)),
@@ -653,7 +662,7 @@ impl State {
                 json!({"name":"ruwac","implementation":"spike","package":env!("CARGO_PKG_VERSION"),"protocol":0}),
             ),
             "capabilities" => Ok(
-                json!({"job_metadata":true,"job_metadata_no_argv":true,"structured_agent_state":false,"recovery":self.store.is_some(),"primary_buffer_history":true,"extended_terminal_styles":true,"kitty_keyboard_input":false,"history_checkpoints":"private canonical active and hidden primary tail, 50000 lines or 512 KiB per pane; processes restore ended","desktop_clipboard":false,"primary":false,"graphics":false,"image_attachment":true,"image_attachment_adapters":["codex draft path"],"image_attachment_submits":false,"ssh_transport":"authenticated OpenSSH through CLI --host","shared_focus":false,"independent_client_focus":true,"client_zoom":true,"atomic_paste":true,"max_paste_bytes":paste::MAX_BYTES,"pty_sizing":"minimum session dimensions and minimum visible pane size across attached clients","split":"persistent horizontal/vertical tree, sixteen panes","capture_limit":2000,"history_page_limit":500,"scrollback_default":50000,"max_text_bytes":ruwac_protocol::MAX_TEXT}),
+                json!({"terminal_size_limits":ruwac_protocol::TerminalLimits::CURRENT,"max_render_response_bytes":ruwac_protocol::MAX_RENDER_FRAME,"job_metadata":true,"job_metadata_no_argv":true,"structured_agent_state":false,"recovery":self.store.is_some(),"primary_buffer_history":true,"extended_terminal_styles":true,"kitty_keyboard_input":false,"history_checkpoints":"private canonical active and hidden primary tail, 50000 lines or 512 KiB per pane; processes restore ended","desktop_clipboard":false,"primary":false,"graphics":false,"image_attachment":true,"image_attachment_adapters":["codex draft path"],"image_attachment_submits":false,"ssh_transport":"authenticated OpenSSH through CLI --host","shared_focus":false,"independent_client_focus":true,"client_zoom":true,"atomic_paste":true,"max_paste_bytes":paste::MAX_BYTES,"pty_sizing":"minimum session dimensions and minimum visible pane size across attached clients","split":"persistent horizontal/vertical tree, sixteen panes","capture_limit":2000,"history_page_limit":500,"scrollback_default":50000,"max_text_bytes":ruwac_protocol::MAX_TEXT}),
             ),
             "schema" => Ok(schema()),
             "describe" => Ok(
@@ -670,8 +679,7 @@ impl State {
                 let s = id("session");
                 let name = text(v, "name")?;
                 checked_text(&name)?;
-                let rows = num(v, "rows", 23, 4, 100)?;
-                let cols = num(v, "cols", 80, 10, 200)?;
+                let (rows, cols) = terminal_dimensions(v)?;
                 self.sessions.insert(
                     s.clone(),
                     Session {
@@ -705,8 +713,7 @@ impl State {
                 if !self.sessions.contains_key(&s) {
                     return Err(Error::new("STALE_ID", "session does not exist"));
                 }
-                let rows = num(v, "rows", 23, 4, 100)?;
-                let cols = num(v, "cols", 80, 10, 200)?;
+                let (rows, cols) = terminal_dimensions(v)?;
                 if let Some(old) = self.clients.remove(client) {
                     self.layout(&old.session);
                 }
@@ -1163,8 +1170,7 @@ impl State {
                 Ok(json!({"queued":true}))
             }
             "client.resize" => {
-                let rows = num(v, "rows", 23, 4, 100)?;
-                let cols = num(v, "cols", 80, 10, 200)?;
+                let (rows, cols) = terminal_dimensions(v)?;
                 let c = self
                     .clients
                     .get_mut(client)
@@ -1301,7 +1307,7 @@ impl State {
     }
 }
 pub fn schema() -> Value {
-    json!({"protocol":0,"framing":"u32 big-endian byte length + UTF-8 JSON","max_frame_bytes":ruwac_protocol::MAX_FRAME,"methods":["job.list","job.query","agent.probe","health","version","capabilities","schema","describe","session.create","session.list","session.attach","session.detach","window.create","window.list","window.rename","window.select","window.cycle","window.previous","pane.create","pane.layout","pane.history","pane.history.freeze","pane.history.release","pane.close","pane.list","pane.select","pane.attachImage","pane.sendText","pane.sendKey","pane.capture","pane.wait","buffer.set","buffer.get","buffer.paste","client.resize","client.render","client.input","client.paste","events.subscribe","daemon.checkpoint","daemon.stop"],"targets":{"session":"session_ + 32 hex","window":"window_ + 32 hex","pane":"pane_ + 32 hex"},"request":{"version":0,"id":"JSON request correlation value","method":"method name","params":"object","idempotency_key":"optional 1..128 byte daemon-lifetime key"}})
+    json!({"protocol":0,"framing":"u32 big-endian byte length + UTF-8 JSON","max_frame_bytes":ruwac_protocol::MAX_FRAME,"max_render_response_bytes":ruwac_protocol::MAX_RENDER_FRAME,"terminal_size_limits":ruwac_protocol::TerminalLimits::CURRENT,"methods":["job.list","job.query","agent.probe","health","version","capabilities","schema","describe","session.create","session.list","session.attach","session.detach","window.create","window.list","window.rename","window.select","window.cycle","window.previous","pane.create","pane.layout","pane.history","pane.history.freeze","pane.history.release","pane.close","pane.list","pane.select","pane.attachImage","pane.sendText","pane.sendKey","pane.capture","pane.wait","buffer.set","buffer.get","buffer.paste","client.resize","client.render","client.input","client.paste","events.subscribe","daemon.checkpoint","daemon.stop"],"targets":{"session":"session_ + 32 hex","window":"window_ + 32 hex","pane":"pane_ + 32 hex"},"request":{"version":0,"id":"JSON request correlation value","method":"method name","params":"object","idempotency_key":"optional 1..128 byte daemon-lifetime key"}})
 }
 
 fn primary_buffer(v: &Value) -> std::result::Result<bool, Error> {

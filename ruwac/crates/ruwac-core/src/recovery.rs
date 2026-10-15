@@ -187,7 +187,7 @@ impl State {
     fn saved(&self) -> Checkpoint {
         // Clipboard registers, requests, input, argv, client identities and
         // authentication are intentionally absent from this schema.
-        Checkpoint {
+        let mut checkpoint = Checkpoint {
             schema: 5,
             revision: self.revision,
             sessions: self
@@ -229,7 +229,23 @@ impl State {
                         .or_else(|| p.pty.as_ref().and_then(Pty::exit_code)),
                 })
                 .collect(),
+        };
+        let legacy = ruwac_protocol::TerminalLimits::LEGACY;
+        if checkpoint
+            .sessions
+            .iter()
+            .any(|s| !legacy.valid(s.rows, s.cols))
+            || checkpoint.panes.iter().any(|p| {
+                !legacy.valid(p.terminal.rows, p.terminal.cols)
+                    || p.terminal
+                        .primary
+                        .as_ref()
+                        .is_some_and(|g| !legacy.valid(g.rows, g.cols))
+            })
+        {
+            checkpoint.schema = 6;
         }
+        checkpoint
     }
     pub(super) fn restore(&mut self) -> io::Result<()> {
         let Some(store) = &self.store else {
@@ -239,7 +255,7 @@ impl State {
             return Ok(());
         };
         let invalid = || io::Error::other("checkpoint resource graph rejected; original preserved");
-        if !matches!(saved.schema, 1 | 2 | 3 | 4 | 5)
+        if !matches!(saved.schema, 1 | 2 | 3 | 4 | 5 | 6)
             || saved.sessions.len() > 64
             || saved.windows.len() > 128
             || saved.panes.len() > 128
@@ -249,8 +265,9 @@ impl State {
         for s in saved.sessions {
             if !valid_id(&s.id, "session")
                 || checked_text(&s.name).is_err()
-                || !(4..=100).contains(&s.rows)
-                || !(10..=200).contains(&s.cols)
+                || s.rows < 4
+                || s.cols < 10
+                || !ruwac_protocol::TerminalLimits::CURRENT.valid(s.rows, s.cols)
                 || s.windows.is_empty()
                 || s.windows.len() > 128
                 || self.sessions.insert(s.id.clone(), s).is_some()

@@ -1,9 +1,9 @@
-# RUWAC CLI login-shell compatibility
+# RUWAC natural terminal grids and status controls
 
-New CLI sessions and TUI windows/splits now load the selected login shell explicitly, including when attached to a preserved older daemon. This covers one-command named sessions, detached creation, named session/window/pane commands, Screen control aliases and interactive split/window shortcuts. Existing shells retain their processes and startup settings.
+Current engines advertise up to 512 rows, 1024 columns and a 262144-cell budget. GTK and TUI clients use the actual allocation within those bounds. Smaller simultaneous attachments retain the documented minimum-size policy. Existing running daemons keep their capabilities and live processes; old engines retain their previous 100-row/200-column limits until an owner-controlled update.
 
-Remote named creation obtains the default shell from the authenticated SSH endpoint. Update the remote RUWAC CLI as well; endpoints without shell discovery receive an explicit update diagnostic before creation. Raw RPC and JSON requests retain their literal arguments, including custom commands. Reattachment does not require shell discovery.
+Requests and ordinary replies remain limited to 1 MiB. Terminal render clients explicitly opt into bounded replies up to 64 MiB. Oversized responses receive a correlated error before any partial frame is written, keeping the connection usable. Large snapshots use a separate bounded server budget. Checkpoints with larger active or retained buffers use schema 6; existing smaller archives remain compatible, and older readers preserve files they cannot read.
 
-Qualification includes actual Bash profiles, generated shells, real PTYs, isolated current/older daemons and a disposable authenticated loopback SSH server. Ten synthetic peer cases exercise remote discovery refusals. Separate external-host and physical-input acceptance gates remain.
+The CLI status bar renders and hit-tests one shared layout: clipped Unicode labels stay clickable, the selected window stays visible, and arrows navigate hidden windows. Bottom-row clicks remain local. Native rendering also avoids redundant frame copies and unnecessary blank-glyph layout while retaining styles and decorations.
 
-The earlier rustls patch affects the development test-server graph; the shipped RDP client uses native TLS. The independent RSA advisory remains visible and unsuppressed. This release does not claim seamless RDP frontend handoff or fully qualified Fedora distribution.
+Qualification distinguishes actual private PTYs, kernel sizes, generated colour frames, checkpoint files and native GTK/Wayland pixels from physical input and external-host interoperability. The RSA advisory, full Fedora distribution qualification and seamless RDP frontend handoff remain separate open gates.

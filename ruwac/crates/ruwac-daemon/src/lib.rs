@@ -84,9 +84,11 @@ pub async fn serve(socket: &Path) -> std::io::Result<()> {
     let handle = ruwac_core::start_with_store(Some(store))?;
     let stop = Arc::new(Notify::new());
     let limit = Arc::new(Semaphore::new(64));
+    // Bound outstanding large snapshots independently of the small control API.
+    let render_budget = Arc::new(Semaphore::new(2));
     let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
     loop {
-        tokio::select! {_ = stop.notified()=>break,_=tokio::signal::ctrl_c()=>break,_=term.recv()=>break, accepted=listener.accept()=>{let(stream,_)=accepted?;if stream.peer_cred()?.uid()!=uid{continue}let Ok(permit)=limit.clone().try_acquire_owned()else{continue};let h=handle.clone();let stop=stop.clone();tokio::spawn(async move{let _permit=permit;let client=id("client");let _=connection(stream,&h,&client,stop).await;let _=h.tx.send(Message::Disconnect(client)).await;});}}
+        tokio::select! {_ = stop.notified()=>break,_=tokio::signal::ctrl_c()=>break,_=term.recv()=>break, accepted=listener.accept()=>{let(stream,_)=accepted?;if stream.peer_cred()?.uid()!=uid{continue}let Ok(permit)=limit.clone().try_acquire_owned()else{continue};let h=handle.clone();let stop=stop.clone();let renders=render_budget.clone();tokio::spawn(async move{let _permit=permit;let client=id("client");let _=connection(stream,&h,&client,stop,renders).await;let _=h.tx.send(Message::Disconnect(client)).await;});}}
     }
     let _ = handle
         .call(request("daemon.stop", json!({})), "shutdown")
@@ -105,6 +107,7 @@ async fn connection(
     h: &Handle,
     c: &str,
     stop: Arc<Notify>,
+    render_budget: Arc<Semaphore>,
 ) -> std::io::Result<()> {
     loop {
         let b = match tokio::time::timeout(Duration::from_secs(60), read_async(&mut stream)).await {
@@ -198,6 +201,61 @@ async fn connection(
             write(&mut stream, &response(&r.id, result)).await?;
             continue;
         }
+        let response_limit = if r.method == "client.render" {
+            match r.params.get("max_response_bytes") {
+                None => ruwac_protocol::MAX_FRAME,
+                Some(value) => match value.as_u64().and_then(|n| usize::try_from(n).ok()) {
+                    Some(n)
+                        if (ruwac_protocol::MAX_FRAME..=ruwac_protocol::MAX_RENDER_FRAME)
+                            .contains(&n) =>
+                    {
+                        n
+                    }
+                    _ => {
+                        write(
+                            &mut stream,
+                            &response(
+                                &r.id,
+                                Err(Error::new(
+                                    "INVALID_PARAMS",
+                                    "invalid render response bound",
+                                )),
+                            ),
+                        )
+                        .await?;
+                        continue;
+                    }
+                },
+            }
+        } else {
+            ruwac_protocol::MAX_FRAME
+        };
+        let _render_permit = if response_limit > ruwac_protocol::MAX_FRAME {
+            match tokio::time::timeout(
+                Duration::from_secs(10),
+                render_budget.clone().acquire_owned(),
+            )
+            .await
+            {
+                Ok(Ok(permit)) => Some(permit),
+                _ => {
+                    write(
+                        &mut stream,
+                        &response(
+                            &r.id,
+                            Err(Error::new(
+                                "BUSY",
+                                "large render budget busy; retry a render later",
+                            )),
+                        ),
+                    )
+                    .await?;
+                    continue;
+                }
+            }
+        } else {
+            None
+        };
         let result = tokio::time::timeout(Duration::from_secs(10), h.call(r.clone(), c))
             .await
             .unwrap_or_else(|_| {
@@ -207,7 +265,18 @@ async fn connection(
                 ))
             });
         let stopping = r.method == "daemon.stop" && result.is_ok();
-        let written = write(&mut stream, &response(&r.id, result)).await;
+        let value = response(&r.id, result);
+        let bytes = ruwac_protocol::encode_frame(&value, response_limit).or_else(|_| {
+            ruwac_protocol::encode_frame(&response(&r.id, Err(Error::new("LIMIT", "response exceeds the requested frame bound; terminal renders may opt in to max_response_bytes"))), ruwac_protocol::MAX_FRAME)
+        })?;
+        let written = tokio::time::timeout(Duration::from_secs(10), async {
+            use tokio::io::AsyncWriteExt;
+            stream.write_u32(bytes.len() as u32).await?;
+            stream.write_all(&bytes).await?;
+            stream.flush().await
+        })
+        .await
+        .map_err(|_| std::io::Error::other("write timeout"))?;
         if stopping {
             stop.notify_one();
         }

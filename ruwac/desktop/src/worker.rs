@@ -1,5 +1,5 @@
 //! All potentially blocking RPC and paste delivery run outside the GTK thread.
-use ruwac_protocol::{read_frame, request, write_frame};
+use ruwac_protocol::{request, write_frame};
 use serde_json::{Value, json};
 use std::{
     collections::VecDeque,
@@ -18,7 +18,11 @@ use std::{
     thread,
     time::Duration,
 };
-pub struct Rpc(UnixStream);
+pub struct Rpc {
+    stream: UnixStream,
+    limits: ruwac_protocol::TerminalLimits,
+    requested_size: Option<(u16, u16)>,
+}
 impl Rpc {
     pub fn connect(path: &Path) -> io::Result<Self> {
         for (p, mode) in [
@@ -58,21 +62,48 @@ impl Rpc {
         {
             return Err(io::Error::other("server peer UID rejected"));
         }
-        Ok(Self(s))
+        Ok(Self {
+            stream: s,
+            limits: ruwac_protocol::TerminalLimits::LEGACY,
+            requested_size: None,
+        })
     }
     fn request(&mut self, method: &str, params: Value) -> io::Result<Value> {
         let r = request(method, params);
-        write_frame(&mut self.0, &r)?;
-        let v = read_frame(&mut self.0)?;
+        write_frame(&mut self.stream, &r)?;
+        self.stream
+            .set_read_timeout(Some(Duration::from_secs(if method == "client.render" {
+                15
+            } else {
+                2
+            })))?;
+        let mut v = ruwac_protocol::read_frame_with_limit(
+            &mut self.stream,
+            if method == "client.render" {
+                ruwac_protocol::MAX_RENDER_FRAME
+            } else {
+                ruwac_protocol::MAX_FRAME
+            },
+        )?;
         if v["version"] != 0 || v["id"] != r.id {
             return Err(io::Error::other("protocol/correlation rejected"));
         }
         if let Some(e) = v.get("error") {
             return Err(io::Error::other(e.to_string()));
         }
-        Ok(v["result"].clone())
+        Ok(v["result"].take())
     }
-    pub fn call(&mut self, method: &str, params: Value) -> io::Result<Value> {
+    pub fn call(&mut self, method: &str, mut params: Value) -> io::Result<Value> {
+        if matches!(method, "session.attach" | "client.resize") {
+            let raw = (
+                params["rows"].as_u64().unwrap_or(23).min(u16::MAX as u64) as u16,
+                params["cols"].as_u64().unwrap_or(80).min(u16::MAX as u64) as u16,
+            );
+            self.requested_size = Some(raw);
+            let (rows, cols) = self.limits.clamp(raw.0, raw.1);
+            params["rows"] = json!(rows);
+            params["cols"] = json!(cols);
+        }
         let mut result = ruwac_protocol::client_call(method, params, |m, v| self.request(m, v))?;
         if method == "client.render"
             && result["unchanged"] != true
@@ -94,6 +125,20 @@ impl Rpc {
                         json!(rows.iter().position(|row| row["id"] == result["window"]));
                     result["windows"]=json!(rows.iter().enumerate().map(|(index,row)|json!({"id":row["id"],"index":index,"name":row["name"]})).collect::<Vec<_>>());
                 }
+            }
+        }
+        if method == "client.render" && result["unchanged"] != true {
+            if self
+                .requested_size
+                .is_some_and(|raw| self.limits.clamp(raw.0, raw.1) != raw)
+            {
+                result["size_notice"] = json!(
+                    if self.limits.rows == 100 && self.limits.cols == 200 {
+                        "Running older daemon limits the grid to 100×200; preserve sessions and update the daemon when ready"
+                    } else {
+                        "Terminal cell budget reached; use a larger font or a smaller view"
+                    }
+                );
             }
         }
         Ok(result)
@@ -210,6 +255,7 @@ impl Worker {
                     .as_array()
                     .is_some_and(|methods| methods.iter().any(|m| m == "window.previous"));
                 let capabilities = rpc.call("capabilities", json!({}))?;
+                rpc.limits = ruwac_protocol::TerminalLimits::advertised(&capabilities);
                 // A not-yet-allocated or hidden tab must not impose a 24x80
                 // transient resize on an already shared session.
                 let mut early = VecDeque::new();

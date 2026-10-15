@@ -355,7 +355,7 @@ impl View {
         });
         v.area.add_controller(wheel);
         let w = Rc::downgrade(&v);
-        v.area.connect_resize(move|_,width,height|if let Some(v)=w.upgrade(){if width>0&&height>0{v.command("client.resize",json!({"rows":((height as f64/v.cell_height.get())as i32).clamp(4,100),"cols":((width as f64/v.cell_width.get())as i32).clamp(10,200)}));}});
+        v.area.connect_resize(move|_,width,height|if let Some(v)=w.upgrade(){if width>0&&height>0{v.command("client.resize",json!({"rows":((height as f64/v.cell_height.get())as i32).clamp(4,u16::MAX as i32),"cols":((width as f64/v.cell_width.get())as i32).clamp(10,u16::MAX as i32)}));}});
         v
     }
     pub fn show_terminal(&self) {
@@ -933,11 +933,19 @@ impl View {
                     (self.area.height() as f64 / self.cell_height.get()).floor() as u64;
                 let viewport_cols =
                     (self.area.width() as f64 / self.cell_width.get()).floor() as u64;
-                let shared = match (rows, cols) {
-                    (Some(rows), Some(cols)) if rows < viewport_rows || cols < viewport_cols => {
-                        format!(" · shared PTY {cols}×{rows}; view {viewport_cols}×{viewport_rows}")
+                let shared = if let Some(notice) = frame["size_notice"].as_str() {
+                    format!(" · {notice}")
+                } else {
+                    match (rows, cols) {
+                        (Some(rows), Some(cols))
+                            if rows < viewport_rows || cols < viewport_cols =>
+                        {
+                            format!(
+                                " · shared PTY {cols}×{rows}; view {viewport_cols}×{viewport_rows}"
+                            )
+                        }
+                        _ => String::new(),
                     }
-                    _ => String::new(),
                 };
                 self.status.set_text(&format!(
                     "{} · {}:{} — {state}{shared}",
@@ -1472,7 +1480,7 @@ impl View {
                 .max(1.),
         );
         if self.area.width() > 0 && self.area.height() > 0 {
-            self.command("client.resize",json!({"rows":((self.area.height()as f64/self.cell_height.get())as i32).clamp(4,100),"cols":((self.area.width()as f64/self.cell_width.get())as i32).clamp(10,200)}));
+            self.command("client.resize",json!({"rows":((self.area.height()as f64/self.cell_height.get())as i32).clamp(4,u16::MAX as i32),"cols":((self.area.width()as f64/self.cell_width.get())as i32).clamp(10,u16::MAX as i32)}));
         }
         self.area.queue_draw();
     }
@@ -1481,8 +1489,8 @@ impl View {
     }
     fn draw(&self, area: &gtk::DrawingArea, cr: &gtk::cairo::Context, _width: i32, _height: i32) {
         self.drawn.set(self.drawn.get() + 1);
-        let bg = crate::schemes::current().bg();
-        cr.set_source_rgb(bg.0, bg.1, bg.2);
+        let canvas_bg = crate::schemes::current().bg();
+        cr.set_source_rgb(canvas_bg.0, canvas_bg.1, canvas_bg.2);
         let _ = cr.paint();
         let frame = self.frame.borrow();
         let Some(frame) = frame.as_ref() else {
@@ -1515,6 +1523,8 @@ impl View {
         let attributes = gtk::pango::AttrList::new();
         attributes.insert(gtk::pango::AttrFontFeatures::new("liga=0, calt=0"));
         layout.set_attributes(Some(&attributes));
+        let mut last_glyph = String::new();
+        let mut last_font = None;
         for p in panes {
             let _ = cr.save();
             cr.translate(
@@ -1549,14 +1559,16 @@ impl View {
                             {
                                 bg = (0.18, 0.28, 0.48);
                             }
-                            cr.set_source_rgb(bg.0, bg.1, bg.2);
-                            cr.rectangle(
-                                c as f64 * self.cell_width.get(),
-                                y + r as f64 * self.cell_height.get(),
-                                self.cell_width.get(),
-                                self.cell_height.get(),
-                            );
-                            let _ = cr.fill();
+                            if bg != canvas_bg {
+                                cr.set_source_rgb(bg.0, bg.1, bg.2);
+                                cr.rectangle(
+                                    c as f64 * self.cell_width.get(),
+                                    y + r as f64 * self.cell_height.get(),
+                                    self.cell_width.get(),
+                                    self.cell_height.get(),
+                                );
+                                let _ = cr.fill();
+                            }
                         }
                         for (c, cell) in cells.iter().enumerate() {
                             if cell[1] != true && cell[6]["hidden"] != true {
@@ -1568,23 +1580,33 @@ impl View {
                                 if cell[6]["dim"] == true {
                                     fg = (fg.0 * 0.65, fg.1 * 0.65, fg.2 * 0.65);
                                 }
-                                layout.set_font_description(Some(
-                                    match (cell[4] == true, cell[6]["italic"] == true) {
-                                        (true, true) => &bold_italic,
-                                        (true, false) => &bold,
-                                        (false, true) => &italic,
-                                        _ => &normal,
-                                    },
-                                ));
-                                layout.set_text(cell[0].as_str().unwrap_or(""));
-                                cr.set_source_rgb(fg.0, fg.1, fg.2);
-                                cr.move_to(
-                                    c as f64 * self.cell_width.get(),
-                                    y + r as f64 * self.cell_height.get()
-                                        + (self.cell_height.get() - layout.pixel_size().1 as f64)
-                                            / 2.,
-                                );
-                                pangocairo::functions::show_layout(cr, &layout);
+                                let glyph = cell[0].as_str().unwrap_or("");
+                                if !matches!(glyph, "" | " ") {
+                                    let font_key = (cell[4] == true, cell[6]["italic"] == true);
+                                    if last_font != Some(font_key) {
+                                        layout.set_font_description(Some(match font_key {
+                                            (true, true) => &bold_italic,
+                                            (true, false) => &bold,
+                                            (false, true) => &italic,
+                                            _ => &normal,
+                                        }));
+                                        last_font = Some(font_key);
+                                    }
+                                    if glyph != last_glyph {
+                                        layout.set_text(glyph);
+                                        last_glyph.clear();
+                                        last_glyph.push_str(glyph);
+                                    }
+                                    cr.set_source_rgb(fg.0, fg.1, fg.2);
+                                    cr.move_to(
+                                        c as f64 * self.cell_width.get(),
+                                        y + r as f64 * self.cell_height.get()
+                                            + (self.cell_height.get()
+                                                - layout.pixel_size().1 as f64)
+                                                / 2.,
+                                    );
+                                    pangocairo::functions::show_layout(cr, &layout);
+                                }
                                 let ul = if cell[6]["underline_color"].is_null() {
                                     fg
                                 } else {

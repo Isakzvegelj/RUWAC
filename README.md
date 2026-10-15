@@ -263,3 +263,9 @@ license, source link and an offline QR code for the optional
 contained in the application. Updating installed files does not change a running
 GUI; restarting it still reconnects RDP transports. Leave an active window open
 until ready to reconnect. Terminal PTYs remain owned by the persistent daemon.
+
+## Terminal sizes and older running daemons
+
+Current engines support up to 512 rows and 1024 columns within a 262144-cell budget. Clients use the engine’s advertised bounds; simultaneous attachments still share the minimum dimensions. Updates preserve live older daemons, which retain their previous limits until you deliberately replace them after saving your work. A fresh private daemon can be used independently through --socket without stopping the existing one. Large terminal renders explicitly opt into bounded replies; ordinary control requests keep the existing 1 MiB limit.
+
+The CLI window bar keeps the selected window visible. Click clipped labels or the ‹/› arrows to select visible or hidden windows. These clicks do not reach terminal applications.

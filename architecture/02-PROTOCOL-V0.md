@@ -46,3 +46,9 @@ Remote use can pipe a JSON request into `ssh EXISTING_HOST ruwac request` using 
 ### Optional Codex process probe
 
 `agent.probe` takes `{"pane":"pane_ID"}` and returns `pane`, `adapter` (`codex`), `foreground_pid`, `process_detected` and `selected`. Discover support from `schema.methods`. This read-only operation reuses the bounded same-UID foreground-process-group check; it neither reads arguments/environment/terminal contents nor changes selection. Process presence does not establish login, model readiness, draft acceptance or image consumption. Extra fields, stale/wrong IDs and idempotency keys are rejected.
+
+### Natural terminal grids
+
+Protocol 0 keeps the 1 MiB request/default-response ceiling. capabilities and schema now advertise terminal_size_limits (rows, cols, cells) and max_render_response_bytes. Current limits are 512 rows, 1024 columns and 262144 cells; session creation, attachment and resizing validate the whole area before mutation. Missing capability metadata selects the legacy 100-row/200-column client bounds.
+
+Only client.render may opt into a larger reply using max_response_bytes (1 MiB through 64 MiB). The client must read that explicit bound while continuing to validate version and request correlation. Invalid bounds return INVALID_PARAMS. An over-budget encoded reply returns a small correlated LIMIT response before any frame bytes are written. Other responses and all requests retain their existing limit. Outstanding large renders have a separate two-permit budget and bounded waiting/write deadlines; BUSY requests can retry reads later without replaying input. This does not alter PTY ownership, authentication, focus or endpoint identities.

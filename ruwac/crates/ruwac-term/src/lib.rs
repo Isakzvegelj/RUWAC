@@ -71,8 +71,7 @@ fn validate_terminal_data(
     history: &[(String, bool)],
     grid: &Value,
 ) -> std::result::Result<(), String> {
-    if !(1..=100).contains(&rows)
-        || !(1..=200).contains(&cols)
+    if !ruwac_protocol::TerminalLimits::CURRENT.valid(rows, cols)
         || history.len() > 50000
         || history.iter().map(|(s, _)| s.len()).sum::<usize>() > 512 * 1024
         || history
