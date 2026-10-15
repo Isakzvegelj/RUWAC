@@ -1035,6 +1035,7 @@ pub struct RdpView {
     held: RefCell<HashSet<(u8, bool)>>,
     buttons: RefCell<HashSet<u32>>,
     pointer_position: Cell<(u16, u16)>,
+    pointer_geometry: Cell<Option<(f64, f64, f64, f64)>>,
     broker: crate::clipboard::Broker,
     id: String,
     policy: Cell<ClipPolicy>,
@@ -1153,10 +1154,17 @@ impl RdpView {
             .vexpand(true)
             .focusable(true)
             .build();
+        // The entire framebuffer is one focusable widget. GTK's automatic
+        // scroll-to-focus moves a zoomed desktop when a tab regains focus.
+        // Keep the user's pan instead of scrolling the whole canvas into view.
+        let viewport = gtk::Viewport::builder()
+            .scroll_to_focus(false)
+            .child(&area)
+            .build();
         let scroll = gtk::ScrolledWindow::builder()
             .hexpand(true)
             .vexpand(true)
-            .child(&area)
+            .child(&viewport)
             .build();
         viewport_overlay.set_child(Some(&scroll));
         let display_info = gtk::Label::new(None);
@@ -1207,6 +1215,7 @@ impl RdpView {
             held: RefCell::new(HashSet::new()),
             buttons: RefCell::new(HashSet::new()),
             pointer_position: Cell::new((0, 0)),
+            pointer_geometry: Cell::new(None),
             broker,
             id: ruwac_protocol::id("rdp"),
             policy: Cell::new(ClipPolicy::Bidirectional),
@@ -1575,6 +1584,12 @@ impl RdpView {
         click.connect_released(move |g, _, x, y| {
             if let Some(v) = w.upgrade() {
                 v.pointer(x, y, g.current_button(), true);
+            }
+        });
+        let w = Rc::downgrade(&v);
+        click.connect_cancel(move |_, _| {
+            if let Some(v) = w.upgrade() {
+                v.release_buttons();
             }
         });
         v.area.add_controller(click);
@@ -2235,6 +2250,29 @@ impl RdpView {
             ));
         }
     }
+    pub fn fixture_pointer(&self, q: &serde_json::Value) -> serde_json::Value {
+        if q["cancel"] == true {
+            let controllers = self.area.observe_controllers();
+            for i in 0..controllers.n_items() {
+                if let Some(click) = controllers.item(i).and_downcast::<gtk::GestureClick>() {
+                    click.emit_by_name::<()>("cancel", &[&None::<gdk::EventSequence>]);
+                }
+            }
+        } else if let (Some(x), Some(y)) = (q["x"].as_f64(), q["y"].as_f64()) {
+            // The owned fixture supplies canvas coordinates, as GTK does.
+            self.pointer(
+                x,
+                y,
+                q["button"].as_u64().unwrap_or(0) as u32,
+                q["release"] == true,
+            );
+        }
+        if let (Some(x), Some(y)) = (q["pan_x"].as_f64(), q["pan_y"].as_f64()) {
+            self.scroll.hadjustment().set_value(x);
+            self.scroll.vadjustment().set_value(y);
+        }
+        serde_json::json!({"held_buttons":self.buttons.borrow().len(),"position":self.pointer_position.get(),"state":self.fixture_inspect()})
+    }
     pub fn set_profile(&self, host: &str, user: &str, reference: &str, ca: &str) {
         for (e, value) in self.entries.iter().zip([host, user, reference, ca]) {
             e.set_text(value);
@@ -2690,13 +2728,38 @@ impl RdpView {
         if self.auto_gdm.borrow().armed {
             return;
         }
-        let (sx, sy, ox, oy) = self.geometry(self.area.width() as f64, self.area.height() as f64);
+        let geometry = self.geometry(self.area.width() as f64, self.area.height() as f64);
+        // A changed local zoom/allocation maps the same physical pointer to a
+        // different remote position. End the old drag before sending that move.
+        if self
+            .pointer_geometry
+            .replace(Some(geometry))
+            .is_some_and(|old| old != geometry)
+        {
+            self.release_buttons();
+        }
+        let (sx, sy, ox, oy) = geometry;
         let (px, py) = ((x - ox) / sx, (y - oy) / sy);
         let (rw, rh) = self.size.get();
-        if px < 0.0 || py < 0.0 || px >= rw as f64 || py >= rh as f64 {
+        let inside = px.is_finite()
+            && py.is_finite()
+            && px >= 0.0
+            && py >= 0.0
+            && px < rw as f64
+            && py < rh as f64;
+        // A release outside the image (letterboxing, toolbar or window edge)
+        // must still end a drag. Keep its last valid remote position: converting
+        // out-of-bounds coordinates can fling a held window to a desktop corner.
+        let (x, y) = if inside {
+            (px as u16, py as u16)
+        } else if release && self.buttons.borrow().contains(&button) {
+            self.pointer_position.get()
+        } else {
+            return;
+        };
+        if release && !self.buttons.borrow().contains(&button) {
             return;
         }
-        let (x, y) = (px as u16, py as u16);
         self.pointer_position.set((x, y));
         if button != 0 {
             if release {
@@ -3246,6 +3309,28 @@ impl RdpView {
     }
     fn release_keys(&self) {
         self.pending_super.borrow_mut().clear();
+        self.release_buttons();
+        let keys: Vec<_> = self
+            .held
+            .borrow_mut()
+            .drain()
+            .map(|(k, e)| {
+                FastPathInputEvent::KeyboardEvent(
+                    KeyboardFlags::RELEASE
+                        | if e {
+                            KeyboardFlags::EXTENDED
+                        } else {
+                            KeyboardFlags::empty()
+                        },
+                    k,
+                )
+            })
+            .collect();
+        if !keys.is_empty() {
+            self.send(keys);
+        }
+    }
+    fn release_buttons(&self) {
         let (x, y) = self.pointer_position.get();
         let events: Vec<_> = self
             .buttons
@@ -3268,25 +3353,6 @@ impl RdpView {
             .collect();
         if !events.is_empty() {
             self.send(events);
-        }
-        let keys: Vec<_> = self
-            .held
-            .borrow_mut()
-            .drain()
-            .map(|(k, e)| {
-                FastPathInputEvent::KeyboardEvent(
-                    KeyboardFlags::RELEASE
-                        | if e {
-                            KeyboardFlags::EXTENDED
-                        } else {
-                            KeyboardFlags::empty()
-                        },
-                    k,
-                )
-            })
-            .collect();
-        if !keys.is_empty() {
-            self.send(keys);
         }
     }
     pub fn close(&self) {

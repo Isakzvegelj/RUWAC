@@ -214,6 +214,41 @@ def unwind_address_data(content, address, executable):
     return data
 
 
+def unwind_index_data(content, address, frame_address, frames, executable):
+    """Validate the x86_64 linker unwind index before excluding numeric slots."""
+    if len(content) < 12 or content[:4] != b'\x01\x1b\x03\x3b':
+        raise ValueError('Unsupported unwind-index encoding')
+    frame_offset, count = struct.unpack_from('<iI', content, 4)
+    if address + 4 + frame_offset != frame_address or len(content) != 12 + count * 8:
+        raise ValueError('Invalid unwind-index bounds or frame reference')
+    fdes = set()
+    at = 0
+    while at + 4 <= len(frames):
+        size = struct.unpack_from('<I', frames, at)[0]
+        if size == 0:
+            if any(frames[at:]):
+                raise ValueError('Invalid unwind-index frame trailer')
+            at = len(frames)
+            break
+        if size < 4 or size == 0xffffffff or at + 4 + size > len(frames):
+            raise ValueError('Invalid unwind-index frame record')
+        if struct.unpack_from('<I', frames, at + 4)[0]:
+            fdes.add(frame_address + at)
+        at += 4 + size
+    if at != len(frames) or count != len(fdes):
+        raise ValueError('Unwind-index count differs from frame records')
+    previous = -1
+    for at in range(12, len(content), 8):
+        code, fde = struct.unpack_from('<ii', content, at)
+        code += address
+        fde += address
+        if code < previous or not any(start <= code < stop for start, stop in executable) or fde not in fdes:
+            raise ValueError('Unwind-index entry is not an executable/frame address')
+        previous = code
+        fdes.remove(fde)
+    return bytearray(content[:4]) + bytearray(len(content) - 4)
+
+
 def binary_data(path):
     """Read bounded non-executable ELF sections, retaining constants and symbols."""
     data = path.read_bytes()
@@ -243,6 +278,7 @@ def binary_data(path):
             raise ValueError('ELF section names exceed artifact bounds')
         names = data[names_record[4]:names_record[4] + names_record[5]]
     executable = [(s[3], s[3] + s[5]) for s in records if s[2] & 4]
+    frames = [s for s in records if names[s[0]:].split(b'\0', 1)[0] == b'.eh_frame']
     sections = []
     for section in records:
         kind, flags, address, start, size = section[1:6]
@@ -256,6 +292,11 @@ def binary_data(path):
         name = names[section[0]:].split(b'\0', 1)[0] if section[0] < len(names) else b''
         if name == b'.eh_frame':
             content = unwind_address_data(content, address, executable)
+        if name == b'.eh_frame_hdr':
+            if len(frames) != 1 or frames[0][4] + frames[0][5] > len(data):
+                raise ValueError('Unwind index requires one bounded frame section')
+            frame = frames[0]
+            content = unwind_index_data(content, address, frame[3], data[frame[4]:frame[4] + frame[5]], executable)
         if flags & 2:  # SHF_ALLOC: r_offset is an allocated virtual address.
             for pointer in relocations:
                 if address <= pointer and pointer + 8 <= address + size:

@@ -15,6 +15,8 @@ struct Settings {
     schema: u32,
     pinned: bool,
     width: u16,
+    #[serde(default, skip_serializing_if = "std::collections::BTreeSet::is_empty")]
+    collapsed_groups: std::collections::BTreeSet<String>,
 }
 impl Default for Settings {
     fn default() -> Self {
@@ -22,6 +24,7 @@ impl Default for Settings {
             schema: 1,
             pinned: false,
             width: 260,
+            collapsed_groups: Default::default(),
         }
     }
 }
@@ -53,20 +56,43 @@ fn load() -> Result<Settings, String> {
         || m.uid() != unsafe { libc::geteuid() }
         || m.mode() & 0o077 != 0
         || m.nlink() != 1
-        || m.len() > 4096
+        || m.len() > 1024 * 1024
     {
         return Err("Existing desktop preferences protected".into());
     }
     let mut bytes = Vec::new();
-    file.take(4097)
+    file.take(1024 * 1024 + 1)
         .read_to_end(&mut bytes)
         .map_err(|_| "Preferences unreadable")?;
     let value: Settings =
         serde_json::from_slice(&bytes).map_err(|_| "Existing desktop preferences protected")?;
-    if value.schema != 1 || !(200..=420).contains(&value.width) {
+    if value.schema != 1
+        || !(200..=420).contains(&value.width)
+        || value.collapsed_groups.len() > 1000
+        || value
+            .collapsed_groups
+            .iter()
+            .any(|g| g.len() > 1024 || g.contains('\0'))
+    {
         return Err("Existing desktop preferences protected".into());
     }
     Ok(value)
+}
+
+pub fn collapsed_groups() -> std::collections::BTreeSet<String> {
+    load().unwrap_or_default().collapsed_groups
+}
+pub fn set_group_collapsed(group: &str, collapsed: bool) -> Result<(), String> {
+    let mut settings = load()?;
+    if collapsed {
+        if group.len() > 1024 || group.contains('\0') || settings.collapsed_groups.len() >= 1000 {
+            return Err("Group display preference limit reached".into());
+        }
+        settings.collapsed_groups.insert(group.into());
+    } else {
+        settings.collapsed_groups.remove(group);
+    }
+    save(&settings)
 }
 fn save(value: &Settings) -> Result<(), String> {
     load()?; // Refuse unknown or unsafe existing settings rather than replacing them.
@@ -168,6 +194,7 @@ impl Shell {
                 schema: 1,
                 pinned: p.is_active(),
                 width: w.value_as_int() as u16,
+                ..load().unwrap_or_default()
             })
             .is_err()
             {
@@ -185,6 +212,7 @@ impl Shell {
                 schema: 1,
                 pinned: p.is_active(),
                 width: w.value_as_int() as u16,
+                ..load().unwrap_or_default()
             })
             .is_err()
             {
@@ -223,5 +251,24 @@ impl Shell {
             self.button.set_active(shown);
         }
         serde_json::json!({"shown":self.view.shows_sidebar(),"overlay":self.view.is_collapsed(),"pinned":self.pinned.is_active(),"width":self.width.value_as_int(),"allocated_sidebar_width":self.view.sidebar().map(|w|w.width()),"allocated_content_width":self.view.content().map(|w|w.width()),"allocated_width":self.view.width()})
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn old_sidebar_preferences_preserve_width_and_default_groups_open() {
+        let old: Settings =
+            serde_json::from_str(r#"{"schema":1,"pinned":true,"width":320}"#).unwrap();
+        assert!(old.pinned && old.collapsed_groups.is_empty());
+        assert_eq!(old.width, 320);
+        let mut current = old;
+        current.collapsed_groups.insert("Generated/Group".into());
+        let saved: Settings =
+            serde_json::from_slice(&serde_json::to_vec(&current).unwrap()).unwrap();
+        assert_eq!(saved.collapsed_groups, current.collapsed_groups);
+        assert!(saved.pinned);
+        assert_eq!(saved.width, 320);
     }
 }

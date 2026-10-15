@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## v0.2.42 — 2026-10-15 — Stable source release
+
+- Add collapsible machine groups with remembered state; search temporarily reveals matching machines.
+
+- Preserve the RDP viewport position across tab focus changes by disabling automatic scrolling of the framebuffer.
+
+- End remote mouse drags when released outside the desktop image or cancelled by GTK, preserving the last valid pointer position; stop held drags before local zoom or allocation changes remap the pointer.
+
 ## v0.2.41 — 2026-10-15 — Stable source release
 
 - Make both auto-hide toolbars unmeasured overlays, preserving terminal and RDP viewport dimensions when controls appear.

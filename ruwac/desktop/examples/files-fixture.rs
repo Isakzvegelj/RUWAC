@@ -11,6 +11,8 @@ mod files_rsync;
 mod profiles;
 #[path = "../src/rdp_trust.rs"]
 mod rdp_trust;
+#[path = "../src/sidebar_shell.rs"]
+mod sidebar_shell;
 #[path = "../src/ssh_jump.rs"]
 mod ssh_jump;
 use std::{

@@ -6,6 +6,8 @@ receipts and original reports are archived privately outside Git.
 
 | Area | Result | Scope |
 | --- | --- | --- |
+| Collapsible machine groups | PASS | Actual GTK disclosure controls, search reveal/restore, preference preservation and reopen persistence with generated profiles |
+| RDP drag release and viewport stability | PASS | Actual authenticated loopback left/right release receipts, GTK gesture cancellation, tab-switch release, zoom remapping and preserved pan; synthetic input, external physical reproduction remains separate |
 | Bulk Remmina metadata import | PASS | Generated native/legacy/Flatpak profiles; confirmation, cancellation, changed-file refusal, duplicate skipping and credential exclusion |
 | Auto-hide toolbar overlays | PASS | Actual GTK allocations remain unchanged across repeated toggles and hover callbacks; authenticated RDP resize regression is required before publication |
 | Screen CLI aliases and readable session list | PASS | Seven real PTY groups including detached/shared sessions, automation title, control-key navigation and kill cancellation; full GNU Screen language remains unsupported |

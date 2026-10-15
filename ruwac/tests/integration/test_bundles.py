@@ -258,6 +258,24 @@ class Bundles(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'record bounds'):
             bundles.binary_data(path)
 
+    def test_unwind_index_only_masks_valid_numeric_offsets(self):
+        address, frame_address = 0x1000, 0x3000
+        code = address + int.from_bytes(b'abc\0', 'little')
+        frames = struct.pack('<II', 4, 0) + struct.pack('<II', 4, 4) + bytes(4)
+        index = b'\x01\x1b\x03\x3b' + struct.pack('<iIii', frame_address-address-4, 1, code-address, frame_address+8-address)
+        masked = bundles.unwind_index_data(index, address, frame_address, frames, [(code, code+8)])
+        self.assertEqual(masked[:4], index[:4])
+        self.assertEqual(masked[4:], bytes(len(index)-4))
+        checker = runpy.run_path(str(ROOT / 'scripts/privacy-check.py'))
+        self.assertFalse(checker['findings'](bytes(masked), ['abc']))
+        # A real string outside the validated index is still rejected.
+        self.assertTrue(checker['findings'](bytes(masked) + b'abc\0', ['abc']))
+        for corrupt in [index[:-1], index+b'abc', b'\x02'+index[1:], index[:8]+struct.pack('<I',2)+index[12:], index[:16]+struct.pack('<i',123)]:
+            with self.assertRaises(ValueError):
+                bundles.unwind_index_data(corrupt, address, frame_address, frames, [(code, code+8)])
+        with self.assertRaises(ValueError):
+            bundles.unwind_index_data(index, address, frame_address, frames, [(code+1, code+8)])
+
     def test_elf_scanner_rejects_key_material_but_allows_parser_markers(self):
         checker = runpy.run_path(str(ROOT / 'scripts/privacy-check.py'))
         marker = b'-----BEGIN ' + b'PRIVATE KEY-----'

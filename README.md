@@ -245,3 +245,7 @@ duplicates are skipped, unreadable/unsupported files are counted, and changed fi
 or a changed library require a fresh review. Import excludes passwords, certificates
 and private key paths; source Remmina files are read-only. The 1000-profile limit is
 checked before writing any of the batch.
+
+### Machine groups
+
+Click a group heading in Machines to collapse or expand its connections. RUWAC remembers collapsed groups across restarts. Search temporarily reveals matching connections; clearing the search restores your collapsed groups. Favorites stay first within each group.

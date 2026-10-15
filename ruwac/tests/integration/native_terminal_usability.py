@@ -17,7 +17,7 @@ for key,name in [('HOME','home'),('XDG_CONFIG_HOME','config'),('XDG_DATA_HOME','
 for key in ['TMUX','STY','RUWAC_SHORTCUTS','RUWAC_KEYMAP']:env.pop(key,None)
 home=Path(env['HOME']);data=Path(env['XDG_DATA_HOME']);paths=[]
 for i,folder in enumerate([data/'remmina',home/'.remmina',home/'.var/app/org.remmina.Remmina/data/remmina']):
- folder.mkdir(parents=True,mode=0o700);file=folder/(str(i)+'.remmina');file.write_text('[remmina]\nname=Generated Remmina '+str(i)+'\nprotocol=RDP\nserver=127.0.0.1\npassword=GENERATED-DO-NOT-IMPORT\n');paths.append(file)
+ folder.mkdir(parents=True,mode=0o700);file=folder/(str(i)+'.remmina');file.write_text('[remmina]\nname=Generated Remmina '+str(i)+'\ngroup=Lab/'+('A' if i<2 else 'B')+'\nprotocol=RDP\nserver=127.0.0.1\npassword=GENERATED-DO-NOT-IMPORT\n');paths.append(file)
 before={str(path):path.read_bytes() for path in paths};sock=root/'control.sock';children=[];seq=0;fixture=root/'fixture';fixture.mkdir(mode=0o700);checks=[]
 def start(argv,name):
  log=(root/(name+'.log')).open('w');child=subprocess.Popen(argv,env=env,stdout=log,stderr=log);children.append((child,log));return child
@@ -75,6 +75,18 @@ try:
  command('profiles-control',operation='import-all');command('profiles-control',bulk_response='import');assert [p['id'] for p in imported()]==identities
  assert 'GENERATED-DO-NOT-IMPORT' not in saved.read_text() and all(path.read_bytes()==before[str(path)] for path in paths)
  checks.append('native-bulk-import-confirm-cancel-stale-review-duplicate-and-credential-separation')
+ command('profiles-control',import_expanded=False)
+ groups=command('profiles-control')['groups'];assert len(groups)==2 and all(g['expanded'] for g in groups),groups
+ command('profiles-control',group='Lab › A',expanded=False)
+ eventually(lambda:command('profiles-control')['visible']['rows']==1)
+ # Search reveals matching machines without forgetting the collapsed state.
+ command('profiles',search='Generated Remmina 0');eventually(lambda:command('profiles-control')['visible']['rows']==1)
+ assert command('profiles-control')['groups'][0]['expanded']
+ command('profiles',search='');eventually(lambda:command('profiles-control')['visible']['rows']==1)
+ command('sidebar-shell',width=240)
+ assert json.loads((Path(env['XDG_CONFIG_HOME'])/'RUWAC/ui.json').read_text())['collapsed_groups']==['Lab/A']
+ checks.append('machine-groups-collapse-search-reveals-matches-and-preferences-survive-width-change')
+
  command('compact-controls',open=False);baseline=command('compact-controls')['viewport']
  for i in range(20):
   sample=command('compact-controls',open=i%2==0);assert sample['viewport']==baseline
@@ -93,7 +105,9 @@ try:
  argv=['tmux','-S',str(tmux),'-f',str(conf),'new-session','-s','generated',shlex.join([sys.executable,str(receiver),str(output)])]
  nested=rpc('session.create',{'name':'Generated nested tmux','argv':argv})
  rpc('pane.wait',{'pane':nested['pane'],'contains':'RUWAC_RECEIVER_READY','timeout_ms':8000})
- second=gui('--session',nested['session']);eventually(lambda:command('inspect').get('target')==nested['pane'],20)
+ second=gui('--session',nested['session'],'--show-machines');eventually(lambda:command('inspect').get('target')==nested['pane'],20)
+ assert any(g['label']=='Lab › A' and not g['expanded'] for g in command('profiles-control')['groups'])
+ checks.append('collapsed-machine-groups-restored-after-GTK-restart')
  def key(key,mods=0):command('key',key=key,mods=mods)
  key('a',4);key('a',4);key('c')
  def windows():return subprocess.check_output(['tmux','-S',str(tmux),'list-windows','-t','generated'],env=env,text=True).splitlines()

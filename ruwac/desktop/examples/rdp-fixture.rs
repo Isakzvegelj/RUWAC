@@ -44,6 +44,7 @@ fn fixture_stamp(path: &std::path::Path, value: serde_json::Value) -> anyhow::Re
 struct InputReceipt {
     path: PathBuf,
     units: Vec<u16>,
+    mouse: Vec<String>,
 }
 impl RdpServerInputHandler for InputReceipt {
     fn keyboard(&mut self, event: KeyboardEvent) {
@@ -53,7 +54,16 @@ impl RdpServerInputHandler for InputReceipt {
             let _=std::fs::write(&self.path,serde_json::to_vec(&json!({"units":self.units.len(),"sha256":format!("{:x}",Sha256::digest(&bytes))})).unwrap());
         }
     }
-    fn mouse(&mut self, _: MouseEvent) {}
+    fn mouse(&mut self, event: MouseEvent) {
+        if self.mouse.len() == 1000 {
+            self.mouse.remove(0);
+        }
+        self.mouse.push(format!("{event:?}"));
+        let _ = fixture_stamp(
+            &self.path.with_extension("mouse.json"),
+            json!({"events":self.mouse}),
+        );
+    }
 }
 struct Display {
     marker: Option<PathBuf>,
@@ -205,6 +215,7 @@ async fn run(dir: PathBuf) -> anyhow::Result<()> {
             .with_input_handler(InputReceipt {
                 path: dir.join(format!("input-{port}.json")),
                 units: Vec::new(),
+                mouse: Vec::new(),
             })
             .with_display_handler(Display::new(
                 (std::env::var("RUWAC_FIXTURE_FRAME_MARKERS").as_deref() == Ok("1"))

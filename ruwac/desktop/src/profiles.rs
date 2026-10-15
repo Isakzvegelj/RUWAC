@@ -973,6 +973,7 @@ pub fn sidebar(
     status.connect_label_notify(|label| label.set_visible(!label.text().is_empty()));
     status.set_visible(false);
     let list = gtk::Box::new(gtk::Orientation::Vertical, 4);
+    list.set_widget_name("machines-list-box");
     let scroll = gtk::ScrolledWindow::builder()
         .vexpand(true)
         .child(&list)
@@ -1068,8 +1069,8 @@ pub fn sidebar(
                 .collect();
             rows.sort_by_key(|(_, p)| {
                 (
-                    !p.favorite,
                     p.group.clone(),
+                    !p.favorite,
                     std::cmp::Reverse(p.last_used),
                     p.name.clone(),
                 )
@@ -1100,11 +1101,38 @@ pub fn sidebar(
                     list.append(&gtk::Label::new(Some(&g.path.replace('/', " › "))));
                 }
             }
-            let mut previous = String::new();
+            let collapsed = crate::sidebar_shell::collapsed_groups();
+            let searching = !search.text().is_empty();
+            let mut previous = None;
+            let mut group_rows = gtk::Box::new(gtk::Orientation::Vertical, 4);
             for (i, p) in rows.into_iter().skip(start).take(50) {
-                if p.group != previous {
-                    list.append(&gtk::Label::new(Some(&p.group.replace('/', " › "))));
-                    previous = p.group.clone();
+                if previous.as_ref() != Some(&p.group) {
+                    let title = if p.group.is_empty() {
+                        "Ungrouped".into()
+                    } else {
+                        p.group.replace('/', " › ")
+                    };
+                    let group = gtk::Expander::new(Some(&title));
+                    group.set_widget_name("machine-group");
+                    group.set_expanded(searching || !collapsed.contains(&p.group));
+                    group_rows = gtk::Box::new(gtk::Orientation::Vertical, 4);
+                    group.set_child(Some(&group_rows));
+                    let path = p.group.clone();
+                    let message = status.clone();
+                    group.connect_expanded_notify(move |group| {
+                        // Searching temporarily reveals matches without erasing
+                        // the owner's normal collapsed-group preferences.
+                        if !searching {
+                            if let Err(error) = crate::sidebar_shell::set_group_collapsed(
+                                &path,
+                                !group.is_expanded(),
+                            ) {
+                                message.set_text(&error);
+                            }
+                        }
+                    });
+                    list.append(&group);
+                    previous = Some(p.group.clone());
                 }
                 let row = gtk::Box::new(gtk::Orientation::Horizontal, 2);
                 let star = gtk::Button::with_label(if p.favorite { "★" } else { "☆" });
@@ -1160,7 +1188,7 @@ pub fn sidebar(
                     editor(b, s.clone(), Some(id.clone()), st.clone(), cb.clone())
                 });
                 row.append(&edit);
-                list.append(&row);
+                group_rows.append(&row);
                 let s = store.clone();
                 let label = star.clone();
                 let st = status.clone();
@@ -3289,6 +3317,21 @@ pub fn fixture_library(
             dropdown.set_selected(selected.unwrap_or(0));
         }
     }
+    let mut group_states = Vec::new();
+    if let Some(list) = find(root.upcast_ref(), "machines-list-box") {
+        let mut child = list.first_child();
+        while let Some(widget) = child {
+            child = widget.next_sibling();
+            if let Some(group) = widget.downcast_ref::<gtk::Expander>() {
+                if q["group"].as_str() == group.label().as_deref() {
+                    if let Some(expanded) = q["expanded"].as_bool() {
+                        group.set_expanded(expanded);
+                    }
+                }
+                group_states.push(json!({"label":group.label().map(|l|l.to_string()),"expanded":group.is_expanded()}));
+            }
+        }
+    }
     let action = q["operation"].as_str().unwrap_or("inspect");
     if action == "undo" {
         expand_sidebar_panel(root, "machines-tools-panel", true);
@@ -3371,7 +3414,7 @@ pub fn fixture_library(
         .and_then(|w| w.model())
         .map(|m| m.n_items().saturating_sub(1))
         .unwrap_or(0);
-    json!({"import_outside_scroll":import_outside_scroll,"discovered_count":discovered_count,"import_enabled":sensitive("machines-import-apply"),"import_expanded":panel("machines-import-panel"),"tools_expanded":panel("machines-tools-panel"),"list_height":list_height,"sidebar_height":root.height(),"page":text("machines-page-label"),"previous":sensitive("machines-page-previous"),"next":sensitive("machines-page-next"),"status":text("machines-status"),"review_text":review_text,"visible":fixture(root,None,None,false,false)})
+    json!({"groups":group_states,"import_outside_scroll":import_outside_scroll,"discovered_count":discovered_count,"import_enabled":sensitive("machines-import-apply"),"import_expanded":panel("machines-import-panel"),"tools_expanded":panel("machines-tools-panel"),"list_height":list_height,"sidebar_height":root.height(),"page":text("machines-page-label"),"previous":sensitive("machines-page-previous"),"next":sensitive("machines-page-next"),"status":text("machines-status"),"review_text":review_text,"visible":fixture(root,None,None,false,false)})
 }
 #[cfg(test)]
 mod merge_tests {

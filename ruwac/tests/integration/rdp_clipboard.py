@@ -403,6 +403,52 @@ try:
   time.sleep(.7);after=command('gui','rdp-inspect',rdp=0)
   return {'before':before['metrics'],'after':after['metrics'],'processes_before':start_metrics,'processes_after':process_metrics(),'wall_seconds':time.perf_counter()-wall_start,'transitions':transitions,'negotiation':'actual Display Control DVC plus server DeactivateAll/reactivation','resize_storm':{'gtk_allocation_changes':20,'settled_size':storm['size'],'stable_after_800ms':True},'post_resize_clipboard':True,'other_tabs_unchanged':True,'codec':'raw bitmap fixture; RemoteFX/GNOME issue remains a separate gate'}
  case('RDP-NATIVE-RESIZE-20',resize)
+ def pointer_drag():
+  focus('gui');command('gui','rdp-switch',rdp=0)
+  command('gui','rdp-display',rdp=0,mode='stretch',zoom=1.0)
+  time.sleep(.3)
+  def pointer(**kw):return command('gui','rdp-pointer',rdp=0,**kw)
+  def mouse():
+   try:return json.loads((root/f"input-{ready['ports'][0]}.mouse.json").read_text())['events']
+   except(FileNotFoundError,ValueError):return []
+  transitions=[]
+  for button,label in [(1,'Left'),(3,'Right')]:
+   for x,y in [(-100,-100),(100000,100000)]:
+    pointer(x=100,y=100,button=button);pressed=spike.eventually(lambda:m if (m:=mouse()) and m[-1]==label+'Pressed' else False)
+    valid=pointer()['position'];result=pointer(x=x,y=y,button=button,release=True)
+    assert result['held_buttons']==0 and result['position']==valid,result
+    released=spike.eventually(lambda:m if (m:=mouse()) and len(m)>len(pressed) and m[-1]==label+'Released' else False)
+    assert not any('Move' in e for e in released[len(pressed):]),released
+    pointer(x=x,y=y);assert pointer()['position']==valid
+    transitions.append({'button':label,'outside':[x,y],'release_received':True,'position_preserved':True})
+  # ironrdp-server 0.13 maps middle-button PDUs to Move, so only client
+  # held-state is asserted for middle; no remote middle-button pass is claimed.
+  assert pointer(x=100,y=100,button=2)['held_buttons']==1
+  assert pointer(x=-100,y=-100,button=2,release=True)['held_buttons']==0
+  pointer(x=100,y=100,button=1);pressed=spike.eventually(lambda:m if (m:=mouse()) and m[-1]=='LeftPressed' else False)
+  assert pointer(cancel=True)['held_buttons']==0
+  spike.eventually(lambda:len(mouse())>len(pressed) and mouse()[-1]=='LeftReleased')
+  # A late release after cancellation cannot duplicate a remote button release.
+  count=len(mouse());pointer(x=100,y=100,button=1,release=True);time.sleep(.2);assert len(mouse())==count
+  pointer(x=100,y=100,button=1);spike.eventually(lambda:mouse()[-1]=='LeftPressed')
+  command('gui','rdp-switch',rdp=1);spike.eventually(lambda:mouse()[-1]=='LeftReleased')
+  command('gui','rdp-switch',rdp=0);assert pointer()['held_buttons']==0
+  # Local pan and zoom remain stable when focus returns from another tab.
+  command('gui','rdp-display',rdp=0,mode='native',zoom=4.0,width=1800,height=1200)
+  spike.eventually(lambda:command('gui','rdp-inspect',rdp=0)['size']==[1800,1200],20);time.sleep(.4)
+  pan=pointer(pan_x=180,pan_y=120)['state']['pan'];assert pan==[180,120],pan
+  for _ in range(5):
+   command('gui','rdp-switch',rdp=1);command('gui','rdp-switch',rdp=0);time.sleep(.1)
+   assert pointer()['state']['pan']==pan
+  pointer(x=300,y=200,button=1);spike.eventually(lambda:mouse()[-1]=='LeftPressed')
+  start=len(mouse());command('gui','rdp-display',rdp=0,mode='native',zoom=2.0);time.sleep(.2)
+  assert pointer(x=400,y=300)['held_buttons']==0
+  events=spike.eventually(lambda:m[start:] if 'LeftReleased' in (m:=mouse())[start:] and any(e.startswith('Move') for e in m[start:]) else False)
+  assert events.index('LeftReleased')<next(i for i,e in enumerate(events) if e.startswith('Move')),events
+  command('gui','rdp-display',rdp=0,mode='fit',zoom=1.0)
+  return {'geometry_change_ends_drag_before_move':True,'outside_release' :transitions,'gesture_cancel':True,'late_release_ignored':True,'tab_switch_releases_drag':True,'pan_preserved_on_focus':True,'scope':'Production pointer mapping and GTK cancellation callback; actual authenticated RDP peer receipts; synthetic input, not physical mouse acceptance'}
+ case('RDP-NATIVE-POINTER-DRAG',pointer_drag)
+
 
  def profile_keyring_preferences():
   assert provider and provider.poll() is None, 'Disposable Secret Service provider unavailable'
