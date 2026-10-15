@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v0.4.4 — 2026-10-16 — Stable source release
+
+- Load the selected login shell for CLI-created sessions, Screen control aliases and TUI windows/splits, including with preserved older daemons. Resolve remote defaults at the authenticated SSH endpoint; leave custom raw RPC argv literal.
+
 ## v0.4.3 — 2026-10-15 — Stable source release
 
 - Collapse completed split panes in CLI and GTK through the established pane-close operation, repairing focus and expanding the surviving layout without restarting shells or daemons. Keep final-session and restored history inspectable.

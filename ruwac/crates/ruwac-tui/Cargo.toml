@@ -7,6 +7,7 @@ publish.workspace = true
 
 [dependencies]
 ruwac-protocol = { path = "../ruwac-protocol" }
+ruwac-pty = { path = "../ruwac-pty" }
 serde_json.workspace = true
 libc.workspace = true
 unicode-segmentation.workspace = true

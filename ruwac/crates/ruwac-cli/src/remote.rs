@@ -179,6 +179,29 @@ impl Remote {
         }
         Ok(v)
     }
+    pub fn shell_argv(&self) -> io::Result<Vec<String>> {
+        let value = self.exchange(&["shell-argv"], Vec::new()).map_err(|_| {
+            io::Error::other(
+                "Remote login-shell discovery failed; update the remote RUWAC CLI or use raw RPC with explicit remote argv",
+            )
+        })?;
+        let argv = value["result"]["argv"].as_array().filter(|a| a.len() == 2);
+        if value["version"] != 0 || value.get("error").is_some() {
+            return Err(io::Error::other("Remote login-shell response rejected"));
+        }
+        let Some(argv) = argv else {
+            return Err(io::Error::other("Remote login-shell argv rejected"));
+        };
+        let shell = argv[0].as_str().filter(|s| {
+            s.len() <= 4096
+                && std::path::Path::new(s).is_absolute()
+                && !s.chars().any(char::is_control)
+        });
+        if argv[1] != "-l" || shell.is_none() {
+            return Err(io::Error::other("Remote login-shell argv rejected"));
+        }
+        Ok(vec![shell.unwrap().into(), "-l".into()])
+    }
     pub fn gui(&self, request: &Request) -> io::Result<Value> {
         let value = self.exchange(&["gui-request"], serde_json::to_vec(request)?)?;
         if value["version"] != 0 || value["id"] != request.id {

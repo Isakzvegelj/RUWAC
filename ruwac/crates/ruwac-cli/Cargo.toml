@@ -9,6 +9,7 @@ publish.workspace = true
 ruwac-protocol = { path = "../ruwac-protocol" }
 ruwac-daemon = { path = "../ruwac-daemon" }
 ruwac-tui = { path = "../ruwac-tui" }
+ruwac-pty = { path = "../ruwac-pty" }
 ruwac-clipboard = { path = "../ruwac-clipboard" }
 serde_json.workspace = true
 tokio.workspace = true

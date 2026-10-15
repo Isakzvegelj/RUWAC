@@ -15,24 +15,16 @@ PYTHONDONTWRITEBYTECODE=1 python3 ruwac/tests/integration/spike.py \
   --binary "$CARGO_TARGET_DIR/release/ruwac" --evidence "$EVIDENCE_DIR"
 ```
 
-Start the daemon in one terminal:
-
-```sh
-"$CARGO_TARGET_DIR/release/ruwac" serve
-```
-
-In another terminal, use the same build directory:
+Create and enter a persistent named session with one command. The daemon starts automatically when needed:
 
 ```sh
 R="$CARGO_TARGET_DIR/release/ruwac"
-"$R" rpc session.create --params '{"name":"development"}'
-# Use the returned session and pane IDs:
-"$R" attach --session session_ID
-"$R" rpc pane.sendText --params '{"pane":"pane_ID","text":"literal $HOME and ž"}'
-"$R" rpc pane.sendKey --params '{"pane":"pane_ID","key":"Enter"}'
-"$R" rpc pane.capture --params '{"pane":"pane_ID","lines":250}'
-"$R" version
+"$R" -S development
 ```
+
+Use Ctrl-A then `d` to detach, `ruwac -r development` to reattach, and `ruwac -ls` to list sessions. `ruwac -dmS development` creates a detached session. Multiple connections can attach to the same session with independent window and pane focus.
+
+New CLI sessions and TUI windows/splits explicitly load your selected login shell, including with a preserved older daemon. Existing shells retain their startup flags. For `--host` named creation, update the endpoint RUWAC CLI too: it resolves the remote shell over verified SSH, rather than using your local shell path. Raw `rpc` and JSON `request` parameters remain literal for custom commands and automation.
 
 The default socket is beneath your private runtime directory. `RUWAC_SOCKET` or `--socket PATH` selects an explicit socket; its parent must be owned by you with mode 0700. Use the same socket in each terminal.
 
@@ -144,7 +136,7 @@ The searchable machine sidebar shows grouped profiles with native protocol icons
 
 The RDP toolbar reuses the same authenticated connection and display handlers as the advanced controls. Reconnect/disconnect affects only that view; fit and zoom do not restart the connection. Dynamic resolution requests a negotiated remote display change, with local fit as a fallback when unsupported. Closing the GUI preserves daemon-owned terminal programs. A previously running older GUI remains active during installation; close/reopen its window to see a newly installed interface. Older daemons visibly reject unsupported previous-window navigation without losing subsequent input.
 
-The GitHub workflow publishes verified source releases and does not compile downloadable executables. Local build.sh compiles the independent headless binary and optional GTK binary. A final stable release and Fedora binary/package publication remain subject to the acceptance gates in the product audit.
+The GitHub workflow publishes source releases and compiled Fedora 44 x86_64 testing bundles and RPMs with checksums and artifact provenance. Local build.sh compiles the independent headless binary and optional GTK binary. These testing artifacts do not establish clean-system dependency resolution, complete external interoperability or production security qualification; see the current acceptance status.
 
 ### Native RDP automation
 

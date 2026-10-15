@@ -6,6 +6,7 @@ receipts and original reports are archived privately outside Git.
 
 | Area | Result | Scope |
 | --- | --- | --- |
+| CLI/TUI login-shell compatibility | PASS | Eighteen actual startup groups against current and isolated older daemons, real Bash profile loading, named/detached/Screen creation, TUI window/split commands, unchanged custom argv, retained reattach PID and authenticated loopback SSH endpoint-local shell resolution. Ten synthetic discovery cases; no external-host claim. |
 | Split-pane exit collapse | PASS | Twelve real PTY/native GTK groups against current and isolated older daemons: two concurrent TUIs, GTK-only cases, full viewport, repaired focus, exact input bytes, nested survivors and attachment after exit. Completed split history follows ordinary pane-close semantics; final-session and restored history remain inspectable. |
 | Terminal shell startup and exit | PASS | Real PTYs, native GTK and an isolated older daemon: explicit login-shell argv in new tabs/windows/splits, real Bash profile/rc, live-window fallback, last-view closure and retained ended history |
 | GTK Ctrl+A routing | PASS | Real tmux configured with Ctrl+A receives a single prefix; local RUWAC GTK prefix is Ctrl+Alt+A; CLI prefix remains Ctrl+A |

@@ -251,7 +251,10 @@ fn raw_call(s: &mut UnixStream, m: &str, v: Value) -> io::Result<Value> {
     }
     Ok(r["result"].clone())
 }
-fn call(s: &mut UnixStream, m: &str, v: Value) -> io::Result<Value> {
+fn call(s: &mut UnixStream, m: &str, mut v: Value) -> io::Result<Value> {
+    if matches!(m, "session.create" | "window.create" | "pane.create") && v.get("argv").is_none() {
+        v["argv"] = json!(ruwac_pty::shell::default_argv().map_err(io::Error::other)?);
+    }
     let mut result = ruwac_protocol::client_call(m, v, |m, v| raw_call(s, m, v))?;
     if m == "client.render" && result["unchanged"] != true && result.get("session_name").is_none() {
         if let Ok(sessions) = call(s, "session.list", json!({})) {

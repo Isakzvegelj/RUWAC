@@ -382,6 +382,22 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         Some(remote) => remote.rpc(request),
         None => rpc(&socket, request),
     };
+    // Resolve defaults where the new shell will run. Raw RPC/request remains literal.
+    // Supplying argv also fixes shell startup against an already-running older daemon.
+    let spawn_call = |request: &Request| {
+        let mut request = request.clone();
+        if matches!(
+            request.method.as_str(),
+            "session.create" | "window.create" | "pane.create"
+        ) && request.params.get("argv").is_none()
+        {
+            request.params["argv"] = json!(match &remote {
+                Some(remote) => remote.shell_argv()?,
+                None => ruwac_pty::shell::default_argv().map_err(io::Error::other)?,
+            });
+        }
+        call(&request)
+    };
     if a.len() >= 4 && a[0] == "-S" && a[2] == "-X" {
         let sessions = call(&request("session.list", json!({})))?;
         let id = named_session_id(&sessions, &a[1])?.ok_or("No exact named session")?;
@@ -395,7 +411,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         let name = ruwac_protocol::screen_command(&a[3]);
         let args = &a[4..];
         let reply = match (name, args) {
-            ("new", [] | [_]) => call(&request("window.create", json!({"session":id,"name":args.first().map(String::as_str).unwrap_or("shell")})))?,
+            ("new", [] | [_]) => spawn_call(&request("window.create", json!({"session":id,"name":args.first().map(String::as_str).unwrap_or("shell")})))?,
             ("rename", [_, ..]) => call(&request("window.rename", json!({"window":window,"name":args.join(" ")})))?,
             ("windows", []) => call(&request("window.list", json!({"session":id})))?,
             ("next" | "prev", []) => call(&request("window.cycle", json!({"session":id,"previous":name=="prev"})))?,
@@ -456,7 +472,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     return Err("No session with this exact name; use -S NAME to create it".into());
                 }
                 None => {
-                    call(&request("session.create", json!({"name": a[1]})))?["result"]["session"]
+                    spawn_call(&request("session.create", json!({"name": a[1]})))?["result"]["session"]
                         .as_str()
                         .ok_or("session creation returned no ID")?
                         .to_owned()
@@ -479,7 +495,16 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         Some("--version") => println!("RUWAC {}", env!("CARGO_PKG_VERSION")),
-        Some("session" | "window" | "pane") => println!("{}", call(&named_request(&a)?)?),
+        Some("session" | "window" | "pane") => println!("{}", spawn_call(&named_request(&a)?)?),
+        Some("shell-argv") => {
+            if remote.is_some() || a.len() != 1 {
+                return Err("shell-argv is endpoint-local and takes no options".into());
+            }
+            println!(
+                "{}",
+                json!({"version":0,"result":{"argv":ruwac_pty::shell::default_argv().map_err(io::Error::other)?}})
+            );
+        }
         Some("job") => println!("{}", call(&job_request(&a[1..])?)?),
         Some("gui") => {
             use std::os::unix::process::CommandExt;

@@ -1,7 +1,9 @@
-# RUWAC split exit and TLS security fixes
+# RUWAC CLI login-shell compatibility
 
-Exiting a shell in a split now closes that completed pane and expands the surviving layout. CLI and GTK share the same policy and use the existing authenticated pane-close operation, including with older running daemons. Surviving shell processes and concurrent attachments remain running. A closed split has ordinary pane-close history semantics; the final ended session and restored history remain inspectable.
+New CLI sessions and TUI windows/splits now load the selected login shell explicitly, including when attached to a preserved older daemon. This covers one-command named sessions, detached creation, named session/window/pane commands, Screen control aliases and interactive split/window shortcuts. Existing shells retain their processes and startup settings.
 
-The desktop lockfile updates rustls to 0.23.46, the upstream patch for RUSTSEC-2026-0346 through RUSTSEC-2026-0349. The unrelated RSA advisory remains unsuppressed. This remains a testing distribution with separate external Windows/Fedora and physical-input acceptance gates.
+Remote named creation obtains the default shell from the authenticated SSH endpoint. Update the remote RUWAC CLI as well; endpoints without shell discovery receive an explicit update diagnostic before creation. Raw RPC and JSON requests retain their literal arguments, including custom commands. Reattachment does not require shell discovery.
 
-Installing an update leaves running windows unchanged. Restarting the frontend still reconnects its RDP transports; persistent terminal processes survive. The release does not claim seamless RDP process handoff.
+Qualification includes actual Bash profiles, generated shells, real PTYs, isolated current/older daemons and a disposable authenticated loopback SSH server. Ten synthetic peer cases exercise remote discovery refusals. Separate external-host and physical-input acceptance gates remain.
+
+The earlier rustls patch affects the development test-server graph; the shipped RDP client uses native TLS. The independent RSA advisory remains visible and unsuppressed. This release does not claim seamless RDP frontend handoff or fully qualified Fedora distribution.
