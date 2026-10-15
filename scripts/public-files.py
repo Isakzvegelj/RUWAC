@@ -48,7 +48,7 @@ def files(root):
   elif r.parts[:2]==('ruwac','notices') and len(r.parts)==4 and r.name in {'LICENSE-APACHE','LICENSE-MIT'}:out.append(r)
   elif len(r.parts)==1 and r.name in ROOT_FILES:out.append(r)
   elif r.parts[0]=='spec' and len(r.parts)==2 and r.suffix=='.md':out.append(r)
-  elif r.parts[0]=='ruwac' and r.parts[1]=='desktop' and (r.name in {'Cargo.toml','Cargo.lock'} or r.suffix=='.rs'):out.append(r)
+  elif r.parts[0]=='ruwac' and r.parts[1]=='desktop' and (r.name in {'Cargo.toml','Cargo.lock','chrome.css'} or r.suffix=='.rs'):out.append(r)
   elif r.as_posix() in {'ruwac/packaging/ruwac.spec','ruwac/packaging/ruwac.desktop','ruwac/packaging/ruwac-rpm-update.service','ruwac/packaging/ruwac-rpm-update.timer'}:out.append(r)
   elif r.parts[0]=='ruwac' and r.parts[1]=='gui' and r.suffix=='.py':out.append(r)
   elif r.parts[0]=='architecture' and len(r.parts)==2 and r.name in ARCH_FILES:out.append(r)

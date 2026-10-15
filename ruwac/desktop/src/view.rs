@@ -10,13 +10,17 @@ use std::{
     path::PathBuf,
     rc::Rc,
 };
-const CW: f64 = 10.0;
-const CH: f64 = 20.0;
 pub struct View {
     pub session: String,
     pub root: gtk::Box,
     pub area: gtk::DrawingArea,
     pub status: gtk::Label,
+    pub history_controls: gtk::Box,
+    cell_width: Cell<f64>,
+    cell_height: Cell<f64>,
+    font: RefCell<String>,
+    font_size: Cell<u8>,
+    line_height: Cell<f32>,
     pub worker: Worker,
     pub frame: RefCell<Option<Value>>,
     pub target: RefCell<String>,
@@ -48,7 +52,7 @@ impl View {
         let status = gtk::Label::new(Some("Connecting to daemon…"));
         status.set_xalign(0.0);
         status.set_ellipsize(gtk::pango::EllipsizeMode::End);
-        root.append(&status);
+
         let area = gtk::DrawingArea::builder()
             .hexpand(true)
             .vexpand(true)
@@ -110,6 +114,12 @@ impl View {
             root,
             area,
             status,
+            history_controls: choices.clone(),
+            cell_width: Cell::new(10.0),
+            cell_height: Cell::new(20.0),
+            font: RefCell::new("Monospace".into()),
+            font_size: Cell::new(12),
+            line_height: Cell::new(1.30),
             worker,
             frame: RefCell::new(None),
             target: RefCell::new(String::new()),
@@ -141,6 +151,7 @@ impl View {
                 .unwrap_or_default(),
             stack,
         });
+        v.apply_appearance(&crate::sidebar_shell::Shell::prefs());
         let weak = Rc::downgrade(&v);
         active_history.connect_clicked(move |_| {
             if let Some(v) = weak.upgrade() {
@@ -340,7 +351,7 @@ impl View {
         });
         v.area.add_controller(wheel);
         let w = Rc::downgrade(&v);
-        v.area.connect_resize(move|_,width,height|if let Some(v)=w.upgrade(){v.command("client.resize",json!({"rows":((height as f64/CH)as i32-2).clamp(4,100),"cols":((width as f64/CW)as i32).clamp(10,180)}));});
+        v.area.connect_resize(move|_,width,height|if let Some(v)=w.upgrade(){v.command("client.resize",json!({"rows":((height as f64/v.cell_height.get())as i32-2).clamp(4,100),"cols":((width as f64/v.cell_width.get())as i32).clamp(10,180)}));});
         v
     }
     pub fn show_terminal(&self) {
@@ -364,9 +375,7 @@ impl View {
             }
             None
         }
-        let Some(root) = self.stack.child_by_name("copy") else {
-            return false;
-        };
+        let root = self.history_controls.clone().upcast::<gtk::Widget>();
         let name = if primary {
             "history-primary-buffer"
         } else {
@@ -698,6 +707,8 @@ impl View {
     }
     fn find_divider(&self, x: f64, y: f64) -> Option<(String, bool, f64, f64, f64)> {
         fn walk(
+            cw: f64,
+            ch: f64,
             node: &Value,
             r: (f64, f64, f64, f64),
             x: f64,
@@ -710,8 +721,8 @@ impl View {
             let size = if vertical { w } else { h };
             let start = if vertical { rx } else { ry };
             let initial = start
-                + ((size / (if vertical { CW } else { CH }) * ratio).floor())
-                    * (if vertical { CW } else { CH });
+                + ((size / (if vertical { cw } else { ch }) * ratio).floor())
+                    * (if vertical { cw } else { ch });
             if x >= rx
                 && x < rx + w
                 && y >= ry
@@ -735,7 +746,7 @@ impl View {
                     (rx, initial, w, ry + h - initial),
                 )
             };
-            walk(&node["first"], a, x, y).or_else(|| walk(&node["second"], b, x, y))
+            walk(cw, ch, &node["first"], a, x, y).or_else(|| walk(cw, ch, &node["second"], b, x, y))
         }
         let f = self.frame.borrow();
         let f = f.as_ref()?;
@@ -749,15 +760,22 @@ impl View {
                 p["rect"]["x"].as_f64().unwrap_or(0.0) + p["rect"]["cols"].as_f64().unwrap_or(0.0)
             })
             .fold(0.0, f64::max)
-            * CW;
+            * self.cell_width.get();
         let height = panes
             .iter()
             .map(|p| {
                 p["rect"]["y"].as_f64().unwrap_or(0.0) + p["rect"]["rows"].as_f64().unwrap_or(0.0)
             })
             .fold(0.0, f64::max)
-            * CH;
-        walk(&f["layout"], (0.0, 0.0, width, height), x, y)
+            * self.cell_height.get();
+        walk(
+            self.cell_width.get(),
+            self.cell_height.get(),
+            &f["layout"],
+            (0.0, 0.0, width, height),
+            x,
+            y,
+        )
     }
 
     // Test-only caller reaches the same compiled GTK gesture callbacks as pointer drags.
@@ -776,18 +794,18 @@ impl View {
                     p["rect"]["x"].as_f64().unwrap_or(0.) + p["rect"]["cols"].as_f64().unwrap_or(0.)
                 })
                 .fold(0., f64::max)
-                * CW;
+                * self.cell_width.get();
             let height = panes
                 .iter()
                 .map(|p| {
                     p["rect"]["y"].as_f64().unwrap_or(0.) + p["rect"]["rows"].as_f64().unwrap_or(0.)
                 })
                 .fold(0., f64::max)
-                * CH;
+                * self.cell_height.get();
             let ratio = f["layout"]["ratio"].as_f64().unwrap_or(500.) / 1000.;
             if f["layout"]["orientation"] == "vertical" {
                 (
-                    (width / CW * ratio).floor() * CW,
+                    (width / self.cell_width.get() * ratio).floor() * self.cell_width.get(),
                     height / 2.,
                     width * 0.1,
                     0.,
@@ -795,7 +813,7 @@ impl View {
             } else {
                 (
                     width / 2.,
-                    (height / CH * ratio).floor() * CH,
+                    (height / self.cell_height.get() * ratio).floor() * self.cell_height.get(),
                     0.,
                     height * 0.1,
                 )
@@ -888,8 +906,10 @@ impl View {
                 };
                 let rows = frame["rows"].as_u64();
                 let cols = frame["cols"].as_u64();
-                let viewport_rows = (self.area.height() as f64 / CH).floor() as u64;
-                let viewport_cols = (self.area.width() as f64 / CW).floor() as u64;
+                let viewport_rows =
+                    (self.area.height() as f64 / self.cell_height.get()).floor() as u64;
+                let viewport_cols =
+                    (self.area.width() as f64 / self.cell_width.get()).floor() as u64;
                 let shared = match (rows, cols) {
                     (Some(rows), Some(cols)) if rows < viewport_rows || cols < viewport_cols => {
                         format!(" · shared PTY {cols}×{rows}; view {viewport_cols}×{viewport_rows}")
@@ -1019,13 +1039,17 @@ impl View {
         for p in frame["panes"].as_array()? {
             let rows = p["grid"]["rows"].as_u64()? as usize;
             let cols = p["grid"]["cols"].as_u64()? as usize;
-            let px = p["rect"]["x"].as_f64().unwrap_or(0.0) * CW;
-            let py = p["rect"]["y"].as_f64().unwrap_or(0.0) * CH;
-            if y >= py && y < py + rows as f64 * CH && x >= px && x < px + cols as f64 * CW {
+            let px = p["rect"]["x"].as_f64().unwrap_or(0.0) * self.cell_width.get();
+            let py = p["rect"]["y"].as_f64().unwrap_or(0.0) * self.cell_height.get();
+            if y >= py
+                && y < py + rows as f64 * self.cell_height.get()
+                && x >= px
+                && x < px + cols as f64 * self.cell_width.get()
+            {
                 return Some((
                     p["id"].as_str()?.into(),
-                    ((y - py) / CH) as usize,
-                    ((x - px) / CW) as usize,
+                    ((y - py) / self.cell_height.get()) as usize,
+                    ((x - px) / self.cell_width.get()) as usize,
                 ));
             }
         }
@@ -1403,9 +1427,39 @@ impl View {
         self.broker.borrow_mut().disconnect(&self.session);
         self.status.set_text("Detached; daemon PTYs preserved");
     }
+    pub fn apply_appearance(&self, prefs: &crate::sidebar_shell::Settings) {
+        let font = if crate::chrome::font_available(&prefs.term_font) {
+            prefs.term_font.as_str()
+        } else {
+            "Monospace"
+        };
+        *self.font.borrow_mut() = font.into();
+        self.font_size.set(prefs.term_size_pt);
+        self.line_height.set(prefs.line_height);
+        let description =
+            gtk::pango::FontDescription::from_string(&format!("{font} {}", prefs.term_size_pt));
+        let layout = self.area.create_pango_layout(Some("M"));
+        layout.set_font_description(Some(&description));
+        self.cell_width.set(layout.pixel_size().0.max(1) as f64);
+        let metrics = self.area.pango_context().metrics(Some(&description), None);
+        self.cell_height.set(
+            (((metrics.ascent() + metrics.descent()) as f64 / gtk::pango::SCALE as f64)
+                * prefs.line_height as f64)
+                .round()
+                .max(1.),
+        );
+        if self.area.width() > 0 && self.area.height() > 0 {
+            self.command("client.resize",json!({"rows":((self.area.height()as f64/self.cell_height.get())as i32-2).clamp(4,100),"cols":((self.area.width()as f64/self.cell_width.get())as i32).clamp(10,180)}));
+        }
+        self.area.queue_draw();
+    }
+    pub fn cell_metrics(&self) -> (f64, f64) {
+        (self.cell_width.get(), self.cell_height.get())
+    }
     fn draw(&self, area: &gtk::DrawingArea, cr: &gtk::cairo::Context, _width: i32, _height: i32) {
         self.drawn.set(self.drawn.get() + 1);
-        cr.set_source_rgb(0.04, 0.04, 0.05);
+        let bg = crate::schemes::current().bg();
+        cr.set_source_rgb(bg.0, bg.1, bg.2);
         let _ = cr.paint();
         let frame = self.frame.borrow();
         let Some(frame) = frame.as_ref() else {
@@ -1415,15 +1469,34 @@ impl View {
             return;
         };
         let layout = area.create_pango_layout(None);
-        let normal = gtk::pango::FontDescription::from_string("Monospace 11");
-        let bold = gtk::pango::FontDescription::from_string("Monospace Bold 11");
-        let italic = gtk::pango::FontDescription::from_string("Monospace Italic 11");
-        let bold_italic = gtk::pango::FontDescription::from_string("Monospace Bold Italic 11");
+        let normal = gtk::pango::FontDescription::from_string(&format!(
+            "{} {}",
+            self.font.borrow(),
+            self.font_size.get()
+        ));
+        let bold = gtk::pango::FontDescription::from_string(&format!(
+            "{} Bold {}",
+            self.font.borrow(),
+            self.font_size.get()
+        ));
+        let italic = gtk::pango::FontDescription::from_string(&format!(
+            "{} Italic {}",
+            self.font.borrow(),
+            self.font_size.get()
+        ));
+        let bold_italic = gtk::pango::FontDescription::from_string(&format!(
+            "{} Bold Italic {}",
+            self.font.borrow(),
+            self.font_size.get()
+        ));
+        let attributes = gtk::pango::AttrList::new();
+        attributes.insert(gtk::pango::AttrFontFeatures::new("liga=0, calt=0"));
+        layout.set_attributes(Some(&attributes));
         for p in panes {
             let _ = cr.save();
             cr.translate(
-                p["rect"]["x"].as_f64().unwrap_or(0.0) * CW,
-                p["rect"]["y"].as_f64().unwrap_or(0.0) * CH,
+                p["rect"]["x"].as_f64().unwrap_or(0.0) * self.cell_width.get(),
+                p["rect"]["y"].as_f64().unwrap_or(0.0) * self.cell_height.get(),
             );
             let y = 0.0;
             let g = &p["grid"];
@@ -1432,8 +1505,8 @@ impl View {
                 cr.rectangle(
                     0.0,
                     0.0,
-                    g["cols"].as_f64().unwrap_or(0.0) * CW,
-                    g["rows"].as_f64().unwrap_or(0.0) * CH,
+                    g["cols"].as_f64().unwrap_or(0.0) * self.cell_width.get(),
+                    g["rows"].as_f64().unwrap_or(0.0) * self.cell_height.get(),
                 );
                 let _ = cr.stroke();
             }
@@ -1454,7 +1527,12 @@ impl View {
                                 bg = (0.18, 0.28, 0.48);
                             }
                             cr.set_source_rgb(bg.0, bg.1, bg.2);
-                            cr.rectangle(c as f64 * CW, y + r as f64 * CH, CW, CH);
+                            cr.rectangle(
+                                c as f64 * self.cell_width.get(),
+                                y + r as f64 * self.cell_height.get(),
+                                self.cell_width.get(),
+                                self.cell_height.get(),
+                            );
                             let _ = cr.fill();
                         }
                         for (c, cell) in cells.iter().enumerate() {
@@ -1477,7 +1555,12 @@ impl View {
                                 ));
                                 layout.set_text(cell[0].as_str().unwrap_or(""));
                                 cr.set_source_rgb(fg.0, fg.1, fg.2);
-                                cr.move_to(c as f64 * CW, y + r as f64 * CH);
+                                cr.move_to(
+                                    c as f64 * self.cell_width.get(),
+                                    y + r as f64 * self.cell_height.get()
+                                        + (self.cell_height.get() - layout.pixel_size().1 as f64)
+                                            / 2.,
+                                );
                                 pangocairo::functions::show_layout(cr, &layout);
                                 let ul = if cell[6]["underline_color"].is_null() {
                                     fg
@@ -1487,10 +1570,11 @@ impl View {
                                 crate::terminal_style::decoration(
                                     cr,
                                     &cell[6],
-                                    c as f64 * CW,
-                                    y + r as f64 * CH,
-                                    CW * cell[6]["width"].as_f64().unwrap_or(1.0),
-                                    CH,
+                                    c as f64 * self.cell_width.get(),
+                                    y + r as f64 * self.cell_height.get(),
+                                    self.cell_width.get()
+                                        * cell[6]["width"].as_f64().unwrap_or(1.0),
+                                    self.cell_height.get(),
                                     fg,
                                     ul,
                                 );
@@ -1504,10 +1588,10 @@ impl View {
             {
                 cr.set_source_rgb(0.5, 0.7, 0.9);
                 cr.rectangle(
-                    g["cursor"]["col"].as_u64().unwrap_or(0) as f64 * CW,
-                    y + g["cursor"]["row"].as_u64().unwrap_or(0) as f64 * CH,
-                    CW,
-                    CH,
+                    g["cursor"]["col"].as_u64().unwrap_or(0) as f64 * self.cell_width.get(),
+                    y + g["cursor"]["row"].as_u64().unwrap_or(0) as f64 * self.cell_height.get(),
+                    self.cell_width.get(),
+                    self.cell_height.get(),
                 );
                 let _ = cr.stroke();
             }
@@ -1547,17 +1631,13 @@ fn color(v: &Value, fg: bool) -> (f64, f64, f64) {
     let n = v.as_u64().unwrap_or(256);
     if n >= 256 {
         return if fg {
-            (0.9, 0.9, 0.9)
+            crate::schemes::current().fg()
         } else {
-            (0.04, 0.04, 0.05)
+            crate::schemes::current().bg()
         };
     }
     let rgb = if n < 16 {
-        let p = [
-            0x000000, 0xcd0000, 0x00cd00, 0xcdcd00, 0x0000ee, 0xcd00cd, 0x00cdcd, 0xe5e5e5,
-            0x7f7f7f, 0xff0000, 0x00ff00, 0xffff00, 0x5c5cff, 0xff00ff, 0x00ffff, 0xffffff,
-        ];
-        p[n as usize]
+        return crate::schemes::current().ansi(n as usize);
     } else if n >= 232 {
         let l = 8 + 10 * (n - 232);
         l * 0x010101

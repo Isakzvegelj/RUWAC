@@ -1007,7 +1007,8 @@ impl AutoGdm {
 pub struct RdpView {
     pub root: gtk::Box,
     area: gtk::DrawingArea,
-    status: gtk::Label,
+    pub status: gtk::Label,
+    pub toolbar: gtk::Box,
     connection: RefCell<Option<Connection>>,
     surface: RefCell<Option<gtk::cairo::ImageSurface>>,
     size: Cell<(u16, u16)>,
@@ -1143,12 +1144,14 @@ impl RdpView {
         status.set_ellipsize(gtk::pango::EllipsizeMode::End);
         status.add_css_class("dim-label");
         status.set_max_width_chars(80);
-        let viewport_overlay = crate::compact::toolbar(&root, &toolbar, "rdp-tools", Some(&status));
+        let viewport_overlay = gtk::Overlay::new();
+        viewport_overlay.set_vexpand(true);
+        root.append(&viewport_overlay);
         let review_certificate = gtk::Button::with_label("Review RDP certificate…");
         review_certificate.set_widget_name("rdp-review-certificate");
         review_certificate.set_halign(gtk::Align::Start);
         review_certificate.set_visible(false);
-        root.append(&review_certificate);
+        toolbar.append(&review_certificate);
         let area = gtk::DrawingArea::builder()
             .hexpand(true)
             .vexpand(true)
@@ -1188,6 +1191,7 @@ impl RdpView {
             root: root.clone(),
             area,
             status,
+            toolbar: toolbar.clone(),
             connection: RefCell::new(None),
             surface: RefCell::new(None),
             size: Cell::new((0, 0)),
@@ -1204,7 +1208,7 @@ impl RdpView {
             review_certificate: review_certificate.clone(),
             transient_pin: RefCell::new(None),
             preferences_due: Cell::new(None),
-            mode: Cell::new(Scale::Fit),
+            mode: Cell::new(Scale::Dynamic),
             scroll,
             zoom: Cell::new(1.0),
             desired: Cell::new((0, 0)),
@@ -1773,6 +1777,8 @@ impl RdpView {
         v
     }
     pub fn fixture_connect(&self, port: u16, ca: &std::path::Path) {
+        // This generated peer starts at a fixed size; resize cases opt in explicitly.
+        self.mode.set(Scale::Fit);
         self.close();
         let c = Connection::start_with_secret(
             Profile {
@@ -1793,22 +1799,7 @@ impl RdpView {
         self.focus();
     }
     pub fn fixture_toolbar(&self, action: Option<&str>) -> serde_json::Value {
-        fn find(w: &gtk::Widget) -> Option<gtk::Box> {
-            if w.widget_name() == "rdp-toolbar" {
-                return w.clone().downcast().ok();
-            }
-            let mut child = w.first_child();
-            while let Some(c) = child {
-                if let Some(found) = find(&c) {
-                    return Some(found);
-                }
-                child = c.next_sibling();
-            }
-            None
-        }
-        let Some(toolbar) = find(self.root.upcast_ref()) else {
-            return serde_json::json!({"error":"toolbar unavailable"});
-        };
+        let toolbar = &self.toolbar;
         let mut controls = Vec::new();
         let mut clicked = false;
         let mut child = toolbar.first_child();
@@ -1852,7 +1843,7 @@ impl RdpView {
             }
             None
         }
-        if let Some(drop) = find(self.root.upcast_ref()) {
+        if let Some(drop) = find(self.toolbar.upcast_ref()) {
             drop.set_selected(index.min(4));
         }
     }
@@ -2210,7 +2201,7 @@ impl RdpView {
             }
             None
         }
-        if let Some(b) = find(self.root.upcast_ref()) {
+        if let Some(b) = find(self.toolbar.upcast_ref()) {
             b.emit_clicked();
         }
         if self.fullscreen.get() {
@@ -2251,6 +2242,7 @@ impl RdpView {
         }
     }
     pub fn fixture_pointer(&self, q: &serde_json::Value) -> serde_json::Value {
+        let position_before = self.pointer_position.get();
         if q["cancel"] == true {
             let controllers = self.area.observe_controllers();
             for i in 0..controllers.n_items() {
@@ -2271,7 +2263,7 @@ impl RdpView {
             self.scroll.hadjustment().set_value(x);
             self.scroll.vadjustment().set_value(y);
         }
-        serde_json::json!({"held_buttons":self.buttons.borrow().len(),"position":self.pointer_position.get(),"state":self.fixture_inspect()})
+        serde_json::json!({"held_buttons":self.buttons.borrow().len(),"position_before":position_before,"position":self.pointer_position.get(),"state":self.fixture_inspect()})
     }
     pub fn set_profile(&self, host: &str, user: &str, reference: &str, ca: &str) {
         for (e, value) in self.entries.iter().zip([host, user, reference, ca]) {

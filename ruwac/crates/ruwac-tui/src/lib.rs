@@ -222,16 +222,23 @@ impl Drop for Raw {
         }
     }
 }
-fn dimensions() -> (u16, u16) {
+fn terminal_dimensions() -> (u16, u16) {
     unsafe {
         let mut s: libc::winsize = std::mem::zeroed();
-        libc::ioctl(0, libc::TIOCGWINSZ, &mut s);
+        if libc::ioctl(0, libc::TIOCGWINSZ, &mut s) != 0 {
+            return (24, 80);
+        }
         (
-            s.ws_row.saturating_sub(1).clamp(4, 100),
-            s.ws_col.clamp(10, 200),
+            if s.ws_row == 0 { 24 } else { s.ws_row },
+            if s.ws_col == 0 { 80 } else { s.ws_col },
         )
     }
 }
+fn dimensions() -> (u16, u16) {
+    let (rows, cols) = terminal_dimensions();
+    (rows.saturating_sub(1).clamp(4, 100), cols.clamp(10, 200))
+}
+
 fn call(s: &mut UnixStream, m: &str, v: Value) -> io::Result<Value> {
     let sent = request(m, v);
     write_frame(s, &sent)?;
@@ -330,8 +337,8 @@ fn status_line(v: &Value, size: (u16, u16), status: &str) -> String {
     } else {
         format!(
             "RUWAC {} · {}{} · {}",
+            copy::clip(&window_identity(v), (size.1 as usize / 3).max(1)),
             safe(status),
-            window_identity(v),
             shared,
             windows
         )
@@ -339,7 +346,7 @@ fn status_line(v: &Value, size: (u16, u16), status: &str) -> String {
     copy::clip(&line, size.1 as usize)
 }
 
-fn draw(v: &Value, size: (u16, u16), status: &str) -> io::Result<()> {
+fn draw(v: &Value, status: &str) -> io::Result<()> {
     let mut out = format!(
         "\x1b]2;RUWAC {}\x07\x1b[?25l\x1b[0m\x1b[H\x1b[2J",
         window_identity(v).chars().take(160).collect::<String>()
@@ -417,10 +424,15 @@ fn draw(v: &Value, size: (u16, u16), status: &str) -> io::Result<()> {
             }
         }
     }
+    // The daemon bounds the PTY grid, but chrome belongs to the physical
+    // terminal. Keep the bar at its bottom even beyond the engine grid limits.
+    let (screen_rows, screen_cols) = terminal_dimensions();
+    let line = status_line(v, (screen_rows.saturating_sub(1), screen_cols), status);
     out.push_str(&format!(
-        "\x1b[{};1H\x1b[0;7m{}\x1b[0m\x1b[K",
-        size.0 + 1,
-        status_line(v, size, status)
+        "\x1b[{};1H\x1b[0;7m{}{}\x1b[0m",
+        screen_rows,
+        line,
+        " ".repeat((screen_cols as usize).saturating_sub(copy::width(&line)))
     ));
     out.push_str(if mouse {
         "\x1b[?1000h\x1b[?1006h"
@@ -783,7 +795,7 @@ fn draw_mode(
     config: &Config,
 ) -> io::Result<()> {
     if matches!(mode, Mode::Live) {
-        return draw(snapshot, size, &format!("{} · {}", config.label(), status));
+        return draw(snapshot, &format!("{} · {}", config.label(), status));
     }
     let height = size.0 as usize;
     let columns = size.1 as usize;
@@ -941,6 +953,7 @@ pub fn attach(socket: &Path, session: &str) -> io::Result<()> {
         ancestor = parent;
     }
     let _raw = Raw::enter()?;
+    let mut screen_size = terminal_dimensions();
     let mut size = dimensions();
     call(
         &mut s,
@@ -1410,6 +1423,11 @@ pub fn attach(socket: &Path, session: &str) -> io::Result<()> {
         }
         if STOP.load(Ordering::Relaxed) {
             break;
+        }
+        let new_screen_size = terminal_dimensions();
+        if new_screen_size != screen_size {
+            screen_size = new_screen_size;
+            dirty = true;
         }
         let newsize = dimensions();
         if newsize != size {

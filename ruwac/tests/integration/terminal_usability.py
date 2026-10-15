@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Real named CLI sessions, independent attachments, titles and recursion refusal."""
-import argparse,json,os,shlex,subprocess,tempfile,time
+import argparse,json,os,shlex,subprocess,tempfile,time,fcntl,struct,re
 from pathlib import Path
 from spike import Client,Tui,eventually
 p=argparse.ArgumentParser();p.add_argument('--binary',type=Path,required=True);p.add_argument('--evidence',type=Path,required=True);a=p.parse_args()
@@ -20,6 +20,17 @@ try:
  one=ui(['-S','d'],'create');eventually(lambda:sock.exists())
  sessions=eventually(lambda:rpc('session.list'));assert len(sessions)==1 and sessions[0]['name']=='d';sid=sessions[0]['id']
  eventually(lambda:b'RUWAC d'in one.data);assert b'\x1b]2;RUWAC d'in one.data
+ # Assert the actual emitted bottom row, including spaces that make its
+ # inverse background visible across the complete terminal width.
+ def bar(rows,cols,offset=0):
+  pattern=rb'\x1b\['+str(rows).encode()+rb';1H\x1b\[0;7m([^\x1b]*)\x1b\[0m'
+  found=re.findall(pattern,one.data[offset:])
+  return found[-1].decode() if found and len(found[-1].decode())==cols else None
+ assert eventually(lambda:bar(24,80)).startswith('RUWAC d')
+ for rows,cols in [(40,120),(120,240),(130,260),(24,80)]:
+  offset=len(one.data);fcntl.ioctl(one.slave,0x5414,struct.pack('HHHH',rows,cols,0,0))
+  assert eventually(lambda:bar(rows,cols,offset)).startswith('RUWAC d')
+ checks.append('full-width-status-bar-at-physical-bottom-through-PTY-limit-resizes')
  checks.append('single-command-start-create-attach-title')
  listed=subprocess.run([str(binary),'--socket',str(sock),'-ls'],env=env,capture_output=True,text=True,timeout=10)
  assert listed.returncode==0 and 'NAME' in listed.stdout and sid in listed.stdout and 'running' in listed.stdout and not listed.stdout.startswith('{')

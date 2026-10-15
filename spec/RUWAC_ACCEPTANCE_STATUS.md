@@ -6,12 +6,17 @@ receipts and original reports are archived privately outside Git.
 
 | Area | Result | Scope |
 | --- | --- | --- |
-| Collapsible machine groups | PASS | Actual GTK disclosure controls, search reveal/restore, preference preservation and reopen persistence with generated profiles |
+| Scrollable, collapsible machine groups | PASS | 123 generated profiles without pagination, native disclosure, search reveal/restore, preference preservation and restart persistence |
 | RDP drag release and viewport stability | PASS | Actual authenticated loopback left/right release receipts, GTK gesture cancellation, tab-switch release, zoom remapping and preserved pan; synthetic input, external physical reproduction remains separate |
 | Bulk Remmina metadata import | PASS | Generated native/legacy/Flatpak profiles; confirmation, cancellation, changed-file refusal, duplicate skipping and credential exclusion |
-| Auto-hide toolbar overlays | PASS | Actual GTK allocations remain unchanged across repeated toggles and hover callbacks; authenticated RDP resize regression is required before publication |
-| Screen CLI aliases and readable session list | PASS | Seven real PTY groups including detached/shared sessions, automation title, control-key navigation and kill cancellation; full GNU Screen language remains unsupported |
-| Compact GTK controls and reachable Remmina import | PASS | Five actual owned-Wayland groups, small-window disclosure toggling and import outside option scroll; generated profiles and synthetic callbacks |
+| Dynamic RDP and local host shortcuts | PASS | Owned Mutter 50.5, twenty Display Control reactivations and allocation-driven resize storm; real GDK Ctrl+Alt+Home and Ctrl+Alt+Enter events release focus and enter/exit fullscreen without reconnecting |
+| Header Controls and optional dock | PASS | 32px native header; popover preserves terminal/RDP allocation, explicit dock takes layout space; synthetic GTK callbacks |
+| Screen CLI aliases and readable session list | PASS | Eight real PTY groups including full-width bottom status through normal and beyond-limit physical resizes, detached/shared sessions, automation title, control-key navigation and kill cancellation; full GNU Screen language remains unsupported |
+| Desktop appearance and font metrics | PASS | Six actual rendered background pixel checks, saved schema-2 preferences and PTY dimensions changed by font size; unavailable fonts fall back to Monospace |
+| Remote agent launch configuration | PASS | Native SSH profile saves commands/backend; generated command/quoting tests; no real agent account or external remote installation claimed |
+| Remote CLI installation and external agent launch | BLOCKED | Explicit installer/launcher implemented; external host prerequisites and agent login remain separate acceptance |
+| Weston popup-after-resize compatibility | BLOCKED | Weston 15.0.1 exited in popup positioning on two owned displays; Mutter qualification is recorded separately; no physical desktop pass inferred |
+| Strict warnings-as-errors desktop lint | BLOCKED | Local Clippy component unavailable; existing GTK deprecation/dead-code warnings remain; ordinary hosted lint is a separate quality gate |
 | Current automatic GDM sign-in | BLOCKED | Owner reports failure in older running GUI; current recognition regressions pass, but no new real-host login claimed in this batch |
 | Named CLI creation/reattachment, window titles and concurrent clients | PASS | Actual generated local PTYs; exact-name and recursion safeguards; two simultaneous clients |
 | Nested prefix routing | PASS | Two through five real RUWAC layers and native GTK with actual tmux; synthetic GTK callbacks |

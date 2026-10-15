@@ -1,6 +1,5 @@
 //! Native overlay/docked machine sidebar and private desktop preferences.
 use adw::prelude::*;
-use gtk::glib;
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
@@ -11,17 +10,80 @@ use std::{
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Settings {
-    schema: u32,
+pub struct Settings {
+    pub schema: u32,
+    #[serde(default = "default_scheme")]
+    pub scheme: String,
+    #[serde(default = "default_font")]
+    pub term_font: String,
+    #[serde(default = "default_size")]
+    pub term_size_pt: u8,
+    #[serde(default = "default_height")]
+    pub line_height: f32,
+    #[serde(default = "default_labels")]
+    pub bar_labels: bool,
+    #[serde(default)]
+    pub actions_collapsed: bool,
+    #[serde(default)]
+    pub controls_docked: bool,
+
     pinned: bool,
     width: u16,
     #[serde(default, skip_serializing_if = "std::collections::BTreeSet::is_empty")]
     collapsed_groups: std::collections::BTreeSet<String>,
 }
+fn default_scheme() -> String {
+    "graphite".into()
+}
+fn default_font() -> String {
+    "JetBrains Mono".into()
+}
+fn default_size() -> u8 {
+    12
+}
+fn default_height() -> f32 {
+    1.30
+}
+fn default_labels() -> bool {
+    true
+}
+pub const FONTS: [&str; 6] = [
+    "JetBrains Mono",
+    "IBM Plex Mono",
+    "Fira Code",
+    "Source Code Pro",
+    "Red Hat Mono",
+    "Ubuntu Mono",
+];
+impl Settings {
+    fn validate(&self) -> bool {
+        [1, 2].contains(&self.schema)
+            && [
+                "graphite", "nocturne", "fjord", "ember", "paper", "contrast",
+            ]
+            .contains(&self.scheme.as_str())
+            && FONTS.contains(&self.term_font.as_str())
+            && (9..=18).contains(&self.term_size_pt)
+            && [1.15, 1.30, 1.45].contains(&self.line_height)
+            && (200..=420).contains(&self.width)
+            && self.collapsed_groups.len() <= 1000
+            && !self
+                .collapsed_groups
+                .iter()
+                .any(|g| g.len() > 1024 || g.contains('\0'))
+    }
+}
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            schema: 1,
+            schema: 2,
+            scheme: default_scheme(),
+            term_font: default_font(),
+            term_size_pt: default_size(),
+            line_height: default_height(),
+            bar_labels: true,
+            actions_collapsed: false,
+            controls_docked: false,
             pinned: false,
             width: 260,
             collapsed_groups: Default::default(),
@@ -40,7 +102,7 @@ fn path() -> Result<PathBuf, String> {
     }
     Ok(base.join("ui.json"))
 }
-fn load() -> Result<Settings, String> {
+pub fn load() -> Result<Settings, String> {
     let path = path()?;
     let file = match fs::OpenOptions::new()
         .read(true)
@@ -64,18 +126,12 @@ fn load() -> Result<Settings, String> {
     file.take(1024 * 1024 + 1)
         .read_to_end(&mut bytes)
         .map_err(|_| "Preferences unreadable")?;
-    let value: Settings =
+    let mut value: Settings =
         serde_json::from_slice(&bytes).map_err(|_| "Existing desktop preferences protected")?;
-    if value.schema != 1
-        || !(200..=420).contains(&value.width)
-        || value.collapsed_groups.len() > 1000
-        || value
-            .collapsed_groups
-            .iter()
-            .any(|g| g.len() > 1024 || g.contains('\0'))
-    {
+    if !value.validate() {
         return Err("Existing desktop preferences protected".into());
     }
+    value.schema = 2;
     Ok(value)
 }
 
@@ -95,7 +151,14 @@ pub fn set_group_collapsed(group: &str, collapsed: bool) -> Result<(), String> {
     save(&settings)
 }
 fn save(value: &Settings) -> Result<(), String> {
+    if !value.validate() || value.schema != 2 {
+        return Err("Invalid desktop preferences".into());
+    }
     load()?; // Refuse unknown or unsafe existing settings rather than replacing them.
+    let bytes = serde_json::to_vec(value).map_err(|_| "Invalid preferences")?;
+    if bytes.len() > 1024 * 1024 {
+        return Err("Desktop preferences exceed the size limit".into());
+    }
     let target = path()?;
     let tmp = target.with_file_name(format!("{}.tmp", ruwac_protocol::id("ui")));
     let result = (|| {
@@ -106,7 +169,7 @@ fn save(value: &Settings) -> Result<(), String> {
             .custom_flags(libc::O_NOFOLLOW)
             .open(&tmp)
             .map_err(|_| "Preferences cannot be saved")?;
-        file.write_all(&serde_json::to_vec(value).map_err(|_| "Invalid preferences")?)
+        file.write_all(&bytes)
             .map_err(|_| "Preferences cannot be saved")?;
         file.sync_all().map_err(|_| "Preferences cannot be saved")?;
         load()?;
@@ -129,6 +192,17 @@ pub struct Shell {
     pub width: gtk::SpinButton,
 }
 impl Shell {
+    pub fn prefs() -> Settings {
+        load().unwrap_or_default()
+    }
+    pub fn update(change: impl FnOnce(&mut Settings)) -> Result<Settings, String> {
+        let mut prefs = load()?;
+        change(&mut prefs);
+        prefs.schema = 2;
+        save(&prefs)?;
+        Ok(prefs)
+    }
+
     pub fn new(
         sidebar: &gtk::Box,
         tabs: &adw::TabView,
@@ -191,7 +265,7 @@ impl Shell {
                 v.set_show_sidebar(true);
             }
             if save(&Settings {
-                schema: 1,
+                schema: 2,
                 pinned: p.is_active(),
                 width: w.value_as_int() as u16,
                 ..load().unwrap_or_default()
@@ -209,7 +283,7 @@ impl Shell {
             v.set_min_sidebar_width(w.value());
             v.set_max_sidebar_width(w.value());
             if save(&Settings {
-                schema: 1,
+                schema: 2,
                 pinned: p.is_active(),
                 width: w.value_as_int() as u16,
                 ..load().unwrap_or_default()
@@ -257,6 +331,34 @@ impl Shell {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn appearance_schema_defaults_and_rejection() {
+        let mut v: Settings =
+            serde_json::from_str(r#"{"schema":1,"pinned":false,"width":260}"#).unwrap();
+        assert!(v.validate());
+        assert_eq!(v.scheme, "graphite");
+        assert_eq!(v.term_size_pt, 12);
+        assert_eq!(v.line_height, 1.30);
+        v.schema = 2;
+        assert!(v.validate());
+        v.scheme = "unknown".into();
+        assert!(!v.validate());
+        v.scheme = "paper".into();
+        v.term_size_pt = 19;
+        assert!(!v.validate());
+        v.term_size_pt = 12;
+        v.line_height = f32::NAN;
+        assert!(!v.validate());
+        v.line_height = 1.45;
+        v.term_font = "unconfigured".into();
+        assert!(!v.validate());
+        assert!(
+            serde_json::from_str::<Settings>(
+                r#"{"schema":2,"pinned":false,"width":260,"unknown":true}"#
+            )
+            .is_err()
+        );
+    }
     #[test]
     fn old_sidebar_preferences_preserve_width_and_default_groups_open() {
         let old: Settings =

@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## v0.2.43 — 2026-10-15 — Stable source release
+
+- Keep the CLI status bar visible across the full terminal width and at its physical bottom after resizing, including terminals larger than the daemon PTY limit.
+- Replace floating toolbars with a 32px header, adaptive action labels, session Controls popover and optional dock; add six live palettes and terminal font/spacing preferences.
+- List all machines in one scrollable grouped list, with persistent collapse state and icon actions for configured endpoints and remote agents.
+- Add configurable Codex/Claude resume commands and RUWAC, Screen, tmux or direct remote sessions, plus explicit headless remote RUWAC setup.
+- Default new RDP profiles to Dynamic resolution; add local-focus and fullscreen keyboard chords while retaining AltGr input and saved display overrides.
+
 ## v0.2.42 — 2026-10-15 — Stable source release
 
 - Add collapsible machine groups with remembered state; search temporarily reveals matching machines.

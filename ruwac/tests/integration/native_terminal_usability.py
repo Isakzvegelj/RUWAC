@@ -44,12 +44,17 @@ try:
  assert inspect!=session['pane'] and len(rpc('session.list'))==2
  assert (admin.call('client.render')['panes'][0]['grid']['rows'],admin.call('client.render')['panes'][0]['grid']['cols'])==(32,137)
  checks.append('default-GTK-creates-own-session-and-preserves-attached-CLI-size')
- controls=command('compact-controls');assert controls['found'] and not controls['open']
- command('compact-controls',open=True,width=800,height=600)
- eventually(lambda:command('compact-controls')['open'])
- command('compact-controls',open=False)
- eventually(lambda:not command('compact-controls')['open'])
- checks.append('native-centered-controls-collapse-and-expand-at-small-window-size')
+ command('chrome',width=1600,height=1000,collapse=False,dock=False)
+ import time
+ time.sleep(.5)
+ controls=command('chrome');(root/'chrome-initial.json').write_text(json.dumps(controls,indent=2));command('snapshot');assert controls['header_height']<=33,{k:v for k,v in controls.items()if k!='header_tree'}
+ assert controls['content_height']==controls['window_height']-controls['header_height'],controls
+ command('chrome',collapse=True);time.sleep(.3)
+ narrow=command('chrome');assert narrow['tab_bar_width']>=narrow['window_width']-220,{k:v for k,v in narrow.items()if k!='header_tree'}
+ command('chrome',collapse=False,open=True,width=800,height=600)
+ eventually(lambda:command('chrome')['open'])
+ command('chrome',open=False);eventually(lambda:not command('chrome')['open'])
+ checks.append('single-row-header-allocation-collapse-and-controls-popover')
  command('profiles-control',import_expanded=True)
  eventually(lambda:command('profiles-control')['discovered_count']==3)
  preview=command('profiles-control',discovered_index=0)
@@ -87,17 +92,51 @@ try:
  assert json.loads((Path(env['XDG_CONFIG_HOME'])/'RUWAC/ui.json').read_text())['collapsed_groups']==['Lab/A']
  checks.append('machine-groups-collapse-search-reveals-matches-and-preferences-survive-width-change')
 
- command('compact-controls',open=False);baseline=command('compact-controls')['viewport']
+ command('sidebar-shell',shown=False)
+ command('chrome',open=False);baseline=command('chrome')['content_height']
  for i in range(20):
-  sample=command('compact-controls',open=i%2==0);assert sample['viewport']==baseline
- command('compact-controls',open=False,hover=True);eventually(lambda:command('compact-controls')['open']);assert command('compact-controls')['viewport']==baseline
- command('compact-controls',hover=False);eventually(lambda:not command('compact-controls')['open'])
- command('rdp-open');command('compact-controls',name='rdp-tools',open=False)
- remote=eventually(lambda:r if (r:=command('compact-controls',name='rdp-tools')).get('viewport') and min(r['viewport'])>0 else False)
+  sample=command('chrome',open=i%2==0);assert sample['content_height']==baseline
+ command('chrome',open=False,dock=True);time.sleep(.3)
+ docked=command('chrome');assert docked['docked'] and docked['content_height']<baseline and docked['dock_height']<=32,{k:v for k,v in docked.items()if k!='header_tree'}
+ command('chrome',dock=False);time.sleep(.3);assert command('chrome')['content_height']==baseline
+ command('rdp-open');time.sleep(.3)
+ remote=command('rdp-inspect',rdp=0)['viewport']
  for i in range(20):
-  assert command('compact-controls',name='rdp-tools',open=i%2==0)['viewport']==remote['viewport']
-  assert command('compact-controls',open=i%2==0)['viewport']==baseline
- checks.append('both-unmeasured-native-overlays-preserve-terminal-and-RDP-viewport')
+  command('chrome',open=i%2==0)
+  assert command('rdp-inspect',rdp=0)['viewport']==remote
+ command('chrome',open=False)
+ checks.append('controls-popover-preserves-terminal-and-RDP-size-explicit-dock-takes-space')
+ # More than two former pages, generated locally: every row is in the scroll list.
+ for i in range(120):
+  (paths[0].parent/f'bulk-{i}.remmina').write_text(f'[remmina]\nname=Generated bulk {i:03}\ngroup=Other\nprotocol=RDP\nserver=127.0.0.1:{4000+i}\n')
+ terminate(first);first=gui('--show-machines');eventually(lambda:command('inspect').get('target'),20)
+ command('profiles-control',import_expanded=True)
+ eventually(lambda:command('profiles-control')['discovered_count']==123)
+ command('profiles-control',operation='import-all');command('profiles-control',bulk_response='import')
+ eventually(lambda:len(imported())==123)
+ command('sidebar-shell',shown=True);time.sleep(.3)
+ many=command('profiles-control');assert many['visible']['rows']==121,many['visible']
+ checks.append('all-123-machines-in-one-scroll-list-with-collapsed-group-preserved')
+ command('tab-select',tab=0);command('sidebar-shell',shown=False);time.sleep(.2)
+ metrics=[]
+ for scheme,bg in [('graphite',0x131416),('nocturne',0x121320),('fjord',0x262a33),('ember',0x181613),('paper',0xfbfaf7),('contrast',0x000000)]:
+  c=command('chrome',scheme=scheme);assert c['scheme']==scheme and c['terminal_background']==bg,c
+  time.sleep(.1);command('snapshot')
+  from PIL import Image
+  pixel=Image.open(fixture/'native-rust.png').convert('RGB').getpixel((5,c['header_height']+5));assert pixel==((bg>>16)&255,(bg>>8)&255,bg&255),(scheme,pixel)
+ command('chrome',scheme='graphite',size=12);time.sleep(.3);before_grid=command('inspect')['grid_size']
+ command('chrome',size=14);time.sleep(.3)
+ assert command('chrome')['term_size_pt']==14
+ assert command('inspect')['grid_size']!=before_grid,(before_grid,command('inspect'))
+ command('snapshot');assert (fixture/'native-rust.png').is_file()
+ prefs=json.loads((Path(env['XDG_CONFIG_HOME'])/'RUWAC/ui.json').read_text());assert prefs['schema']==2 and prefs['term_size_pt']==14 and prefs['collapsed_groups']==['Lab/A']
+ checks.append('six-live-palettes-and-persisted-schema2-font-size')
+ command('sidebar-shell',shown=True)
+ result=command('profile-editor',operation='new',fields={'0':'Generated agent host','1':'Agents','3':'127.0.0.1:22222','4':'fixture','13':1},named={'machine-codex-command':'codex resume --all','machine-claude-command':'claude --resume','machine-agent-backend':2},response='save')
+ assert not result.get('error'),result
+ configured=eventually(lambda:next((p for p in imported()if p['name']=='Generated agent host'),None))
+ assert configured['preferences']['codex_command']=='codex resume --all' and configured['preferences']['claude_command']=='claude --resume' and configured['preferences']['agent_backend']=='tmux'
+ checks.append('native-profile-saves-agent-commands-and-backend-without-launching')
 
  terminate(first)
  tmux=root/'tmux.sock';conf=root/'tmux.conf';conf.write_text('set -g prefix C-a\nbind C-a send-prefix\nset -g status off\nset -g set-clipboard off\nset -g default-shell /bin/sh\n')

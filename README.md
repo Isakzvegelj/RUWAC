@@ -69,7 +69,7 @@ Private configuration may set RUWAC_SCROLLBACK_LINES (default 50000) and RUWAC_S
 
 “New RDP tab” opens the in-process client. Supply an authorized host:port, username, a Secret Service profile reference and optional trusted CA PEM. The lookup uses attributes application=RUWAC and profile=the reference; secrets are not stored in the project. System certificate/hostname validation is mandatory. Fit/native/stretch/fullscreen and explicit send-key actions are implemented. Text and PNG CLIPRDR works in both directions with five clipboard policies, explicit send/receive and remote paste. Authenticated loopback sessions are tested; dynamic resizing is qualified against authenticated loopback sessions; external Windows/GNOME hosts remain unqualified.
 
-“Machines” toggles the sidebar; Ctrl+K searches names, full groups, endpoints and tags. Favorites and recent-use filters are available. Previous/next controls show 50 profiles per page; search and filter changes start at the first matching page. Choose a Remmina file explicitly to preview approved nonsecret metadata, then import it. Passwords and key/certificate files are never imported. To update an existing endpoint, preview the file, explicitly select its endpoint identity, and use Review merge into selected endpoint. Review the field changes before Apply; local IDs, credential references, trust/key paths and preferences are preserved. Active endpoints and changes made after review require closing tabs or reviewing again. Cancel leaves metadata unchanged; Undo restores the previous private library. RDP entries open native tabs; SSH entries create daemon-owned SSH terminals. Native profile editing and Set/replace/forget credential controls are implemented.
+“Machines” toggles the sidebar; Ctrl+K searches names, full groups, endpoints and tags. Favorites and recent-use filters are available. All matching profiles appear in one scrollable list; group headings collapse or expand their machines. Choose a Remmina file explicitly to preview approved nonsecret metadata, then import it. Passwords and key/certificate files are never imported. To update an existing endpoint, preview the file, explicitly select its endpoint identity, and use Review merge into selected endpoint. Review the field changes before Apply; local IDs, credential references, trust/key paths and preferences are preserved. Active endpoints and changes made after review require closing tabs or reviewing again. Cancel leaves metadata unchanged; Undo restores the previous private library. RDP entries open native tabs; SSH entries create daemon-owned SSH terminals. Native profile editing and Set/replace/forget credential controls are implemented.
 
 ## Machine workspaces and Files
 
@@ -167,7 +167,7 @@ Contribution and repository checks: see [CONTRIBUTING.md](CONTRIBUTING.md), [SEC
 
 Native windows, the overlay sidebar and GNOME dual-credential storage are documented in [GNOME login and desktop windows](spec/RUWAC_GNOME_LOGIN.md). GNOME modes support the non-AVC Graphics Pipeline and verified same-endpoint RDSTLS handover. Real Fedora GDM rendering is tested; Linux user sign-in remains a separate explicit action.
 
-Fedora 44 updates: use the header's update icon or `ruwac update --check` and `ruwac update --install`. Automatic checks announce newer stable GitHub releases; per-user installations support source builds or explicitly selected testing bundles, retaining active sessions and the previous version. Bundle updates require `gh` to verify signed build provenance before installation. System installations use the release RPMs and DNF. See [prerequisites, bootstrap and rollback](spec/RUWAC_UPDATES.md).
+Fedora 44 updates: use Main menu → Updates or `ruwac update --check` and `ruwac update --install`. Automatic checks announce newer stable GitHub releases; per-user installations support source builds or explicitly selected testing bundles, retaining active sessions and the previous version. Bundle updates require `gh` to verify signed build provenance before installation. System installations use the release RPMs and DNF. See [prerequisites, bootstrap and rollback](spec/RUWAC_UPDATES.md).
 
 The native Files view supports SFTP and verified staged rsync copies of files and folders. See [SSH file transfers](spec/RUWAC_FILES.md) for authentication, replacement and cancellation behavior.
 
@@ -233,10 +233,11 @@ read-only; selecting a profile previews metadata, then **Import selected profile
 imports it explicitly. Passwords are never imported.
 
 
-Both workspace and RDP toolbars are unmeasured overlays: opening, hovering or
-pinning them does not change terminal or RDP viewport dimensions. Their collapsed
-center arrows leave the remote desktop corners available. RDP status and resolution
-appear with the expanded RDP controls.
+The single-row header keeps tabs beside collapsible actions. **Controls** (F10 or
+Ctrl+.) opens the selected session's actions without changing its viewport. An
+optional dock occupies a normal row. Appearance offers six palettes, terminal fonts,
+size and line spacing. See [desktop controls and remote shortcuts](spec/RUWAC_DESKTOP_CHROME.md).
+
 
 Use **Machines → Import from Remmina → Import all Remmina profiles…** to review
 and import metadata from the discovered native, legacy and Flatpak locations.

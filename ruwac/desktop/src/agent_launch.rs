@@ -8,17 +8,30 @@ fn quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
 }
 fn agent_command(agent: u32) -> Result<(&'static str, &'static str), String> {
-    Ok(match agent {
-        0 => (
-            "Codex",
-            "if type cx >/dev/null 2>&1; then cx; elif command -v codex >/dev/null 2>&1; then if codex agents --help 2>/dev/null | grep -Eq '^Usage: codex agents([[:space:]]|$)'; then exec codex agents --no-alt-screen; else exec codex --no-alt-screen; fi; else printf 'Codex is not installed on this SSH host.\\n' >&2; exit 127; fi",
-        ),
-        1 => (
-            "Claude Code",
-            "if type cc >/dev/null 2>&1 && alias cc >/dev/null 2>&1; then cc; else exec claude --resume; fi",
-        ),
-        _ => return Err("Choose Codex or Claude Code".into()),
-    })
+    match agent {
+        0 => Ok(("codex", "codex resume --all")),
+        1 => Ok(("claude", "claude --resume")),
+        _ => Err("Choose Codex or Claude".into()),
+    }
+}
+fn ssh_command(profile: &profiles::Profile, command: String) -> Result<Vec<String>, String> {
+    let mut argv = profiles::ssh_argv(profile)?;
+    let position = argv
+        .iter()
+        .position(|s| s == "--")
+        .ok_or("Invalid SSH command")?;
+    argv.splice(
+        position..position,
+        [
+            "-tt".into(),
+            "-o".into(),
+            "ForwardAgent=no".into(),
+            "-o".into(),
+            "ClearAllForwardings=yes".into(),
+        ],
+    );
+    argv.push(command);
+    Ok(argv)
 }
 fn argv(
     profile: &profiles::Profile,
@@ -39,7 +52,56 @@ fn argv(
     {
         return Err("Invalid remote RUWAC executable or socket".into());
     }
-    let (name, command) = agent_command(agent)?;
+    if agent == 2 {
+        return ssh_command(
+            profile,
+            format!(
+                "python3 -c {} --bootstrap --headless",
+                quote(include_str!("../../../scripts/update-user.py"))
+            ),
+        );
+    }
+    let (name, default) = agent_command(agent)?;
+    let configured = if agent == 0 {
+        &profile.preferences.codex_command
+    } else {
+        &profile.preferences.claude_command
+    };
+    let command = if configured.is_empty() {
+        default
+    } else {
+        configured.as_str()
+    };
+    if command.len() > 1024 || command.chars().any(char::is_control) {
+        return Err(
+            "Invalid agent command; keep credentials in the remote agent's own login store".into(),
+        );
+    }
+    match profile.preferences.agent_backend.as_str() {
+        "" | "ruwac" => (),
+        "tmux" => {
+            return ssh_command(
+                profile,
+                format!(
+                    "exec tmux new-session -A -s {} bash -lic {}",
+                    quote(name),
+                    quote(command)
+                ),
+            );
+        }
+        "screen" => {
+            return ssh_command(
+                profile,
+                format!(
+                    "exec screen -xRR -S {} bash -lic {}",
+                    quote(name),
+                    quote(command)
+                ),
+            );
+        }
+        "direct" => return ssh_command(profile, format!("exec bash -lic {}", quote(command))),
+        _ => return Err("Unknown remote session backend".into()),
+    }
     let cli = json!([binary]).to_string();
     let socket = if socket.is_empty() {
         vec![]
@@ -50,6 +112,9 @@ fn argv(
         r#"import json,os,shutil,subprocess,sys
 cli=json.loads({cli:?})+json.loads({socket:?})
 exe=shutil.which(cli[0])
+if not exe and cli[0]=='ruwac':
+ candidate=os.path.expanduser('~/.local/bin/ruwac')
+ if os.path.isfile(candidate) and os.access(candidate,os.X_OK):exe=candidate
 if not exe:sys.exit('Install the RUWAC CLI on this machine before launching a persistent agent.')
 cli[0]=exe
 subprocess.run(cli+['start'],check=True,stdout=subprocess.DEVNULL)
@@ -63,23 +128,104 @@ os.execv(exe,cli+['attach','--session',sid])
 "#,
         socket = serde_json::to_string(&socket).unwrap()
     );
-    let mut argv = profiles::ssh_argv(profile)?;
-    let position = argv.iter().position(|s| s == "--").unwrap();
-    argv.splice(
-        position..position,
-        [
-            "-tt".into(),
-            "-o".into(),
-            "ForwardAgent=no".into(),
-            "-o".into(),
-            "ClearAllForwardings=yes".into(),
-        ],
+    ssh_command(
+        profile,
+        format!(
+            "bash -lc {}",
+            quote(&format!("python3 -c {}", quote(&script)))
+        ),
+    )
+}
+
+/// Called only by explicit machine actions. No remote probe or agent starts on list refresh.
+pub fn launch(
+    parent: &impl IsA<gtk::Window>,
+    profile: profiles::Profile,
+    kind: u32,
+    tabs: &adw::TabView,
+    views: &Rc<RefCell<Vec<Rc<crate::view::View>>>>,
+    socket: &PathBuf,
+    broker: &crate::clipboard::Broker,
+) {
+    if kind == 2 {
+        let d = gtk::Dialog::builder()
+            .title("Install remote RUWAC CLI")
+            .transient_for(parent)
+            .modal(true)
+            .build();
+        let info = gtk::Label::new(Some(&format!(
+            "Install/update the headless CLI for {} at {} using its saved SSH account. The existing verified source installer runs in a terminal, needs Python 3 and Rust build tools, and preserves sessions. No Codex/Claude installation or login is performed.",
+            profile.name, profile.server
+        )));
+        info.set_wrap(true);
+        info.set_max_width_chars(64);
+        d.content_area().append(&info);
+        d.add_button("Cancel", gtk::ResponseType::Cancel);
+        d.add_button("Install", gtk::ResponseType::Accept);
+        let (t, v, s, b) = (tabs.clone(), views.clone(), socket.clone(), broker.clone());
+        d.connect_response(move |d, r| {
+            if r == gtk::ResponseType::Accept {
+                open_terminal(profile.clone(), 2, &t, &v, &s, &b);
+            }
+            d.close();
+        });
+        d.present();
+    } else {
+        open_terminal(profile, kind, tabs, views, socket, broker);
+    }
+}
+fn open_terminal(
+    profile: profiles::Profile,
+    kind: u32,
+    tabs: &adw::TabView,
+    views: &Rc<RefCell<Vec<Rc<crate::view::View>>>>,
+    socket: &PathBuf,
+    broker: &crate::clipboard::Broker,
+) {
+    let title = format!(
+        "{} · {}",
+        profile.name,
+        if kind == 0 {
+            "Codex"
+        } else if kind == 1 {
+            "Claude"
+        } else {
+            "RUWAC setup"
+        }
     );
-    argv.push(format!(
-        "bash -lc {}",
-        quote(&format!("python3 -c {}", quote(&script)))
-    ));
-    Ok(argv)
+    let planned = argv(&profile, kind, "ruwac", "");
+    let (tx, rx) = std::sync::mpsc::sync_channel(1);
+    let sock = socket.clone();
+    let name = title.clone();
+    std::thread::spawn(move || {
+        let result = (|| -> Result<serde_json::Value, String> {
+            let argv = planned?;
+            let mut rpc = Rpc::connect(&sock).map_err(|_| "Local daemon unavailable")?;
+            rpc.call("session.create", json!({"name":name,"argv":argv}))
+                .map_err(|_| "Unable to create SSH session".into())
+        })();
+        let _ = tx.send(result);
+    });
+    let (t, v, s, b) = (tabs.clone(), views.clone(), socket.clone(), broker.clone());
+    gtk::glib::timeout_add_local(Duration::from_millis(20), move || match rx.try_recv() {
+        Ok(Ok(r)) => {
+            if let Some(id) = r["session"].as_str() {
+                sessions::append(&t, &v, &s, &b, id, &title);
+            }
+            gtk::glib::ControlFlow::Break
+        }
+        Ok(Err(error)) => {
+            let d = gtk::Window::builder()
+                .title("Remote terminal unavailable")
+                .default_width(420)
+                .child(&gtk::Label::new(Some(&error)))
+                .build();
+            d.present();
+            gtk::glib::ControlFlow::Break
+        }
+        Err(std::sync::mpsc::TryRecvError::Empty) => gtk::glib::ControlFlow::Continue,
+        Err(_) => gtk::glib::ControlFlow::Break,
+    });
 }
 
 pub fn button(
@@ -105,6 +251,9 @@ pub fn button(
         endpoint.set_widget_name("agent-launch-profile");
         let agent = gtk::DropDown::from_strings(&["Codex (cx)", "Claude Code (cc)"]);
         agent.set_widget_name("agent-launch-agent");
+        let backend=gtk::DropDown::from_strings(&["RUWAC","GNU Screen","tmux","Direct"]);backend.set_widget_name("agent-launch-backend");
+        let command=gtk::Entry::builder().text("codex resume --all").build();command.set_widget_name("agent-launch-command");let cmd=command.clone();agent.connect_selected_notify(move|a|cmd.set_text(if a.selected()==0{"codex resume --all"}else{"claude --resume"}));
+        body.append(&gtk::Label::new(Some("Remote session backend")));body.append(&backend);body.append(&gtk::Label::new(Some("Command (no passwords)")));body.append(&command);
         let binary = gtk::Entry::builder().text("ruwac").build();
         binary.set_widget_name("agent-launch-binary");
         let socket = gtk::Entry::builder().placeholder_text("Leave empty for the remote user's default").build();
@@ -117,7 +266,7 @@ pub fn button(
         let (tabs,views,local_socket,broker,reader)=(tabs.clone(),views.clone(),local_socket.clone(),broker.clone(),reader.clone());
         dialog.connect_response(move |d,response| {
             if response!=gtk::ResponseType::Accept { d.close();return; }
-            let plan=rows.get(endpoint.selected() as usize).and_then(|r|r["id"].as_str()).ok_or("Choose an SSH endpoint".to_string()).and_then(|id|reader(id)).and_then(|p|argv(&p,agent.selected(),&binary.text(),&socket.text()));
+            let plan=rows.get(endpoint.selected() as usize).and_then(|r|r["id"].as_str()).ok_or("Choose an SSH endpoint".to_string()).and_then(|id|reader(id)).and_then(|mut p|{p.preferences.agent_backend=["ruwac","screen","tmux","direct"][backend.selected()as usize].into();if agent.selected()==0{p.preferences.codex_command=command.text().into();}else{p.preferences.claude_command=command.text().into();}argv(&p,agent.selected(),&binary.text(),&socket.text())});
             let argv=match plan {Ok(a)=>a,Err(e)=>{status.set_text(&e);return;}};
             open.set_sensitive(false);status.set_text("Opening remote agent terminal…");
             let (tx,rx)=std::sync::mpsc::sync_channel(1);let socket=local_socket.clone();
@@ -167,56 +316,9 @@ mod tests {
     use super::*;
     use std::{fs, os::unix::fs::PermissionsExt, process::Command};
     #[test]
-    fn codex_launch_is_prompt_free_across_cli_versions_and_keeps_user_aliases() {
-        let root = std::env::temp_dir().join(ruwac_protocol::id("launch"));
-        fs::create_dir(&root).unwrap();
-        let binary = root.join("codex");
-        let receipt = root.join("args.json");
-        let command = agent_command(0).unwrap().1;
-        for modern in [true, false] {
-            fs::write(&binary, format!("#!/usr/bin/python3\nimport json,sys\nfrom pathlib import Path\nif '--help' in sys.argv:\n print({:?})\nelse: Path({:?}).write_text(json.dumps(sys.argv[1:]))\n", if modern { "Usage: codex agents [OPTIONS]" } else { "Usage: codex [OPTIONS] [PROMPT]" }, receipt.to_str().unwrap())).unwrap();
-            fs::set_permissions(&binary, fs::Permissions::from_mode(0o700)).unwrap();
-            let output = Command::new("/usr/bin/bash")
-                .arg("-c")
-                .arg(command)
-                .env("PATH", format!("{}:/usr/bin:/bin", root.display()))
-                .output()
-                .unwrap();
-            assert!(output.status.success());
-            let args: Vec<String> = serde_json::from_slice(&fs::read(&receipt).unwrap()).unwrap();
-            assert_eq!(
-                args,
-                if modern {
-                    vec!["agents", "--no-alt-screen"]
-                } else {
-                    vec!["--no-alt-screen"]
-                }
-            );
-        }
-        fs::remove_file(&receipt).unwrap();
-        let user = root.join("user-choice");
-        let shell = format!(
-            "cx() {{ printf chosen > {}; }}; {}",
-            quote(user.to_str().unwrap()),
-            command
-        );
-        let output = Command::new("/usr/bin/bash")
-            .arg("-c")
-            .arg(shell)
-            .env("PATH", format!("{}:/usr/bin:/bin", root.display()))
-            .output()
-            .unwrap();
-        assert!(output.status.success() && user.exists() && !receipt.exists());
-        fs::remove_file(&binary).unwrap();
-        let output = Command::new("/usr/bin/bash")
-            .arg("-c")
-            .arg(command)
-            .env("PATH", &root)
-            .output()
-            .unwrap();
-        assert_eq!(output.status.code(), Some(127));
-        assert!(String::from_utf8_lossy(&output.stderr).contains("Codex is not installed"));
-        fs::remove_dir_all(root).unwrap();
+    fn defaults_open_resume_pickers_without_a_prompt() {
+        assert_eq!(agent_command(0).unwrap(), ("codex", "codex resume --all"));
+        assert_eq!(agent_command(1).unwrap(), ("claude", "claude --resume"));
     }
 
     #[test]
@@ -265,12 +367,37 @@ mod tests {
                 serde_json::from_slice(&fs::read(&receipt).unwrap()).unwrap();
             assert_eq!(params["argv"][0], "bash");
             assert_eq!(params["argv"][1], "-lic");
-            assert_eq!(
-                params["name"],
-                if agent == 0 { "Codex" } else { "Claude Code" }
-            );
+            assert_eq!(params["name"], if agent == 0 { "codex" } else { "claude" });
             assert!(String::from_utf8_lossy(&output.stdout).contains("Closing this view detaches"));
         }
+        let mut custom = p.clone();
+        custom.preferences.codex_command = "printf '%s' 'generated command with spaces'".into();
+        for backend in ["screen", "tmux", "direct"] {
+            custom.preferences.agent_backend = backend.into();
+            let args = argv(&custom, 0, "ruwac", "").unwrap();
+            assert!(!args.join(" ").contains(&custom.secret_reference));
+            if backend == "direct" {
+                let output = Command::new("bash")
+                    .args(["-c", args.last().unwrap()])
+                    .output()
+                    .unwrap();
+                assert!(output.status.success());
+                assert_eq!(
+                    String::from_utf8_lossy(&output.stdout),
+                    "generated command with spaces"
+                );
+            } else {
+                let script = &args[args.len() - 1];
+                assert!(script.starts_with(&format!("exec {backend} ")));
+                assert!(script.contains("codex"));
+                assert!(script.contains("bash -lic"));
+            }
+        }
+        custom.preferences.agent_backend = "unknown".into();
+        assert!(argv(&custom, 0, "ruwac", "").is_err());
+        let install = argv(&p, 2, "ruwac", "").unwrap();
+        assert!(install.last().unwrap().ends_with("--bootstrap --headless"));
+        assert!(!install.join(" ").contains(&p.secret_reference));
         let mut rdp = p.clone();
         rdp.protocol = "RDP".into();
         assert!(argv(&rdp, 0, "ruwac", "").is_err());

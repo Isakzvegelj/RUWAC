@@ -42,6 +42,12 @@ pub struct Preferences {
     #[serde(skip_serializing_if = "String::is_empty")]
     pub rdp_mode: String,
     #[serde(skip_serializing_if = "String::is_empty")]
+    pub codex_command: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub claude_command: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub agent_backend: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub gnome_username: String,
     #[serde(skip_serializing_if = "String::is_empty")]
     pub gnome_secret_reference: String,
@@ -67,6 +73,9 @@ impl Default for Preferences {
     fn default() -> Self {
         Self {
             rdp_mode: String::new(),
+            codex_command: String::new(),
+            claude_command: String::new(),
+            agent_backend: String::new(),
             gnome_username: String::new(),
             gnome_secret_reference: String::new(),
             gnome_auto_login: false,
@@ -75,7 +84,7 @@ impl Default for Preferences {
             gateway: String::new(),
             ssh_jump_alias: String::new(),
             clipboard: 0,
-            display: "fit".into(),
+            display: "dynamic".into(),
             zoom: 1.0,
             fullscreen: false,
             reconnect: true,
@@ -228,6 +237,8 @@ impl Profile {
             || (!self.preferences.gnome_secret_reference.is_empty()
                 && self.preferences.gnome_secret_reference == self.secret_reference)
             || (self.inherit_credential && !self.inherit_connection)
+            || !["", "ruwac", "screen", "tmux", "direct"]
+                .contains(&self.preferences.agent_backend.as_str())
             || self.preferences.clipboard > 4
             || !["fit", "native", "stretch", "dynamic"].contains(&self.preferences.display.as_str())
             || !self.preferences.zoom.is_finite()
@@ -237,6 +248,8 @@ impl Profile {
                 .iter()
                 .any(|s| s.len() > 1024 || s.chars().any(char::is_control))
             || [
+                &self.preferences.codex_command,
+                &self.preferences.claude_command,
                 &self.preferences.gnome_username,
                 &self.preferences.gnome_secret_reference,
                 &self.preferences.label,
@@ -935,7 +948,9 @@ fn bulk_import_plan(existing: &[Profile], incoming: &[Profile]) -> Result<Vec<Pr
     }
     Ok(result)
 }
+pub type AgentLauncher = Rc<dyn Fn(Profile, u32)>;
 pub fn sidebar(
+    agent_launcher: AgentLauncher,
     open: impl Fn(Profile, PreferenceSink, ConnectionLease) + 'static,
 ) -> (
     gtk::Box,
@@ -947,7 +962,7 @@ pub fn sidebar(
 ) {
     let root = gtk::Box::new(gtk::Orientation::Vertical, 6);
     root.set_width_request(180);
-    root.add_css_class("background");
+    root.add_css_class("machines-sidebar");
     root.set_margin_start(8);
     root.set_margin_end(8);
     root.set_margin_top(8);
@@ -981,23 +996,6 @@ pub fn sidebar(
     scroll.set_widget_name("machines-list-scroll");
     scroll.set_min_content_height(64);
     root.append(&scroll);
-    let page = Rc::new(Cell::new(0usize));
-    let pager = gtk::Box::new(gtk::Orientation::Horizontal, 4);
-    let previous_page = gtk::Button::from_icon_name("go-previous-symbolic");
-    previous_page.set_widget_name("machines-page-previous");
-    previous_page.set_tooltip_text(Some("Previous machine page"));
-    previous_page.update_property(&[gtk::accessible::Property::Label("Previous machine page")]);
-    let page_label = gtk::Label::new(None);
-    page_label.set_widget_name("machines-page-label");
-    page_label.set_hexpand(true);
-    let next_page = gtk::Button::from_icon_name("go-next-symbolic");
-    next_page.set_widget_name("machines-page-next");
-    next_page.set_tooltip_text(Some("Next machine page"));
-    next_page.update_property(&[gtk::accessible::Property::Label("Next machine page")]);
-    pager.append(&previous_page);
-    pager.append(&page_label);
-    pager.append(&next_page);
-    root.append(&pager);
     let store = Rc::new(RefCell::new(Store::load()));
     if let Some(e) = &store.borrow().error {
         status.set_text(e);
@@ -1014,12 +1012,7 @@ pub fn sidebar(
         let filter = filter.clone();
         let status = status.clone();
         let callback = callback.clone();
-        let (page, previous_page, next_page, page_label) = (
-            page.clone(),
-            previous_page.clone(),
-            next_page.clone(),
-            page_label.clone(),
-        );
+        let agent_launcher = agent_launcher.clone();
         Rc::new(move || {
             while let Some(c) = list.first_child() {
                 list.remove(&c);
@@ -1075,23 +1068,7 @@ pub fn sidebar(
                     p.name.clone(),
                 )
             });
-            let total = rows.len();
-            page.set(page.get().min(total.saturating_sub(1) / 50));
-            let start = page.get() * 50;
-            page_label.set_label(&format!(
-                "{}–{} of {}",
-                if total == 0 { 0 } else { start + 1 },
-                (start + 50).min(total),
-                total
-            ));
-            previous_page.set_sensitive(page.get() > 0);
-            next_page.set_sensitive(start + 50 < total);
-            for g in store
-                .borrow()
-                .groups
-                .iter()
-                .take(if page.get() == 0 { 50 } else { 0 })
-            {
+            for g in &store.borrow().groups {
                 if !rows.iter().any(|(_, p)| p.group == g.path)
                     && (search.text().is_empty()
                         || g.path
@@ -1105,7 +1082,7 @@ pub fn sidebar(
             let searching = !search.text().is_empty();
             let mut previous = None;
             let mut group_rows = gtk::Box::new(gtk::Orientation::Vertical, 4);
-            for (i, p) in rows.into_iter().skip(start).take(50) {
+            for (i, p) in rows {
                 if previous.as_ref() != Some(&p.group) {
                     let title = if p.group.is_empty() {
                         "Ungrouped".into()
@@ -1135,6 +1112,7 @@ pub fn sidebar(
                     previous = Some(p.group.clone());
                 }
                 let row = gtk::Box::new(gtk::Orientation::Horizontal, 2);
+                row.add_css_class("machine-row");
                 let star = gtk::Button::with_label(if p.favorite { "★" } else { "☆" });
                 let button = gtk::Button::with_label(&format!(
                     "{} · {} · {}",
@@ -1181,14 +1159,104 @@ pub fn sidebar(
                 row.append(&star);
                 row.append(&button);
                 let edit = gtk::Button::with_label("Edit");
+                edit.set_icon_name("document-edit-symbolic");
+                edit.set_tooltip_text(Some("Edit"));
+                for b in [&star, &button, &edit] {
+                    b.add_css_class("flat");
+                }
                 let (s, st) = (store.clone(), status.clone());
                 let id = p.id.clone();
                 let cb = callback.clone();
+                let launcher = agent_launcher.clone();
                 edit.connect_clicked(move |b| {
-                    editor(b, s.clone(), Some(id.clone()), st.clone(), cb.clone())
+                    editor(
+                        b,
+                        s.clone(),
+                        Some(id.clone()),
+                        st.clone(),
+                        cb.clone(),
+                        launcher.clone(),
+                    )
                 });
                 row.append(&edit);
-                group_rows.append(&row);
+                let entry = gtk::Box::new(gtk::Orientation::Vertical, 0);
+                entry.append(&row);
+                let quick = gtk::Box::new(gtk::Orientation::Horizontal, 2);
+                let linked = store
+                    .borrow()
+                    .items
+                    .iter()
+                    .filter(|x| x.machine_id == p.machine_id)
+                    .cloned()
+                    .collect::<Vec<_>>();
+                for (protocol, icon, tip) in [
+                    ("RDP", "video-display-symbolic", "Open RDP"),
+                    ("SSH", "utilities-terminal-symbolic", "Open SSH terminal"),
+                ] {
+                    if let Some(target) = linked.iter().find(|x| x.protocol == protocol) {
+                        let b = gtk::Button::from_icon_name(icon);
+                        b.add_css_class("flat");
+                        b.set_tooltip_text(Some(tip));
+                        b.set_widget_name(if protocol == "RDP" {
+                            "machine-rdp"
+                        } else {
+                            "machine-terminal"
+                        });
+                        let (s, st, cb, id) = (
+                            store.clone(),
+                            status.clone(),
+                            callback.clone(),
+                            target.id.clone(),
+                        );
+                        b.connect_clicked(move |_| {
+                            if let Some((p, sink, lease)) = acquire(&s, &st, &id) {
+                                cb(p, sink, lease);
+                            }
+                        });
+                        quick.append(&b);
+                    }
+                }
+                if let Some(ssh) = linked.iter().find(|x| x.protocol == "SSH") {
+                    for (kind, command, icon, label) in [
+                        (
+                            0,
+                            &ssh.preferences.codex_command,
+                            "system-run-symbolic",
+                            "Codex",
+                        ),
+                        (
+                            1,
+                            &ssh.preferences.claude_command,
+                            "applications-science-symbolic",
+                            "Claude",
+                        ),
+                    ] {
+                        if !command.is_empty() {
+                            let b = gtk::Button::from_icon_name(icon);
+                            b.add_css_class("flat");
+                            b.set_tooltip_text(Some(label));
+                            b.set_widget_name(if kind == 0 {
+                                "machine-codex"
+                            } else {
+                                "machine-claude"
+                            });
+                            let (s, st, id, launch) = (
+                                store.clone(),
+                                status.clone(),
+                                ssh.id.clone(),
+                                agent_launcher.clone(),
+                            );
+                            b.connect_clicked(move |_| {
+                                if let Some((p, _, _)) = acquire(&s, &st, &id) {
+                                    launch(p, kind);
+                                }
+                            });
+                            quick.append(&b);
+                        }
+                    }
+                }
+                entry.append(&quick);
+                group_rows.append(&entry);
                 let s = store.clone();
                 let label = star.clone();
                 let st = status.clone();
@@ -1217,16 +1285,6 @@ pub fn sidebar(
             }
         })
     };
-    let (p, r) = (page.clone(), refresh.clone());
-    previous_page.connect_clicked(move |_| {
-        p.set(p.get().saturating_sub(1));
-        r();
-    });
-    let (p, r) = (page.clone(), refresh.clone());
-    next_page.connect_clicked(move |_| {
-        p.set(p.get() + 1);
-        r();
-    });
     let maintenance = gtk::Box::new(gtk::Orientation::Vertical, 6);
     let maintenance_panel = gtk::Expander::new(Some("Machine tools"));
     maintenance_panel.set_widget_name("machines-tools-panel");
@@ -1236,13 +1294,17 @@ pub fn sidebar(
     let (s, st) = (store.clone(), status.clone());
     groups.connect_clicked(move |b| group_editor(b, s.clone(), st.clone()));
     let add = gtk::Button::with_label("New machine / endpoint…");
+    add.add_css_class("new-machine");
     if let Some(label) = add.child().and_then(|w| w.downcast::<gtk::Label>().ok()) {
         label.set_ellipsize(gtk::pango::EllipsizeMode::End);
     }
     root.append(&add);
     let (s, st) = (store.clone(), status.clone());
     let cb = callback.clone();
-    add.connect_clicked(move |b| editor(b, s.clone(), None, st.clone(), cb.clone()));
+    let launcher = agent_launcher.clone();
+    add.connect_clicked(move |b| {
+        editor(b, s.clone(), None, st.clone(), cb.clone(), launcher.clone())
+    });
     let refresh_button = gtk::Button::with_label("Refresh machines");
     maintenance.append(&refresh_button);
     let r = refresh.clone();
@@ -1301,14 +1363,12 @@ pub fn sidebar(
         drop(s);
         r();
     });
-    let (r, p) = (refresh.clone(), page.clone());
+    let r = refresh.clone();
     filter.connect_selected_notify(move |_| {
-        p.set(0);
         r();
     });
-    let (r, p) = (refresh.clone(), page.clone());
+    let r = refresh.clone();
     search.connect_changed(move |_| {
-        p.set(0);
         r();
     });
     let import_controls = gtk::Box::new(gtk::Orientation::Vertical, 6);
@@ -1879,6 +1939,7 @@ fn editor(
     id: Option<String>,
     status: gtk::Label,
     open: Rc<dyn Fn(Profile, PreferenceSink, ConnectionLease)>,
+    agent_launcher: AgentLauncher,
 ) {
     let existing = id
         .as_ref()
@@ -2473,6 +2534,63 @@ fn editor(
             advanced.append(&b);
         }
     }
+    let agents = gtk::Box::new(gtk::Orientation::Vertical, 6);
+    let codex_command = gtk::Entry::new();
+    codex_command.set_widget_name("machine-codex-command");
+    codex_command.set_text(&original.preferences.codex_command);
+    codex_command.set_placeholder_text(Some("codex resume --all"));
+    let claude_command = gtk::Entry::new();
+    claude_command.set_widget_name("machine-claude-command");
+    claude_command.set_text(&original.preferences.claude_command);
+    claude_command.set_placeholder_text(Some("claude --resume"));
+    for (label, entry, default) in [
+        (
+            "Enable Codex shortcut",
+            &codex_command,
+            "codex resume --all",
+        ),
+        ("Enable Claude shortcut", &claude_command, "claude --resume"),
+    ] {
+        let enable = gtk::CheckButton::with_label(label);
+        enable.set_active(!entry.text().is_empty());
+        let entry = entry.clone();
+        enable.connect_toggled(move |b| {
+            if b.is_active() && entry.text().is_empty() {
+                entry.set_text(default);
+            } else if !b.is_active() {
+                entry.set_text("");
+            }
+        });
+        agents.append(&enable);
+    }
+    form_row(&agents, "Codex command (no passwords)", &codex_command);
+    form_row(&agents, "Claude command (no passwords)", &claude_command);
+    let backend = gtk::DropDown::from_strings(&[
+        "RUWAC",
+        "GNU Screen",
+        "tmux",
+        "Direct (no persistent remote session)",
+    ]);
+    backend.set_widget_name("machine-agent-backend");
+    backend.set_selected(
+        ["ruwac", "screen", "tmux", "direct"]
+            .iter()
+            .position(|s| *s == original.preferences.agent_backend)
+            .unwrap_or(0) as u32,
+    );
+    form_row(&agents, "Remote session backend", &backend);
+    let setup = gtk::Button::with_label("Install / update remote RUWAC CLI…");
+    setup.set_widget_name("machine-install-ruwac");
+    setup.set_sensitive(existing.is_some() && original.protocol == "SSH");
+    setup.set_tooltip_text(Some("Use this saved SSH endpoint to open the existing headless installer in a terminal. Requires Python 3 and Rust build tools; does not install Codex or Claude."));
+    let saved = original.clone();
+    setup.connect_clicked(move |_| agent_launcher(saved.clone(), 2));
+    agents.append(&setup);
+    let agent_panel = gtk::Expander::builder()
+        .label("Remote terminals / agents (SSH)")
+        .child(&agents)
+        .build();
+    form.append(&agent_panel);
     let expander = gtk::Expander::builder()
         .label("Advanced connection settings")
         .child(&advanced)
@@ -2488,7 +2606,7 @@ fn editor(
             let(s,id,machine_id,st,parent)=(store.clone(),original.id.clone(),original.machine_id.clone(),status.clone(),d.clone());confirm.connect_response(move|c,r|{if r==gtk::ResponseType::Accept {let mut s=s.borrow_mut();let old=s.items.clone();s.items.retain(|p|p.id!=id&&(!machine||p.machine_id!=machine_id));if let Err(e)=s.save(){s.items=old;st.set_text(&e);}else{drop(s);st.set_text("Metadata deleted; previous library retained for Undo");refresh_widgets(parent.transient_for().as_ref());parent.close();}}c.close();});confirm.present();return;
         }
         if response!=gtk::ResponseType::Accept && response!=gtk::ResponseType::Other(1) && response!=gtk::ResponseType::Other(3) && response!=gtk::ResponseType::Other(5){d.close();return;}
-        let mut p=original.clone();p.name=fields[0].text().into();p.group=fields[1].text().into();p.machine_id=fields[2].text().into();p.server=fields[3].text().into();p.username=fields[4].text().into();p.preferences.label=fields[5].text().into();p.preferences.network=fields[6].text().into();p.preferences.gateway=fields[7].text().into();p.preferences.ssh_jump_alias=ssh_jump.text().into();p.tags=fields[8].text().split(',').map(str::trim).filter(|s|!s.is_empty()).map(str::to_owned).collect();p.secret_reference=fields[9].text().into();p.preferences.trust=fields[10].text().into();p.preferences.identity_file=fields[11].text().into();p.preferences.identity_secret_reference=identity_reference.text().into();p.preferences.known_hosts=fields[12].text().into();p.protocol=if protocol.selected()==1{"SSH"}else{"RDP"}.into();p.preferences.display=["fit","native","stretch","dynamic"][display.selected() as usize].into();p.preferences.clipboard=clipboard.selected();p.preferences.zoom=zoom.value();p.preferences.fullscreen=full.is_active();p.preferences.reconnect=retry.is_active();p.inherit=inherit.is_active();p.inherit_connection=inherit_connection.is_active();p.inherit_credential=inherit_credential.is_active();p.preferences.rdp_mode=["","gnome-remote-login","gnome-desktop-sharing"][rdp_mode.selected() as usize].into();p.preferences.gnome_auto_login=gnome_auto.is_active();p.preferences.gnome_username=gnome_user.text().into();p.preferences.gnome_secret_reference=if p.preferences.rdp_mode=="gnome-remote-login"||!original.preferences.gnome_secret_reference.is_empty(){gnome_ref.text().into()}else{String::new()};
+        let mut p=original.clone();p.preferences.codex_command=codex_command.text().into();p.preferences.claude_command=claude_command.text().into();p.preferences.agent_backend=["ruwac","screen","tmux","direct"][backend.selected()as usize].into();p.name=fields[0].text().into();p.group=fields[1].text().into();p.machine_id=fields[2].text().into();p.server=fields[3].text().into();p.username=fields[4].text().into();p.preferences.label=fields[5].text().into();p.preferences.network=fields[6].text().into();p.preferences.gateway=fields[7].text().into();p.preferences.ssh_jump_alias=ssh_jump.text().into();p.tags=fields[8].text().split(',').map(str::trim).filter(|s|!s.is_empty()).map(str::to_owned).collect();p.secret_reference=fields[9].text().into();p.preferences.trust=fields[10].text().into();p.preferences.identity_file=fields[11].text().into();p.preferences.identity_secret_reference=identity_reference.text().into();p.preferences.known_hosts=fields[12].text().into();p.protocol=if protocol.selected()==1{"SSH"}else{"RDP"}.into();p.preferences.display=["fit","native","stretch","dynamic"][display.selected() as usize].into();p.preferences.clipboard=clipboard.selected();p.preferences.zoom=zoom.value();p.preferences.fullscreen=full.is_active();p.preferences.reconnect=retry.is_active();p.inherit=inherit.is_active();p.inherit_connection=inherit_connection.is_active();p.inherit_credential=inherit_credential.is_active();p.preferences.rdp_mode=["","gnome-remote-login","gnome-desktop-sharing"][rdp_mode.selected() as usize].into();p.preferences.gnome_auto_login=gnome_auto.is_active();p.preferences.gnome_username=gnome_user.text().into();p.preferences.gnome_secret_reference=if p.preferences.rdp_mode=="gnome-remote-login"||!original.preferences.gnome_secret_reference.is_empty(){gnome_ref.text().into()}else{String::new()};
         if response==gtk::ResponseType::Other(1){p.id=ruwac_protocol::id("endpoint");p.machine_id=ruwac_protocol::id("machine");p.secret_reference=p.id.clone();if !p.preferences.gnome_secret_reference.is_empty(){p.preferences.gnome_secret_reference=format!("{}.gnome",p.id);}p.name.push_str(" (copy)");}
         if response==gtk::ResponseType::Other(3){p.name=original.name.clone();p.group=original.group.clone();p.id=ruwac_protocol::id("endpoint");p.secret_reference=p.id.clone();if !p.preferences.gnome_secret_reference.is_empty(){p.preferences.gnome_secret_reference=format!("{}.gnome",p.id);}}
         if let Err(e)=p.validate(){info.set_text(&e);return;}
@@ -2842,7 +2960,7 @@ fn group_editor(button: &gtk::Button, store: Rc<RefCell<Store>>, status: gtk::La
 pub fn fixture_editor(root: &gtk::Box, q: &serde_json::Value) -> serde_json::Value {
     fn find(w: &gtk::Widget, label: &str) -> Option<gtk::Button> {
         if let Some(b) = w.downcast_ref::<gtk::Button>() {
-            if b.label().as_deref() == Some(label) {
+            if b.label().as_deref() == Some(label) || b.tooltip_text().as_deref() == Some(label) {
                 return Some(b.clone());
             }
         }
@@ -3777,5 +3895,17 @@ mod discovery_tests {
             assert!(p.secret_reference.is_empty());
         }
         std::fs::remove_dir_all(root).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod launch_preferences_tests {
+    use super::*;
+    #[test]
+    fn new_rdp_defaults_dynamic_but_saved_modes_survive() {
+        assert_eq!(Preferences::default().display, "dynamic");
+        let p: Preferences = serde_json::from_str(r#"{"display":"fit"}"#).unwrap();
+        assert_eq!(p.display, "fit");
+        assert!(p.codex_command.is_empty() && p.claude_command.is_empty());
     }
 }

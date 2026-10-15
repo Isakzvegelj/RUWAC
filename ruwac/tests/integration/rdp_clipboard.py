@@ -16,11 +16,27 @@ def command(who,action=None,timeout=8,**kw):
   try:r=json.loads((root/(who+'-response.json')).read_text());return r['result'] if r['seq']==seq else None
   except (FileNotFoundError,ValueError):return None
  return spike.eventually(read,timeout)
+mutter_input=None
+if os.environ.get('RUWAC_TEST_MUTTER_INPUT')=='1':
+ assert os.environ.get('WAYLAND_DISPLAY','').startswith('ruwac-')
+ assert Path(os.environ['XDG_RUNTIME_DIR']).resolve()!=Path('/run/user')/str(os.getuid())
+ from gi.repository import Gio,GLib
+ bus=Gio.bus_get_sync(Gio.BusType.SESSION,None);dest='org.gnome.Mutter.RemoteDesktop'
+ path=bus.call_sync(dest,'/org/gnome/Mutter/RemoteDesktop',dest,'CreateSession',None,None,Gio.DBusCallFlags.NONE,5000,None).unpack()[0]
+ def mutter_input(method,args=None):return bus.call_sync(dest,path,dest+'.Session',method,args,None,Gio.DBusCallFlags.NONE,5000,None)
+ mutter_input('Start')
+def focus_keys(toggle=False):
+ if mutter_input:
+  def key(n,state):mutter_input('NotifyKeyboardKeysym',GLib.Variant('(ub)',(n,state)))
+  if toggle:
+   key(65513,True);key(65289,True);key(65289,False);key(65513,False)
+  else:key(65505,True);key(65505,False)
+ else:subprocess.run(['xdotool','key','--clearmodifiers','Super_L+Tab'if toggle else'Shift_L'],env={**os.environ,'DISPLAY':os.environ['RUWAC_XTEST_DISPLAY']},check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
 def focus(who):
  for _ in range(6):
   if command('gui','inspect').get('active')==(who=='gui'):
-   subprocess.run(['xdotool','key','Shift_L'],env={**os.environ,'DISPLAY':os.environ['RUWAC_XTEST_DISPLAY']},check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL);time.sleep(.06);return
-  subprocess.run(['xdotool','key','--clearmodifiers','Super_L+Tab'],env={**os.environ,'DISPLAY':os.environ['RUWAC_XTEST_DISPLAY']},check=True);time.sleep(.12)
+   focus_keys();time.sleep(.06);return
+  focus_keys(True);time.sleep(.3)
  raise AssertionError('Isolated compositor focus failed')
 def case(name,fn):
  if a.case and name not in a.case and name!='RDP-NATIVE-AUTH-3':return
@@ -289,7 +305,7 @@ try:
  def profiles():
   focus('gui')
   for i in range(70):
-   name=f'machine-{i}.remmina';original=f'[remmina]\nname=Same leaf\ngroup=Team{i}/Nested\nprotocol=RDP\nserver=127.0.0.1:3389\nusername=fixture\npassword=DO-NOT-IMPORT\nssh_privatekey=/private/key\nlabels=linux,test\n';(root/name).write_text(original);r=command('gui','profiles',file=name);assert r['rows']==min(50,i+1),r;assert(root/name).read_text()==original
+   name=f'machine-{i}.remmina';original=f'[remmina]\nname=Same leaf\ngroup=Team{i}/Nested\nprotocol=RDP\nserver=127.0.0.1:3389\nusername=fixture\npassword=DO-NOT-IMPORT\nssh_privatekey=/private/key\nlabels=linux,test\n';(root/name).write_text(original);r=command('gui','profiles',file=name);assert r['rows']==i+1,r;assert(root/name).read_text()==original
   r=command('gui','profiles',search='Team69');assert r['rows']==1,r
   r=command('gui','profiles',favorite=True);assert r['favorites']==1,r
   stored=(root/'config/RUWAC/machines.json');data=stored.read_text();assert 'DO-NOT-IMPORT' not in data and '/private/key' not in data;assert stored.stat().st_mode&0o777==0o600
@@ -388,21 +404,40 @@ try:
    r=command('gui','rdp-inspect',rdp=0)
    return r if r['size']==r['requested_size'] and min(r['size'])>=200 and r['status'].startswith('Connected') else False
   storm=spike.eventually(settled,15);count=storm['metrics']['decoded_updates'];time.sleep(.8);stable=settled();assert stable and stable['size']==storm['size'],stable
-  # Both overlays must leave negotiated framebuffer and resize metrics unchanged.
+  # Controls popover must leave negotiated framebuffer and resize metrics unchanged.
   baseline=command('gui','rdp-inspect',rdp=0)
   for i in range(20):
-   command('gui','compact-controls',open=i%2==0)
-   command('gui','compact-controls',name='rdp-tools',open=i%2==0)
+   command('gui','chrome',open=i%2==0)
   time.sleep(.8);overlay=command('gui','rdp-inspect',rdp=0)
   assert overlay['viewport']==baseline['viewport'] and overlay['requested_size']==baseline['requested_size'] and overlay['size']==baseline['size'],(baseline,overlay)
   assert overlay['metrics']==baseline['metrics'],'Toolbar overlays triggered remote activity'
   for mode in ['native','stretch','fit']:
    r=command('gui','rdp-display',rdp=0,mode=mode,zoom=1.25);assert r['zoom']==1.25
   command('gui','rdp-display',rdp=0,mode='fit',zoom=1.0)
+  command('gui','chrome',open=False);command('gui','rdp-switch',rdp=0)
   text='Clipboard after 20 actual reactivations ž 🦀';(root/'resize-text.txt').write_text(text);got=read_remote(0,'text','resize-text.txt');assert got['sha256']==digest(text.encode()),got
   time.sleep(.7);after=command('gui','rdp-inspect',rdp=0)
   return {'before':before['metrics'],'after':after['metrics'],'processes_before':start_metrics,'processes_after':process_metrics(),'wall_seconds':time.perf_counter()-wall_start,'transitions':transitions,'negotiation':'actual Display Control DVC plus server DeactivateAll/reactivation','resize_storm':{'gtk_allocation_changes':20,'settled_size':storm['size'],'stable_after_800ms':True},'post_resize_clipboard':True,'other_tabs_unchanged':True,'codec':'raw bitmap fixture; RemoteFX/GNOME issue remains a separate gate'}
  case('RDP-NATIVE-RESIZE-20',resize)
+ def host_shortcuts():
+  assert mutter_input,'Owned Mutter input fixture required'
+  focus('gui');command('gui','chrome',open=False);command('gui','rdp-switch',rdp=0)
+  before=command('gui','rdp-inspect',rdp=0);assert before['gnome_auto']['guards']['canvas_focus']
+  def chord(key):
+   for k in [65507,65513,key]:mutter_input('NotifyKeyboardKeysym',GLib.Variant('(ub)',(k,True)))
+   for k in [key,65513,65507]:mutter_input('NotifyKeyboardKeysym',GLib.Variant('(ub)',(k,False)))
+  chord(65360)
+  spike.eventually(lambda:not command('gui','rdp-inspect',rdp=0)['gnome_auto']['guards']['canvas_focus'])
+  local=command('gui','chrome')
+  chord(65293)
+  large=spike.eventually(lambda:r if (r:=command('gui','chrome'))['window_height']>local['window_height']else False,8)
+  chord(65293)
+  spike.eventually(lambda:command('gui','chrome')['window_height']==local['window_height'],8)
+  assert command('gui','rdp-inspect',rdp=0)['transport_id']==before['transport_id']
+  command('gui','rdp-switch',rdp=0)
+  return {'real_GDK_key_events':True,'Ctrl_Alt_Home_releases_remote_focus':True,'Ctrl_Alt_Enter_fullscreen_and_restore':True,'transport_preserved':True,'physical_keyboard':False}
+ if mutter_input:case('RDP-NATIVE-HOST-SHORTCUTS',host_shortcuts)
+
  def pointer_drag():
   focus('gui');command('gui','rdp-switch',rdp=0)
   command('gui','rdp-display',rdp=0,mode='stretch',zoom=1.0)
@@ -419,7 +454,7 @@ try:
     assert result['held_buttons']==0 and result['position']==valid,result
     released=spike.eventually(lambda:m if (m:=mouse()) and len(m)>len(pressed) and m[-1]==label+'Released' else False)
     assert not any('Move' in e for e in released[len(pressed):]),released
-    pointer(x=x,y=y);assert pointer()['position']==valid
+    ignored=pointer(x=x,y=y);assert ignored['position']==ignored['position_before'],ignored
     transitions.append({'button':label,'outside':[x,y],'release_received':True,'position_preserved':True})
   # ironrdp-server 0.13 maps middle-button PDUs to Move, so only client
   # held-state is asserted for middle; no remote middle-button pass is claimed.
@@ -466,10 +501,11 @@ try:
   protected=command('gui','profile-editor',operation='edit',response='delete',confirm=True);assert any(p['id']==item['id']for p in protected['items'])
   # Exercise the visible native toolbar against the ordinary credential-backed connection.
   command('gui','rdp-switch',rdp=2)
+  command('gui','chrome',open=True);time.sleep(.2)
   toolbar=command('gui','rdp-toolbar',rdp=2)
   standard={'reconnect','disconnect','fit','dynamic','zoom-out','zoom-in','fullscreen'}
-  assert {b['action'] for b in toolbar['controls']}==standard|{'gnome-sign-in'},toolbar
-  assert all(b['icon'] and b['label'] for b in toolbar['controls']),toolbar
+  assert {b['action'] for b in toolbar['controls']}==standard|{'gnome-sign-in','rdp-review-certificate','cancel-automatic-sign-in'},toolbar
+  assert all(b['icon'] and b['label'] for b in toolbar['controls'] if b['action'] in standard|{'gnome-sign-in'}),toolbar
   assert all(b['mapped'] for b in toolbar['controls']if b['action']in standard),toolbar
   assert not next(b['mapped']for b in toolbar['controls']if b['action']=='gnome-sign-in'),toolbar
   neighbors=[command('gui','rdp-inspect',rdp=i)['transport_id'] for i in [0,1]]
@@ -515,6 +551,9 @@ try:
  case('MACHINES-RESTART-1000',restart_and_thousand)
 
 finally:
+ if mutter_input:
+  try:mutter_input('Stop')
+  except Exception:pass
  def rss(proc):
   try:return int(next(l.split()[1] for l in Path(f'/proc/{proc.pid}/status').read_text().splitlines() if l.startswith('VmRSS:')))/1024
   except (FileNotFoundError,StopIteration):return None
@@ -529,6 +568,6 @@ finally:
  def rss(proc):
   try:return int(next(l.split()[1] for l in Path(f'/proc/{proc.pid}/status').read_text().splitlines() if l.startswith('VmRSS:')))/1024
   except (FileNotFoundError,StopIteration):return None
- report={'cases':results,'rss_mib':memory,'environment':'Owned Weston/Xvfb, real native GTK/GDK peer, actual loopback IronRDP server; generated credentials and frames','limitations':['No external Windows/GNOME login','No physical keyboard/touchpad acceptance','No external Windows/GNOME Display Control or RemoteFX qualification']}
+ report={'cases':results,'rss_mib':memory,'environment':'Owned Mutter'if mutter_input else'Owned Weston/Xvfb','limitations':['No external Windows/GNOME login','No physical keyboard/touchpad acceptance','No external Windows/GNOME Display Control or RemoteFX qualification']}
  (root/'receipt.json').write_text(json.dumps(report,indent=2));Path(a.evidence,'rdp-native-acceptance.json').write_text(json.dumps(report,indent=2));print('Evidence',root,flush=True)
 raise SystemExit(0 if results and all(r['status']=='PASS' for r in results) else 1)

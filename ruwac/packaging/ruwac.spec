@@ -36,6 +36,9 @@ Requires: tesseract
 Requires: tesseract-langpack-eng
 Requires: polkit
 
+Recommends: jetbrains-mono-fonts
+Suggests: ibm-plex-mono-fonts fira-code-fonts adobe-source-code-pro-fonts redhat-mono-fonts
+
 %description desktop
 Native GTK workspace, authenticated RDP, desktop clipboard and file transfers.
 This is an upstream testing candidate, not a Fedora repository qualification.
