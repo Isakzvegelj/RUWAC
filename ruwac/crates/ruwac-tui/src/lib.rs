@@ -346,6 +346,73 @@ fn status_line(v: &Value, size: (u16, u16), status: &str) -> String {
     copy::clip(&line, size.1 as usize)
 }
 
+fn status_window_at(v: &Value, size: (u16, u16), status: &str, column: usize) -> Option<String> {
+    let rows = v["windows"].as_array()?;
+    let labels: Vec<String> = rows
+        .iter()
+        .map(|w| {
+            format!(
+                "{}:{}{}",
+                w["index"].as_u64().unwrap_or(0),
+                safe(w["name"].as_str().unwrap_or("shell")),
+                if w["id"] == v["window"] { "*" } else { "" }
+            )
+        })
+        .collect();
+    let joined = labels.join(" ");
+    if joined.is_empty() {
+        return None;
+    }
+    let line = status_line(v, size, status);
+    let at = line.rfind(&joined)?;
+    let mut left = copy::width(&line[..at]);
+    for (row, label) in rows.iter().zip(labels) {
+        let right = left + copy::width(&label);
+        if left <= column && column < right {
+            return row["id"].as_str().map(str::to_owned);
+        }
+        left = right + 1;
+    }
+    None
+}
+fn status_mouse(
+    v: &Value,
+    bytes: &[u8],
+    screen: (u16, u16),
+    status: &str,
+) -> (bool, Option<String>) {
+    let Some(text) = std::str::from_utf8(bytes)
+        .ok()
+        .and_then(|s| s.strip_prefix("\x1b[<"))
+    else {
+        return (false, None);
+    };
+    let Some(last) = text
+        .as_bytes()
+        .last()
+        .copied()
+        .filter(|b| matches!(b, b'M' | b'm'))
+    else {
+        return (false, None);
+    };
+    let parts: Vec<_> = text[..text.len() - 1]
+        .split(';')
+        .map(str::parse::<usize>)
+        .collect();
+    let [Ok(button), Ok(x), Ok(y)] = parts.as_slice() else {
+        return (false, None);
+    };
+    if *y != screen.0 as usize {
+        return (false, None);
+    }
+    let target = if last == b'M' && *button == 0 && *x > 0 {
+        status_window_at(v, (screen.0.saturating_sub(1), screen.1), status, x - 1)
+    } else {
+        None
+    };
+    (true, target)
+}
+
 fn draw(v: &Value, status: &str) -> io::Result<()> {
     let mut out = format!(
         "\x1b]2;RUWAC {}\x07\x1b[?25l\x1b[0m\x1b[H\x1b[2J",
@@ -354,7 +421,6 @@ fn draw(v: &Value, status: &str) -> io::Result<()> {
 
     let active = v["active_pane"].as_str().unwrap_or("");
     let mut cursor = None;
-    let mut mouse = false;
     if let Some(panes) = v["panes"].as_array() {
         for p in panes {
             let g = &p["grid"];
@@ -368,7 +434,6 @@ fn draw(v: &Value, status: &str) -> io::Result<()> {
                         left + c["col"].as_u64().unwrap_or(0),
                     ))
                 }
-                mouse = g["mouse"] == true;
             }
             if let Some(rows) = g["cells"].as_array() {
                 for (r, cells) in rows.iter().enumerate() {
@@ -434,11 +499,7 @@ fn draw(v: &Value, status: &str) -> io::Result<()> {
         line,
         " ".repeat((screen_cols as usize).saturating_sub(copy::width(&line)))
     ));
-    out.push_str(if mouse {
-        "\x1b[?1000h\x1b[?1006h"
-    } else {
-        "\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l"
-    });
+    out.push_str("\x1b[?1000h\x1b[?1006h");
     if let Some((r, c)) = cursor {
         out.push_str(&format!("\x1b[{};{}H\x1b[?25h", r + 1, c + 1));
     }
@@ -982,6 +1043,9 @@ pub fn attach(socket: &Path, session: &str) -> io::Result<()> {
     let mut prefix = false;
     let mut mode = Mode::Live;
     let mut snapshot = call(&mut s, "client.render", json!({}))?;
+    let mut seen_running = snapshot["panes"]
+        .as_array()
+        .is_some_and(|p| p.iter().any(|p| p["ended"] != true));
     let mut status = String::new();
     draw_mode(&mut mode, &snapshot, size, &status, &config)?;
     let mut rendered = Instant::now();
@@ -1013,6 +1077,21 @@ pub fn attach(socket: &Path, session: &str) -> io::Result<()> {
                 }
                 Input::Mouse(b) => {
                     if matches!(mode, Mode::Live) {
+                        let (bar, target) = status_mouse(
+                            &snapshot,
+                            &b,
+                            screen_size,
+                            &format!("{} · {}", config.label(), status),
+                        );
+                        if bar {
+                            if let Some(window) = target {
+                                call(&mut s, "window.select", json!({"window":window}))?;
+                                snapshot = call(&mut s, "client.render", json!({}))?;
+                                prefix = false;
+                                status.clear();
+                            }
+                            continue;
+                        }
                         let result=String::from_utf8(b).map_err(io::Error::other).and_then(|text|call(&mut s,"client.input",json!({"pane":snapshot["active_pane"],"kind":"mouse","text":text})));
                         if let Err(e) = result {
                             status = e.to_string();
@@ -1295,7 +1374,7 @@ pub fn attach(socket: &Path, session: &str) -> io::Result<()> {
                                                     call(&mut s, "session.detach", json!({}))?;
                                                     STOP.store(true, Ordering::Relaxed);
                                                 }
-                                                'S' | '|' => {
+                                                'S' | 's' | '|' => {
                                                     call(
                                                         &mut s,
                                                         "pane.create",
@@ -1448,6 +1527,23 @@ pub fn attach(socket: &Path, session: &str) -> io::Result<()> {
                 )?;
                 if fresh["unchanged"] != true {
                     snapshot = fresh;
+                    let ended = snapshot["panes"]
+                        .as_array()
+                        .is_some_and(|p| !p.is_empty() && p.iter().all(|p| p["ended"] == true));
+                    if seen_running && ended {
+                        let panes = call(&mut s, "pane.list", json!({"session":session}))?;
+                        if let Some(live) = panes
+                            .as_array()
+                            .and_then(|p| p.iter().find(|p| p["ended"] != true))
+                        {
+                            call(&mut s, "window.select", json!({"window":live["window"]}))?;
+                            call(&mut s, "pane.select", json!({"pane":live["id"]}))?;
+                            snapshot = call(&mut s, "client.render", json!({}))?;
+                        } else {
+                            break;
+                        }
+                    }
+                    seen_running |= !ended;
                     dirty = true;
                 }
             }

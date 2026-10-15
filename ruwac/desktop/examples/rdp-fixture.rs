@@ -223,6 +223,9 @@ async fn run(dir: PathBuf) -> anyhow::Result<()> {
             ))
             .with_bitmap_codecs(ironrdp::pdu::rdp::capability_sets::BitmapCodecs(Vec::new()))
             .with_cliprdr_factory(Some(Box::new(Factory(bridge.clone()))))
+            .with_honor_client_desktop_size(
+                std::env::var_os("RUWAC_FIXTURE_HONOR_CLIENT_SIZE").is_some(),
+            )
             .build();
         server.set_credentials(Some(Credentials {
             username: "fixture".into(),
@@ -393,7 +396,11 @@ async fn run(dir: PathBuf) -> anyhow::Result<()> {
             }
         });
     }
-    std::fs::write(dir.join("server-ready.json"),json!({"ports":ports,"server":"ironrdp-server 0.13.0","security":"TLS verified + CredSSP/NLA","generated_desktop":[320,180]}).to_string())?;
+    // Existence announces complete readiness; readers must never observe an empty file.
+    fixture_stamp(
+        &dir.join("server-ready.json"),
+        json!({"ports":ports,"server":"ironrdp-server 0.13.0","security":"TLS verified + CredSSP/NLA","generated_desktop":[320,180]}),
+    )?;
     std::future::pending::<()>().await;
     Ok(())
 }

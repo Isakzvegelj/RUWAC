@@ -70,6 +70,18 @@ try:
  assert b'\x1b]2;RUWAC d \xc2\xb7 1:shell'not in two.data
  assert two.p.poll()is None
  checks.append('two-real-pty-reattachments-have-independent-window-titles')
+ # Actual SGR bottom-row click selects a stable window without reaching a child.
+ time.sleep(.15)
+ pattern=rb'\x1b\[24;1H\x1b\[0;7m([^\x1b]*)\x1b\[0m'
+ line=re.findall(pattern,one.data)[-1].decode()
+ column=line.index('0:d')+1
+ offset=len(one.data);one.send(f'\x1b[<0;{column};24M\x1b[<0;{column};24m'.encode())
+ eventually(lambda:b'\x1b]2;RUWAC d \xc2\xb7 0:d'in one.data[offset:])
+ before=len(rpc('pane.list',{'session':sid}))
+ one.send(b'\x01s');eventually(lambda:len(rpc('pane.list',{'session':sid}))==before+1)
+ one.send(b'\x01|');eventually(lambda:len(rpc('pane.list',{'session':sid}))==before+2)
+ checks.append('clickable-physical-bottom-window-bar-and-lowercase-horizontal-vertical-splits')
+
  one.send(b'\x010');time.sleep(.15)
  session=rpc('pane.list',{'session':sid})[0]
  command=shlex.join([str(binary),'--socket',str(sock),'-r','d'])+'\n'

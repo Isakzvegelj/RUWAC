@@ -65,7 +65,10 @@ def pid_receipt():
  try:return json.loads(pid_file.read_text())
  except (OSError,ValueError):return None
 # Preserve the standard raw receiver behavior while recording the actual leaf PID.
-leaf=root/'leaf.py';leaf.write_text("import fcntl,json,os,runpy,signal,struct,sys,termios\nfrom pathlib import Path\nrecord=Path(sys.argv[2])\nidentity={'pid':os.getpid(),'start':Path('/proc/self/stat').read_text().split()[21]}\ndef resized(*_):\n prior=signal.pthread_sigmask(signal.SIG_BLOCK,{signal.SIGWINCH})\n try:\n  rows,cols,_,_=struct.unpack('HHHH',fcntl.ioctl(0,termios.TIOCGWINSZ,b'\\0'*8)); temp=record.with_name(record.name+'.tmp'); temp.write_text(json.dumps({**identity,'rows':rows,'cols':cols})); temp.replace(record)\n finally:signal.pthread_sigmask(signal.SIG_SETMASK,prior)\nsignal.signal(signal.SIGWINCH,resized); resized()\nsys.argv=[sys.argv[3],sys.argv[1]]\nrunpy.run_path(sys.argv[0],run_name='__main__')\n")
+# Redraw after resize like an interactive TUI: detached Screen adaptation can
+# discard a one-shot banner before the outside display attaches. Input receipts
+# and every PID/resize/prefix assertion remain independent of this readiness line.
+leaf=root/'leaf.py';leaf.write_text("import fcntl,json,os,runpy,signal,struct,sys,termios\nfrom pathlib import Path\nrecord=Path(sys.argv[2])\nidentity={'pid':os.getpid(),'start':Path('/proc/self/stat').read_text().split()[21]}\ndef resized(*_):\n prior=signal.pthread_sigmask(signal.SIG_BLOCK,{signal.SIGWINCH})\n try:\n  rows,cols,_,_=struct.unpack('HHHH',fcntl.ioctl(0,termios.TIOCGWINSZ,b'\\0'*8)); temp=record.with_name(record.name+'.tmp'); temp.write_text(json.dumps({**identity,'rows':rows,'cols':cols})); temp.replace(record)\n finally:signal.pthread_sigmask(signal.SIG_SETMASK,prior)\n if globals().get('ready',False):os.write(1,b'\\r\\nRUWAC_RECEIVER_READY\\r\\n')\nsignal.signal(signal.SIGWINCH,resized); resized(); ready=True\nsys.argv=[sys.argv[3],sys.argv[1]]\nrunpy.run_path(sys.argv[0],run_name='__main__')\n")
 def prefix(kind,default):return b'\x02'if kind=='tmux'and default else b'\x01'
 def routed(payload,pattern,default):
  for kind in reversed(pattern):
@@ -100,11 +103,18 @@ try:
    assert identities_equal(identity,pid_receipt());os.kill(identity['pid'],0)
    ui=UI(attach,name+'-reattach',prefix(pattern[0],default));eventually(lambda:b'RUWAC_RECEIVER_READY'in ui.data or b'SEEN:'in ui.data,20)
    ui.send(b'REATTACH');eventually(lambda:out.read_bytes()==expected+b'REATTACH',10);assert identities_equal(identity,pid_receipt())
+   # An attach-time size signal can precede a nested legacy client's startup.
+   # Record that retained size, then drive a real physical resize after input
+   # has proved the full chain is active. Do not assume attach itself resized it.
+   attach_size=pid_receipt()
+   fcntl.ioctl(ui.slave,termios.TIOCSWINSZ,struct.pack('HHHH',30,101,0,0));os.kill(ui.p.pid,signal.SIGWINCH)
+   eventually(lambda:(r if (r:=pid_receipt())and r['cols']==101 else None),10)
+   fcntl.ioctl(ui.slave,termios.TIOCSWINSZ,struct.pack('HHHH',30,100,0,0));os.kill(ui.p.pid,signal.SIGWINCH)
    eventually(lambda:(r if (r:=pid_receipt())and r['cols']==100 else None),10);initial_size=pid_receipt()
    fcntl.ioctl(ui.slave,termios.TIOCSWINSZ,struct.pack('HHHH',42,137,0,0));os.kill(ui.p.pid,signal.SIGWINCH)
    size=eventually(lambda:(r if (r:=pid_receipt())and r['cols']==137 and r['rows']>initial_size['rows']else None),10)
    assert identities_equal(identity,size)and size['rows']==initial_size['rows']+12;assert ui.finish()==0
-   results.append({'id':f'MIXED-NESTING-{index+1}','status':'PASS','layers':pattern,'depth':len(pattern),'seconds':time.monotonic()-started,'literal_utf8_and_prefix_exact':True,'single_bracketed_paste_pair':True,'paste_contains_both_control_prefixes': 'screen'not in pattern,'prefix_configuration':'tmux default Control-B'if default else 'common Control-A','GNU_Screen_display_adaptation_explicit':True,'deep_window_create_select':True,'leaf_resize_propagated':{'before':[initial_size['rows'],initial_size['cols']],'after':[size['rows'],size['cols']]},'same_leaf_pid_and_start_time_after_detach_reattach':True,'termios_restored':True,'receiver_sha256':hashlib.sha256(out.read_bytes()).hexdigest()});print(name,'PASS',pattern,'default tmux prefix'if default else 'common prefix',flush=True)
+   results.append({'id':f'MIXED-NESTING-{index+1}','status':'PASS','layers':pattern,'depth':len(pattern),'seconds':time.monotonic()-started,'literal_utf8_and_prefix_exact':True,'single_bracketed_paste_pair':True,'paste_contains_both_control_prefixes': 'screen'not in pattern,'prefix_configuration':'tmux default Control-B'if default else 'common Control-A','GNU_Screen_display_adaptation_explicit':True,'deep_window_create_select':True,'initial_attach_leaf':[attach_size['rows'],attach_size['cols']],'explicit_resize_baseline':True,'leaf_resize_propagated':{'before':[initial_size['rows'],initial_size['cols']],'after':[size['rows'],size['cols']]},'same_leaf_pid_and_start_time_after_detach_reattach':True,'termios_restored':True,'receiver_sha256':hashlib.sha256(out.read_bytes()).hexdigest()});print(name,'PASS',pattern,'default tmux prefix'if default else 'common prefix',flush=True)
   except Exception as error:
    results.append({'id':f'MIXED-NESTING-{index+1}','status':'FAIL','layers':pattern,'error':str(error),'traceback':traceback.format_exc()});print(name,'FAIL',error,flush=True);raise
  # Default Screen reattachment may restore its retained window dimensions.

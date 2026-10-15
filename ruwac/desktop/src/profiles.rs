@@ -2615,8 +2615,13 @@ fn editor(
             if response==gtk::ResponseType::Other(1){for endpoint in old.iter().filter(|x|x.machine_id==original.machine_id&&x.id!=original.id){if s.items.len()>=1000{s.items=old.clone();info.set_text("Profile limit reached");return;}let mut copy=endpoint.clone();copy.id=ruwac_protocol::id("endpoint");copy.secret_reference=copy.id.clone();if !copy.preferences.gnome_secret_reference.is_empty(){copy.preferences.gnome_secret_reference=format!("{}.gnome",copy.id);}copy.machine_id=new_machine.clone();copy.name.push_str(" (copy)");s.items.push(copy);}}
         }
         if let Err(e)=s.save(){s.items=old;info.set_text(&e);return;}
-        status.set_text("Machine metadata saved; existing tabs retain their connection settings");drop(s);refresh_widgets(parent.as_ref().map(|w|w.upcast_ref::<gtk::Widget>()));d.close();
-        if response==gtk::ResponseType::Other(5){if let Some((profile,sink,lease))=acquire(&store,&status,&saved_id){open(profile,sink,lease);}}
+        status.set_text("Machine metadata saved; existing tabs retain their connection settings");drop(s);
+        // Release the editor's text-input focus before destroying its entries.
+        // Open the connection after the response unwinds, rather than switching
+        // the parent tab while Wayland still owns this dialog's input context.
+        gtk::prelude::GtkWindowExt::set_focus(d,None::<&gtk::Widget>);
+        refresh_widgets(parent.as_ref().map(|w|w.upcast_ref::<gtk::Widget>()));d.close();
+        if response==gtk::ResponseType::Other(5){let(store,status,open)=(store.clone(),status.clone(),open.clone());gtk::glib::idle_add_local_once(move||{if let Some((profile,sink,lease))=acquire(&store,&status,&saved_id){open(profile,sink,lease);}});}
     });
     dialog.present();
 }

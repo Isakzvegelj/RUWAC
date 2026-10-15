@@ -20,6 +20,10 @@ def command(action,**kwargs):
  return eventually(read,10)
 def api(verb,*args):
  d=json.loads(subprocess.check_output([a.binary,'--socket',str(sock),'rdp',verb,*args,'--json'],env=env,text=True,timeout=10));assert 'result'in d,d;return d['result']
+def create_profile(fields):
+ command('profile-editor',operation='new',response='keep',fields=fields)
+ eventually(lambda:any(d['fields'] and d['width']>0 for d in command('profile-editor',operation='layout')['dialogs']),10)
+ return command('profile-editor',operation='inspect')
 def index(profile):
  views=api('list')['views'];return next(i for i,v in enumerate(views)if v['profile']==profile)
 def pending(profile):
@@ -51,7 +55,7 @@ try:
  gui=start([a.gui,'--socket',str(sock),'--session',session['session'],'--fixture-dir',str(root),'--allow-rdp-control'],'gui');eventually(lambda:command('inspect'),15)
  reference='generated-certificate-'+root.name
  subprocess.run(['secret-tool','store','--label=RUWAC disposable certificate test','application','RUWAC','profile',reference],env=env,input=b'generated-local-only',stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,check=True,timeout=10)
- created=command('profile-editor',operation='new',fields={'0':'Untrusted fixture','1':'Generated trust tests','3':'127.0.0.1:'+str(port),'4':'fixture','9':reference})
+ created=create_profile({'0':'Untrusted fixture','1':'Generated trust tests','3':'127.0.0.1:'+str(port),'4':'fixture','9':reference})
  assert not created['error'],created;profile=created['items'][0]['id'];api('open','--profile',profile)
  r=pending(profile);assert r['certificate']['token']==token and r['certificate']['valid_now'],r;assert frames(profile)['decoded_updates']==0
  baseline=store.read_bytes();command('rdp-trust',rdp=index(profile),operation='review');command('rdp-trust',rdp=index(profile),response='cancel');assert store.read_bytes()==baseline and frames(profile)['decoded_updates']==0
@@ -74,7 +78,7 @@ try:
  command('rdp-trust',rdp=index(profile),confirmation='TRUST',response='save');connected(profile);assert metadata()['items'][0]['preferences']['trust']==token
  record('TRUST-CHANGED-EXPLICIT-REPLACEMENT',confirmed_exact_fingerprint=True)
  # An independently changed profile cannot receive a stale dialog's saved trust.
- created=command('profile-editor',operation='new',fields={'0':'Stale approval fixture','1':'Generated trust tests','3':'127.0.0.1:'+str(ready['ports'][1]),'4':'fixture','9':reference})
+ created=create_profile({'0':'Stale approval fixture','1':'Generated trust tests','3':'127.0.0.1:'+str(ready['ports'][1]),'4':'fixture','9':reference})
  assert not created['error'],created;other=next(p['id']for p in created['items']if p['name']=='Stale approval fixture')
  api('open','--profile',other);pending(other);command('rdp-trust',rdp=index(other),operation='review')
  d=metadata();row=next(p for p in d['items']if p['id']==other);row['server']='127.0.0.1:'+str(ready['ports'][2]);write_metadata(d);before=store.read_bytes()

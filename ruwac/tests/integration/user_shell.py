@@ -4,7 +4,7 @@ import argparse,hashlib,json,os,subprocess,tempfile,time
 from pathlib import Path
 from spike import Client,eventually
 p=argparse.ArgumentParser();p.add_argument('--binary',required=True);p.add_argument('--gui',required=True);p.add_argument('--legacy',required=True);p.add_argument('--evidence',type=Path,required=True);a=p.parse_args()
-runtime=Path(os.environ['XDG_RUNTIME_DIR']);assert runtime.name=='display'and runtime.parent.parent.name=='results'
+runtime=Path(os.environ['XDG_RUNTIME_DIR']);assert os.environ.get('WAYLAND_DISPLAY','').startswith('ruwac-') and runtime.resolve()!=Path('/run/user')/str(os.getuid())
 root=Path(tempfile.mkdtemp(prefix='user-shell-',dir=a.evidence));root.chmod(0o700);env={**os.environ,'GTK_A11Y':'none','GSETTINGS_BACKEND':'memory'}
 for key,name in [('HOME','home'),('XDG_CONFIG_HOME','config'),('XDG_DATA_HOME','data'),('XDG_CACHE_HOME','cache')]:env[key]=str(root/name);Path(env[key]).mkdir(mode=0o700)
 # Generated shell sources only a fixture-owned profile. No owner shell files are read.
@@ -13,9 +13,9 @@ shell=root/'selected-user-shell';shell.write_text('#!/bin/sh\n[ "$1" = "-l" ] ||
 def start(argv,name):
  log=(root/(name+'.log')).open('wb');process=subprocess.Popen(argv,env=env,stdout=log,stderr=log);children.append((process,log));return process
 
-def command(action):
+def command(action,**kw):
  global seq
- seq+=1;tmp=root/'request.tmp';tmp.write_text(json.dumps({'seq':seq,'action':action}));tmp.replace(root/'gui-request.json')
+ seq+=1;tmp=root/'request.tmp';tmp.write_text(json.dumps({'seq':seq,'action':action,**kw}));tmp.replace(root/'gui-request.json')
  def response():
   try:d=json.loads((root/'gui-response.json').read_text());return d['result']if d['seq']==seq else None
   except (OSError,ValueError):return None
@@ -39,6 +39,16 @@ try:
   eventually(lambda:'EXISTING-SESSION-PRESERVED'in c.call('pane.capture',{'pane':initial['pane']})['text'])
  assert old.poll()is None
  results.append({'id':'USER-SHELL-GTK-NEW-TERMINAL-OLDER-DAEMON-COMPATIBILITY','status':'PASS'})
+ eventually(lambda:command('inspect',view=1).get('target')==pane,15)
+ with Client(legacy) as c:
+  for binding in ['c','s','|']:
+   before={p['id'] for p in c.call('pane.list',{'session':new['id']})}
+   command('key',view=1,key='a',mods=12);command('key',view=1,key='bar' if binding=='|' else binding)
+   fresh=eventually(lambda:next((p for p in c.call('pane.list',{'session':new['id']}) if p['id'] not in before),None))
+   eventually(lambda:'RUWAC_USER_LOGIN_PROFILE_LOADED' in c.call('pane.capture',{'pane':fresh['id']})['text'])
+   eventually(lambda:command('inspect',view=1).get('target')==fresh['id'],15)
+ results.append({'id':'USER-SHELL-GTK-NEW-WINDOW-AND-BOTH-SPLITS-OLDER-DAEMON-LOGIN-ARGV','status':'PASS'})
+
  command('window-close');eventually(lambda:gui.poll()is not None)
  assert old.poll()is None
  results.append({'id':'USER-SHELL-CLOSE-WINDOW-PRESERVES-DAEMON-PTY','status':'PASS'})

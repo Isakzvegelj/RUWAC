@@ -14,6 +14,7 @@ if os.environ.get('RUWAC_NATIVE_OWNED_BUS')!='1':
 a.evidence.mkdir(parents=True,exist_ok=True);root=Path(tempfile.mkdtemp(prefix='native-terminal-usability-',dir=a.evidence));root.chmod(0o700)
 env={**os.environ,'GTK_A11Y':'none','GSETTINGS_BACKEND':'memory'}
 for key,name in [('HOME','home'),('XDG_CONFIG_HOME','config'),('XDG_DATA_HOME','data'),('XDG_CACHE_HOME','cache')]:env[key]=str(root/name);Path(env[key]).mkdir(mode=0o700)
+env['SHELL']='/bin/bash'
 for key in ['TMUX','STY','RUWAC_SHORTCUTS','RUWAC_KEYMAP']:env.pop(key,None)
 home=Path(env['HOME']);data=Path(env['XDG_DATA_HOME']);paths=[]
 for i,folder in enumerate([data/'remmina',home/'.remmina',home/'.var/app/org.remmina.Remmina/data/remmina']):
@@ -33,7 +34,9 @@ def command(action,**kw):
 def gui(*options):
  (fixture/'gui-response.json').unlink(missing_ok=True)
  (fixture/'gui-request.json').unlink(missing_ok=True)
- return start([str(a.gui),'--new-instance','--socket',str(sock),'--fixture-dir',str(fixture),*options],'gui-'+str(len(children)))
+ child=start([str(a.gui),'--new-instance','--socket',str(sock),'--fixture-dir',str(fixture),*options],'gui-'+str(len(children)))
+ eventually(lambda:command('inspect'),20);command('tab-select',tab=0)
+ return child
 def terminate(child):child.terminate();child.wait(timeout=10)
 admin=None
 try:
@@ -148,13 +151,29 @@ try:
  assert any(g['label']=='Lab › A' and not g['expanded'] for g in command('profiles-control')['groups'])
  checks.append('collapsed-machine-groups-restored-after-GTK-restart')
  def key(key,mods=0):command('key',key=key,mods=mods)
- key('a',4);key('a',4);key('c')
+ key('a',4);key('c')
  def windows():return subprocess.check_output(['tmux','-S',str(tmux),'list-windows','-t','generated'],env=env,text=True).splitlines()
  eventually(lambda:len(windows())==2)
  assert len(rpc('window.list',{'session':nested['session']}))==1
- key('a',4);key('a',4);key('0');key('x')
+ key('a',4);key('0');key('x')
  eventually(lambda:output.exists() and output.read_bytes()==b'x')
- checks.append('GTK-double-Control-A-routes-to-real-nested-tmux-without-outer-window-change')
+ checks.append('GTK-single-Control-A-routes-to-real-tmux-without-outer-window-change')
+ about=command('about',close=True)
+ assert about['donation_url']=='https://idz.si/bs/ruwac-donate.html' and about['qr_modules']>25 and not about['visible']
+ checks.append('native-About-version-license-support-and-static-QR')
+ # A real Bash login reads an owned profile and interactive rc, including when
+ # an older running daemon otherwise defaults to --noprofile/--norc.
+ home.joinpath('.bash_profile').write_text('. "$HOME/.bashrc"\n')
+ home.joinpath('.bashrc').write_text("PS1='GENERATED_USER_PROMPT> '; printf 'GENERATED_RC_LOADED\\n'\n")
+ known={p['id'] for ses in rpc('session.list') for p in rpc('pane.list',{'session':ses['id']})}
+ command('new-terminal')
+ target=eventually(lambda:q['target'] if (q:=command('inspect',view=1)).get('target') and q['target'] not in known else None)
+ eventually(lambda:'GENERATED_USER_PROMPT>' in rpc('pane.capture',{'pane':target})['text'])
+ assert 'GENERATED_RC_LOADED' in rpc('pane.capture',{'pane':target})['text']
+ count=command('inspect')['tabs'];rpc('pane.sendText',{'pane':target,'text':'exit\r'})
+ eventually(lambda:command('inspect')['tabs']==count-1)
+ assert second.poll() is None and daemon.poll() is None
+ checks.append('native-real-Bash-login-loads-rc-and-exit-closes-only-ended-tab')
  # The caller runs this suite in its own D-Bus session: a repeated normal GUI
  # invocation activates this fixture's primary application without another PTY.
  primary_session=rpc('session.create',{'name':'Generated primary application','argv':['/bin/cat']})
@@ -169,6 +188,13 @@ try:
  checks.append('repeated-GTK-launch-reuses-primary-without-an-orphan-session')
 
  assert daemon.poll()is None and second.poll()is None
+ terminate(second);terminate(primary)
+ final=rpc('session.create',{'name':'Generated final shell','argv':['/bin/bash','-l']})
+ last=gui('--session',final['session']);eventually(lambda:command('inspect').get('target')==final['pane'],20)
+ rpc('pane.sendText',{'pane':final['pane'],'text':'exit\r'})
+ eventually(lambda:last.poll() is not None,8)
+ assert daemon.poll() is None and any(p['id']==final['pane'] and p['ended'] for p in rpc('pane.list',{'session':final['session']}))
+ checks.append('native-last-shell-exit-closes-GTK-window-and-retains-daemon-history')
  receipt={'status':'PASS','checks':checks,'scope':'Actual GTK on owned Wayland, actual daemon/PTys/tmux and generated Remmina files; GTK callbacks are synthetic, not physical input or external SSH acceptance'}
  (root/'acceptance.json').write_text(json.dumps(receipt,indent=2)+'\n');print('Native terminal usability PASS',len(checks),'groups')
 finally:

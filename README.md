@@ -36,7 +36,7 @@ R="$CARGO_TARGET_DIR/release/ruwac"
 
 The default socket is beneath your private runtime directory. `RUWAC_SOCKET` or `--socket PATH` selects an explicit socket; its parent must be owned by you with mode 0700. Use the same socket in each terminal.
 
-Ctrl-A then `c/n/p/d/a` creates/cycles/detaches/sends literal Ctrl-A. Double Ctrl-A switches to the previous window on a matching daemon. Ctrl-A `S` splits horizontally and `|` vertically; `Tab` changes pane; `0–9` selects windows. `[` opens interactive canonical keyboard copy/search in both clients; `]` pastes the independent internal buffer. `z` zooms, `"` opens the window chooser, `:` opens commands and `?` shows configured shortcuts. PTYs survive final-client detach. Each attached client keeps its own selected window, pane and zoom. Shared PTYs and split ratios remain canonical. The session uses the minimum attached rows and columns; each pane uses the minimum dimensions of its visible rectangles. Unattached explicit selection sets the default for future attachments without redirecting current clients. Existing daemons retain the behavior of their running version until deliberately replaced. `rpc daemon.stop` stops the selected daemon and its owned panes.
+Ctrl-A then `c/n/p/d/a` creates/cycles/detaches/sends literal Ctrl-A. Double Ctrl-A forwards the literal prefix; Ctrl-A then o selects the previous window on a matching daemon. Ctrl-A `S` splits horizontally and `|` vertically; `Tab` changes pane; `0–9` selects windows. `[` opens interactive canonical keyboard copy/search in both clients; `]` pastes the independent internal buffer. `z` zooms, `"` opens the window chooser, `:` opens commands and `?` shows configured shortcuts. PTYs survive final-client detach. Each attached client keeps its own selected window, pane and zoom. Shared PTYs and split ratios remain canonical. The session uses the minimum attached rows and columns; each pane uses the minimum dimensions of its visible rectangles. Unattached explicit selection sets the default for future attachments without redirecting current clients. Existing daemons retain the behavior of their running version until deliberately replaced. `rpc daemon.stop` stops the selected daemon and its owned panes.
 
 Unix PTYs are required. The tested toolchain is Fedora Rust 1.98.1. Cargo.lock pins registry checksums. Prereleases describe a prototype, not production or desktop acceptance. Tagged source prereleases preserve operational implementation and engineering history. RUWAC’s original source is licensed under Apache-2.0; see [LICENSE](LICENSE). Dependencies retain their own licenses. Binary packaging remains subject to dependency notice and packaging validation.
 
@@ -63,7 +63,7 @@ Launch the desktop from the same external build directory and socket:
 # Repeated --session IDs on ruwac-desktop open additional persistent tabs.
 ```
 
-Create windows with Ctrl-A c, split with Ctrl-A S or |, move between panes with Ctrl-A Tab, and zoom/restore with Ctrl-A z. Drag dividers to change persistent ratios. Ctrl-A [ opens canonical history: arrows/hjkl, Page Up/Down, g/G, Space to mark, Enter to save internally, / to search and Escape to return. Ctrl-A ] pastes that buffer. Ctrl-Shift-C/V use desktop CLIPBOARD separately. Ctrl-A d detaches; opening the same session again retains running programs and layout.
+Create windows with Ctrl-Alt-A c, split with Ctrl-Alt-A S or |, move between panes with Ctrl-Alt-A Tab, and zoom/restore with Ctrl-Alt-A z. Drag dividers to change persistent ratios. Ctrl-Alt-A [ opens canonical history: arrows/hjkl, Page Up/Down, g/G, Space to mark, Enter to save internally, / to search and Escape to return. Ctrl-Alt-A ] pastes that buffer. Ctrl-Shift-C/V use desktop CLIPBOARD separately. Ctrl-Alt-A d detaches; opening the same session again retains running programs and layout. Plain Ctrl-A is forwarded to the terminal application.
 
 Private configuration may set RUWAC_SCROLLBACK_LINES (default 50000) and RUWAC_SCROLLBACK_MIB (default 256; approximate cell budget). Copy view has an 8 MiB cap with visible truncation. RUWAC_SHORTCUTS remaps GTK accelerators for prefix/copy/paste; RUWAC_KEYMAP remaps prefix commands. Both remapping variables contain JSON objects, for example `RUWAC_SHORTCUTS='{"prefix":"<Control>b"}'` and `RUWAC_KEYMAP='{"x":"z"}'` (x invokes zoom). The TUI supports Control prefixes and prefix-command remapping. `v` toggles rectangular selection, `w/b/e` move by Unicode words, and `n/N` repeat searches. Oversized selections and cancellation preserve the existing internal buffer. See client help for the current configuration.
 
@@ -111,7 +111,7 @@ Global `--remote-binary PATH` and `--socket REMOTE_PATH` select an explicit exec
 
 ## Desktop navigation and diagnostics
 
-Launch `ruwac gui`. Alt+1 through Alt+9 select workspace tabs 1–9; Alt+0 selects tab 10. The shortcuts work from terminal, RDP and Files views. Missing tabs are a no-op. Ctrl+Alt and Shift+Alt remain available to applications. Use `ruwac gui --theme system` to follow the desktop color preference, or `--theme light` / `--theme dark` explicitly.
+Launch `ruwac gui`. Alt+1 through Alt+9 select workspace tabs 1–9; Alt+0 selects tab 10. The shortcuts work from terminal, RDP and Files views. Missing tabs are a no-op. Other unbound Ctrl+Alt and Shift+Alt shortcuts remain available to applications. Use `ruwac gui --theme system` to follow the desktop color preference, or `--theme light` / `--theme dark` explicitly.
 
 `ruwac doctor --desktop` checks local runtime availability without changing it. `ruwac doctor --terminal` inspects the current terminal. After a crashed client leaves raw/no-echo attributes, run `ruwac doctor --terminal --repair` directly in that affected foreground terminal. Repair never targets another terminal and does not reset emulator mouse/private modes. Remote read-only checks use `ruwac --host SSH_HOST doctor`; remote terminal repair is refused.
 
@@ -199,7 +199,7 @@ remains unfinished. The desktop RSA advisory remains unsuppressed.
 
 A fresh GTK workspace creates its own terminal session instead of borrowing an unrelated CLI session. Explicitly attaching the same session shares its PTY size: the smallest attached viewport governs it, and the status bar shows the shared size. Closing or detaching the smaller view allows it to expand. Remmina import discovers native, legacy and Flatpak profile directories, previews the selected metadata, and requires an explicit import; custom file selection remains available. [Remmina documents its profile locations](https://remmina.org/how-to-install-remmina/).
 
-To retain the legacy Screen double-prefix previous-window action, set `RUWAC_SHORTCUTS='{"double_prefix":"previous"}'` when launching the client. Literal prefix forwarding remains available through Ctrl+A then a.
+To retain the legacy Screen double-prefix previous-window action, set `RUWAC_SHORTCUTS='{"double_prefix":"previous"}'` when launching the client. Literal prefix forwarding remains available through the local prefix then a (Ctrl+A in CLI, Ctrl+Alt+A in GTK).
 
 
 ### Screen command aliases
@@ -215,11 +215,14 @@ own selected window and use the canonical shared PTY size.
 closes the current window's programs; `-X quit` closes all programs in that session.
 These destructive automation commands do not prompt.
 
-In TUI and GTK, Ctrl+A then Space selects the next window; Backspace selects the
+The CLI uses Ctrl+A as its local prefix; the GTK terminal uses Ctrl+Alt+A so
+plain Ctrl+A reaches applications such as tmux and Readline. After the local
+prefix, Space selects the next window; Backspace selects the
 previous one; `w` opens the window chooser; `A` prompts for a title; Escape enters
 copy mode; `k` asks before killing the window. Existing `c`, `n`, `p`, `d`, digits,
-`S`, `|`, Tab, `[`, `]`, `?`, and `:` remain available. Double Ctrl+A forwards a
-literal prefix into a nested terminal. Use Ctrl+A then `o` for the other window.
+`s` or `S` splits horizontally; `|` splits vertically. Tab, `[`, `]`, `?`, and `:`
+remain available. Double the local prefix to forward literal Ctrl+A to a nested
+terminal. Follow the local prefix with `o` for the other window.
 Command prompts accept `screen`, `title`, `windowlist`, `split -v`, and `focus`.
 `only` maximizes the current pane without discarding the other persistent panes.
 TUI `quit` requires confirmation; GTK window close preserves terminal sessions.
@@ -250,3 +253,21 @@ checked before writing any of the batch.
 ### Machine groups
 
 Click a group heading in Machines to collapse or expand its connections. RUWAC remembers collapsed groups across restarts. Search temporarily reveals matching connections; clearing the search restores your collapsed groups. Favorites stay first within each group.
+
+The CLI bottom-row window labels accept mouse clicks. An interactive view leaves
+a session when its last running shell exits; ended history remains inspectable.
+New GTK windows and splits explicitly request the user's login shell, including
+when attached to an older daemon. Existing shells keep their original startup mode.
+
+Right-click an RDP **tab** for reconnect, disconnect and display modes. Remote
+framebuffer right-click remains remote input. Tab icons show connection state;
+disconnected configured views show a centered reconnect action. Reconnects retain
+the previous decoded desktop size, with Dynamic mode initially using the current
+viewport. External server behavior remains subject to interoperability testing.
+
+**Main menu → About RUWAC / Support…** shows the installed version, Apache-2.0
+license, source link and an offline QR code for the optional
+[RUWAC support page](https://idz.si/bs/ruwac-donate.html). No payment credentials are
+contained in the application. Updating installed files does not change a running
+GUI; restarting it still reconnects RDP transports. Leave an active window open
+until ready to reconnect. Terminal PTYs remain owned by the persistent daemon.

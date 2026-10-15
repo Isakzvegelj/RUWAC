@@ -176,6 +176,7 @@ impl Command {
 #[derive(Default)]
 pub struct State {
     pub frame: Option<Value>,
+    pub session_ended: bool,
     pub error: Option<String>,
     pub reply: VecDeque<(String, Value)>,
     pub acknowledgements: u64,
@@ -206,14 +207,45 @@ impl Worker {
                     .as_array()
                     .is_some_and(|methods| methods.iter().any(|m| m == "window.previous"));
                 let capabilities = rpc.call("capabilities", json!({}))?;
-                rpc.call(
-                    "session.attach",
-                    json!({"session":session,"rows":24,"cols":80}),
-                )?;
+                // A not-yet-allocated or hidden tab must not impose a 24x80
+                // transient resize on an already shared session.
+                let mut early = VecDeque::new();
+                let mut attached = false;
+                while !halt.load(Ordering::Relaxed) {
+                    match rx.recv_timeout(Duration::from_millis(20)) {
+                        Ok(Command::Rpc(method, params)) if method == "client.resize" => {
+                            budget.fetch_sub(
+                                Command::Rpc(method, params.clone()).bytes(),
+                                Ordering::Relaxed,
+                            );
+                            rpc.call("session.attach",json!({"session":session,"rows":params["rows"],"cols":params["cols"]}))?;
+                            attached = true;
+                            break;
+                        }
+                        Ok(Command::Close) => {
+                            halt.store(true, Ordering::Relaxed);
+                        }
+                        Ok(command) => {
+                            if early.len() >= 128 {
+                                return Err(io::Error::other(
+                                    "Unmapped terminal command queue full",
+                                ));
+                            }
+                            early.push_back(command);
+                        }
+                        Err(mpsc::RecvTimeoutError::Disconnected) => return Ok(()),
+                        Err(mpsc::RecvTimeoutError::Timeout) => (),
+                    }
+                }
+                if !attached {
+                    return Ok(());
+                }
                 let mut revision = None;
                 while !halt.load(Ordering::Relaxed) {
                     for _ in 0..16 {
-                        let Ok(cmd) = rx.try_recv() else { break };
+                        let Some(cmd) = early.pop_front().or_else(|| rx.try_recv().ok()) else {
+                            break;
+                        };
                         let size = cmd.bytes();
                         let result = match cmd {
                             Command::Rpc(m, p) => rpc.call(&m, p).map(|v| (m, v)),
@@ -348,11 +380,27 @@ impl Worker {
                             Err(e) => s.error = Some(format!("Input/command delivery failed: {e}")),
                         };
                     }
-                    let frame = rpc.call(
+                    let mut frame = rpc.call(
                         "client.render",
                         revision.map(|r| json!({"revision":r})).unwrap_or(json!({})),
                     )?;
                     if frame["unchanged"] != true {
+                        st.lock().unwrap().session_ended = false;
+                        if frame["panes"].as_array().is_some_and(|panes| {
+                            !panes.is_empty() && panes.iter().all(|p| p["ended"] == true)
+                        }) {
+                            let panes = rpc.call("pane.list", json!({"session":session}))?;
+                            if let Some(live) = panes
+                                .as_array()
+                                .and_then(|rows| rows.iter().find(|p| p["ended"] != true))
+                            {
+                                rpc.call("window.select", json!({"window":live["window"]}))?;
+                                rpc.call("pane.select", json!({"pane":live["id"]}))?;
+                                frame = rpc.call("client.render", json!({}))?;
+                            } else {
+                                st.lock().unwrap().session_ended = true;
+                            }
+                        }
                         let r = frame["revision"]
                             .as_u64()
                             .ok_or_else(|| io::Error::other("missing render revision"))?;

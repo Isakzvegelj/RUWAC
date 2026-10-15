@@ -3,9 +3,10 @@
 import argparse,hashlib,importlib.util,json,os,subprocess,sys,tempfile,time,traceback
 from pathlib import Path
 from PIL import Image
-p=argparse.ArgumentParser();p.add_argument('--binary',required=True);p.add_argument('--gui',required=True);p.add_argument('--server',required=True);p.add_argument('--evidence',required=True);p.add_argument('--r5-only',action='store_true');p.add_argument('--mixed-only',action='store_true');p.add_argument('--case',action='append',default=[]);a=p.parse_args()
+p=argparse.ArgumentParser();p.add_argument('--binary',required=True);p.add_argument('--gui',required=True);p.add_argument('--server',required=True);p.add_argument('--evidence',required=True);p.add_argument('--r5-only',action='store_true');p.add_argument('--mixed-only',action='store_true');p.add_argument('--case',action='append',default=[]);p.add_argument('--honor-client-size',action='store_true');a=p.parse_args()
 spec=importlib.util.spec_from_file_location('spike',Path(__file__).with_name('spike.py'));spike=importlib.util.module_from_spec(spec);spec.loader.exec_module(spike)
 root=Path(tempfile.mkdtemp(prefix='rdp-native-',dir=a.evidence));root.chmod(0o700);env={**os.environ,'HOME':str(root/'home'),'XDG_CONFIG_HOME':str(root/'config'),'XDG_CACHE_HOME':str(root/'cache'),'XDG_DATA_HOME':str(root/'data'),'GSETTINGS_BACKEND':'memory','GTK_USE_PORTAL':'0','GTK_A11Y':'none'}
+if a.honor_client_size:env['RUWAC_FIXTURE_HONOR_CLIENT_SIZE']='1'
 for key in ['HOME','XDG_CONFIG_HOME','XDG_CACHE_HOME','XDG_DATA_HOME']:Path(env[key]).mkdir(mode=0o700)
 processes=[];logs=[];results=[];sequences={};sock=root/'control.sock';private_bus=None;provider=None
 def start(argv,name):
@@ -67,7 +68,7 @@ try:
  def lifecycle():
   connections=[]
   for tab,port in enumerate(ready['ports']):
-   started=time.perf_counter();command('gui','rdp-open',port=port);r=spike.eventually(lambda:r if (r:=command('gui','rdp-inspect',rdp=tab)).get('size')==[320,180] else False,20);assert r['status'].startswith('Connected'),r;r['connect_to_decoded_frame_ms']=(time.perf_counter()-started)*1000;connections.append(r)
+   started=time.perf_counter();command('gui','rdp-open',port=port);r=spike.eventually(lambda:r if (r:=command('gui','rdp-inspect',rdp=tab)).get('size')==([1280,720] if a.honor_client_size else [320,180]) else False,20);assert r['status'].startswith('Connected'),r;r['connect_to_decoded_frame_ms']=(time.perf_counter()-started)*1000;connections.append(r)
   return {'server':ready,'connections':connections,'authentication':'actual CredSSP/NLA','frames':'decoded live loopback server frames, generated desktop'}
  case('RDP-NATIVE-AUTH-3',lifecycle)
  def lifecycle_api():
@@ -229,6 +230,36 @@ try:
   got=transfer_to_remote(0,'text','policy-local.txt');assert got['sha256']==digest(b'POLICY-LOCAL-SENTINEL')
   return {'reconnect_to_frame_ms':(time.perf_counter()-started)*1000,'same_tab':True,'clipboard_after_reconnect':'PASS','bounded_backoff':True}
  case('RDP-NATIVE-RECONNECT',reconnect)
+ def tab_menu():
+  current=command('gui','rdp-inspect',rdp=0);neighbor=command('gui','rdp-inspect',rdp=1)
+  before=neighbor['transport_id'];tab=current['tab']
+  for action,mode in [('dynamic','Dynamic'),('fit','Fit'),('native','Native'),('fit','Fit')]:
+   menu=command('gui','rdp-tab-menu',tab=tab,control=action)
+   assert menu['icon'] and menu['status_icon'],menu
+   assert ' · RDP' not in menu['title'] and ' / ' not in menu['title'],menu
+   assert command('gui','rdp-inspect',rdp=0)['display_mode']==mode
+   assert command('gui','rdp-inspect',rdp=1)['transport_id']==before
+  return {'native_TabView_setup_menu':True,'targeted_modes':4,'neighbor_transport_unchanged':True,'remote_framebuffer_right_click':'retained existing pointer path'}
+ case('RDP-NATIVE-TAB-MENU',tab_menu)
+
+ def reconnect_size():
+  assert a.honor_client_size,'Requires a peer that honors initial client desktop dimensions'
+  focus('gui');command('gui','rdp-switch',rdp=0)
+  command('gui','rdp-display',rdp=0,mode='dynamic',window_width=1400,window_height=900)
+  previous=spike.eventually(lambda:r['size'] if (r:=command('gui','rdp-inspect',rdp=0))['size']==r['requested_size']==r['viewport'] and r['size'][0]==1400 and min(r['size'])>=200 else False,15)
+  print('RDP reconnect stable starting framebuffer',previous,flush=True)
+  trace_length=len(command('gui','rdp-inspect',rdp=0)['metrics']['decoded_sizes'])
+  for _ in range(3):
+   generation=command('gui','rdp-inspect',rdp=0)['gnome_auto']['generation']
+   command('server-0','disconnect')
+   spike.eventually(lambda:command('gui','rdp-inspect',rdp=0)['gnome_auto']['generation']>generation,15)
+   r=spike.eventually(lambda:r if (r:=command('gui','rdp-inspect',rdp=0))['status'].startswith('Connected') and r['size']==previous else False,15)
+   # Bounded trace records actual decoded dimensions, including brief frames
+   # which a polling-only test could miss.
+   assert all(size==previous for size in r['metrics']['decoded_sizes'][trace_length-1:]),r
+  return {'previous_framebuffer':previous,'authenticated_reconnects':3,'last_sizes':r['metrics']['decoded_sizes'],'scope':'Real loopback CredSSP/framebuffer; no external Windows acceptance'}
+ case('RDP-NATIVE-RECONNECT-SIZE',reconnect_size)
+
  def ownership():
   sentinel=b'LOCAL-OWNER-SENTINEL';(root/'sentinel.txt').write_bytes(sentinel);(root/'inactive.txt').write_text('Generated inactive remote offer')
   for i in range(200):
@@ -358,7 +389,9 @@ try:
   ref='generated-save-connect-'+root.name
   subprocess.run(['secret-tool','store','--label=RUWAC disposable save-connect fixture','application','RUWAC','profile',ref],input=b'generated-local-only',env=env,check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=10)
   transports=[command('gui','rdp-inspect',rdp=i)['transport_id']for i in range(3)]
-  saved=command('gui','profile-editor',operation='new',response='connect',fields={'0':'Generated Save Connect','3':'127.0.0.1:'+str(port),'4':'fixture','9':ref,'10':str(root/'cert.pem'),'13':0},named={'rdp-connection-mode':1,'gnome-username':'generated-linux-user','gnome-auto-login':True})
+  command('gui','profile-editor',operation='new',response='keep',fields={'0':'Generated Save Connect','3':'127.0.0.1:'+str(port),'4':'fixture','9':ref,'10':str(root/'cert.pem'),'13':0},named={'rdp-connection-mode':1,'gnome-username':'generated-linux-user','gnome-auto-login':True})
+  spike.eventually(lambda:any(d['fields'] and d['width']>0 for d in command('gui','profile-editor',operation='layout')['dialogs']),10)
+  saved=command('gui','profile-editor',operation='inspect',response='connect')
   item=next(p for p in saved['items']if p['name']=='Generated Save Connect')
   frame=spike.eventually(lambda:r if (r:=command('gui','rdp-inspect',rdp=3)).get('size')==[320,180] and r['status'].startswith('Connected') else False,20)
   assert [command('gui','rdp-inspect',rdp=i)['transport_id']for i in range(3)]==transports
@@ -484,6 +517,44 @@ try:
   return {'geometry_change_ends_drag_before_move':True,'outside_release' :transitions,'gesture_cancel':True,'late_release_ignored':True,'tab_switch_releases_drag':True,'pan_preserved_on_focus':True,'scope':'Production pointer mapping and GTK cancellation callback; actual authenticated RDP peer receipts; synthetic input, not physical mouse acceptance'}
  case('RDP-NATIVE-POINTER-DRAG',pointer_drag)
 
+
+ def center_reconnect():
+  extra=root/'center-reconnect-server';extra.mkdir(mode=0o700)
+  for name in ['cert.pem','key.pem']:(extra/name).write_bytes((root/name).read_bytes());(extra/name).chmod(0o600)
+  start([a.server,str(extra)],'center-reconnect-server');spike.eventually(lambda:(extra/'server-ready.json').exists(),10)
+  port=json.loads((extra/'server-ready.json').read_text())['ports'][0]
+  reference='generated-center-reconnect-'+root.name
+  subprocess.run(['secret-tool','store','--label=RUWAC disposable reconnect fixture','application','RUWAC','profile',reference],input=b'generated-local-only',env=env,check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=10)
+  neighbors=[command('gui','rdp-inspect',rdp=i)['transport_id']for i in range(3)]
+  def mapped():
+   return any(d['fields'] and d['width']>0 for d in command('gui','profile-editor',operation='layout')['dialogs'])
+  def decoded():
+   r=command('gui','rdp-inspect',rdp=3)
+   return r if min(r.get('size',[0,0]))>0 and min(r.get('viewport',[0,0]))>0 and r.get('metrics',{}).get('decoded_sizes') and r.get('status','').startswith('Connected') else None
+  try:
+   command('gui','profile-editor',operation='new',response='keep',fields={'0':'Generated reconnect host','3':'127.0.0.1:'+str(port),'4':'fixture','9':reference,'10':str(root/'cert.pem'),'13':0})
+   spike.eventually(mapped,10)
+   saved=command('gui','profile-editor',operation='inspect',response='connect');assert not saved['error'],saved
+   frame=spike.eventually(decoded,20)
+   before=frame['transport_id'];tab=frame['tab'];viewport=frame['viewport']
+   menu=command('gui','rdp-tab-menu',tab=tab,control='disconnect');assert menu['title']=='Generated reconnect host',menu
+   lost=spike.eventually(lambda:r if (r:=command('gui','rdp-inspect',rdp=3)).get('reconnect_visible') else False,8)
+   assert lost['viewport']==viewport
+   command('gui','rdp-tab-menu',tab=tab,control='reconnect')
+   fresh=spike.eventually(lambda:r if (r:=decoded()) and r['transport_id']!=before and not r['reconnect_visible'] else None,20)
+   assert [command('gui','rdp-inspect',rdp=i)['transport_id']for i in range(3)]==neighbors
+   command('gui','close-rdp',rdp=3)
+   for _ in range(3):
+    command('gui','profiles',search='Generated reconnect host')
+    command('gui','profile-editor',operation='edit',response='keep');spike.eventually(mapped,10)
+    saved=command('gui','profile-editor',operation='inspect',response='connect');assert not saved['error'],saved
+    again=spike.eventually(decoded,20)
+    assert [command('gui','rdp-inspect',rdp=i)['transport_id']for i in range(3)]==neighbors
+    command('gui','close-rdp',rdp=3)
+   return {'editor_connect_cycles':4,'configured_profile':True,'center_card_visible_when_disconnected':True,'overlay_preserves_viewport':True,'tab_reconnect_actual_CredSSP_and_frame':True,'neighbors_preserved':True}
+  finally:
+   command('gui','close-rdp',rdp=3)
+ case('RDP-NATIVE-CENTER-RECONNECT',center_reconnect)
 
  def profile_keyring_preferences():
   assert provider and provider.poll() is None, 'Disposable Secret Service provider unavailable'

@@ -4,6 +4,61 @@ use crate::cliprdr::{Backend, Bridge, Event, Format};
 use crate::rdp_trust::{Review, Trust};
 use adw::prelude::*;
 use gtk::{gdk, glib};
+
+/// Local actions belong to the tab; right-click on the framebuffer stays remote input.
+pub fn install_tab_menu(
+    window: &adw::ApplicationWindow,
+    tabs: &adw::TabView,
+    views: Rc<RefCell<Vec<Rc<RdpView>>>>,
+) {
+    let target: Rc<RefCell<Option<std::rc::Weak<RdpView>>>> = Rc::new(RefCell::new(None));
+    let menu = gtk::gio::Menu::new();
+    let group = gtk::gio::SimpleActionGroup::new();
+    let mut actions = Vec::new();
+    for (name, label) in [
+        ("reconnect", "Reconnect"),
+        ("dynamic", "Dynamic resolution"),
+        ("fit", "Fit to window"),
+        ("native", "Original size"),
+        ("disconnect", "Disconnect"),
+    ] {
+        let action = gtk::gio::SimpleAction::new(name, None);
+        action.set_enabled(false);
+        let selected = target.clone();
+        action.connect_activate(move |_, _| {
+            let view = selected.borrow().as_ref().and_then(std::rc::Weak::upgrade);
+            if let Some(view) = view {
+                match name {
+                    "reconnect" => {
+                        if let Err(error) = view.automation_reconnect() {
+                            view.status.set_text(&error);
+                        }
+                    }
+                    "disconnect" => view.close(),
+                    mode => view.set_display(mode, 1.0, 0, 0),
+                }
+            }
+        });
+        group.add_action(&action);
+        menu.append(Some(label), Some(&format!("connection.{name}")));
+        actions.push(action);
+    }
+    window.insert_action_group("connection", Some(&group));
+    tabs.set_menu_model(Some(&menu));
+    tabs.connect_setup_menu(move |_, page| {
+        let selected = page.and_then(|page| {
+            views
+                .borrow()
+                .iter()
+                .find(|view| crate::tiles::contains(&page.child(), &view.root))
+                .cloned()
+        });
+        for action in &actions {
+            action.set_enabled(selected.is_some());
+        }
+        *target.borrow_mut() = selected.as_ref().map(Rc::downgrade);
+    });
+}
 use ironrdp::{
     connector,
     pdu::{
@@ -170,6 +225,7 @@ struct Profile {
     reference: String,
     ca: Option<String>,
     reconnect: bool,
+    desktop_size: (u16, u16),
     graphics: bool,
     clipboard: bool,
     handover: Option<Arc<crate::handover::Plan>>,
@@ -247,6 +303,8 @@ struct State {
     display_cap: Option<u64>,
     clipboard_channel_negotiated: bool,
     display_request: Option<(u16, u16)>,
+    desktop_size: Option<(u16, u16)>,
+    decoded_sizes: std::collections::VecDeque<(u16, u16)>,
     reactivating: bool,
     cadence: std::collections::VecDeque<std::time::Instant>,
     bridge: Bridge,
@@ -327,6 +385,9 @@ async fn run(
     for attempt in 0..=3 {
         {
             let mut st = state.lock().unwrap();
+            if let Some(size) = st.desktop_size {
+                p.desktop_size = size;
+            }
             st.generation += 1;
             st.phase = if attempt == 0 {
                 "connecting"
@@ -543,6 +604,10 @@ async fn run_session(
                 password
             },
         );
+        config.desktop_size = connector::DesktopSize {
+            width: p.desktop_size.0,
+            height: p.desktop_size.1,
+        };
         if let Some(plan) = p.handover.as_ref() {
             config.enable_rdstls = true;
             config.enable_credssp = false;
@@ -724,6 +789,10 @@ async fn run_session(
     .build();
     state.lock().unwrap().status = Some("Connected".into());
     let (mut reader, mut writer) = ironrdp_tokio::split_tokio_framed(framed);
+    // Input queued during authentication belongs to the previous transport (or
+    // an unready channel). Discard it before processing this connection's PDUs.
+    // Fresh clipboard initialization is driven by the new channel callbacks.
+    while input.try_recv().is_ok() {}
     loop {
         if state
             .lock()
@@ -822,6 +891,14 @@ async fn run_session(
                 ActiveStageOutput::GraphicsUpdate(rect) => {
                     let mut st = state.lock().unwrap();
                     st.reactivating = false;
+                    st.desktop_size = Some((image.width(), image.height()));
+                    let dimensions = (image.width(), image.height());
+                    if st.decoded_sizes.back() != Some(&dimensions) {
+                        st.decoded_sizes.push_back(dimensions);
+                        if st.decoded_sizes.len() > 64 {
+                            st.decoded_sizes.pop_front();
+                        }
+                    }
                     st.phase = "connected".into();
                     if st.display_request == Some((image.width(), image.height())) {
                         st.display_request = None;
@@ -892,7 +969,7 @@ async fn run_session(
         }
     }
 }
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Scale {
     Fit,
     Native,
@@ -1009,9 +1086,12 @@ pub struct RdpView {
     area: gtk::DrawingArea,
     pub status: gtk::Label,
     pub toolbar: gtk::Box,
+    disconnect_card: gtk::Box,
+    disconnect_message: gtk::Label,
     connection: RefCell<Option<Connection>>,
     surface: RefCell<Option<gtk::cairo::ImageSurface>>,
     size: Cell<(u16, u16)>,
+    last_size: Cell<(u16, u16)>,
     surface_generation: Cell<u64>,
     rendered_generation: Cell<u64>,
     last_pixel: Cell<[u8; 4]>,
@@ -1170,6 +1250,26 @@ impl RdpView {
             .child(&viewport)
             .build();
         viewport_overlay.set_child(Some(&scroll));
+        let disconnect_card = gtk::Box::new(gtk::Orientation::Vertical, 12);
+        disconnect_card.set_halign(gtk::Align::Center);
+        disconnect_card.set_valign(gtk::Align::Center);
+        disconnect_card.set_widget_name("rdp-connection-card");
+        disconnect_card.add_css_class("card");
+        disconnect_card.set_margin_top(20);
+        disconnect_card.set_margin_bottom(20);
+        disconnect_card.set_margin_start(20);
+        disconnect_card.set_margin_end(20);
+        let disconnect_message = gtk::Label::new(Some("Disconnected"));
+        disconnect_message.set_wrap(true);
+        disconnect_message.set_max_width_chars(52);
+        disconnect_card.append(&disconnect_message);
+        let reconnect_center = gtk::Button::with_label("Reconnect");
+        reconnect_center.set_widget_name("rdp-center-reconnect");
+        reconnect_center.add_css_class("suggested-action");
+        disconnect_card.append(&reconnect_center);
+        disconnect_card.set_visible(false);
+        viewport_overlay.add_overlay(&disconnect_card);
+
         let display_info = gtk::Label::new(None);
         display_info.set_wrap(true);
         display_info.set_visible(false);
@@ -1192,9 +1292,12 @@ impl RdpView {
             area,
             status,
             toolbar: toolbar.clone(),
+            disconnect_card,
+            disconnect_message,
             connection: RefCell::new(None),
             surface: RefCell::new(None),
             size: Cell::new((0, 0)),
+            last_size: Cell::new((1280, 720)),
             surface_generation: Cell::new(0),
             rendered_generation: Cell::new(0),
             last_pixel: Cell::new([0; 4]),
@@ -1774,6 +1877,38 @@ impl RdpView {
             }
             glib::ControlFlow::Continue
         });
+        let weak = Rc::downgrade(&v);
+        reconnect_center.connect_clicked(move |_| {
+            if let Some(v) = weak.upgrade() {
+                if let Err(message) = v.automation_reconnect() {
+                    v.status.set_text(&message);
+                }
+            }
+        });
+        let weak = Rc::downgrade(&v);
+        glib::timeout_add_local(Duration::from_millis(100), move || {
+            let Some(v) = weak.upgrade() else {
+                return glib::ControlFlow::Break;
+            };
+            let phase = v.metadata()["phase"]
+                .as_str()
+                .unwrap_or("disconnected")
+                .to_owned();
+            let configured = !v.entries[0].text().is_empty();
+            let show = configured && phase != "connected" && !v.auto_gdm.borrow().armed;
+            v.disconnect_card.set_visible(show);
+            if show {
+                v.disconnect_message.set_text(match phase.as_str() {
+                    "connecting" => "Connecting…",
+                    "reconnecting" => "Connection interrupted · reconnecting…",
+                    "error" => "Connection failed · check the connection settings and retry",
+                    _ => "Disconnected",
+                });
+                v.disconnect_message
+                    .set_tooltip_text(Some(&v.status.text()));
+            }
+            glib::ControlFlow::Continue
+        });
         v
     }
     pub fn fixture_connect(&self, port: u16, ca: &std::path::Path) {
@@ -1787,6 +1922,7 @@ impl RdpView {
                 user: "fixture".into(),
                 reference: String::new(),
                 reconnect: true,
+                desktop_size: (1280, 720),
                 graphics: false,
                 clipboard: self.broker.borrow().desktop_enabled(),
                 handover: None,
@@ -1825,9 +1961,9 @@ impl RdpView {
                 .zip(s.cadence.iter().skip(1))
                 .map(|(a, b)| b.duration_since(*a).as_secs_f64() * 1000.0)
                 .collect();
-            serde_json::json!({"decoded_updates":s.frames,"update_intervals_ms":times})
+            serde_json::json!({"decoded_updates":s.frames,"decoded_sizes":s.decoded_sizes,"update_intervals_ms":times})
         });
-        serde_json::json!({"transport_id":self.connection.borrow().as_ref().map(|c|c.id.as_str()),"requested_size":self.requested.get(),"metrics":metrics,"gnome_auto":{"armed":self.auto_gdm.borrow().armed,"step":format!("{:?}",self.auto_gdm.borrow().sequence.step),"input_epoch":self.assist_epoch.load(Ordering::Acquire),"guards":{"canvas_focus":self.area.has_focus(),"window_active":self.root.root().and_downcast::<gtk::Window>().is_some_and(|w|w.is_active()),"selected":self.selected.borrow().as_ref().is_some_and(|f|f()),"profile_current":self.profile_metadata.borrow().as_ref().is_some_and(crate::profiles::assist_profile_current),"rendered_generation":self.rendered_generation.get(),"surface_generation":self.surface_generation.get()},"generation":self.connection.borrow().as_ref().map(|c|c.state.lock().unwrap().generation),"handovers":self.connection.borrow().as_ref().map(|c|c.state.lock().unwrap().handovers)},"last_pixel":self.last_pixel.get(),"status":self.status.text().as_str(),"size":self.size.get(),"zoom":self.zoom.get(),"pan":[self.scroll.hadjustment().value(),self.scroll.vadjustment().value()],"viewport":[self.area.width(),self.area.height()],"window_width":self.root.root().and_then(|r|r.downcast::<gtk::Window>().ok()).map(|w|w.width()),"active":self.broker.borrow().active()==Some(self.id.as_str()),"epoch":self.broker.borrow().epoch(),"pending":self.pending.borrow().is_some(),"received_generation":self.received_generation.get(),"offers":self.offers_seen.get(),"policy":format!("{:?}",self.policy.get())})
+        serde_json::json!({"transport_id":self.connection.borrow().as_ref().map(|c|c.id.as_str()),"requested_size":self.requested.get(),"display_mode":format!("{:?}",self.mode.get()),"reconnect_visible":self.disconnect_card.is_visible(),"metrics":metrics,"gnome_auto":{"armed":self.auto_gdm.borrow().armed,"step":format!("{:?}",self.auto_gdm.borrow().sequence.step),"input_epoch":self.assist_epoch.load(Ordering::Acquire),"guards":{"canvas_focus":self.area.has_focus(),"window_active":self.root.root().and_downcast::<gtk::Window>().is_some_and(|w|w.is_active()),"selected":self.selected.borrow().as_ref().is_some_and(|f|f()),"profile_current":self.profile_metadata.borrow().as_ref().is_some_and(crate::profiles::assist_profile_current),"rendered_generation":self.rendered_generation.get(),"surface_generation":self.surface_generation.get()},"generation":self.connection.borrow().as_ref().map(|c|c.state.lock().unwrap().generation),"handovers":self.connection.borrow().as_ref().map(|c|c.state.lock().unwrap().handovers)},"last_pixel":self.last_pixel.get(),"status":self.status.text().as_str(),"size":self.size.get(),"zoom":self.zoom.get(),"pan":[self.scroll.hadjustment().value(),self.scroll.vadjustment().value()],"viewport":[self.area.width(),self.area.height()],"window_width":self.root.root().and_then(|r|r.downcast::<gtk::Window>().ok()).map(|w|w.width()),"active":self.broker.borrow().active()==Some(self.id.as_str()),"epoch":self.broker.borrow().epoch(),"pending":self.pending.borrow().is_some(),"received_generation":self.received_generation.get(),"offers":self.offers_seen.get(),"policy":format!("{:?}",self.policy.get())})
     }
     pub fn fixture_policy(&self, index: u32) {
         fn find(w: &gtk::Widget) -> Option<gtk::DropDown> {
@@ -2129,6 +2265,26 @@ impl RdpView {
                 .set_text("Host, user and secret reference are required");
             return Err("Configured user and credential reference required".into());
         }
+        let initial_size = if self.mode.get() == Scale::Dynamic
+            && self.scroll.width() >= 200
+            && self.scroll.height() >= 200
+        {
+            let scale = self
+                .area
+                .native()
+                .and_then(|n| n.surface())
+                .map(|s| s.scale())
+                .unwrap_or(1.0);
+            stable_resize(
+                (
+                    ((self.scroll.width() as f64 * scale).clamp(200.0, 4096.0) as u16) / 2 * 2,
+                    (self.scroll.height() as f64 * scale).clamp(200.0, 4096.0) as u16,
+                ),
+                self.desired.get(),
+            )
+        } else {
+            self.last_size.get()
+        };
         self.close();
         self.certificate.borrow_mut().take();
         self.review_certificate.set_visible(false);
@@ -2138,6 +2294,7 @@ impl RdpView {
             user: user.into(),
             reference: reference.into(),
             reconnect: self.reconnect.get(),
+            desktop_size: initial_size,
             clipboard: self.broker.borrow().desktop_enabled(),
             handover: None,
             graphics: self
@@ -2176,6 +2333,20 @@ impl RdpView {
                 (s.phase.clone(), s.frames > 0)
             })
             .unwrap_or(("disconnected".into(), false))
+    }
+    pub fn tab_title(&self) -> String {
+        self.profile_metadata
+            .borrow()
+            .as_ref()
+            .map(|p| p.name.clone())
+            .unwrap_or_else(|| {
+                let host = self.entries[0].text();
+                if host.is_empty() {
+                    "Remote desktop".into()
+                } else {
+                    host.to_string()
+                }
+            })
     }
     pub fn metadata(&self) -> serde_json::Value {
         let connection = self.connection.borrow();
@@ -2223,7 +2394,7 @@ impl RdpView {
             window.set_default_size(w, h);
         }
     }
-    pub fn fixture_display(&self, mode: &str, zoom: f64, width: u16, height: u16) {
+    pub fn set_display(&self, mode: &str, zoom: f64, width: u16, height: u16) {
         self.mode.set(match mode {
             "native" => Scale::Native,
             "stretch" => Scale::Stretch,
@@ -3453,6 +3624,7 @@ impl RdpView {
                 self.surface.borrow_mut().take();
             }
             self.size.set((f.width, f.height));
+            self.last_size.set((f.width, f.height));
             if let Some(p) = f.pixels.get(f.pixels.len().saturating_sub(4)..) {
                 if p.len() == 4 {
                     self.last_pixel.set(p.try_into().unwrap());
@@ -3521,6 +3693,7 @@ mod tests {
             reference: "service-reference".into(),
             ca: None,
             reconnect: true,
+            desktop_size: (1280, 720),
             graphics: true,
             clipboard: true,
             handover: Some(plan.clone()),
@@ -3603,6 +3776,7 @@ mod tests {
                     user: "synthetic-fixture".into(),
                     reference: String::new(),
                     reconnect: true,
+                    desktop_size: (1280, 720),
                     graphics: false,
                     clipboard: true,
                     handover: None,

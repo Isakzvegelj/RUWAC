@@ -1,23 +1,11 @@
-# RUWAC compact desktop and machine workspaces
+# RUWAC terminal usability and connection controls
 
-Remote Codex/Claude buttons now share existing named RUWAC sessions. Concurrent SSH launches create one session; reconnects preserve its process and do not run changed command preferences. Existing duplicate names are refused with CLI recovery instructions. Seven actual authenticated loopback SSH/PTY tests use a generated agent process; provider login and external-host agent execution remain separate acceptance gates.
+GTK terminals pass Ctrl+A directly to applications; Ctrl+Alt+A opens local RUWAC commands. New windows and splits explicitly use the login shell even with an older running daemon. Existing shells retain their original startup flags.
 
-This batch introduces a compact single-row header, contextual Controls with optional
-docking, six live color schemes and configurable terminal font/spacing. Machine
-profiles are scrollable without pagination and groups remember their collapse state.
+Live clients close when the last shell exits; ended history remains available. CLI window labels accept mouse clicks, and lowercase s / vertical-bar split commands are supported. GTK uses its full allocated terminal height and up to 200 columns; unmapped tabs wait before attaching.
 
-SSH profiles can expose Codex/Claude shortcuts with configurable resume commands
-and RUWAC, Screen, tmux or direct sessions. Explicit remote CLI setup uses the existing
-headless installer. New RDP profiles default to Dynamic resolution. Ctrl+Alt+Home
-moves focus to local controls; Ctrl+Alt+Enter toggles fullscreen, leaving AltGr intact.
+RDP reconnects retain decoded desktop dimensions. Right-click a tab for connection/display controls. Concise tab titles, status icons and a centered reconnect action clarify connection state. These changes require native and authenticated loopback acceptance; external server window placement remains a separate gate.
 
-Read the desktop guide and current acceptance status for exact validation scope.
-Generated fixtures and native GTK callbacks are separate from physical input and
-external-host acceptance. Existing dependency advisories remain unsuppressed.
+The native About / Support dialog includes version/license information and a QR link to the dedicated RUWAC support page. No payment secrets are included.
 
-Known limitation: Weston 15.0.1 popup-after-resize compatibility remains unqualified.
-
-The CLI status bar fills the bottom row and remains there across large-terminal
-resizes, showing session/window identity before shortcut hints.
-
-Artifact privacy scanning now recognizes one validated compiler-generated relative branch-table form. All table targets must resolve into executable sections; adjacent literals, unchecked instruction forms and invalid targets retain the ordinary scan. Twenty-six synthetic archive/privacy tests pass. No private matching values enter source or reports.
+Installing updates leaves the running process unchanged. GUI restart still interrupts RDP transports; persistent terminals survive. Seamless RDP process handoff is not implemented. Existing dependency advisories and physical-input/external-host acceptance limitations remain unsuppressed.

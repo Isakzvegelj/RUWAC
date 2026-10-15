@@ -56,3 +56,5 @@ Unknown fields or invalid appearance values protect the existing file from write
 Testing note: Weston 15.0.1 exited while positioning a Controls popup after repeated
 resizes. That compositor path remains unqualified; isolated Mutter results do not
 substitute for physical desktop acceptance.
+
+GTK terminal multiplexer commands use Ctrl+Alt+A by default. Plain Ctrl+A reaches the child application, including tmux and Readline. CLI RUWAC continues to use Ctrl+A. Existing explicit shortcut overrides are retained. Main menu → About RUWAC / Support exposes the installed version, source, license and donation QR.

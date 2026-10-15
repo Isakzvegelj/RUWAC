@@ -27,6 +27,8 @@ pub struct View {
     pub drawn: Cell<u64>,
     pub prefix: Cell<bool>,
     pub detached: Cell<bool>,
+    pub finished: Cell<bool>,
+    seen_running: Cell<bool>,
     pub broker: Broker,
     window_index: Cell<Option<usize>>,
     pub warning: RefCell<Option<String>>,
@@ -126,6 +128,8 @@ impl View {
             drawn: Cell::new(0),
             prefix: Cell::new(false),
             detached: Cell::new(false),
+            finished: Cell::new(false),
+            seen_running: Cell::new(false),
             broker,
             window_index: Cell::new(None),
             warning: RefCell::new(None),
@@ -351,7 +355,7 @@ impl View {
         });
         v.area.add_controller(wheel);
         let w = Rc::downgrade(&v);
-        v.area.connect_resize(move|_,width,height|if let Some(v)=w.upgrade(){v.command("client.resize",json!({"rows":((height as f64/v.cell_height.get())as i32-2).clamp(4,100),"cols":((width as f64/v.cell_width.get())as i32).clamp(10,180)}));});
+        v.area.connect_resize(move|_,width,height|if let Some(v)=w.upgrade(){if width>0&&height>0{v.command("client.resize",json!({"rows":((height as f64/v.cell_height.get())as i32).clamp(4,100),"cols":((width as f64/v.cell_width.get())as i32).clamp(10,200)}));}});
         v
     }
     pub fn show_terminal(&self) {
@@ -430,7 +434,7 @@ impl View {
             .shortcuts
             .get("prefix")
             .map(String::as_str)
-            .unwrap_or("<Control>a");
+            .unwrap_or("<Control><Alt>a");
         gtk::accelerator_parse(binding)
             .and_then(|(key, flags)| {
                 key.to_unicode().filter(|c| {
@@ -462,11 +466,11 @@ impl View {
     }
     fn show_help(&self) {
         let text = format!(
-            "Prefix: {}\nDesktop copy: {}\nDesktop paste: {}\n\nPrefix commands: double prefix forwards to nested terminal · o previous window · c new · n/p windows · 0–9 select · \" chooser · S horizontal / | vertical split · Tab pane · z zoom/restore · [ copy/search · ] internal paste · : command · d detach · a literal prefix.\n\nCopy mode: arrows/hjkl, Page Up/Down, g/G, Space mark, Enter save internally, / search, Escape exit. Drag dividers to resize. Shift+drag overrides application mouse.\n\nCustom prefix command mappings: {}",
+            "Prefix: {}\nDesktop copy: {}\nDesktop paste: {}\n\nPrefix commands: double prefix forwards to nested terminal · o previous window · c new · n/p windows · 0–9 select · \" chooser · s/S horizontal / | vertical split · Tab pane · z zoom/restore · [ copy/search · ] internal paste · : command · d detach · a literal prefix.\n\nCopy mode: arrows/hjkl, Page Up/Down, g/G, Space mark, Enter save internally, / search, Escape exit. Drag dividers to resize. Shift+drag overrides application mouse.\n\nCustom prefix command mappings: {}",
             self.shortcuts
                 .get("prefix")
                 .map(String::as_str)
-                .unwrap_or("Ctrl+A"),
+                .unwrap_or("Ctrl+Alt+A"),
             self.shortcuts
                 .get("copy")
                 .map(String::as_str)
@@ -836,7 +840,17 @@ impl View {
         *self.warning.borrow_mut() = Some(message.into());
         self.status.set_text(message);
     }
-    pub fn command(&self, m: &str, p: Value) {
+    pub fn command(&self, m: &str, mut p: Value) {
+        if matches!(m, "window.create" | "pane.create") && p.get("argv").is_none() {
+            match crate::shell::default_argv() {
+                Ok(argv) => p["argv"] = json!(argv),
+                Err(e) => {
+                    self.navigation.set(false);
+                    self.warn(&e);
+                    return;
+                }
+            }
+        }
         if let Err(e) = self.worker.send(Command::Rpc(m.into(), p)) {
             self.warn(&e);
         }
@@ -889,6 +903,15 @@ impl View {
                 return;
             }
             let panes = frame["panes"].as_array().unwrap();
+            if panes
+                .iter()
+                .any(|p| p["ended"] != true && p["restored"] != true)
+            {
+                self.seen_running.set(true);
+            }
+            if self.seen_running.get() && s.session_ended {
+                self.finished.set(true);
+            }
             if !panes
                 .iter()
                 .any(|p| p["id"].as_str() == Some(self.target.borrow().as_str()))
@@ -902,7 +925,7 @@ impl View {
                         "Restored history · process ended · New terminal starts a session"
                     }
                     Some(p) if p["ended"] == true => "Process ended · history remains available",
-                    _ => "Ctrl+A prefix · Shift+drag selects · PTYs persist",
+                    _ => "Ctrl+Alt+A controls · Ctrl+A to application · Shift+drag selects",
                 };
                 let rows = frame["rows"].as_u64();
                 let cols = frame["cols"].as_u64();
@@ -1260,7 +1283,7 @@ impl View {
             self.paste_clipboard(false);
             return;
         }
-        if !self.prefix.get() && self.binding(key, mods, "prefix", "<Control>a") {
+        if !self.prefix.get() && self.binding(key, mods, "prefix", "<Control><Alt>a") {
             self.prefix.set(true);
             self.status
                 .set_text("Prefix command pending · ? help · a literal prefix");
@@ -1287,7 +1310,7 @@ impl View {
         let ctrl = mods.contains(gdk::ModifierType::CONTROL_MASK);
         let ch = key.to_unicode();
         if self.prefix.replace(false) {
-            if self.binding(key, mods, "prefix", "<Control>a") {
+            if self.binding(key, mods, "prefix", "<Control><Alt>a") {
                 if self
                     .shortcuts
                     .get("double_prefix")
@@ -1327,7 +1350,7 @@ impl View {
                 ),
                 "a" => self.input(&self.literal_prefix()),
                 "o" => self.navigate("window.previous", json!({"session":self.session})),
-                "S" | "|" => self.split(binding == "|"),
+                "S" | "s" | "|" => self.split(binding == "|"),
                 "[" => self.open_history(),
                 "]" => self.command("buffer.get", json!({"session":self.session})),
                 "?" => self.show_help(),
@@ -1449,7 +1472,7 @@ impl View {
                 .max(1.),
         );
         if self.area.width() > 0 && self.area.height() > 0 {
-            self.command("client.resize",json!({"rows":((self.area.height()as f64/self.cell_height.get())as i32-2).clamp(4,100),"cols":((self.area.width()as f64/self.cell_width.get())as i32).clamp(10,180)}));
+            self.command("client.resize",json!({"rows":((self.area.height()as f64/self.cell_height.get())as i32).clamp(4,100),"cols":((self.area.width()as f64/self.cell_width.get())as i32).clamp(10,200)}));
         }
         self.area.queue_draw();
     }

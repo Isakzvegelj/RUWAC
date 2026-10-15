@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## v0.4.2 — 2026-10-15 — Stable source release
+
+- Forward plain Ctrl+A to GTK terminal applications; use Ctrl+Alt+A for local multiplexer commands. Load the login shell explicitly in new GUI windows and splits with older daemons.
+- Close live terminal views when their last shell exits, retaining ended history and selecting surviving session windows.
+- Use actual terminal allocations without the former two-row reservation or 180-column cap; defer attaching unmapped tabs.
+- Make CLI window status labels clickable and support lowercase horizontal-split aliases.
+- Discard stale input queued during authentication before activating the replacement RDP transport.
+- Preserve desktop dimensions through RDP reconnects; add contextual tab controls, connection icons, concise titles and centered reconnect feedback.
+- Release profile-editor text focus before Save & Connect switches tabs, then open the saved connection after the response unwinds.
+- Add native About / Support with an offline QR code linking to the dedicated RUWAC donation page.
+
+
 ## v0.4.1 — 2026-10-15 — Stable source release
 
 - Validate compiler-generated bounded relative branch tables during artifact privacy scans; retain rejection of private literals and unknown instruction forms.
