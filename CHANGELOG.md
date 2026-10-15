@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v0.4.0 — 2026-10-15 — Stable source release
+
+- Deliver the compact desktop, scrollable machine library, remote-agent launch configuration, dynamic RDP defaults, fullscreen/local-focus shortcuts and visible CLI status bar as the minor release.
+
 ## v0.2.43 — 2026-10-15 — Stable source release
 
 - Keep the CLI status bar visible across the full terminal width and at its physical bottom after resizing, including terminals larger than the daemon PTY limit.
