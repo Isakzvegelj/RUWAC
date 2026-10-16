@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v0.4.15 — 2026-10-16 — Stable source release
+
+- Nested `ruwac -r`/`-S` sessions handle the mouse like tmux with mouse mode on: over a program without mouse support (such as a shell) the wheel scrolls the session's history and scrolling back down returns to the live view, a drag selects text into the session's paste buffer, and a middle-click (touchpad three-finger tap) pastes it. Programs that use the mouse still receive every event in their own coordinates. Shift keeps the outer terminal's own selection.
+
 ## v0.4.14 — 2026-10-16 — Stable source release
 
 - Updates: install the newest complete release (quality and privacy checks passed on its commit, every installed package attached) instead of waiting on the newest tag; newer releases still in qualification are listed as skipped, nothing is ever downgraded, and an unavailable package is never reported as installed. Applies to RPM and testing-bundle updates.

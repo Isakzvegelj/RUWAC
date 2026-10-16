@@ -260,6 +260,38 @@ impl Copy {
             self.goto(p.row, p.col);
         }
     }
+    /// Show the newest `height` lines with the cursor on the last one.
+    pub fn align_bottom(&mut self, height: usize) {
+        let last = self.lines.len().saturating_sub(1);
+        self.top = self.lines.len().saturating_sub(height.max(1));
+        self.cursor.row = last;
+        self.desired = self.cursor.col;
+    }
+    /// Mouse wheel: move the view by `delta` lines (negative = older),
+    /// keeping the cursor inside it.
+    pub fn scroll(&mut self, delta: isize, height: usize) {
+        let height = height.max(1);
+        let max_top = self.lines.len().saturating_sub(height);
+        let top = (self.top as isize + delta).clamp(0, max_top as isize) as usize;
+        self.top = top;
+        let bottom = (top + height - 1).min(self.lines.len().saturating_sub(1));
+        self.cursor.row = self.cursor.row.clamp(top, bottom.max(top));
+    }
+    /// True when the newest line is visible.
+    pub fn at_bottom(&self, height: usize) -> bool {
+        self.top + height.max(1) >= self.lines.len()
+    }
+    /// Move the cursor to a 0-based screen position of the copy view.
+    pub fn point(&mut self, row: usize, col: usize) {
+        self.cursor.row = (self.top + row).min(self.lines.len().saturating_sub(1));
+        self.cursor.col = (self.left + col).min(self.cols.saturating_sub(1));
+        self.desired = self.cursor.col;
+    }
+    /// Begin a mouse selection at the cursor.
+    pub fn mark(&mut self) {
+        self.anchor = Some(self.cursor);
+        self.rectangle = false;
+    }
     pub fn paste_query(&mut self, text: &str) {
         if let Some((query, _)) = &mut self.edit {
             for c in text.chars().filter(|c| !c.is_control()) {
@@ -485,7 +517,7 @@ impl Copy {
             self.left = self.cursor.col - columns + 1;
         }
         let mut out = String::from(
-            "\x1b[?25l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[0m\x1b[H\x1b[2J",
+            "\x1b[?25l\x1b[?1003l\x1b[?1000h\x1b[?1002h\x1b[?1006h\x1b[0m\x1b[H\x1b[2J",
         );
         for row in self.top..(self.top + height).min(self.lines.len()) {
             out.push_str(&format!("\x1b[{};1H", row - self.top + 1));

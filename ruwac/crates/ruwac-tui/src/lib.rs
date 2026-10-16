@@ -555,8 +555,8 @@ fn divider_cells(v: &Value) -> std::collections::BTreeMap<(u64, u64), u8> {
 fn mouse_wanted(v: &Value) -> bool {
     mouse_request(v).is_some()
 }
-/// The outer terminal's mouse mode for the active program: clicks (1000),
-/// drags (1002) or all motion (1003); None keeps native selection and paste.
+/// The outer terminal's mouse mode: the program's own (clicks 1000, drags
+/// 1002, all motion 1003), or drags for the client's scrollback and selection.
 fn mouse_request(v: &Value) -> Option<u16> {
     let p = v["panes"]
         .as_array()?
@@ -564,7 +564,9 @@ fn mouse_request(v: &Value) -> Option<u16> {
         .find(|p| p["id"] == v["active_pane"])?;
     let g = &p["grid"];
     if g["mouse"] != true {
-        None
+        // The client scrolls history and selects for programs without mouse
+        // support; Shift keeps the outer terminal's own selection.
+        Some(1002)
     } else if g["mouse_motion"] == true {
         Some(1003)
     } else if g["mouse_drag"] == true {
@@ -573,20 +575,25 @@ fn mouse_request(v: &Value) -> Option<u16> {
         Some(1000)
     }
 }
-/// An SGR mouse report from the outer terminal mapped to the pane under the
-/// pointer: (pane, structured event in pane coordinates, pane wants mouse).
-fn route_mouse(v: &Value, bytes: &[u8]) -> Option<(String, Value, bool)> {
+/// (button, column, row, release) from an SGR mouse report; 1-based.
+fn sgr_mouse(bytes: &[u8]) -> Option<(u64, u64, u64, bool)> {
     let text = std::str::from_utf8(bytes).ok()?.strip_prefix("\x1b[<")?;
     let release = text.ends_with('m');
     if !release && !text.ends_with('M') {
         return None;
     }
     let mut parts = text[..text.len() - 1].split(';').map(str::parse::<u64>);
-    let (button, x, y) = (
+    Some((
         parts.next()?.ok()?,
         parts.next()?.ok()?,
         parts.next()?.ok()?,
-    );
+        release,
+    ))
+}
+/// An SGR mouse report from the outer terminal mapped to the pane under the
+/// pointer: (pane, structured event in pane coordinates, pane wants mouse).
+fn route_mouse(v: &Value, bytes: &[u8]) -> Option<(String, Value, bool)> {
+    let (button, x, y, release) = sgr_mouse(bytes)?;
     let (col, row) = (x.checked_sub(1)?, y.checked_sub(1)?);
     v["panes"].as_array()?.iter().find_map(|p| {
         let r = &p["rect"];
@@ -1305,6 +1312,8 @@ pub fn attach_with_window(socket: &Path, session: &str, window: Option<&str>) ->
     }
     let _raw = Raw::enter()?;
     let mut screen_size = terminal_dimensions();
+    // Left-button press on a pane without mouse support: (pane, column, row).
+    let mut drag: Option<(String, usize, usize)> = None;
     let mut size = dimensions(limits);
     call(
         &mut s,
@@ -1369,6 +1378,47 @@ pub fn attach_with_window(socket: &Path, session: &str, window: Option<&str>) ->
                     }
                 }
                 Input::Mouse(b) => {
+                    if let Mode::Copy(c) = &mut mode {
+                        // Scrollback opened by the wheel or a drag.
+                        let Some((button, x, y, release)) = sgr_mouse(&b) else {
+                            continue;
+                        };
+                        let (height, row, col) = (
+                            size.0 as usize,
+                            y.saturating_sub(1) as usize,
+                            x.saturating_sub(1) as usize,
+                        );
+                        match button {
+                            64 => c.scroll(-3, height),
+                            65 => {
+                                c.scroll(3, height);
+                                if c.at_bottom(height) && c.anchor.is_none() {
+                                    mode = Mode::Live;
+                                    status.clear();
+                                }
+                            }
+                            0 if !release => {
+                                c.point(row, col);
+                                c.mark();
+                            }
+                            0 | 32 => {
+                                c.point(row, col);
+                                if release && c.anchor.is_some() {
+                                    let text = c.selected(MAX_TEXT).map_err(io::Error::other)?;
+                                    let bytes = text.len();
+                                    call(
+                                        &mut s,
+                                        "buffer.set",
+                                        json!({"session":session,"text":text}),
+                                    )?;
+                                    mode = Mode::Live;
+                                    status = format!("Copied {bytes} bytes; middle-click pastes");
+                                }
+                            }
+                            _ => (),
+                        }
+                        continue;
+                    }
                     if matches!(mode, Mode::Live) {
                         let (bar, target) = status_mouse(
                             &snapshot,
@@ -1404,6 +1454,55 @@ pub fn attach_with_window(socket: &Path, session: &str, window: Option<&str>) ->
                             );
                             if let Err(e) = result {
                                 status = e.to_string();
+                            }
+                            continue;
+                        }
+                        // A program without mouse support (e.g. a shell): the
+                        // wheel opens scrollback, a drag selects into the
+                        // session buffer and a middle-click pastes it.
+                        let height = size.0 as usize;
+                        let (x, y) = (
+                            event["x"].as_u64().unwrap_or(1).saturating_sub(1) as usize,
+                            event["y"].as_u64().unwrap_or(1).saturating_sub(1) as usize,
+                        );
+                        let release = event["release"] == true;
+                        match event["button"].as_u64().unwrap_or(0) {
+                            64 => {
+                                let mut c = history(&mut s, &pane)?;
+                                c.align_bottom(height);
+                                c.scroll(-3, height);
+                                mode = Mode::Copy(c);
+                            }
+                            0 if !release => drag = Some((pane.clone(), x, y)),
+                            32 => {
+                                if let Some((start_pane, sx, sy)) = drag.take() {
+                                    if start_pane == pane {
+                                        let rows = snapshot["panes"]
+                                            .as_array()
+                                            .and_then(|p| {
+                                                p.iter().find(|p| p["id"] == pane.as_str())
+                                            })
+                                            .and_then(|p| p["rect"]["rows"].as_u64())
+                                            .unwrap_or(height as u64)
+                                            as usize;
+                                        // Pane row r is history line len-rows+r.
+                                        let offset = height.saturating_sub(rows);
+                                        let mut c = history(&mut s, &pane)?;
+                                        c.align_bottom(height);
+                                        c.point(offset + sy, sx);
+                                        c.mark();
+                                        c.point(offset + y, x);
+                                        mode = Mode::Copy(c);
+                                    }
+                                }
+                            }
+                            1 if !release => {
+                                call(&mut s, "buffer.paste", json!({"pane":pane}))?;
+                            }
+                            _ => {
+                                if release {
+                                    drag = None;
+                                }
                             }
                         }
                     }
@@ -1885,7 +1984,10 @@ mod tests {
                 {"id":"pane_htop","grid":{"mouse":true}}
             ]})
         };
-        assert!(!mouse_wanted(&frame("pane_shell")));
+        assert!(
+            mouse_wanted(&frame("pane_shell")),
+            "client handles wheel and drag for shells"
+        );
         assert!(mouse_wanted(&frame("pane_htop")));
         assert!(!mouse_wanted(&json!({})));
     }
@@ -1911,7 +2013,11 @@ mod tests {
         let mut active = frame.clone();
         active["active_pane"] = json!("pane_btm");
         assert_eq!(mouse_request(&active), Some(1003));
-        assert_eq!(mouse_request(&frame), None);
+        assert_eq!(
+            mouse_request(&frame),
+            Some(1002),
+            "shells: client scrollback and selection"
+        );
     }
     #[test]
     fn fragmented_input_and_replies() {
