@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## v0.4.10 — 2026-10-16 — Stable source release
+
+- Detect the SSH keys you already have (keys in `~/.ssh` with a public half, and `IdentityFile` entries in `~/.ssh/config`) in machine SSH setup: a Detected keys menu, and an empty key field is filled with the preferred key (ed25519, then ECDSA, then RSA). Only public keys and the SSH config are read.
+
+- Colour machines in the sidebar by what is ready to use: violet for AI agents (Codex/Claude/Kimi), green for SSH, plain otherwise.
+
 ## v0.4.9 — 2026-10-16 — Stable source release
 
 - Open new desktop windows at the size of the last closed window instead of the default; each window still keeps its own geometry. The desktop-menu New window action now supplies the daemon socket.

@@ -1497,6 +1497,20 @@ pub fn sidebar(
                     .filter(|x| x.machine_id == p.machine_id)
                     .cloned()
                     .collect::<Vec<_>>();
+                // Colour by what is ready to use: AI agents, SSH, or neither.
+                let agents = linked.iter().any(|x| {
+                    !x.preferences.codex_command.is_empty()
+                        || !x.preferences.claude_command.is_empty()
+                        || !x.preferences.kimi_command.is_empty()
+                });
+                let ssh = linked.iter().any(|x| x.protocol == "SSH");
+                if agents {
+                    entry.add_css_class("machine-agents");
+                    entry.set_tooltip_text(Some("AI agents configured (Codex / Claude / Kimi)"));
+                } else if ssh {
+                    entry.add_css_class("machine-ssh");
+                    entry.set_tooltip_text(Some("SSH endpoint configured"));
+                }
                 for (kind, icon, tip, name, enabled, text) in [
                     (
                         3,
@@ -2895,6 +2909,36 @@ fn editor_seed(
         chooser.show();
     });
     key_row.append(&choose_key);
+    // Offer keys this user already has; an empty field gets the best one so
+    // the key can be authorized on the host without browsing for it.
+    let detected = crate::ssh_keys::detect();
+    if !detected.is_empty() {
+        let list = gtk::Box::new(gtk::Orientation::Vertical, 2);
+        let pop = gtk::Popover::new();
+        for key in &detected {
+            let b = gtk::Button::with_label(&key.label());
+            b.add_css_class("flat");
+            b.set_widget_name("ssh-detected-key");
+            b.set_tooltip_text(Some(&key.path.to_string_lossy()));
+            let (entry, pop, path) = (fields[11].clone(), pop.clone(), key.path.clone());
+            b.connect_clicked(move |_| {
+                entry.set_text(&path.to_string_lossy());
+                pop.popdown();
+            });
+            list.append(&b);
+        }
+        pop.set_child(Some(&list));
+        let menu = gtk::MenuButton::builder()
+            .label(format!("Detected keys ({})", detected.len()))
+            .popover(&pop)
+            .tooltip_text("SSH keys found in ~/.ssh and ~/.ssh/config")
+            .build();
+        menu.set_widget_name("ssh-detected-keys");
+        key_row.append(&menu);
+        if original.protocol == "SSH" && fields[11].text().is_empty() {
+            fields[11].set_text(&detected[0].path.to_string_lossy());
+        }
+    }
     if original.protocol == "SSH" {
         form_row(
             &agents,

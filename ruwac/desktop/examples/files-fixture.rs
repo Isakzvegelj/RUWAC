@@ -15,6 +15,8 @@ mod rdp_trust;
 mod sidebar_shell;
 #[path = "../src/ssh_jump.rs"]
 mod ssh_jump;
+#[path = "../src/ssh_keys.rs"]
+mod ssh_keys;
 use std::{
     path::Path,
     sync::{

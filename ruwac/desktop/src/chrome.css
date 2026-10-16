@@ -36,5 +36,10 @@ headerbar.ruwac-bar button.image-button, headerbar.ruwac-bar menubutton > button
 
 .machine-shortcuts button { min-height: 20px; min-width: 0; padding: 0 6px; margin: 0; font-size: 11px; border-radius: 10px; background: alpha(currentColor, 0.08); }
 .machine-shortcuts button:hover { background: alpha(@ruwac_accent, 0.25); }
-.machine-entry { padding-bottom: 4px; }
+.machine-entry { padding-bottom: 4px; border-left: 3px solid transparent; border-radius: 4px; }
+/* Ready-to-use machines: violet = AI agents, green = SSH only. */
+.machine-entry.machine-agents { border-left-color: #a78bfa; background: alpha(#a78bfa, 0.08); }
+.machine-entry.machine-agents .machine-shortcuts button { background: alpha(#a78bfa, 0.18); }
+.machine-entry.machine-ssh { border-left-color: #34d399; background: alpha(#34d399, 0.07); }
+.machine-entry.machine-ssh .machine-shortcuts button { background: alpha(#34d399, 0.16); }
 .ruwac-disconnected { padding: 24px 32px; }
