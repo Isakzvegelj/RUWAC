@@ -1,7 +1,13 @@
-# RUWAC initial Dynamic RDP sizing
+# RUWAC saved host actions and desktop continuity
 
-New Dynamic RDP connections wait for a stable allocated viewport before the existing credential lookup and authenticated connection start. This prevents a newly opened tab from negotiating a temporary 1280×720 desktop and immediately resizing again. The wait is bounded; Disconnect or changed settings cancel the queued request. Fixed/local-scaled display modes retain their behavior.
+Machine bookmarks offer compact SSH, Codex, Claude and Kimi actions. RDP service credentials stay separate from linked SSH accounts. Missing SSH configuration opens an explicit editor; no connection or key authorization occurs merely by showing the machine list. Agent menus include saved hosts; terminal context menus put recent SSH connections first.
 
-A new background tab uses the allocated workspace without selecting itself or taking clipboard ownership. An existing hidden connection retains its last actual framebuffer size. Existing daemon, terminal sessions, profiles, clipboard and authentication infrastructure are preserved.
+Kimi defaults to `kimi --session`. Per-machine opt-in installation uses the selected provider’s official per-user installer. Provider authentication remains in its own terminal flow. Agents may share a named remote RUWAC session in independent windows; reattachment keeps the existing process and does not install or inject a changed command. This requires an updated remote CLI and an engine supporting independent client focus.
 
-Qualification uses actual GTK/Wayland, disposable Secret Service credentials and an authenticated loopback peer. Three initial window sizes, queued cancellation, background connection, reconnect, clipboard and neighboring transports are tested separately from physical input and external Windows/Fedora interoperability. The RSA advisory and complete signed Fedora distribution remain open; this source release does not claim full product acceptance.
+The desktop remembers normal dimensions, maximized/fullscreen state and saved workspace tabs. Terminal processes remain in the independent daemon. RDP connections still reconnect when their frontend process restarts; seamless RDP process handoff remains unfinished.
+
+Ctrl+Shift+T opens a terminal and Ctrl+Shift+R opens RDP machine selection. `ruwac -r` accepts a name or exact session ID. `kill-session NAME_OR_SESSION_ID` closes the selected session’s programs, refusing ambiguous names. Repeated `Terminal` names belong to independent GUI-created sessions.
+
+CLI status uses light blue. Native pane separators render after terminal backgrounds. New engines reserve divider cells so CLI lines never cover application text. Preserved older daemons retain their existing adjacent-cell layout; updates do not restart their live sessions.
+
+Acceptance distinguishes generated authenticated SSH/PTY and isolated native GTK/Wayland tests from external host and physical input acceptance. The shipped RSA advisory and complete Fedora distribution acceptance remain open. This release does not claim full product completion.

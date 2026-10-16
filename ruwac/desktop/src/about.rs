@@ -25,7 +25,7 @@ pub fn present(parent: &adw::ApplicationWindow) -> gtk::Window {
     let info = adw::PreferencesGroup::new();
     for (name, value) in [
         ("Installed version", env!("CARGO_PKG_VERSION")),
-        ("Authors", "RUWAC contributors"),
+        ("Author", "Denis Zvegelj"),
         ("License", "Apache-2.0"),
     ] {
         info.add(

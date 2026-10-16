@@ -23,6 +23,16 @@ class PrivacyTests(unittest.TestCase):
         self.assertTrue(privacy.findings('test_' + host + '_login', [host]))
         self.assertFalse(privacy.findings('prefix' + host + 'suffix', [host]))
 
+    def test_public_attribution_does_not_allow_private_account_or_paths(self):
+        account = 'generated-' + uuid.uuid4().hex
+        attribution = account + ' Exampleauthor'
+        policy = privacy.PolicyTerms([account], [attribution])
+        self.assertFalse(privacy.findings('Author: ' + attribution, policy))
+        self.assertTrue(privacy.findings('account=' + account, policy))
+        self.assertTrue(privacy.findings('Author: ' + attribution + ' account=' + account, policy))
+        self.assertTrue(privacy.findings('/home/' + attribution, policy))
+        self.assertTrue(privacy.findings(attribution + ' https://' + 'generated:generated-password@host.example.test', policy))
+
     def test_report_never_contains_payload(self):
         value = 'generated-' + uuid.uuid4().hex
         with tempfile.TemporaryDirectory() as tmp:

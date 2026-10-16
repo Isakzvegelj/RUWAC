@@ -6,6 +6,8 @@ input to, replaces, or restarts a live process. No agent account is probed.
 """
 import fcntl
 import json
+import hashlib
+import re
 import os
 from pathlib import Path
 import shutil
@@ -20,8 +22,14 @@ class LaunchError(Exception):
 
 
 def main():
-    binary, socket, name, command = sys.argv[1:]
-    if name not in ('codex', 'claude'):
+    if len(sys.argv) not in (5, 6):
+        raise LaunchError('Invalid remote agent request')
+    binary, socket, name, command = sys.argv[1:5]
+    shared = sys.argv[5] if len(sys.argv) == 6 else ''
+    if shared and not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,63}', shared):
+        raise LaunchError('Use a short session name containing letters, digits, dots, underscores or hyphens')
+    session_name = shared or name
+    if name not in ('codex', 'claude', 'kimi'):
         raise LaunchError('Choose a supported remote agent')
     exe = shutil.which(binary)
     if not exe and binary == 'ruwac':
@@ -38,6 +46,10 @@ def main():
                                 else f'/tmp/ruwac-{os.geteuid()}/control.sock')
     socket = os.path.abspath(socket)
     cli = [exe, '--socket', socket]
+    if shared:
+        usage = subprocess.run(cli + ['attach', '--help'], capture_output=True, text=True, timeout=5)
+        if '--window' not in usage.stdout + usage.stderr:
+            raise LaunchError('Update the remote RUWAC CLI before enabling shared agent windows')
     subprocess.run(cli + ['start'], check=True, stdout=subprocess.DEVNULL, timeout=20)
 
     def rpc(method, params):
@@ -47,14 +59,18 @@ def main():
             raise LaunchError('Remote RUWAC request failed')
         return reply['result']
 
-    # Serialize only launchers for this agent and this daemon, including parallel
+    if shared and rpc('capabilities', {}).get('independent_client_focus') is not True:
+        raise LaunchError('Shared agent windows need an engine with independent client focus; keep separate sessions until the remote engine is updated')
+    window = None
+    # Serialize launchers for this session and this daemon, including parallel
     # SSH connections. Old running daemons need no new protocol or restart.
     directory = os.open(Path(socket).parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
         info = os.fstat(directory)
         if info.st_uid != os.geteuid() or info.st_mode & 0o077:
             raise LaunchError('Remote daemon directory must be private and owned by this account')
-        lock = os.open(f'.agent-{name}.lock', os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK,
+        lock_name = '.agent-session-' + hashlib.sha256(shared.encode()).hexdigest()[:24] if shared else '.agent-' + name
+        lock = os.open(lock_name + '.lock', os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK,
                        0o600, dir_fd=directory)
     finally:
         os.close(directory)
@@ -72,15 +88,29 @@ def main():
                 if time.monotonic() >= deadline:
                     raise LaunchError('Another remote launch is busy; retry shortly')
                 time.sleep(0.05)
-        matches = [s for s in rpc('session.list', {}) if s.get('name') == name]
+        matches = [s for s in rpc('session.list', {}) if s.get('name') == session_name]
         if len(matches) > 1:
             raise LaunchError('Multiple sessions have this name. Use ruwac -ls and attach by session ID.')
         if matches:
             sid = matches[0]['id']
             state = 'Reattaching to'
         else:
-            sid = rpc('session.create', {'name': name, 'argv': ['bash', '-lic', command]})['session']
+            created = rpc('session.create', {'name': session_name, 'argv': ['bash', '-lic', command]})
+            sid = created['session']
+            if shared:
+                window = created['window']
+                rpc('window.rename', {'window': window, 'name': name})
             state = 'Created'
+        if shared and window is None:
+            windows = [w for w in rpc('window.list', {'session': sid}) if w.get('name') == name]
+            if len(windows) > 1:
+                raise LaunchError('Multiple agent windows have this name. Attach and choose a window explicitly.')
+            if windows:
+                window = windows[0]['id']
+            else:
+                window = rpc('window.create', {'session': sid, 'name': name, 'argv': ['bash', '-lic', command]})['window']
+        if window is not None and (not isinstance(window, str) or not window.startswith('window_')):
+            raise LaunchError('Remote agent window identity rejected')
         if not isinstance(sid, str) or not sid.startswith('session_'):
             raise LaunchError('Remote RUWAC session identity rejected')
     finally:
@@ -88,7 +118,7 @@ def main():
         os.close(lock)
     print(f'{state} persistent {name} session: {sid}', flush=True)
     print('Closing this view detaches; the remote agent keeps running.', flush=True)
-    os.execv(exe, cli + ['attach', '--session', sid])
+    os.execv(exe, cli + ['attach', '--session', sid] + (['--window', window] if window else []))
 
 
 if __name__ == '__main__':

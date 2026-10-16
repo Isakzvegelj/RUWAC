@@ -508,6 +508,50 @@ fn status_mouse(
     (true, target)
 }
 
+// Draw only reserved cells. Older daemons have adjacent pane rectangles;
+// their application content must never be overwritten by a decorative line.
+fn divider_cells(v: &Value) -> std::collections::BTreeMap<(u64, u64), u8> {
+    let mut out = std::collections::BTreeMap::new();
+    let Some(panes) = v["panes"].as_array() else {
+        return out;
+    };
+    let rects: Vec<_> = panes
+        .iter()
+        .map(|p| {
+            let r = &p["rect"];
+            (
+                r["x"].as_u64().unwrap_or(0),
+                r["y"].as_u64().unwrap_or(0),
+                r["cols"].as_u64().unwrap_or(0).min(1024),
+                r["rows"].as_u64().unwrap_or(0).min(512),
+            )
+        })
+        .collect();
+    let empty = |x, y| {
+        !rects
+            .iter()
+            .any(|&(a, b, w, h)| a <= x && x < a + w && b <= y && y < b + h)
+    };
+    for &(x, y, w, h) in &rects {
+        if x > 0 {
+            for row in y..y + h {
+                if empty(x - 1, row) {
+                    *out.entry((row, x - 1)).or_insert(0) |= 1;
+                }
+            }
+        }
+        if y > 0 {
+            for col in x..x + w {
+                if empty(col, y - 1) {
+                    *out.entry((y - 1, col)).or_insert(0) |= 2;
+                }
+            }
+        }
+    }
+    out
+}
+const STATUS_STYLE: &str = "\x1b[0;38;2;16;32;48;48;2;173;216;230m";
+
 fn draw(v: &Value, status: &str) -> io::Result<()> {
     let mut out = format!(
         "\x1b]2;RUWAC {}\x07\x1b[?25l\x1b[0m\x1b[H\x1b[2J",
@@ -584,13 +628,26 @@ fn draw(v: &Value, status: &str) -> io::Result<()> {
             }
         }
     }
+    for ((row, col), direction) in divider_cells(v) {
+        let glyph = match direction {
+            1 => "│",
+            2 => "─",
+            _ => "┼",
+        };
+        out.push_str(&format!(
+            "\x1b[{};{}H\x1b[0;38;2;120;170;205m{glyph}\x1b[0m",
+            row + 1,
+            col + 1
+        ));
+    }
     // The daemon bounds the PTY grid, but chrome belongs to the physical
     // terminal. Keep the bar at its bottom even beyond the engine grid limits.
     let (screen_rows, screen_cols) = terminal_dimensions();
     let line = status_line(v, (screen_rows.saturating_sub(1), screen_cols), status);
     out.push_str(&format!(
-        "\x1b[{};1H\x1b[0;7m{}{}\x1b[0m",
+        "\x1b[{};1H{}{}{}\x1b[0m",
         screen_rows,
+        STATUS_STYLE,
         line,
         " ".repeat((screen_cols as usize).saturating_sub(copy::width(&line)))
     ));
@@ -973,7 +1030,7 @@ fn draw_mode(
                     ));
                 }
                 out.push_str(&format!(
-                    "\x1b[{};1H\x1b[7m{}\x1b[0m",
+                    "\x1b[{};1H{STATUS_STYLE}{}\x1b[0m",
                     height + 1,
                     copy::clip(
                         &format!(
@@ -986,7 +1043,7 @@ fn draw_mode(
             }
             Mode::Confirm { label, .. } => {
                 out.push_str(&format!(
-                    "\x1b[{};1H\x1b[7m{}\x1b[0m",
+                    "\x1b[{};1H{STATUS_STYLE}{}\x1b[0m",
                     height + 1,
                     copy::clip(
                         &format!("{label}? y confirms; any other key cancels"),
@@ -1013,7 +1070,7 @@ fn draw_mode(
                     out.push_str(&format!("\x1b[{};1H{}", y + 1, copy::clip(line, columns)));
                 }
                 out.push_str(&format!(
-                    "\x1b[{};1H\x1b[7mHELP · Esc/Enter exit\x1b[0m",
+                    "\x1b[{};1H{STATUS_STYLE}HELP · Esc/Enter exit\x1b[0m",
                     height + 1
                 ));
             }
@@ -1023,7 +1080,7 @@ fn draw_mode(
     };
     if !status.is_empty() && !matches!(mode, Mode::Copy(_) | Mode::Chooser { .. }) {
         out.push_str(&format!(
-            "\x1b[{};1H\x1b[7m{}\x1b[0m",
+            "\x1b[{};1H{STATUS_STYLE}{}\x1b[0m",
             height + 1,
             copy::clip(status, columns)
         ));
@@ -1079,6 +1136,9 @@ fn verified_connect(socket: &Path) -> io::Result<UnixStream> {
     Ok(s)
 }
 pub fn attach(socket: &Path, session: &str) -> io::Result<()> {
+    attach_with_window(socket, session, None)
+}
+pub fn attach_with_window(socket: &Path, session: &str, window: Option<&str>) -> io::Result<()> {
     STOP.store(false, Ordering::Relaxed);
     let config = Config::load()?;
     let mut s = verified_connect(socket)?;
@@ -1110,6 +1170,17 @@ pub fn attach(socket: &Path, session: &str) -> io::Result<()> {
     }
     let limits =
         ruwac_protocol::TerminalLimits::advertised(&call(&mut s, "capabilities", json!({}))?);
+    if let Some(window) = window {
+        if !ruwac_protocol::valid_id(window, "window")
+            || !call(&mut s, "window.list", json!({"session":session}))?
+                .as_array()
+                .is_some_and(|rows| rows.iter().any(|w| w["id"].as_str() == Some(window)))
+        {
+            return Err(io::Error::other(
+                "Requested window does not belong to the selected session",
+            ));
+        }
+    }
     let _raw = Raw::enter()?;
     let mut screen_size = terminal_dimensions();
     let mut size = dimensions(limits);
@@ -1118,6 +1189,9 @@ pub fn attach(socket: &Path, session: &str) -> io::Result<()> {
         "session.attach",
         json!({"session":session,"rows":size.0,"cols":size.1}),
     )?;
+    if let Some(window) = window {
+        call(&mut s, "window.select", json!({"window":window}))?;
+    }
     let (tx, rx) = mpsc::sync_channel(64);
     std::thread::spawn(move || {
         let mut stdin = io::stdin().lock();
@@ -1628,6 +1702,12 @@ pub fn attach(socket: &Path, session: &str) -> io::Result<()> {
                         .as_array()
                         .is_some_and(|p| !p.is_empty() && p.iter().all(|p| p["ended"] == true));
                     if seen_running && ended {
+                        // An explicitly launched agent view must never silently
+                        // send its next input to a different agent's window.
+                        if window.is_some_and(|window| snapshot["window"].as_str() == Some(window))
+                        {
+                            break;
+                        }
                         let panes = call(&mut s, "pane.list", json!({"session":session}))?;
                         if let Some(live) = panes
                             .as_array()
@@ -1703,6 +1783,22 @@ mod tests {
 #[cfg(test)]
 mod display_identity_tests {
     use super::*;
+    #[test]
+    fn split_lines_use_only_unoccupied_reserved_cells() {
+        let mut frame = json!({"panes":[{"rect":{"x":0,"y":0,"cols":39,"rows":23}},{"rect":{"x":40,"y":0,"cols":40,"rows":23}}]});
+        let lines = divider_cells(&frame);
+        assert_eq!(lines.len(), 23);
+        assert!(
+            lines
+                .iter()
+                .all(|(&(row, col), &direction)| row < 23 && col == 39 && direction == 1)
+        );
+        // An older engine has no spare cell; never overwrite application text.
+        frame["panes"][0]["rect"]["cols"] = json!(40);
+        assert!(divider_cells(&frame).is_empty());
+        frame = json!({"panes":[{"rect":{"x":0,"y":0,"cols":80,"rows":11}},{"rect":{"x":0,"y":12,"cols":80,"rows":11}}]});
+        assert_eq!(divider_cells(&frame).len(), 80);
+    }
     #[test]
     fn long_unicode_window_labels_have_exact_visible_click_ranges() {
         let rows:Vec<_>=(0..18).map(|n|json!({"index":n,"id":format!("window-{n}"),"name":"界é👩‍💻-long-window-label".repeat(8)})).collect();

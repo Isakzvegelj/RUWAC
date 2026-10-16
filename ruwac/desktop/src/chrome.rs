@@ -445,6 +445,20 @@ impl Chrome {
         if let (Some(w), Some(h)) = (q["width"].as_i64(), q["height"].as_i64()) {
             window.set_default_size(w.clamp(500, 3200) as i32, h.clamp(400, 2000) as i32);
         }
+        if let Some(value) = q["maximized"].as_bool() {
+            if value {
+                window.maximize();
+            } else {
+                window.unmaximize();
+            }
+        }
+        if let Some(value) = q["fullscreen"].as_bool() {
+            if value {
+                window.fullscreen();
+            } else {
+                window.unfullscreen();
+            }
+        }
         if q["open"] == true {
             self.controls.popup();
         } else if q["open"] == false {
@@ -502,7 +516,7 @@ impl Chrome {
                 tree.borrow_mut().push(serde_json::json!({"type":w.type_().name(),"name":w.widget_name().as_str(),"height":w.height(),"width":w.width(),"css":w.css_classes().iter().map(|s|s.to_string()).collect::<Vec<_>>()}));
             }
         });
-        serde_json::json!({"header_tree":tree.into_inner(),"header_height":self.header.height(),"tab_bar_width":self.bar.width(),"actions_revealed":self.reveal.reveals_child(),"docked":p.controls_docked,"dock_height":self.dock.height(),"scheme":p.scheme,"term_font":p.term_font,"term_size_pt":p.term_size_pt,"content_height":content.as_ref().height(),"window_height":window.height(),"window_width":window.width(),"terminal_background":schemes::current().colors[8],"open":self.pop.is_visible()})
+        serde_json::json!({"header_tree":tree.into_inner(),"header_height":self.header.height(),"tab_bar_width":self.bar.width(),"actions_revealed":self.reveal.reveals_child(),"docked":p.controls_docked,"dock_height":self.dock.height(),"scheme":p.scheme,"term_font":p.term_font,"term_size_pt":p.term_size_pt,"content_height":content.as_ref().height(),"maximized":window.is_maximized(),"fullscreen":window.is_fullscreen(),"window_height":window.height(),"window_width":window.width(),"terminal_background":schemes::current().colors[8],"open":self.pop.is_visible()})
     }
 }
 pub fn controls_shortcut(key: gdk::Key, mods: gdk::ModifierType) -> bool {

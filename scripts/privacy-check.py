@@ -21,6 +21,12 @@ PRIVATE_NETS = tuple(ipaddress.ip_network((value, bits)) for value, bits in ((10
 DOCUMENTATION_NETS = tuple(ipaddress.ip_network(x) for x in ('192.0.2.0/24', '198.51.100.0/24', '203.0.113.0/24'))
 
 
+class PolicyTerms(list):
+    def __init__(self, terms, public_attributions=()):
+        super().__init__(terms)
+        self.public_attributions = tuple(public_attributions)
+
+
 def private_terms(root, filename=None, required=False):
     filename = filename or os.environ.get('RUWAC_PRIVATE_DENYLIST')
     if not filename:
@@ -36,7 +42,10 @@ def private_terms(root, filename=None, required=False):
     terms = data['terms']
     if not isinstance(terms, list) or not terms or any(not isinstance(x, str) or len(x) < 3 for x in terms):
         raise ValueError('Invalid private publication policy')
-    return terms
+    public = data.get('public_attributions', [])
+    if not isinstance(public, list) or any(not isinstance(x, str) or len(x) < 6 or any(c in x for c in '\r\n\x00') for x in public):
+        raise ValueError('Invalid public attribution policy')
+    return PolicyTerms(terms, public)
 
 
 def findings(data, terms=()):
@@ -56,11 +65,14 @@ def findings(data, terms=()):
                 continue
             if any(address in network for network in PRIVATE_NETS):
                 result.add(('private-network', number))
+        policy_line = line
+        for attribution in getattr(terms, 'public_attributions', ()):
+            policy_line = re.sub(r'(?<![A-Za-z0-9])' + re.escape(attribution) + r'(?![A-Za-z0-9])', '', policy_line)
         for term in terms:
             # Paths and address prefixes are literal substrings; short host/account
             # terms require boundaries, including within underscored fixture names.
             pattern = re.escape(term) if '/' in term or term.endswith('.') else r'(?<![A-Za-z0-9])' + re.escape(term) + r'(?![A-Za-z0-9])'
-            if re.search(pattern, line, re.IGNORECASE):
+            if re.search(pattern, policy_line, re.IGNORECASE):
                 result.add(('private-policy', number))
     return sorted(result)
 

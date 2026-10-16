@@ -95,18 +95,20 @@ impl Layout {
             } => {
                 let size = if *vertical { r.cols } else { r.rows };
                 let available = size.max(2);
-                let n = ((available as u32 * *ratio as u32) / 1000)
-                    .clamp(1, available.saturating_sub(1) as u32) as u16;
+                let gap = u16::from(available >= 3);
+                let content = available - gap;
+                let n = ((content as u32 * *ratio as u32) / 1000)
+                    .clamp(1, content.saturating_sub(1) as u32) as u16;
                 let mut a = r;
                 let mut b = r;
                 if *vertical {
                     a.cols = n;
-                    b.x += n;
-                    b.cols = available - n;
+                    b.x += n + gap;
+                    b.cols = content - n;
                 } else {
                     a.rows = n;
-                    b.y += n;
-                    b.rows = available - n;
+                    b.y += n + gap;
+                    b.rows = content - n;
                 }
                 first.rects(a, out);
                 second.rects(b, out);
@@ -131,6 +133,39 @@ impl Layout {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn split_divider_cells_are_reserved_without_overlapping_panes() {
+        let mut layout = Layout::Leaf("a".into());
+        assert!(layout.split("a", "b".into(), true));
+        let mut rects = Vec::new();
+        layout.rects(
+            Rect {
+                x: 0,
+                y: 0,
+                rows: 23,
+                cols: 80,
+            },
+            &mut rects,
+        );
+        let a = rects[0].1;
+        let b = rects[1].1;
+        assert_eq!(a.cols + b.cols + 1, 80);
+        assert_eq!(b.x, a.cols + 1);
+        assert_eq!(a.rows, 23);
+        assert_eq!(b.rows, 23);
+        let collapsed = layout.remove("b").unwrap();
+        rects.clear();
+        collapsed.rects(
+            Rect {
+                x: 0,
+                y: 0,
+                rows: 23,
+                cols: 80,
+            },
+            &mut rects,
+        );
+        assert_eq!(rects[0].1.cols, 80);
+    }
     #[test]
     fn nested_layout_resize_remove() {
         let mut l = Layout::Leaf("a".into());

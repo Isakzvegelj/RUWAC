@@ -48,7 +48,7 @@ def main():
         return sum(0 if unicodedata.combining(c) else 2 if unicodedata.east_asian_width(c) in 'WF' else 1 for c in text)
 
     def bar(offset=0):
-        matches = re.findall(rb'\x1b\[24;1H\x1b\[0;7m([^\x1b]*)\x1b\[0m', view.data[offset:])
+        matches = re.findall(rb'\x1b\[24;1H\x1b\[0;38;2;16;32;48;48;2;173;216;230m([^\x1b]*)\x1b\[0m', view.data[offset:])
         return matches[-1].decode() if matches else None
 
     def title(index, offset=0):

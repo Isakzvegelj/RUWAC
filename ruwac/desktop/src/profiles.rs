@@ -46,7 +46,13 @@ pub struct Preferences {
     #[serde(skip_serializing_if = "String::is_empty")]
     pub claude_command: String,
     #[serde(skip_serializing_if = "String::is_empty")]
+    pub kimi_command: String,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub agent_install_missing: bool,
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub agent_backend: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub agent_session: String,
     #[serde(skip_serializing_if = "String::is_empty")]
     pub gnome_username: String,
     #[serde(skip_serializing_if = "String::is_empty")]
@@ -75,7 +81,10 @@ impl Default for Preferences {
             rdp_mode: String::new(),
             codex_command: String::new(),
             claude_command: String::new(),
+            kimi_command: String::new(),
+            agent_install_missing: false,
             agent_backend: String::new(),
+            agent_session: String::new(),
             gnome_username: String::new(),
             gnome_secret_reference: String::new(),
             gnome_auto_login: false,
@@ -226,6 +235,17 @@ impl Profile {
         {
             return Err("Invalid profile metadata".into());
         }
+        if !self.preferences.agent_session.is_empty()
+            && (self.preferences.agent_session.len() > 64
+                || !self
+                    .preferences
+                    .agent_session
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
+                || !self.preferences.agent_session.as_bytes()[0].is_ascii_alphanumeric())
+        {
+            return Err("Shared session name must start with a letter or digit and contain at most64 letters, digits, dots, underscores or hyphens".into());
+        }
         endpoint(&self.server, if self.protocol == "SSH" { 22 } else { 3389 })?;
         if ![
             "",
@@ -250,6 +270,7 @@ impl Profile {
             || [
                 &self.preferences.codex_command,
                 &self.preferences.claude_command,
+                &self.preferences.kimi_command,
                 &self.preferences.gnome_username,
                 &self.preferences.gnome_secret_reference,
                 &self.preferences.label,
@@ -949,6 +970,287 @@ fn bulk_import_plan(existing: &[Profile], incoming: &[Profile]) -> Result<Vec<Pr
     Ok(result)
 }
 pub type AgentLauncher = Rc<dyn Fn(Profile, u32)>;
+pub type ShortcutMenus = Rc<dyn Fn(bool) -> gtk::Box>;
+type ConnectionOpener = Rc<dyn Fn(Profile, PreferenceSink, ConnectionLease)>;
+
+fn ssh_seed(source: &Profile) -> Profile {
+    let mut p = source.clone();
+    p.id = ruwac_protocol::id("endpoint");
+    p.protocol = "SSH".into();
+    p.server = endpoint(&source.server, 3389)
+        .map(|(host, _)| {
+            if host.contains(':') {
+                format!("[{host}]")
+            } else {
+                host
+            }
+        })
+        .unwrap_or_default();
+    p.username = gtk::glib::user_name().to_string_lossy().into_owned();
+    p.secret_reference = p.id.clone();
+    p.inherit = false;
+    p.inherit_connection = false;
+    p.inherit_credential = false;
+    p.last_used = 0;
+    p.preferences = Preferences {
+        codex_command: source.preferences.codex_command.clone(),
+        claude_command: source.preferences.claude_command.clone(),
+        kimi_command: source.preferences.kimi_command.clone(),
+        agent_install_missing: source.preferences.agent_install_missing,
+        agent_backend: source.preferences.agent_backend.clone(),
+        agent_session: source.preferences.agent_session.clone(),
+        identity_file: source.preferences.identity_file.clone(),
+        identity_secret_reference: source.preferences.identity_secret_reference.clone(),
+        known_hosts: source.preferences.known_hosts.clone(),
+        ..Preferences::default()
+    };
+    p
+}
+
+fn shortcut_action(
+    button: &gtk::Button,
+    store: &Rc<RefCell<Store>>,
+    status: &gtk::Label,
+    open: &ConnectionOpener,
+    launch: &AgentLauncher,
+    id: &str,
+    kind: u32,
+) {
+    let target = {
+        let s = store.borrow();
+        let Some(p) = s.items.iter().find(|p| p.id == id) else {
+            status.set_text("Saved endpoint no longer exists");
+            return;
+        };
+        if p.protocol == "SSH" {
+            Some(p.clone())
+        } else {
+            s.items
+                .iter()
+                .find(|x| x.machine_id == p.machine_id && x.protocol == "SSH")
+                .cloned()
+        }
+    };
+    if let Some(target) = target {
+        if let Some((mut p, sink, lease)) = acquire(store, status, &target.id) {
+            // Commands enabled on the machine's RDP bookmark also apply to its
+            // explicitly linked SSH endpoint; SSH login and trust stay separate.
+            let machine = store
+                .borrow()
+                .items
+                .iter()
+                .filter(|x| x.machine_id == p.machine_id)
+                .cloned()
+                .collect::<Vec<_>>();
+            if p.preferences.codex_command.is_empty() {
+                p.preferences.codex_command = machine
+                    .iter()
+                    .find(|x| !x.preferences.codex_command.is_empty())
+                    .map(|x| x.preferences.codex_command.clone())
+                    .unwrap_or_default();
+            }
+            if p.preferences.claude_command.is_empty() {
+                p.preferences.claude_command = machine
+                    .iter()
+                    .find(|x| !x.preferences.claude_command.is_empty())
+                    .map(|x| x.preferences.claude_command.clone())
+                    .unwrap_or_default();
+            }
+            if p.preferences.agent_session.is_empty() {
+                p.preferences.agent_session = machine
+                    .iter()
+                    .find(|x| !x.preferences.agent_session.is_empty())
+                    .map(|x| x.preferences.agent_session.clone())
+                    .unwrap_or_default();
+            }
+            if p.preferences.kimi_command.is_empty() {
+                p.preferences.kimi_command = machine
+                    .iter()
+                    .find(|x| !x.preferences.kimi_command.is_empty())
+                    .map(|x| x.preferences.kimi_command.clone())
+                    .unwrap_or_default();
+            }
+            p.preferences.agent_install_missing |=
+                machine.iter().any(|x| x.preferences.agent_install_missing);
+            if kind == 3 {
+                open(p, sink, lease);
+            } else {
+                launch(p, kind);
+            }
+        }
+    } else {
+        let seed = store
+            .borrow()
+            .items
+            .iter()
+            .find(|p| p.id == id)
+            .map(ssh_seed);
+        if let Some(seed) = seed {
+            editor_seed(
+                button,
+                store.clone(),
+                None,
+                status.clone(),
+                open.clone(),
+                launch.clone(),
+                Some(seed),
+            );
+        }
+    }
+}
+
+fn shortcut_button(
+    icon: &str,
+    tip: &str,
+    name: &str,
+    id: &str,
+    kind: u32,
+    store: Rc<RefCell<Store>>,
+    status: gtk::Label,
+    open: ConnectionOpener,
+    launch: AgentLauncher,
+) -> gtk::Button {
+    let b = gtk::Button::from_icon_name(icon);
+    b.add_css_class("flat");
+    b.set_widget_name(name);
+    b.set_tooltip_text(Some(tip));
+    b.update_property(&[gtk::accessible::Property::Label(tip)]);
+    let id = id.to_string();
+    b.connect_clicked(move |b| {
+        shortcut_action(b, &store, &status, &open, &launch, &id, kind);
+        if let Some(pop) = b
+            .ancestor(gtk::Popover::static_type())
+            .and_then(|w| w.downcast::<gtk::Popover>().ok())
+        {
+            pop.popdown();
+        }
+    });
+    b
+}
+
+fn shortcut_menu(
+    store: &Rc<RefCell<Store>>,
+    status: &gtk::Label,
+    open: &ConnectionOpener,
+    launch: &AgentLauncher,
+    agents_only: bool,
+) -> gtk::Box {
+    let body = gtk::Box::new(gtk::Orientation::Vertical, 6);
+    body.set_widget_name("host-shortcuts-list");
+    let items = store.borrow().items.clone();
+    let mut saved = items
+        .iter()
+        .filter(|p| {
+            !agents_only
+                || p.protocol == "SSH"
+                || !p.preferences.codex_command.is_empty()
+                || !p.preferences.claude_command.is_empty()
+                || !p.preferences.kimi_command.is_empty()
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    saved.sort_by_key(|p| {
+        (
+            !p.favorite,
+            p.group.clone(),
+            p.name.clone(),
+            p.protocol != "SSH",
+        )
+    });
+    let mut seen = std::collections::HashSet::new();
+    saved.retain(|p| seen.insert(p.machine_id.clone()));
+    let mut recent = items
+        .iter()
+        .filter(|p| p.protocol == "SSH" && p.last_used > 0)
+        .cloned()
+        .collect::<Vec<_>>();
+    recent.sort_by_key(|p| std::cmp::Reverse(p.last_used));
+    recent.truncate(8);
+    let sections = if agents_only {
+        vec![("Saved agent hosts", saved)]
+    } else {
+        vec![
+            ("Recent SSH connections", recent),
+            ("Saved connections", saved),
+        ]
+    };
+    for (heading, rows) in sections {
+        let label = gtk::Label::new(Some(heading));
+        label.set_xalign(0.0);
+        label.add_css_class("heading");
+        body.append(&label);
+        if rows.is_empty() {
+            let l = gtk::Label::new(Some("No saved connections yet"));
+            l.add_css_class("dim-label");
+            body.append(&l);
+        }
+        for p in rows {
+            let row = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+            let label = gtk::Label::new(Some(&p.name));
+            label.set_xalign(0.0);
+            label.set_hexpand(true);
+            label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+            label.set_tooltip_text(Some(&format!("{} · {}", p.group, p.server)));
+            row.append(&label);
+            let linked = items
+                .iter()
+                .filter(|x| x.machine_id == p.machine_id)
+                .collect::<Vec<_>>();
+            for (kind, icon, tip, name, enabled) in [
+                (
+                    3,
+                    "utilities-terminal-symbolic",
+                    "Open SSH terminal (configure a separate SSH endpoint if needed)",
+                    "saved-host-terminal",
+                    !agents_only,
+                ),
+                (
+                    0,
+                    "system-run-symbolic",
+                    "Open Codex",
+                    "saved-host-codex",
+                    linked
+                        .iter()
+                        .any(|x| !x.preferences.codex_command.is_empty()),
+                ),
+                (
+                    1,
+                    "applications-science-symbolic",
+                    "Open Claude",
+                    "saved-host-claude",
+                    linked
+                        .iter()
+                        .any(|x| !x.preferences.claude_command.is_empty()),
+                ),
+                (
+                    5,
+                    "face-smile-symbolic",
+                    "Open Kimi",
+                    "saved-host-kimi",
+                    linked
+                        .iter()
+                        .any(|x| !x.preferences.kimi_command.is_empty()),
+                ),
+            ] {
+                if enabled {
+                    row.append(&shortcut_button(
+                        icon,
+                        tip,
+                        name,
+                        &p.id,
+                        kind,
+                        store.clone(),
+                        status.clone(),
+                        open.clone(),
+                        launch.clone(),
+                    ));
+                }
+            }
+            body.append(&row);
+        }
+    }
+    body
+}
 pub fn sidebar(
     agent_launcher: AgentLauncher,
     open: impl Fn(Profile, PreferenceSink, ConnectionLease) + 'static,
@@ -959,6 +1261,7 @@ pub fn sidebar(
     ProfileRestorer,
     InventoryReader,
     ImageProfileReader,
+    ShortcutMenus,
 ) {
     let root = gtk::Box::new(gtk::Orientation::Vertical, 6);
     root.set_width_request(180);
@@ -1189,73 +1492,58 @@ pub fn sidebar(
                     .filter(|x| x.machine_id == p.machine_id)
                     .cloned()
                     .collect::<Vec<_>>();
-                for (protocol, icon, tip) in [
-                    ("RDP", "video-display-symbolic", "Open RDP"),
-                    ("SSH", "utilities-terminal-symbolic", "Open SSH terminal"),
+                for (kind, icon, tip, name, enabled) in [
+                    (
+                        3,
+                        "utilities-terminal-symbolic",
+                        "Open SSH terminal (configure a separate SSH endpoint if needed)",
+                        "machine-terminal",
+                        true,
+                    ),
+                    (
+                        0,
+                        "system-run-symbolic",
+                        "Open Codex",
+                        "machine-codex",
+                        linked
+                            .iter()
+                            .any(|x| !x.preferences.codex_command.is_empty()),
+                    ),
+                    (
+                        1,
+                        "applications-science-symbolic",
+                        "Open Claude",
+                        "machine-claude",
+                        linked
+                            .iter()
+                            .any(|x| !x.preferences.claude_command.is_empty()),
+                    ),
+                    (
+                        5,
+                        "face-smile-symbolic",
+                        "Open Kimi",
+                        "machine-kimi",
+                        linked
+                            .iter()
+                            .any(|x| !x.preferences.kimi_command.is_empty()),
+                    ),
                 ] {
-                    if let Some(target) = linked.iter().find(|x| x.protocol == protocol) {
-                        let b = gtk::Button::from_icon_name(icon);
-                        b.add_css_class("flat");
-                        b.set_tooltip_text(Some(tip));
-                        b.set_widget_name(if protocol == "RDP" {
-                            "machine-rdp"
-                        } else {
-                            "machine-terminal"
-                        });
-                        let (s, st, cb, id) = (
+                    if enabled {
+                        quick.append(&shortcut_button(
+                            icon,
+                            tip,
+                            name,
+                            &p.id,
+                            kind,
                             store.clone(),
                             status.clone(),
                             callback.clone(),
-                            target.id.clone(),
-                        );
-                        b.connect_clicked(move |_| {
-                            if let Some((p, sink, lease)) = acquire(&s, &st, &id) {
-                                cb(p, sink, lease);
-                            }
-                        });
-                        quick.append(&b);
+                            agent_launcher.clone(),
+                        ));
                     }
                 }
-                if let Some(ssh) = linked.iter().find(|x| x.protocol == "SSH") {
-                    for (kind, command, icon, label) in [
-                        (
-                            0,
-                            &ssh.preferences.codex_command,
-                            "system-run-symbolic",
-                            "Codex",
-                        ),
-                        (
-                            1,
-                            &ssh.preferences.claude_command,
-                            "applications-science-symbolic",
-                            "Claude",
-                        ),
-                    ] {
-                        if !command.is_empty() {
-                            let b = gtk::Button::from_icon_name(icon);
-                            b.add_css_class("flat");
-                            b.set_tooltip_text(Some(label));
-                            b.set_widget_name(if kind == 0 {
-                                "machine-codex"
-                            } else {
-                                "machine-claude"
-                            });
-                            let (s, st, id, launch) = (
-                                store.clone(),
-                                status.clone(),
-                                ssh.id.clone(),
-                                agent_launcher.clone(),
-                            );
-                            b.connect_clicked(move |_| {
-                                if let Some((p, _, _)) = acquire(&s, &st, &id) {
-                                    launch(p, kind);
-                                }
-                            });
-                            quick.append(&b);
-                        }
-                    }
-                }
-                entry.append(&quick);
+                quick.add_css_class("machine-shortcuts");
+                row.append(&quick);
                 group_rows.append(&entry);
                 let s = store.clone();
                 let label = star.clone();
@@ -1778,8 +2066,9 @@ pub fn sidebar(
         }
         Ok(p)
     });
+    let inventory_store = store.clone();
     let inventory: InventoryReader = Rc::new(move || {
-        let s = store.borrow();
+        let s = inventory_store.borrow();
         if s.path.is_none() || s.error.is_some() {
             return Err(ruwac_protocol::Error::new(
                 "INVENTORY_UNAVAILABLE",
@@ -1795,7 +2084,18 @@ pub fn sidebar(
             json!({"id":p.id,"machine_id":p.machine_id,"name":p.name,"group":p.group,"protocol":p.protocol,"server":p.server,"favorite":p.favorite,"last_used":p.last_used,"tags":p.tags,"label":e.preferences.label,"network":e.preferences.network,"configuration_valid":valid})
         }).collect())
     });
-    (root, search, restore, remote, inventory, image_profile)
+    let menus: ShortcutMenus = Rc::new(move |agents_only| {
+        shortcut_menu(&store, &status, &callback, &agent_launcher, agents_only)
+    });
+    (
+        root,
+        search,
+        restore,
+        remote,
+        inventory,
+        image_profile,
+        menus,
+    )
 }
 #[cfg(test)]
 mod tests {
@@ -1941,10 +2241,22 @@ fn editor(
     open: Rc<dyn Fn(Profile, PreferenceSink, ConnectionLease)>,
     agent_launcher: AgentLauncher,
 ) {
+    editor_seed(button, store, id, status, open, agent_launcher, None);
+}
+fn editor_seed(
+    button: &gtk::Button,
+    store: Rc<RefCell<Store>>,
+    id: Option<String>,
+    status: gtk::Label,
+    open: ConnectionOpener,
+    agent_launcher: AgentLauncher,
+    seed: Option<Profile>,
+) {
     let existing = id
         .as_ref()
         .and_then(|id| store.borrow().items.iter().find(|p| &p.id == id).cloned());
-    let mut original = existing.clone().unwrap_or(Profile {
+    let is_ssh_setup = seed.is_some();
+    let mut original = existing.clone().or(seed).unwrap_or(Profile {
         id: String::new(),
         machine_id: String::new(),
         preferences: Preferences::default(),
@@ -1964,7 +2276,11 @@ fn editor(
     original.identify();
     let parent = button.root().and_then(|w| w.downcast::<gtk::Window>().ok());
     let dialog = gtk::Dialog::builder()
-        .title("Machine / connection properties")
+        .title(if is_ssh_setup {
+            "Set up SSH terminal and agent shortcuts"
+        } else {
+            "Machine / connection properties"
+        })
         .modal(true)
         .default_width(540)
         .default_height(620)
@@ -2487,7 +2803,7 @@ fn editor(
     form.append(&gnome);
     form_row(&form, "Group / nested path", &fields[1]);
     let advanced = gtk::Box::new(gtk::Orientation::Vertical, 12);
-    for i in [5, 8, 10, 11, 12, 6, 7, 2] {
+    for i in [5, 8, 10, 12, 6, 7, 2] {
         form_row(&advanced, vals[i].0, &fields[i]);
     }
     let ssh_jump = gtk::Entry::new();
@@ -2535,6 +2851,91 @@ fn editor(
         }
     }
     let agents = gtk::Box::new(gtk::Orientation::Vertical, 6);
+    let key_row = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+    fields[4].set_placeholder_text(Some(&format!(
+        "Default: {}",
+        gtk::glib::user_name().to_string_lossy()
+    )));
+    fields[11].set_hexpand(true);
+    fields[11].set_placeholder_text(Some("Use your SSH configuration, or choose a key"));
+    key_row.append(&fields[11]);
+    let choose_key = gtk::Button::with_label("Choose key…");
+    choose_key.set_widget_name("ssh-choose-key");
+    let entry = fields[11].clone();
+    choose_key.connect_clicked(move |b| {
+        let parent = b.root().and_then(|w| w.downcast::<gtk::Window>().ok());
+        let chooser = gtk::FileChooserNative::new(
+            Some("Choose SSH identity file"),
+            parent.as_ref(),
+            gtk::FileChooserAction::Open,
+            Some("Use key"),
+            Some("Cancel"),
+        );
+        let entry = entry.clone();
+        chooser.connect_response(move |c, response| {
+            if response == gtk::ResponseType::Accept {
+                if let Some(path) = c.file().and_then(|f| f.path()) {
+                    entry.set_text(&path.to_string_lossy());
+                }
+            }
+            c.destroy();
+        });
+        chooser.show();
+    });
+    key_row.append(&choose_key);
+    if original.protocol == "SSH" {
+        form_row(
+            &agents,
+            "SSH identity file (saved path; private key stays on this computer)",
+            &key_row,
+        );
+    } else {
+        let edit_ssh = gtk::Button::with_label("SSH login and key…");
+        edit_ssh.set_widget_name("ssh-endpoint-properties");
+        edit_ssh.set_sensitive(existing.is_some());
+        let (s, st, cb, launcher, source) = (
+            store.clone(),
+            status.clone(),
+            open.clone(),
+            agent_launcher.clone(),
+            original.clone(),
+        );
+        edit_ssh.connect_clicked(move |button| {
+            let id = s
+                .borrow()
+                .items
+                .iter()
+                .find(|p| p.machine_id == source.machine_id && p.protocol == "SSH")
+                .map(|p| p.id.clone());
+            if let Some(id) = id {
+                editor(
+                    button,
+                    s.clone(),
+                    Some(id),
+                    st.clone(),
+                    cb.clone(),
+                    launcher.clone(),
+                );
+            } else {
+                editor_seed(
+                    button,
+                    s.clone(),
+                    None,
+                    st.clone(),
+                    cb.clone(),
+                    launcher.clone(),
+                    Some(ssh_seed(&source)),
+                );
+            }
+        });
+        let ssh_note = gtk::Label::new(Some(
+            "SSH uses its own account and key, separately from the RDP service login.",
+        ));
+        ssh_note.set_wrap(true);
+        agents.append(&ssh_note);
+        agents.append(&edit_ssh);
+    }
+
     let codex_command = gtk::Entry::new();
     codex_command.set_widget_name("machine-codex-command");
     codex_command.set_text(&original.preferences.codex_command);
@@ -2543,6 +2944,10 @@ fn editor(
     claude_command.set_widget_name("machine-claude-command");
     claude_command.set_text(&original.preferences.claude_command);
     claude_command.set_placeholder_text(Some("claude --resume"));
+    let kimi_command = gtk::Entry::new();
+    kimi_command.set_widget_name("machine-kimi-command");
+    kimi_command.set_text(&original.preferences.kimi_command);
+    kimi_command.set_placeholder_text(Some("kimi --session"));
     for (label, entry, default) in [
         (
             "Enable Codex shortcut",
@@ -2550,6 +2955,7 @@ fn editor(
             "codex resume --all",
         ),
         ("Enable Claude shortcut", &claude_command, "claude --resume"),
+        ("Enable Kimi shortcut", &kimi_command, "kimi --session"),
     ] {
         let enable = gtk::CheckButton::with_label(label);
         enable.set_active(!entry.text().is_empty());
@@ -2565,6 +2971,18 @@ fn editor(
     }
     form_row(&agents, "Codex command (no passwords)", &codex_command);
     form_row(&agents, "Claude command (no passwords)", &claude_command);
+    form_row(&agents, "Kimi command (no passwords)", &kimi_command);
+    let auto_install = gtk::CheckButton::with_label(
+        "Automatically install missing Codex / Claude / Kimi on launch",
+    );
+    auto_install.set_widget_name("machine-agent-auto-install");
+    auto_install.set_active(original.preferences.agent_install_missing);
+    agents.append(&auto_install);
+    let note = gtk::Label::new(Some(
+        "Opt-in per-user official installers run in the SSH terminal only for a new agent process. Existing tools and agent logins are preserved. Sign in inside the agent when requested.",
+    ));
+    note.set_wrap(true);
+    agents.append(&note);
     let backend = gtk::DropDown::from_strings(&[
         "RUWAC",
         "GNU Screen",
@@ -2579,17 +2997,73 @@ fn editor(
             .unwrap_or(0) as u32,
     );
     form_row(&agents, "Remote session backend", &backend);
+    let shared =
+        gtk::CheckButton::with_label("Share one remote RUWAC session (separate agent windows)");
+    shared.set_widget_name("machine-agent-share-session");
+    shared.set_active(!original.preferences.agent_session.is_empty());
+    let agent_session = gtk::Entry::new();
+    agent_session.set_widget_name("machine-agent-session");
+    agent_session.set_text(&original.preferences.agent_session);
+    agent_session.set_placeholder_text(Some(
+        "Existing session name, or agents for a new shared session",
+    ));
+    let entry = agent_session.clone();
+    shared.connect_toggled(move |b| {
+        if b.is_active() && entry.text().is_empty() {
+            entry.set_text("agents");
+        } else if !b.is_active() {
+            entry.set_text("");
+        }
+    });
+    agents.append(&shared);
+    form_row(
+        &agents,
+        "Shared session name (blank keeps one session per agent)",
+        &agent_session,
+    );
+
     let setup = gtk::Button::with_label("Install / update remote RUWAC CLI…");
     setup.set_widget_name("machine-install-ruwac");
-    setup.set_sensitive(existing.is_some() && original.protocol == "SSH");
-    setup.set_tooltip_text(Some("Use this saved SSH endpoint to open the existing headless installer in a terminal. Requires Python 3 and Rust build tools; does not install Codex or Claude."));
-    let saved = original.clone();
-    setup.connect_clicked(move |_| agent_launcher(saved.clone(), 2));
+    setup.set_sensitive(existing.is_some());
+    setup.set_tooltip_text(Some("Install or update through the linked SSH endpoint. If needed, configure a separate SSH login first. Uses the verified headless installer; does not install Codex or Claude."));
+    let (s, st, cb, launcher, saved_id) = (
+        store.clone(),
+        status.clone(),
+        open.clone(),
+        agent_launcher.clone(),
+        original.id.clone(),
+    );
+    setup.connect_clicked(move |button| {
+        shortcut_action(button, &s, &st, &cb, &launcher, &saved_id, 2)
+    });
     agents.append(&setup);
+    let authorize = gtk::Button::with_label("Authorize SSH public key on machine…");
+    authorize.set_widget_name("ssh-authorize-key");
+    authorize.set_sensitive(existing.is_some());
+    authorize.set_tooltip_text(Some("Save the selected key first. Opens ssh-copy-id in a terminal; only your public key is installed after confirmation and SSH authentication."));
+    let (s, st, cb, launcher, saved_id) = (
+        store.clone(),
+        status.clone(),
+        open.clone(),
+        agent_launcher.clone(),
+        original.id.clone(),
+    );
+    authorize.connect_clicked(move |button| {
+        shortcut_action(button, &s, &st, &cb, &launcher, &saved_id, 4)
+    });
+    agents.append(&authorize);
+
     let agent_panel = gtk::Expander::builder()
         .label("Remote terminals / agents (SSH)")
         .child(&agents)
         .build();
+    agent_panel.set_expanded(
+        is_ssh_setup
+            || original.protocol == "SSH"
+            || !original.preferences.codex_command.is_empty()
+            || !original.preferences.claude_command.is_empty()
+            || !original.preferences.kimi_command.is_empty(),
+    );
     form.append(&agent_panel);
     let expander = gtk::Expander::builder()
         .label("Advanced connection settings")
@@ -2606,7 +3080,7 @@ fn editor(
             let(s,id,machine_id,st,parent)=(store.clone(),original.id.clone(),original.machine_id.clone(),status.clone(),d.clone());confirm.connect_response(move|c,r|{if r==gtk::ResponseType::Accept {let mut s=s.borrow_mut();let old=s.items.clone();s.items.retain(|p|p.id!=id&&(!machine||p.machine_id!=machine_id));if let Err(e)=s.save(){s.items=old;st.set_text(&e);}else{drop(s);st.set_text("Metadata deleted; previous library retained for Undo");refresh_widgets(parent.transient_for().as_ref());parent.close();}}c.close();});confirm.present();return;
         }
         if response!=gtk::ResponseType::Accept && response!=gtk::ResponseType::Other(1) && response!=gtk::ResponseType::Other(3) && response!=gtk::ResponseType::Other(5){d.close();return;}
-        let mut p=original.clone();p.preferences.codex_command=codex_command.text().into();p.preferences.claude_command=claude_command.text().into();p.preferences.agent_backend=["ruwac","screen","tmux","direct"][backend.selected()as usize].into();p.name=fields[0].text().into();p.group=fields[1].text().into();p.machine_id=fields[2].text().into();p.server=fields[3].text().into();p.username=fields[4].text().into();p.preferences.label=fields[5].text().into();p.preferences.network=fields[6].text().into();p.preferences.gateway=fields[7].text().into();p.preferences.ssh_jump_alias=ssh_jump.text().into();p.tags=fields[8].text().split(',').map(str::trim).filter(|s|!s.is_empty()).map(str::to_owned).collect();p.secret_reference=fields[9].text().into();p.preferences.trust=fields[10].text().into();p.preferences.identity_file=fields[11].text().into();p.preferences.identity_secret_reference=identity_reference.text().into();p.preferences.known_hosts=fields[12].text().into();p.protocol=if protocol.selected()==1{"SSH"}else{"RDP"}.into();p.preferences.display=["fit","native","stretch","dynamic"][display.selected() as usize].into();p.preferences.clipboard=clipboard.selected();p.preferences.zoom=zoom.value();p.preferences.fullscreen=full.is_active();p.preferences.reconnect=retry.is_active();p.inherit=inherit.is_active();p.inherit_connection=inherit_connection.is_active();p.inherit_credential=inherit_credential.is_active();p.preferences.rdp_mode=["","gnome-remote-login","gnome-desktop-sharing"][rdp_mode.selected() as usize].into();p.preferences.gnome_auto_login=gnome_auto.is_active();p.preferences.gnome_username=gnome_user.text().into();p.preferences.gnome_secret_reference=if p.preferences.rdp_mode=="gnome-remote-login"||!original.preferences.gnome_secret_reference.is_empty(){gnome_ref.text().into()}else{String::new()};
+        let mut p=original.clone();p.preferences.kimi_command=kimi_command.text().into();p.preferences.agent_install_missing=auto_install.is_active();p.preferences.agent_session=agent_session.text().into();p.preferences.codex_command=codex_command.text().into();p.preferences.claude_command=claude_command.text().into();p.preferences.agent_backend=["ruwac","screen","tmux","direct"][backend.selected()as usize].into();p.name=fields[0].text().into();p.group=fields[1].text().into();p.machine_id=fields[2].text().into();p.server=fields[3].text().into();p.username=fields[4].text().into();p.preferences.label=fields[5].text().into();p.preferences.network=fields[6].text().into();p.preferences.gateway=fields[7].text().into();p.preferences.ssh_jump_alias=ssh_jump.text().into();p.tags=fields[8].text().split(',').map(str::trim).filter(|s|!s.is_empty()).map(str::to_owned).collect();p.secret_reference=fields[9].text().into();p.preferences.trust=fields[10].text().into();p.preferences.identity_file=fields[11].text().into();p.preferences.identity_secret_reference=identity_reference.text().into();p.preferences.known_hosts=fields[12].text().into();p.protocol=if protocol.selected()==1{"SSH"}else{"RDP"}.into();p.preferences.display=["fit","native","stretch","dynamic"][display.selected() as usize].into();p.preferences.clipboard=clipboard.selected();p.preferences.zoom=zoom.value();p.preferences.fullscreen=full.is_active();p.preferences.reconnect=retry.is_active();p.inherit=inherit.is_active();p.inherit_connection=inherit_connection.is_active();p.inherit_credential=inherit_credential.is_active();p.preferences.rdp_mode=["","gnome-remote-login","gnome-desktop-sharing"][rdp_mode.selected() as usize].into();p.preferences.gnome_auto_login=gnome_auto.is_active();p.preferences.gnome_username=gnome_user.text().into();p.preferences.gnome_secret_reference=if p.preferences.rdp_mode=="gnome-remote-login"||!original.preferences.gnome_secret_reference.is_empty(){gnome_ref.text().into()}else{String::new()};
         if response==gtk::ResponseType::Other(1){p.id=ruwac_protocol::id("endpoint");p.machine_id=ruwac_protocol::id("machine");p.secret_reference=p.id.clone();if !p.preferences.gnome_secret_reference.is_empty(){p.preferences.gnome_secret_reference=format!("{}.gnome",p.id);}p.name.push_str(" (copy)");}
         if response==gtk::ResponseType::Other(3){p.name=original.name.clone();p.group=original.group.clone();p.id=ruwac_protocol::id("endpoint");p.secret_reference=p.id.clone();if !p.preferences.gnome_secret_reference.is_empty(){p.preferences.gnome_secret_reference=format!("{}.gnome",p.id);}}
         if let Err(e)=p.validate(){info.set_text(&e);return;}
@@ -3016,7 +3490,13 @@ pub fn fixture_editor(root: &gtk::Box, q: &serde_json::Value) -> serde_json::Val
         for window in gtk::Window::list_toplevels() {
             inspect(&window, &mut cells, &mut conflicts);
             if let Some(d) = window.downcast_ref::<gtk::Dialog>() {
-                if d.title().as_deref() == Some("Machine / connection properties") {
+                if matches!(
+                    d.title().as_deref(),
+                    Some(
+                        "Machine / connection properties"
+                            | "Set up SSH terminal and agent shortcuts"
+                    )
+                ) {
                     fn bounds(
                         w: &gtk::Widget,
                         root: &gtk::Widget,
@@ -3066,7 +3546,9 @@ pub fn fixture_editor(root: &gtk::Box, q: &serde_json::Value) -> serde_json::Val
             b.emit_clicked();
         }
     }
-    let title = if q["group"].as_bool() == Some(true) || action == "group" {
+    let title = if q["ssh_setup"] == true {
+        "Set up SSH terminal and agent shortcuts"
+    } else if q["group"].as_bool() == Some(true) || action == "group" {
         "Network groups and inherited defaults"
     } else {
         "Machine / connection properties"
@@ -3912,5 +4394,36 @@ mod launch_preferences_tests {
         let p: Preferences = serde_json::from_str(r#"{"display":"fit"}"#).unwrap();
         assert_eq!(p.display, "fit");
         assert!(p.codex_command.is_empty() && p.claude_command.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod host_shortcut_tests {
+    use super::*;
+    #[test]
+    fn ssh_setup_keeps_machine_and_commands_but_never_rdp_credentials() {
+        let mut source: Profile = serde_json::from_value(serde_json::json!({"id":"endpoint_demo", "machine_id":"machine_demo", "name":"Demo", "group":"Test", "protocol":"RDP", "server":"localhost:3389", "username":"service-user", "secret_reference":"service-reference", "favorite":false, "last_used":0, "tags":[], "preferences":{"gnome_username":"linux-user","gnome_secret_reference":"linux-reference","codex_command":"codex resume --all", "claude_command":"claude --resume", "trust":"system"}})).unwrap();
+        source.inherit_credential = true;
+        let target = ssh_seed(&source);
+        assert_eq!(target.machine_id, source.machine_id);
+        assert_ne!(target.id, source.id);
+        assert_eq!(target.protocol, "SSH");
+        assert_eq!(target.server, "localhost");
+        assert_eq!(target.username, gtk::glib::user_name().to_string_lossy());
+        assert_eq!(target.secret_reference, target.id);
+        assert!(target.preferences.gnome_secret_reference.is_empty());
+        assert!(!target.inherit_credential);
+        assert_eq!(
+            target.preferences.codex_command,
+            source.preferences.codex_command
+        );
+        assert_eq!(
+            target.preferences.claude_command,
+            source.preferences.claude_command
+        );
+        source.preferences.gnome_username.clear();
+        assert!(!ssh_seed(&source).username.is_empty());
+        source.server = "[::1]:3389".into();
+        assert_eq!(ssh_seed(&source).server, "[::1]");
     }
 }

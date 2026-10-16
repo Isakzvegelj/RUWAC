@@ -1166,6 +1166,8 @@ impl View {
                 release,
                 mods,
             );
+        } else if button == 3 && !release {
+            crate::host_shortcuts::popup(&self.area, x, y);
         } else if button == 2 && !release {
             self.paste_clipboard(true);
         }
@@ -1641,6 +1643,28 @@ impl View {
                 let _ = cr.stroke();
             }
             let _ = cr.restore();
+        }
+        // Draw dividers after every pane background and glyph, so an adjacent
+        // pane's repaint cannot erase the separator (including older engines).
+        if panes.len() > 1 {
+            cr.set_source_rgb(0.47, 0.67, 0.80);
+            cr.set_line_width(1.0);
+            for p in panes {
+                let r = &p["rect"];
+                let x = r["x"].as_f64().unwrap_or(0.0) * self.cell_width.get();
+                let y = r["y"].as_f64().unwrap_or(0.0) * self.cell_height.get();
+                let w = r["cols"].as_f64().unwrap_or(0.0) * self.cell_width.get();
+                let h = r["rows"].as_f64().unwrap_or(0.0) * self.cell_height.get();
+                if x > 0.0 {
+                    cr.move_to(x.floor() + 0.5, y);
+                    cr.line_to(x.floor() + 0.5, y + h);
+                }
+                if y > 0.0 {
+                    cr.move_to(x, y.floor() + 0.5);
+                    cr.line_to(x + w, y.floor() + 0.5);
+                }
+            }
+            let _ = cr.stroke();
         }
     }
     pub fn select_grid_fixture(&self) {

@@ -23,7 +23,7 @@ try:
  # Assert the actual emitted bottom row, including spaces that make its
  # inverse background visible across the complete terminal width.
  def bar(rows,cols,offset=0):
-  pattern=rb'\x1b\['+str(rows).encode()+rb';1H\x1b\[0;7m([^\x1b]*)\x1b\[0m'
+  pattern=rb'\x1b\['+str(rows).encode()+rb';1H\x1b\[0;38;2;16;32;48;48;2;173;216;230m([^\x1b]*)\x1b\[0m'
   found=re.findall(pattern,one.data[offset:])
   return found[-1].decode() if found and len(found[-1].decode())==cols else None
  assert eventually(lambda:bar(24,80)).startswith('RUWAC d')
@@ -72,7 +72,7 @@ try:
  checks.append('two-real-pty-reattachments-have-independent-window-titles')
  # Actual SGR bottom-row click selects a stable window without reaching a child.
  time.sleep(.15)
- pattern=rb'\x1b\[24;1H\x1b\[0;7m([^\x1b]*)\x1b\[0m'
+ pattern=rb'\x1b\[24;1H\x1b\[0;38;2;16;32;48;48;2;173;216;230m([^\x1b]*)\x1b\[0m'
  line=re.findall(pattern,one.data)[-1].decode()
  column=line.index('0:d')+1
  offset=len(one.data);one.send(f'\x1b[<0;{column};24M\x1b[<0;{column};24m'.encode())
@@ -92,6 +92,19 @@ try:
  finish(one);finish(two)
  assert b'\x1b[22;0t'in one.data and b'\x1b[23;0t'in one.data
  checks.append('screen-detach-preserves-session-and-restores-title-stack')
+ # Duplicate GUI-style names remain usable by identity, with scoped closure.
+ duplicates=[rpc('session.create',{'name':'Terminal','argv':['/bin/bash','--noprofile','--norc']})for _ in range(2)]
+ refused=ui(['-r','Terminal'],'ambiguous-name');eventually(lambda:refused.p.poll()is not None);assert refused.p.returncode!=0;refused.finish('kill');uis.remove(refused)
+ for index,args in enumerate([['-r',duplicates[0]['session']],['-r','--session',duplicates[1]['session']]]):
+  attached=ui(args,'identity-'+str(index));eventually(lambda:b'RUWAC Terminal'in attached.data);finish(attached)
+ before={s['id']for s in rpc('session.list')}
+ kill=subprocess.run([str(binary),'--socket',str(sock),'kill-session','Terminal'],env=env,capture_output=True,timeout=10);assert kill.returncode!=0
+ assert {s['id']for s in rpc('session.list')}==before
+ kill=subprocess.run([str(binary),'--socket',str(sock),'kill-session',duplicates[0]['session']],env=env,capture_output=True,timeout=10);assert kill.returncode==0
+ assert {s['id']for s in rpc('session.list')}==before-{duplicates[0]['session']}
+ control=subprocess.run([str(binary),'--socket',str(sock),'-S',duplicates[1]['session'],'-X','quit'],env=env,capture_output=True,timeout=10);assert control.returncode==0
+ assert {s['id']for s in rpc('session.list')}==before-{x['session']for x in duplicates}
+ checks.append('duplicate-terminal-name-refusal-exact-ID-reattach-and-scoped-session-closure')
  receipt={'status':'PASS','checks':checks,'scope':'Owned daemon and actual local PTYs; no remote host, physical input or independent PTY-size claim'}
  (root/'acceptance.json').write_text(json.dumps(receipt,indent=2)+'\n');print('Terminal usability PASS',len(checks),'groups')
 finally:

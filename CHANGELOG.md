@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+## v0.4.7 — 2026-10-16 — Stable source release
+
+- Accept exact session IDs in reattach and Screen-control aliases, provide scoped `kill-session`, and refuse ambiguous duplicate names.
+
+- Keep native split separators above pane repaint, reserve divider cells in new-engine split layouts, and render CLI split lines without covering application cells. Use a light-blue CLI status bar.
+
+- Remember normal window dimensions, maximized/fullscreen state and existing saved workspace tabs across desktop restarts, with independent geometry for separate windows.
+
+- Add Kimi (`kimi --session`) machine/host actions and an opt-in official per-user installer for missing Codex, Claude or Kimi, without provisioning agent credentials.
+
+- Offer one shared remote RUWAC session with independent named Codex/Claude/Kimi windows, same-process reattachment and explicit initial-window CLI attachment. Preserve the separate-session default.
+
+- Show configured SSH/agent actions on RDP bookmarks, with separate SSH setup and compact single-row machine actions. Add saved-host agent dropdown and terminal context menus with recent SSH connections.
+- Expose remote CLI installation from linked bookmarks, editable current-user SSH defaults, key chooser and confirmed public-key authorization. Add Ctrl+Shift+T terminal and Ctrl+Shift+R RDP selection.
+- Credit Denis Zvegelj in About and keep one support-page destination.
+
 ## v0.4.6 — 2026-10-16 — Stable source release
 
 - Wait for stable GTK viewport allocation before authenticating a new Dynamic RDP connection, preventing a temporary smaller desktop. Preserve background tab focus, explicit cancellation and hidden reconnect sizes.

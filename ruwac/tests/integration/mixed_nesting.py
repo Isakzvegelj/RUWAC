@@ -80,6 +80,24 @@ def windows(layer):
  if layer['kind']=='ruwac':return len(rpc(layer['socket'],'window.list',{'session':layer['session']['session']}))
  if layer['kind']=='tmux':return len(run(['tmux','-S',str(layer['socket']),'list-windows','-t',layer['name'],'-F','#{window_id}']).splitlines())
  return len(run(['screen','-c',str(screen_config),'-S',layer['name'],'-Q','windows']).strip().split('  '))
+def cleanup_owned_layers():
+ # Each completed matrix case releases its servers before the next begins.
+ # This keeps the matrix bounded rather than retaining sixteen detached chains.
+ for ui in reversed(uis[:]):
+  try:ui.finish(False)
+  except Exception:
+   if ui.p.poll()is None:ui.p.kill();ui.p.wait()
+ for layer in reversed(layers):
+  try:
+   if layer['kind']=='screen':subprocess.run(['screen','-c',str(screen_config),'-S',layer['name'],'-X','quit'],env=env,capture_output=True,timeout=10)
+   elif layer['kind']=='tmux':subprocess.run(['tmux','-S',str(layer['socket']),'kill-server'],env=env,capture_output=True,timeout=10)
+  except (OSError,subprocess.SubprocessError):pass
+ for proc,sock in reversed(servers):
+  if proc.poll()is None:
+   try:rpc(sock,'daemon.stop');proc.wait(timeout=5)
+   except Exception:proc.kill();proc.wait()
+ layers.clear();servers.clear()
+
 patterns=[['ruwac','screen'],['tmux','ruwac'],['ruwac','screen','tmux'],['screen','ruwac','tmux'],['tmux','ruwac','screen','ruwac'],['screen','tmux','ruwac','screen'],['ruwac','screen','tmux','screen','ruwac'],['tmux','screen','ruwac','tmux','screen']]
 try:
  for index,(default,pattern) in enumerate([(mode,pattern)for mode in [False,True]for pattern in patterns]):
@@ -117,6 +135,8 @@ try:
    results.append({'id':f'MIXED-NESTING-{index+1}','status':'PASS','layers':pattern,'depth':len(pattern),'seconds':time.monotonic()-started,'literal_utf8_and_prefix_exact':True,'single_bracketed_paste_pair':True,'paste_contains_both_control_prefixes': 'screen'not in pattern,'prefix_configuration':'tmux default Control-B'if default else 'common Control-A','GNU_Screen_display_adaptation_explicit':True,'deep_window_create_select':True,'initial_attach_leaf':[attach_size['rows'],attach_size['cols']],'explicit_resize_baseline':True,'leaf_resize_propagated':{'before':[initial_size['rows'],initial_size['cols']],'after':[size['rows'],size['cols']]},'same_leaf_pid_and_start_time_after_detach_reattach':True,'termios_restored':True,'receiver_sha256':hashlib.sha256(out.read_bytes()).hexdigest()});print(name,'PASS',pattern,'default tmux prefix'if default else 'common prefix',flush=True)
   except Exception as error:
    results.append({'id':f'MIXED-NESTING-{index+1}','status':'FAIL','layers':pattern,'error':str(error),'traceback':traceback.format_exc()});print(name,'FAIL',error,flush=True);raise
+  finally:
+   cleanup_owned_layers()
  # Default Screen reattachment may restore its retained window dimensions.
  # Test that policy separately from the explicit -A display-fit matrix above.
  retained=root/'default-retained.bin';pid_file=root/'default-retained.pid.json';pid_file.unlink(missing_ok=True)
@@ -148,19 +168,7 @@ try:
  print('GNU-SCREEN-PASTE-PREFIX-BOUNDARY LIMITATION',flush=True)
 
 finally:
- for ui in reversed(uis[:]):
-  try:ui.finish(False)
-  except Exception:
-   if ui.p.poll()is None:ui.p.kill();ui.p.wait()
- for layer in reversed(layers):
-  if layer['kind']=='screen':
-   subprocess.run(['screen','-c',str(screen_config),'-S',layer['name'],'-X','quit'],env=env,capture_output=True,timeout=10)
-  elif layer['kind']=='tmux':
-   subprocess.run(['tmux','-S',str(layer['socket']),'kill-server'],env=env,capture_output=True,timeout=10)
- for proc,sock in reversed(servers):
-  if proc.poll()is None:
-   try:rpc(sock,'daemon.stop');proc.wait(timeout=5)
-   except Exception:proc.kill();proc.wait()
+ cleanup_owned_layers()
  receipt={'results':results,'binary_sha256':hashlib.sha256(binary.read_bytes()).hexdigest(),'versions':{'screen':run(['screen','--version']).strip(),'tmux':run(['tmux','-V']).strip()},'evidence':str(root),'scope':'Actual private local PTYs and owned GNU Screen/tmux/RUWAC servers; common Control-A and native tmux Control-B configurations; explicit upstream Screen paste-prefix limitation; no owner session, remote graphical or physical input claim'}
  (root/'receipt.json').write_text(json.dumps(receipt,indent=2)+'\n');print(json.dumps(receipt,indent=2))
 assert len(results)==18 and sum(c['status']=='PASS'for c in results)==17 and results[-1]['status']=='LIMITATION'

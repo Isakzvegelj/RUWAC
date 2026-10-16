@@ -197,9 +197,9 @@ while True:
         with Client(sock) as c:
             c.call('session.attach', {'session': row['session'], 'rows': 140, 'cols': 480})
             split = c.call('pane.create', {'window': row['window'], 'orientation': 'vertical', 'argv': ['/bin/cat']})
-            eventually(lambda: size(140, 240)['pid'] == row['pid'])
+            eventually(lambda: size(140, 239)['pid'] == row['pid'])
             panes = c.call('pane.list', {'session': row['session']})
-            assert len(panes) == 2 and all(p['cols'] == 240 and p['rows'] == 140 for p in panes)
+            assert len(panes) == 2 and sorted(p['cols'] for p in panes) == [239, 240] and all(p['rows'] == 140 for p in panes)
             c.call('pane.close', {'pane': split['pane']})
             assert size(140, 480)['pid'] == row['pid']
             c.call('session.detach')

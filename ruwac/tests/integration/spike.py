@@ -94,7 +94,7 @@ def run(args):
     c1.call('session.attach',{'session':sid,'rows':30,'cols':100});c2.call('session.attach',{'session':sid,'rows':20,'cols':70});assert rpc('pane.list',{'session':sid})[0]['rows']==20
     second=root/'second.bin';w=rpc('window.create',{'session':sid,'name':'two','argv':[sys.executable,str(receiver),str(second)]});rpc('pane.wait',{'pane':w['pane'],'contains':'READY','timeout_ms':5000})
     assert c1.call('client.render')['window']==c2.call('client.render')['window']==s['window'];c1.call('window.select',{'window':w['window']});assert c2.call('client.render')['window']==s['window'];before=path.read_bytes();rpc('pane.sendText',{'pane':pane,'text':'FOCUS_STABLE'});eventually(lambda:path.read_bytes()==before+b'FOCUS_STABLE');assert second.read_bytes()==b''
-    splitpath=root/'split.bin';split=rpc('pane.create',{'window':w['window'],'argv':[sys.executable,str(receiver),str(splitpath)]});rpc('pane.wait',{'pane':split['pane'],'contains':'READY','timeout_ms':5000});grids=c1.call('client.render')['panes'];assert len(grids)==2;assert sum(p['grid']['rows'] for p in grids)==20
+    splitpath=root/'split.bin';split=rpc('pane.create',{'window':w['window'],'argv':[sys.executable,str(receiver),str(splitpath)]});rpc('pane.wait',{'pane':split['pane'],'contains':'READY','timeout_ms':5000});grids=c1.call('client.render')['panes'];assert len(grids)==2;assert sum(p['grid']['rows'] for p in grids)==19
     c1.call('session.detach');assert c2.call('client.render')['session']==sid
     c1.call('session.attach',{'session':sid,'rows':24,'cols':80});assert rpc('pane.list',{'session':sid})[0]['pid']==pid
     rpc('pane.close',{'pane':split['pane']});rpc('pane.sendText',{'pane':split['pane'],'text':'stale'},error='STALE_ID')

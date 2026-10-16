@@ -57,10 +57,10 @@ def main():
             item['output'].extend(data)
         return bytes(item['output'])
 
-    def launch(name='codex', command=None):
+    def launch(name='codex', command=None, shared=''):
         command = command or shlex.join(['python3', '-u', str(root / 'receiver.py'), str(root / name)])
         remote = shlex.join(['bash', '-lc', shlex.join(
-            ['python3', '-c', script, binary, str(sock), name, command])])
+            ['python3', '-c', script, binary, str(sock), name, command, shared])])
         master, slave = pty.openpty()
         fcntl.ioctl(slave, 0x5414, struct.pack('HHHH', 30, 100, 0, 0))
         child = subprocess.Popen(ssh + [remote], stdin=slave, stdout=slave, stderr=slave,
@@ -185,6 +185,68 @@ def main():
         assert marker.read_text() == 'generated protected bytes'
         assert len(rpc('session.list')) == count
         case('SSH-UNSAFE-LOCK-REFUSED')
+        # Opt-in: two agents in independently selected windows of one session.
+        def shared_command(name):
+            return shlex.join(['python3', '-u', str(root / 'receiver.py'), str(root / ('shared-' + name))])
+        code = launch('codex', shared_command('codex'), 'agents')
+        claude = launch('claude', shared_command('claude'), 'agents')
+        eventually(lambda: attached(code) and attached(claude), 30)
+        shared = next(s for s in rpc('session.list') if s['name'] == 'agents')
+        windows = rpc('window.list', {'session': shared['id']})
+        assert len(windows) == 2 and {w['name'] for w in windows} == {'codex', 'claude'}, windows
+        panes = rpc('pane.list', {'session': shared['id']})
+        identities = {p['id']: p['pid'] for p in panes}
+        case('SSH-SHARED-SESSION-CONCURRENT-NAMED-AGENT-WINDOWS')
+        eventually(lambda: (root/'shared-codex.starts').exists() and (root/'shared-claude.starts').exists(),15)
+        os.write(code['fd'], b'CODEX_ONLY')
+        os.write(claude['fd'], b'CLAUDE_ONLY')
+        eventually(lambda: (root/'shared-codex.input').exists() and (root/'shared-claude.input').exists())
+        assert (root/'shared-codex.input').read_bytes() == b'CODEX_ONLY'
+        assert (root/'shared-claude.input').read_bytes() == b'CLAUDE_ONLY'
+        detach(code); detach(claude)
+        assert {p['id']:p['pid'] for p in rpc('pane.list',{'session':shared['id']})} == identities
+        case('SSH-SHARED-SESSION-INDEPENDENT-INPUT-AND-PERSISTENCE')
+        kimi = launch('kimi', shared_command('kimi'), 'agents')
+        eventually(lambda: attached(kimi), 30)
+        eventually(lambda: (root/'shared-kimi.starts').exists(),15)
+        os.write(kimi['fd'], b'KIMI_ONLY')
+        eventually(lambda: (root/'shared-kimi.input').exists())
+        assert (root/'shared-kimi.input').read_bytes() == b'KIMI_ONLY'
+        assert {w['name'] for w in rpc('window.list',{'session':shared['id']})} == {'codex','claude','kimi'}
+        assert (root/'shared-codex.input').read_bytes() == b'CODEX_ONLY'
+        assert (root/'shared-claude.input').read_bytes() == b'CLAUDE_ONLY'
+        detach(kimi)
+        kimi = launch('kimi', 'touch ' + shlex.quote(str(root/'kimi-must-not-exist')), 'agents')
+        eventually(lambda: attached(kimi))
+        assert not (root/'kimi-must-not-exist').exists()
+        assert len((root/'shared-kimi.starts').read_text().splitlines()) == 1
+        detach(kimi)
+        case('SSH-KIMI-THIRD-SHARED-WINDOW-ISOLATION-AND-REATTACH')
+        again = launch('codex', 'touch ' + shlex.quote(str(root/'shared-must-not-exist')), 'agents')
+        eventually(lambda:attached(again))
+        assert not (root/'shared-must-not-exist').exists()
+        assert len((root/'shared-codex.starts').read_text().splitlines()) == 1
+        target = next(w for w in windows if w['name']=='codex')['panes'][0]
+        rpc('pane.sendText',{'pane':target,'text':'q'})
+        eventually(lambda: (drain(again),again['child'].poll() is not None)[1],10)
+        assert again['child'].returncode == 0
+        assert (root/'shared-claude.input').read_bytes() == b'CLAUDE_ONLY'
+        case('SSH-NAMED-AGENT-EXIT-DOES-NOT-SWITCH-INPUT-TO-OTHER-AGENT')
+        ended = launch('codex',shared_command('codex'),'agents')
+        eventually(lambda:attached(ended))
+        assert len((root/'shared-codex.starts').read_text().splitlines()) == 1
+        detach(ended)
+        case('SSH-SHARED-ENDED-WINDOW-HISTORY-NO-RESTART')
+        existing = next(s for s in rpc('session.list') if s['name']=='claude')
+        old_panes = {p['id']:p['pid'] for p in rpc('pane.list',{'session':existing['id']})}
+        added = launch('codex',shlex.join(['python3','-u',str(root/'receiver.py'),str(root/'added-codex')]),'claude')
+        eventually(lambda:attached(added))
+        after = {p['id']:p['pid'] for p in rpc('pane.list',{'session':existing['id']})}
+        assert all(after[k]==v for k,v in old_panes.items()) and len(after)==len(old_panes)+1
+        assert {w['name'] for w in rpc('window.list',{'session':existing['id']})} == {'codex','claude'}
+        detach(added)
+        case('SSH-ADD-SECOND-AGENT-TO-EXISTING-AGENT-SESSION')
+
     finally:
         for index, item in enumerate(clients):
             if item['child'].poll() is None:
@@ -201,7 +263,7 @@ def main():
         log.close()
         # Revoke generated login credentials even on a failed run.
         (runtime / 'authorized_keys').unlink(missing_ok=True)
-        receipt = {'complete': len(results) == 7, 'results': results, 'binary_sha256': hashlib.sha256(Path(binary).read_bytes()).hexdigest(),
+        receipt = {'complete': len(results) == 13, 'results': results, 'binary_sha256': hashlib.sha256(Path(binary).read_bytes()).hexdigest(),
                    'script_sha256': hashlib.sha256(script.encode()).hexdigest(),
                    'scope': 'Actual authenticated loopback SSH and PTY; generated agent, no provider login',
                    'root': str(root), 'runtime': str(runtime)}

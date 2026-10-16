@@ -418,13 +418,21 @@ try:
   assert d['width']<=540,d
   assert all(x['x']>=0 and x['x']+x['width']<=d['width']+1 for x in d['fields']),d
   assert not any(n in rows for n in ['machine-field-2','machine-field-7','machine-field-10']),rows
-  subprocess.run(['import','-display',env['RUWAC_XTEST_DISPLAY'],'-window','root',str(root/'machine-editor-narrow.png')],env=env,check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
-  cancelled=command('gui','profile-editor',operation='inspect',response='cancel');assert not any(p['name']=='Generated narrow editor'for p in cancelled['items'])
-  return {'actual_GTK_dialog':d,'basic_credentials_order':order,'advanced_collapsed':True,'cancel_preserved_library':True,'screenshot':'machine-editor-narrow.png','physical_desktop':False}
+  screenshot=None
+  try:
+   # The owned Wayland-only compositor has no X11 root window. The actual
+   # allocated GTK field geometry above remains the acceptance evidence.
+   if env.get('RUWAC_XTEST_DISPLAY'):
+    subprocess.run(['import','-display',env['RUWAC_XTEST_DISPLAY'],'-window','root',str(root/'machine-editor-narrow.png')],env=env,check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+    screenshot='machine-editor-narrow.png'
+  finally:
+   cancelled=command('gui','profile-editor',operation='inspect',response='cancel')
+  assert not any(p['name']=='Generated narrow editor'for p in cancelled['items'])
+  return {'actual_GTK_dialog':d,'basic_credentials_order':order,'advanced_collapsed':True,'cancel_preserved_library':True,'screenshot':screenshot,'layout_evidence':'actual allocated GTK dialog and field rectangles','physical_desktop':False}
  case('MACHINES-NATIVE-EDITOR-LAYOUT',editor_layout)
  def agent_launcher():
   before=command('gui','inspect')
-  opened=command('gui','agent-launch-dialog',operation='show');assert opened['dialog_visible'] and opened['agents']==['Codex (cx)','Claude Code (cc)'],opened
+  opened=command('gui','agent-launch-dialog',operation='show');assert opened['dialog_visible'] and opened['agents']==['Codex (cx)','Claude Code (cc)','Kimi'],opened
   command('gui','agent-launch-dialog',operation='cancel')
   after=command('gui','inspect');assert before['tabs']==after['tabs']
   return {'native_dialog':True,'explicit_agents':opened['agents'],'cancel_creates_no_session':True,'SSH_profiles':opened['SSH_profiles'],'external_agent_launch':'not performed in this UI fixture'}

@@ -365,7 +365,7 @@ def artifact_findings(path, checker, terms):
     if re.search(rb'-----BEGIN (?:[A-Z0-9 ]+ )?PRIVATE KEY-----\s+[A-Za-z0-9+/=\r\n]{32,}-----END (?:[A-Z0-9 ]+ )?PRIVATE KEY-----', data):
         found.append(('private-key-material', 0))
     # Private source roots must be absent even outside ordinary data sections.
-    long_terms = [term for term in terms if '/' in term or len(term) >= 8]
+    long_terms = checker['PolicyTerms']([term for term in terms if '/' in term or len(term) >= 8], getattr(terms, 'public_attributions', ()))
     found.extend((rule, line) for rule, line in checker['findings'](data, long_terms) if rule == 'private-policy')
     return found, b'\n'.join(re.findall(rb'[\x20-\x7e]{4,}', text))
 

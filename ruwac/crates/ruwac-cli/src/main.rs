@@ -222,11 +222,17 @@ fn job_request(args: &[String]) -> io::Result<Request> {
     Ok(request(&format!("job.{verb}"), params))
 }
 
-// Resolve only exact names: duplicate names must never attach to an arbitrary session.
+// Exact identities take precedence; duplicate names never select an arbitrary session.
 fn named_session_id(reply: &Value, name: &str) -> io::Result<Option<String>> {
     let sessions = reply["result"]
         .as_array()
         .ok_or_else(|| io::Error::other("invalid session list response"))?;
+    if ruwac_protocol::valid_id(name, "session") {
+        return Ok(sessions
+            .iter()
+            .find(|s| s["id"] == name)
+            .map(|_| name.to_owned()));
+    }
     let matches: Vec<_> = sessions.iter().filter(|s| s["name"] == name).collect();
     match matches.as_slice() {
         [] => Ok(None),
@@ -235,7 +241,7 @@ fn named_session_id(reply: &Value, name: &str) -> io::Result<Option<String>> {
             .map(|id| Some(id.to_owned()))
             .ok_or_else(|| io::Error::other("session has no ID")),
         _ => Err(io::Error::other(
-            "multiple sessions have this name; use session list and attach --session ID",
+            "multiple sessions have this name; use ruwac -ls, then ruwac -r SESSION_ID",
         )),
     }
 }
@@ -433,7 +439,27 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         println!("{reply}");
         return Ok(());
     }
+    if a.len() == 3 && matches!(a[0].as_str(), "-r" | "-x") && a[1] == "--session" {
+        a.remove(1);
+    }
     match a.first().map(String::as_str) {
+        Some("kill-session") => {
+            if a.len() != 2 {
+                return Err(
+                    "usage: ruwac kill-session NAME_OR_SESSION_ID (closes its programs)".into(),
+                );
+            }
+            let id = named_session_id(&call(&request("session.list", json!({})))?, &a[1])?
+                .ok_or("No session with this exact name or ID")?;
+            let panes = call(&request("pane.list", json!({"session":id})))?;
+            for pane in panes["result"].as_array().ok_or("Pane list unavailable")? {
+                call(&request("pane.close", json!({"pane":pane["id"]})))?;
+            }
+            if named_session_id(&call(&request("session.list", json!({})))?, &id)?.is_some() {
+                return Err("Session changed while closing; inspect ruwac -ls and retry".into());
+            }
+            println!("Closed session {id}");
+        }
         Some("-ls" | "-list") => {
             if a.len() > 2 || (a.len() == 2 && a[1] != "--json") {
                 return Err("usage: ruwac -ls [--json]".into());
@@ -448,7 +474,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         Some("-S" | "-r" | "-x" | "-R" | "-dmS") => {
             if a.len() != 2 || a[1].trim().is_empty() || a[1].chars().any(char::is_control) {
                 return Err(
-                    "usage: ruwac -S NAME (create/attach) or ruwac -r NAME (reattach only)".into(),
+                    "usage: ruwac -S NAME (create/attach) or ruwac -r NAME_OR_SESSION_ID (reattach only)".into(),
                 );
             }
             if !matches!(a[0].as_str(), "-dmS")
@@ -468,8 +494,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
             let id = match named_session_id(&call(&request("session.list", json!({})))?, &a[1])? {
                 Some(id) => id,
-                None if matches!(a[0].as_str(), "-r" | "-x") => {
-                    return Err("No session with this exact name; use -S NAME to create it".into());
+                None if matches!(a[0].as_str(), "-r" | "-x") || ruwac_protocol::valid_id(&a[1], "session") => {
+                    return Err("No session with this exact name or ID; use -S NAME to create a named session".into());
                 }
                 None => {
                     spawn_call(&request("session.create", json!({"name": a[1]})))?["result"]["session"]
@@ -581,11 +607,14 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .block_on(ruwac_daemon::serve(&socket))?;
         }
         Some("attach") => {
-            if a.len() != 3 || a[1] != "--session" {
-                return Err("attach --session session_ID".into());
+            if !matches!(a.len(), 3 | 5)
+                || a[1] != "--session"
+                || (a.len() == 5 && a[3] != "--window")
+            {
+                return Err("attach --session session_ID [--window window_ID]".into());
             }
             drop(startup::connect(&socket)?);
-            ruwac_tui::attach(&socket, &a[2])?;
+            ruwac_tui::attach_with_window(&socket, &a[2], a.get(4).map(String::as_str))?;
         }
         Some("rpc") => {
             if a.len() < 2 {
@@ -660,7 +689,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 "Updates (Fedora 44): ruwac update --check | --install | --rollback | --auto-check on|off|status | --auto-install on|off|status | --testing-bundles on|off|status.\nTesting bundle delivery is opt-in for Fedora 44 x86_64; source builds require development dependencies; --headless retains a CLI-only installation. No running processes are restarted."
             );
             println!(
-                "RUWAC\n  ruwac -ls [--json]  # list persistent sessions\n  ruwac -S NAME -X COMMAND  # Screen control aliases; kill/quit close programs\n  ruwac -dmS NAME  # create a detached named session\n  ruwac -x NAME  # share an existing session (also -r)\n  ruwac -R NAME  # attach or create an exact named session\n  ruwac -S NAME  # create or attach a named terminal session\n  ruwac -r NAME  # reattach an existing named session\n  ruwac job list [--session session_ID] [--query TEXT] --json\n  ruwac job query --id pane_ID --json\n  ruwac workspace describe|list|saved [--json]\n  ruwac workspace events subscribe --types tab,focus,layout,rdp --json\n  ruwac workspace events poll --subscription subscription_ID --after CURSOR --limit 50 --json\n  ruwac workspace events unsubscribe --subscription subscription_ID --json\n  ruwac workspace save --name NAME --json\n  ruwac workspace open|restore --id workspace_ID --json\n  ruwac host list [--query TEXT] [--group GROUP] [--protocol SSH|RDP] [--favorites] [--limit 1..50] [--offset N --snapshot TOKEN] --json\n  ruwac host query --id endpoint_ID --json\n  ruwac rdp list --json\n  ruwac rdp query|reconnect|disconnect --id view_ID --json\n  ruwac rdp open --profile endpoint_ID [--activate] --json\n  ruwac workspace activate --id tab_ID --json\n  ruwac workspace focus --id view_ID --json\n  ruwac doctor [--desktop] [--terminal [--repair]] [--json]\n  ruwac --version\n  ruwac start  # starts/reuses a private persistent daemon\n  ruwac gui [--session session_ID]\n  ruwac session create --name NAME --detach --json\n  ruwac session list --json\n  ruwac pane list --session session_ID --json\n  ruwac pane send-text --id pane_ID --text TEXT --json\n  ruwac pane send-text --id pane_ID --file UTF8_FILE --json\n  ruwac pane send-key --id pane_ID --key Enter --json\n  ruwac pane capture --id pane_ID --lines 250 [--buffer active|primary] --json\n  ruwac pane wait --id pane_ID --contains TEXT --timeout-ms 5000 --json\n  ruwac --socket PATH serve\n  ruwac --socket PATH rpc METHOD --params JSON [--idempotency KEY]\n  ruwac --socket PATH request < request.json\n  ruwac --socket PATH attach --session session_ID\n  ruwac image-stage PNG PRIVATE_DIRECTORY\n  ruwac --socket PATH image-attach pane_ID PNG PRIVATE_DIRECTORY\n  ruwac --socket PATH health|version|capabilities|schema|describe\nRemote: ruwac --host SSH_HOST [--remote-binary PATH] [--socket REMOTE_PATH] COMMAND.\n  ruwac --host SSH_HOST describe\n  ruwac --host SSH_HOST pane send-text --id pane_ID --file LOCAL_UTF8_FILE\n  ruwac --host SSH_HOST attach --session session_ID\n  ruwac --host SSH_HOST image-attach pane_ID LOCAL_PNG REMOTE_PRIVATE_DIRECTORY\nHost/workspace/RDP commands address an already-running remote GUI with its explicit permissions. Uses existing SSH keys/config and verified host keys; no credential or agent forwarding. Without explicit --socket, the remote CLI selects its own private default.\nImage attachment: explicit local or SSH Codex draft; no automatic submission. No desktop clipboard or full Screen compatibility claim."
+                "RUWAC\n  ruwac -ls [--json]  # list persistent sessions\n  ruwac -S NAME -X COMMAND  # Screen control aliases; kill/quit close programs\n  ruwac -dmS NAME  # create a detached named session\n  ruwac -x NAME  # share an existing session (also -r)\n  ruwac -R NAME  # attach or create an exact named session\n  ruwac -S NAME  # create or attach a named terminal session\n  ruwac -r NAME_OR_SESSION_ID  # reattach an existing session\n  ruwac kill-session NAME_OR_SESSION_ID  # closes all programs in this session\n  ruwac job list [--session session_ID] [--query TEXT] --json\n  ruwac job query --id pane_ID --json\n  ruwac workspace describe|list|saved [--json]\n  ruwac workspace events subscribe --types tab,focus,layout,rdp --json\n  ruwac workspace events poll --subscription subscription_ID --after CURSOR --limit 50 --json\n  ruwac workspace events unsubscribe --subscription subscription_ID --json\n  ruwac workspace save --name NAME --json\n  ruwac workspace open|restore --id workspace_ID --json\n  ruwac host list [--query TEXT] [--group GROUP] [--protocol SSH|RDP] [--favorites] [--limit 1..50] [--offset N --snapshot TOKEN] --json\n  ruwac host query --id endpoint_ID --json\n  ruwac rdp list --json\n  ruwac rdp query|reconnect|disconnect --id view_ID --json\n  ruwac rdp open --profile endpoint_ID [--activate] --json\n  ruwac workspace activate --id tab_ID --json\n  ruwac workspace focus --id view_ID --json\n  ruwac doctor [--desktop] [--terminal [--repair]] [--json]\n  ruwac --version\n  ruwac start  # starts/reuses a private persistent daemon\n  ruwac gui [--session session_ID]\n  ruwac session create --name NAME --detach --json\n  ruwac session list --json\n  ruwac pane list --session session_ID --json\n  ruwac pane send-text --id pane_ID --text TEXT --json\n  ruwac pane send-text --id pane_ID --file UTF8_FILE --json\n  ruwac pane send-key --id pane_ID --key Enter --json\n  ruwac pane capture --id pane_ID --lines 250 [--buffer active|primary] --json\n  ruwac pane wait --id pane_ID --contains TEXT --timeout-ms 5000 --json\n  ruwac --socket PATH serve\n  ruwac --socket PATH rpc METHOD --params JSON [--idempotency KEY]\n  ruwac --socket PATH request < request.json\n  ruwac --socket PATH attach --session session_ID\n  ruwac image-stage PNG PRIVATE_DIRECTORY\n  ruwac --socket PATH image-attach pane_ID PNG PRIVATE_DIRECTORY\n  ruwac --socket PATH health|version|capabilities|schema|describe\nRemote: ruwac --host SSH_HOST [--remote-binary PATH] [--socket REMOTE_PATH] COMMAND.\n  ruwac --host SSH_HOST describe\n  ruwac --host SSH_HOST pane send-text --id pane_ID --file LOCAL_UTF8_FILE\n  ruwac --host SSH_HOST attach --session session_ID\n  ruwac --host SSH_HOST image-attach pane_ID LOCAL_PNG REMOTE_PRIVATE_DIRECTORY\nHost/workspace/RDP commands address an already-running remote GUI with its explicit permissions. Uses existing SSH keys/config and verified host keys; no credential or agent forwarding. Without explicit --socket, the remote CLI selects its own private default.\nImage attachment: explicit local or SSH Codex draft; no automatic submission. No desktop clipboard or full Screen compatibility claim."
             );
         }
         _ => return Err("unknown command; use --help".into()),
@@ -694,6 +723,18 @@ mod named_session_tests {
         );
         assert_eq!(named_session_id(&reply, "D").unwrap(), None);
         assert_eq!(named_session_id(&reply, "new").unwrap(), None);
+    }
+
+    #[test]
+    fn exact_id_selects_one_of_duplicate_names_and_stale_id_never_becomes_name() {
+        let a = ruwac_protocol::id("session");
+        let b = ruwac_protocol::id("session");
+        let missing = ruwac_protocol::id("session");
+        let reply = json!({"result":[{"id":a,"name":"Terminal"},{"id":b,"name":"Terminal"},{"id":"session_test","name":missing}]});
+        assert!(named_session_id(&reply, "Terminal").is_err());
+        assert_eq!(named_session_id(&reply, &a).unwrap(), Some(a));
+        assert_eq!(named_session_id(&reply, &b).unwrap(), Some(b));
+        assert_eq!(named_session_id(&reply, &missing).unwrap(), None);
     }
 
     #[test]

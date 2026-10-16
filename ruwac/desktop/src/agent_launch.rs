@@ -11,7 +11,8 @@ fn agent_command(agent: u32) -> Result<(&'static str, &'static str), String> {
     match agent {
         0 => Ok(("codex", "codex resume --all")),
         1 => Ok(("claude", "claude --resume")),
-        _ => Err("Choose Codex or Claude".into()),
+        5 => Ok(("kimi", "kimi --session")),
+        _ => Err("Choose Codex, Claude or Kimi".into()),
     }
 }
 fn ssh_command(profile: &profiles::Profile, command: String) -> Result<Vec<String>, String> {
@@ -52,6 +53,46 @@ fn argv(
     {
         return Err("Invalid remote RUWAC executable or socket".into());
     }
+    if agent == 4 {
+        let key = &profile.preferences.identity_file;
+        if key.is_empty() || key.starts_with('-') || key.chars().any(char::is_control) {
+            return Err(
+                "Choose and save an SSH identity file before authorizing its public key".into(),
+            );
+        }
+        let base = profiles::ssh_argv(profile)?;
+        let mut command = vec![
+            "ssh-copy-id".into(),
+            "-o".into(),
+            "ForwardAgent=no".into(),
+            "-o".into(),
+            "ClearAllForwardings=yes".into(),
+        ];
+        let mut i = 1;
+        while i < base.len() {
+            if base[i] == "--" {
+                command.push("--".into());
+                command.extend_from_slice(&base[i + 1..]);
+                break;
+            }
+            let option = &base[i];
+            let value = &base[i + 1];
+            match option.as_str() {
+                "-i" => command.extend([
+                    "-i".into(),
+                    if key.ends_with(".pub") {
+                        key.clone()
+                    } else {
+                        format!("{key}.pub")
+                    },
+                ]),
+                "-l" => command.extend(["-o".into(), format!("User={value}")]),
+                _ => command.extend([option.clone(), value.clone()]),
+            }
+            i += 2;
+        }
+        return Ok(command);
+    }
     if agent == 2 {
         return ssh_command(
             profile,
@@ -64,8 +105,10 @@ fn argv(
     let (name, default) = agent_command(agent)?;
     let configured = if agent == 0 {
         &profile.preferences.codex_command
-    } else {
+    } else if agent == 1 {
         &profile.preferences.claude_command
+    } else {
+        &profile.preferences.kimi_command
     };
     let command = if configured.is_empty() {
         default
@@ -77,6 +120,18 @@ fn argv(
             "Invalid agent command; keep credentials in the remote agent's own login store".into(),
         );
     }
+    let installed;
+    let command = if profile.preferences.agent_install_missing {
+        installed = format!(
+            "python3 -c {} {} {}",
+            quote(include_str!("../../../scripts/agent-bootstrap.py")),
+            quote(name),
+            quote(command)
+        );
+        installed.as_str()
+    } else {
+        command
+    };
     match profile.preferences.agent_backend.as_str() {
         "" | "ruwac" => (),
         "tmux" => {
@@ -103,12 +158,13 @@ fn argv(
         _ => return Err("Unknown remote session backend".into()),
     }
     let script = format!(
-        "python3 -c {} {} {} {} {}",
+        "python3 -c {} {} {} {} {} {}",
         quote(include_str!("../../../scripts/remote-agent.py")),
         quote(binary),
         quote(socket),
         quote(name),
-        quote(command)
+        quote(command),
+        quote(&profile.preferences.agent_session)
     );
     ssh_command(profile, format!("bash -lc {}", quote(&script)))
 }
@@ -123,25 +179,44 @@ pub fn launch(
     socket: &PathBuf,
     broker: &crate::clipboard::Broker,
 ) {
-    if kind == 2 {
+    if kind == 2 || kind == 4 {
         let d = gtk::Dialog::builder()
-            .title("Install remote RUWAC CLI")
+            .title(if kind == 4 {
+                "Authorize SSH public key"
+            } else {
+                "Install remote RUWAC CLI"
+            })
             .transient_for(parent)
             .modal(true)
             .build();
-        let info = gtk::Label::new(Some(&format!(
-            "Install/update the headless CLI for {} at {} using its saved SSH account. The existing verified source installer runs in a terminal, needs Python 3 and Rust build tools, and preserves sessions. No Codex/Claude installation or login is performed.",
-            profile.name, profile.server
-        )));
+        let text = if kind == 4 {
+            format!(
+                "Install your selected public key for {} at {} using SSH authentication. Verify the host key when prompted. The private key stays on this computer. This grants access for that key to the remote account.",
+                profile.username, profile.server
+            )
+        } else {
+            format!(
+                "Install/update the headless CLI for {} at {} using its saved SSH account. The existing verified source installer runs in a terminal, needs Python 3 and Rust build tools, and preserves sessions. No agent installation or login is performed.",
+                profile.name, profile.server
+            )
+        };
+        let info = gtk::Label::new(Some(&text));
         info.set_wrap(true);
         info.set_max_width_chars(64);
         d.content_area().append(&info);
         d.add_button("Cancel", gtk::ResponseType::Cancel);
-        d.add_button("Install", gtk::ResponseType::Accept);
+        d.add_button(
+            if kind == 4 {
+                "Authorize public key"
+            } else {
+                "Install"
+            },
+            gtk::ResponseType::Accept,
+        );
         let (t, v, s, b) = (tabs.clone(), views.clone(), socket.clone(), broker.clone());
         d.connect_response(move |d, r| {
             if r == gtk::ResponseType::Accept {
-                open_terminal(profile.clone(), 2, &t, &v, &s, &b);
+                open_terminal(profile.clone(), kind, &t, &v, &s, &b);
             }
             d.close();
         });
@@ -165,6 +240,10 @@ fn open_terminal(
             "Codex"
         } else if kind == 1 {
             "Claude"
+        } else if kind == 5 {
+            "Kimi"
+        } else if kind == 4 {
+            "SSH authorization"
         } else {
             "RUWAC setup"
         }
@@ -225,10 +304,10 @@ pub fn button(
         let names = rows.iter().map(|r| format!("{} / {} · {}",r["group"].as_str().unwrap_or(""),r["name"].as_str().unwrap_or(""),r["server"].as_str().unwrap_or(""))).collect::<Vec<_>>();
         let endpoint = gtk::DropDown::from_strings(&names.iter().map(String::as_str).collect::<Vec<_>>());
         endpoint.set_widget_name("agent-launch-profile");
-        let agent = gtk::DropDown::from_strings(&["Codex (cx)", "Claude Code (cc)"]);
+        let agent = gtk::DropDown::from_strings(&["Codex (cx)", "Claude Code (cc)", "Kimi"]);
         agent.set_widget_name("agent-launch-agent");
         let backend=gtk::DropDown::from_strings(&["RUWAC","GNU Screen","tmux","Direct"]);backend.set_widget_name("agent-launch-backend");
-        let command=gtk::Entry::builder().text("codex resume --all").build();command.set_widget_name("agent-launch-command");let cmd=command.clone();agent.connect_selected_notify(move|a|cmd.set_text(if a.selected()==0{"codex resume --all"}else{"claude --resume"}));
+        let command=gtk::Entry::builder().text("codex resume --all").build();command.set_widget_name("agent-launch-command");let cmd=command.clone();agent.connect_selected_notify(move|a|cmd.set_text(match a.selected(){0=>"codex resume --all",1=>"claude --resume",_=>"kimi --session"}));
         body.append(&gtk::Label::new(Some("Remote session backend")));body.append(&backend);body.append(&gtk::Label::new(Some("Command (no passwords)")));body.append(&command);
         let binary = gtk::Entry::builder().text("ruwac").build();
         binary.set_widget_name("agent-launch-binary");
@@ -242,7 +321,7 @@ pub fn button(
         let (tabs,views,local_socket,broker,reader)=(tabs.clone(),views.clone(),local_socket.clone(),broker.clone(),reader.clone());
         dialog.connect_response(move |d,response| {
             if response!=gtk::ResponseType::Accept { d.close();return; }
-            let plan=rows.get(endpoint.selected() as usize).and_then(|r|r["id"].as_str()).ok_or("Choose an SSH endpoint".to_string()).and_then(|id|reader(id)).and_then(|mut p|{p.preferences.agent_backend=["ruwac","screen","tmux","direct"][backend.selected()as usize].into();if agent.selected()==0{p.preferences.codex_command=command.text().into();}else{p.preferences.claude_command=command.text().into();}argv(&p,agent.selected(),&binary.text(),&socket.text())});
+            let plan=rows.get(endpoint.selected() as usize).and_then(|r|r["id"].as_str()).ok_or("Choose an SSH endpoint".to_string()).and_then(|id|reader(id)).and_then(|mut p|{p.preferences.agent_backend=["ruwac","screen","tmux","direct"][backend.selected()as usize].into();if agent.selected()==0{p.preferences.codex_command=command.text().into();}else if agent.selected()==1{p.preferences.claude_command=command.text().into();}else{p.preferences.kimi_command=command.text().into();}argv(&p,[0,1,5][agent.selected()as usize],&binary.text(),&socket.text())});
             let argv=match plan {Ok(a)=>a,Err(e)=>{status.set_text(&e);return;}};
             open.set_sensitive(false);status.set_text("Opening remote agent terminal…");
             let (tx,rx)=std::sync::mpsc::sync_channel(1);let socket=local_socket.clone();
@@ -284,7 +363,7 @@ pub fn fixture(q: &serde_json::Value) -> serde_json::Value {
             }
         }
     }
-    json!({"dialog_visible":visible,"SSH_profiles":profiles,"agents":["Codex (cx)","Claude Code (cc)"],"starts_agent_on_cancel":false})
+    json!({"dialog_visible":visible,"SSH_profiles":profiles,"agents":["Codex (cx)","Claude Code (cc)","Kimi"],"starts_agent_on_cancel":false})
 }
 
 #[cfg(test)]
@@ -292,9 +371,35 @@ mod tests {
     use super::*;
     use std::{fs, os::unix::fs::PermissionsExt, process::Command};
     #[test]
+    fn public_key_authorization_uses_saved_target_without_password_arguments() {
+        let profile: profiles::Profile = serde_json::from_value(json!({"id":"endpoint_demo","machine_id":"machine_demo","name":"Demo","group":"Test","protocol":"SSH","server":"127.0.0.1:2222","username":"generated-user","secret_reference":"GENERATED-SECRET-REFERENCE","favorite":false,"last_used":0,"tags":[],"preferences":{"identity_file":"/tmp/generated key'file","known_hosts":"/tmp/generated hosts"}})).unwrap();
+        let args = argv(&profile, 4, "ruwac", "").unwrap();
+        assert_eq!(args[0], "ssh-copy-id");
+        assert!(
+            args.windows(2)
+                .any(|pair| pair == ["-i", "/tmp/generated key'file.pub"])
+        );
+        assert!(args.windows(2).any(|pair| pair == ["-p", "2222"]));
+        assert!(
+            args.windows(2)
+                .any(|pair| pair == ["-o", "User=generated-user"])
+        );
+        assert!(
+            args.windows(2)
+                .any(|pair| pair == ["-o", "StrictHostKeyChecking=ask"])
+        );
+        assert_eq!(&args[args.len() - 2..], &["--", "127.0.0.1"]);
+        assert!(!args.join(" ").contains("GENERATED-SECRET-REFERENCE"));
+        let mut missing = profile.clone();
+        missing.preferences.identity_file.clear();
+        assert!(argv(&missing, 4, "ruwac", "").is_err());
+    }
+
+    #[test]
     fn defaults_open_resume_pickers_without_a_prompt() {
         assert_eq!(agent_command(0).unwrap(), ("codex", "codex resume --all"));
         assert_eq!(agent_command(1).unwrap(), ("claude", "claude --resume"));
+        assert_eq!(agent_command(5).unwrap(), ("kimi", "kimi --session"));
     }
 
     #[test]
