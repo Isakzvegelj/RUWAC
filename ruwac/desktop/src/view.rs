@@ -1372,6 +1372,14 @@ impl View {
             self.copy_clipboard(false);
             return;
         }
+        // An image pasted into an SSH tab is sent to the host as a file.
+        if matches!(key, gdk::Key::v | gdk::Key::V)
+            && mods.contains(gdk::ModifierType::CONTROL_MASK)
+            && !mods.contains(gdk::ModifierType::ALT_MASK)
+            && crate::remote_paste::try_paste(self)
+        {
+            return;
+        }
         if self.binding(key, mods, "paste", "<Control><Shift>v") {
             self.paste_clipboard(false);
             return;

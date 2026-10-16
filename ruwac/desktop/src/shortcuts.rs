@@ -37,7 +37,7 @@ pub fn select_tab(tabs: &adw::TabView, index: i32) {
 /// How long a released AltGr tap keeps the next key local.
 pub const LEADER_WINDOW: Duration = Duration::from_millis(500);
 
-fn altgr(key: gdk::Key) -> bool {
+pub fn altgr(key: gdk::Key) -> bool {
     matches!(key, gdk::Key::ISO_Level3_Shift | gdk::Key::Alt_R)
 }
 fn modifier(key: gdk::Key) -> bool {

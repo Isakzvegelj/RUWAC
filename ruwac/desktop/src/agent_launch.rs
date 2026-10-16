@@ -262,9 +262,11 @@ fn open_terminal(
         let _ = tx.send(result);
     });
     let (t, v, s, b) = (tabs.clone(), views.clone(), socket.clone(), broker.clone());
+    let target = profile.clone();
     gtk::glib::timeout_add_local(Duration::from_millis(20), move || match rx.try_recv() {
         Ok(Ok(r)) => {
             if let Some(id) = r["session"].as_str() {
+                crate::remote_paste::remember(id, &target);
                 sessions::append(&t, &v, &s, &b, id, &title);
             }
             gtk::glib::ControlFlow::Break

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## v0.4.13 — 2026-10-16 — Stable source release
+
+- RDP tabs receive system shortcuts (Alt+Tab, Super and similar) while focused, so they act on the remote desktop; GNOME asks once for permission. Pressing AltGr hands the next shortcut back to this computer's desktop for 0.5 s.
+
+- Ctrl+V with an image on the clipboard in an SSH terminal or agent tab copies the image over that tab's SSH connection into a private folder on the host (`~/.cache/ruwac/images`) and pastes its path, which remote Codex and Claude attach as an image. Text pastes are unchanged.
+
 ## v0.4.12 — 2026-10-16 — Stable source release
 
 - Nested `ruwac` sessions: send each mouse event to the pane under the pointer in that pane's own coordinates (clicks in split panes previously landed on the wrong row), let the engine encode it for the program, focus a pane by clicking it, and request drag/motion reports when programs such as btm or Codex use them.
