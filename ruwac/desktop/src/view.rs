@@ -1103,6 +1103,15 @@ impl View {
                     .place_cursor(&self.copy.buffer().end_iter());
                 self.copy.set_cursor_visible(true);
                 self.copy.grab_focus();
+                // Open at the newest output (where the wheel left the live
+                // view), once the text has been laid out.
+                let copy = self.copy.downgrade();
+                glib::idle_add_local_once(move || {
+                    if let Some(copy) = copy.upgrade() {
+                        let buffer = copy.buffer();
+                        copy.scroll_to_mark(&buffer.get_insert(), 0.0, true, 0.0, 1.0);
+                    }
+                });
             } else if method == "window.list" {
                 if let Some(index) = self.window_index.take() {
                     if let Some(window) = v.as_array().and_then(|a| a.get(index)) {

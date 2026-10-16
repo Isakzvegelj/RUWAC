@@ -167,15 +167,49 @@ pub fn endpoint(address: &str, default_port: u16) -> Result<(String, u16), Strin
     }
     Ok((address.into(), default_port))
 }
+/// Host and port for clients that cannot read ~/.ssh/config (SFTP, rsync
+/// with `-F /dev/null`): an explicit `host:port` wins, otherwise OpenSSH's
+/// own resolution (`ssh -G`) supplies HostName and Port, else port 22.
+pub fn ssh_endpoint(server: &str) -> Result<(String, u16), String> {
+    let (host, port) = endpoint(server, 0)?;
+    if port != 0 {
+        return Ok((host, port));
+    }
+    if host.starts_with('-') {
+        return Err("Invalid SSH host".into());
+    }
+    let resolved = std::process::Command::new("ssh")
+        .args(["-G", "--", &host])
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+        .unwrap_or_default();
+    Ok(resolved_endpoint(&resolved, &host))
+}
+fn resolved_endpoint(ssh_g: &str, host: &str) -> (String, u16) {
+    let value = |key: &str| {
+        ssh_g.lines().find_map(|l| {
+            l.split_once(' ')
+                .filter(|(k, _)| k.eq_ignore_ascii_case(key))
+                .map(|(_, v)| v.trim().to_string())
+        })
+    };
+    let hostname = value("hostname").filter(|h| !h.is_empty() && !h.starts_with('-'));
+    let port = value("port").and_then(|p| p.parse().ok()).unwrap_or(22);
+    (hostname.unwrap_or_else(|| host.into()), port)
+}
 pub fn ssh_argv(p: &Profile) -> Result<Vec<String>, String> {
-    let (host, port) = endpoint(&p.server, 22)?;
-    let mut argv = vec![
-        "ssh".into(),
-        "-p".into(),
-        port.to_string(),
-        "-o".into(),
-        "StrictHostKeyChecking=ask".into(),
-    ];
+    // Without an explicit port, ~/.ssh/config (Port, HostName, ProxyJump…)
+    // decides, exactly as for `ssh host` typed in a terminal.
+    let (host, port) = endpoint(&p.server, 0)?;
+    let mut argv = vec!["ssh".into()];
+    if port != 0 {
+        argv.extend(["-p".into(), port.to_string()]);
+    }
+    argv.extend(["-o".into(), "StrictHostKeyChecking=ask".into()]);
     if !p.preferences.known_hosts.is_empty() {
         argv.extend([
             "-o".into(),
@@ -194,7 +228,15 @@ pub fn ssh_argv(p: &Profile) -> Result<Vec<String>, String> {
         argv.extend(["-l".into(), p.username.clone()]);
     }
     if !p.preferences.ssh_jump_alias.is_empty() {
-        let proxy = crate::ssh_jump::proxy_command(&p.preferences.ssh_jump_alias, &host, port)?;
+        // The bastion cannot read this computer's ssh config: give it the
+        // resolved HostName and Port when no explicit port was entered.
+        let (target, target_port) = if port == 0 {
+            ssh_endpoint(&p.server)?
+        } else {
+            (host.clone(), port)
+        };
+        let proxy =
+            crate::ssh_jump::proxy_command(&p.preferences.ssh_jump_alias, &target, target_port)?;
         argv.extend([
             "-o".into(),
             format!("ProxyCommand={proxy}"),
@@ -1032,26 +1074,22 @@ fn ssh_seed(source: &Profile) -> Profile {
     p
 }
 
-/// Find hosts that already accept this user's SSH key. Each machine is probed
-/// once (again when `recheck`); an RDP-only machine whose host accepts the
-/// key gets an SSH endpoint, so Terminal and agents work without reinstalling
-/// keys. Probes never prompt and never send passwords.
-fn detect_ssh_access(
+/// Which machines already accept this user's existing SSH public keys.
+/// Nothing is contacted before the person confirms, and SSH endpoints are
+/// added only for rows they select after reviewing the results.
+fn ssh_access_review(
+    button: &gtk::Button,
     store: &Rc<RefCell<Store>>,
     status: &gtk::Label,
     refresh: Rc<dyn Fn()>,
-    recheck: bool,
 ) {
-    let cache = crate::ssh_probe::load();
     let items = store.borrow().items.clone();
     let mut machines: Vec<String> = items.iter().map(|p| p.machine_id.clone()).collect();
     machines.sort();
     machines.dedup();
+    // (machine name, probe profile, needs a new SSH endpoint)
     let mut targets = Vec::new();
     for machine in machines {
-        if !recheck && cache.contains_key(&machine) {
-            continue;
-        }
         let endpoints: Vec<&Profile> = items.iter().filter(|p| p.machine_id == machine).collect();
         let existing = endpoints.iter().find(|p| p.protocol == "SSH");
         let probe = match existing {
@@ -1059,7 +1097,7 @@ fn detect_ssh_access(
             None => match endpoints.iter().find(|p| p.protocol == "RDP") {
                 Some(rdp) => {
                     let mut seed = ssh_seed(rdp);
-                    // Leave the account to ~/.ssh/config or the local default.
+                    // Leave account, port and route to ~/.ssh/config.
                     seed.username.clear();
                     seed
                 }
@@ -1072,74 +1110,181 @@ fn detect_ssh_access(
         {
             continue;
         }
-        targets.push((machine, probe, existing.is_none()));
+        targets.push((probe.name.clone(), probe, existing.is_none()));
     }
-    if targets.is_empty() {
-        if recheck {
-            status.set_text("No machines with an address to check");
+    let parent = button.root().and_downcast::<gtk::Window>();
+    let dialog = gtk::Window::builder()
+        .title("SSH key access")
+        .modal(true)
+        .default_width(720)
+        .default_height(520)
+        .build();
+    dialog.set_transient_for(parent.as_ref());
+    let body = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .spacing(10)
+        .margin_top(16)
+        .margin_bottom(16)
+        .margin_start(16)
+        .margin_end(16)
+        .build();
+    let intro = gtk::Label::new(Some(&format!(
+        "Check {} machines for login with your existing SSH public keys (ssh-agent and ~/.ssh). \
+         Each check runs OpenSSH in batch mode with your ~/.ssh/config: no password, no new or changed host keys, \
+         no agent forwarding; at most 4 at a time with a 6 s connect timeout. Nothing is installed or changed on the hosts.",
+        targets.len()
+    )));
+    intro.set_wrap(true);
+    intro.set_xalign(0.0);
+    body.append(&intro);
+    let grid = gtk::Grid::builder()
+        .column_spacing(12)
+        .row_spacing(6)
+        .build();
+    grid.set_widget_name("ssh-access-table");
+    for (col, heading) in ["Add SSH", "Machine", "Result"].iter().enumerate() {
+        let l = gtk::Label::new(Some(heading));
+        l.add_css_class("heading");
+        l.set_xalign(0.0);
+        grid.attach(&l, col as i32, 0, 1, 1);
+    }
+    let mut rows = Vec::new();
+    for (i, (name, probe, add)) in targets.iter().enumerate() {
+        let pick = gtk::CheckButton::new();
+        pick.set_sensitive(false);
+        pick.set_visible(*add);
+        let label = gtk::Label::new(Some(name));
+        label.set_xalign(0.0);
+        let result = gtk::Label::new(Some("Not checked"));
+        result.set_xalign(0.0);
+        result.set_wrap(true);
+        result.set_hexpand(true);
+        result.set_tooltip_text(Some(&probe.server));
+        grid.attach(&pick, 0, i as i32 + 1, 1, 1);
+        grid.attach(&label, 1, i as i32 + 1, 1, 1);
+        grid.attach(&result, 2, i as i32 + 1, 1, 1);
+        rows.push((pick, result));
+    }
+    body.append(
+        &gtk::ScrolledWindow::builder()
+            .child(&grid)
+            .vexpand(true)
+            .hscrollbar_policy(gtk::PolicyType::Never)
+            .build(),
+    );
+    let actions = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    actions.set_halign(gtk::Align::End);
+    let close = gtk::Button::with_label("Close");
+    let check = gtk::Button::with_label("Check now");
+    check.set_widget_name("ssh-access-check");
+    check.add_css_class("suggested-action");
+    let add = gtk::Button::with_label("Add selected SSH endpoints");
+    add.set_widget_name("ssh-access-add");
+    add.set_sensitive(false);
+    actions.append(&close);
+    actions.append(&add);
+    actions.append(&check);
+    body.append(&actions);
+    dialog.set_child(Some(&body));
+    let d = dialog.downgrade();
+    close.connect_clicked(move |_| {
+        if let Some(d) = d.upgrade() {
+            d.close();
         }
-        return;
-    }
-    let total = targets.len();
-    status.set_text(&format!("Checking SSH key access on {total} machines…"));
-    let queue = std::sync::Arc::new(std::sync::Mutex::new(targets));
-    let (tx, rx) = std::sync::mpsc::channel();
-    for _ in 0..4.min(total) {
-        let (queue, tx) = (queue.clone(), tx.clone());
-        std::thread::spawn(move || {
-            while let Some((machine, probe, add)) = queue.lock().unwrap().pop() {
-                let access = crate::ssh_probe::probe(&probe);
-                if tx.send((machine, probe, add, access)).is_err() {
-                    return;
-                }
+    });
+    let targets = Rc::new(targets);
+    let rows = Rc::new(rows);
+    {
+        let (targets, rows, add) = (targets.clone(), rows.clone(), add.clone());
+        check.connect_clicked(move |check| {
+            check.set_sensitive(false);
+            for (_, result) in rows.iter() {
+                result.set_text("Checking…");
             }
+            let work: Vec<_> = targets
+                .iter()
+                .enumerate()
+                .map(|(i, (_, p, _))| (i, p.clone()))
+                .collect();
+            let queue = std::sync::Arc::new(std::sync::Mutex::new(work));
+            let (tx, rx) = std::sync::mpsc::channel();
+            let keys = std::sync::Arc::new(crate::ssh_probe::identities());
+            for _ in 0..4.min(targets.len()) {
+                let (queue, tx, keys) = (queue.clone(), tx.clone(), keys.clone());
+                std::thread::spawn(move || {
+                    loop {
+                        let Some((i, probe)) = queue.lock().unwrap().pop() else {
+                            return;
+                        };
+                        let inputs = crate::ssh_probe::inputs(&probe, &keys);
+                        let outcome = crate::ssh_probe::probe(&probe, &keys);
+                        if tx.send((i, probe.id.clone(), inputs, outcome)).is_err() {
+                            return;
+                        }
+                    }
+                });
+            }
+            let (rows, add, total) = (rows.clone(), add.clone(), targets.len());
+            let mut cache = crate::ssh_probe::load();
+            let mut done = 0;
+            gtk::glib::timeout_add_local(std::time::Duration::from_millis(200), move || {
+                while let Ok((i, id, inputs, outcome)) = rx.try_recv() {
+                    done += 1;
+                    let (pick, result) = &rows[i];
+                    result.set_text(&outcome.describe());
+                    let verified = outcome.access == crate::ssh_probe::Access::Verified;
+                    pick.set_sensitive(verified);
+                    pick.set_active(verified && pick.is_visible());
+                    add.set_sensitive(true);
+                    cache.insert(
+                        id,
+                        crate::ssh_probe::Checked {
+                            access: outcome.access,
+                            accepted_key: outcome.accepted_key,
+                            checked: crate::ssh_probe::now(),
+                            inputs,
+                        },
+                    );
+                }
+                if done < total {
+                    return gtk::glib::ControlFlow::Continue;
+                }
+                let _ = crate::ssh_probe::save(&cache);
+                gtk::glib::ControlFlow::Break
+            });
         });
     }
-    let (store, status) = (store.clone(), status.clone());
-    let mut cache = cache;
-    let (mut done, mut working, mut added) = (0, 0, 0);
-    gtk::glib::timeout_add_local(std::time::Duration::from_millis(200), move || {
-        while let Ok((machine, probe, add, access)) = rx.try_recv() {
-            done += 1;
-            if access == crate::ssh_probe::Access::Key {
-                working += 1;
-                let mut s = store.borrow_mut();
+    let (store, status, d) = (store.clone(), status.clone(), dialog.downgrade());
+    add.connect_clicked(move |_| {
+        let mut added = 0;
+        {
+            let mut s = store.borrow_mut();
+            let old = s.items.clone();
+            for ((_, probe, new), (pick, _)) in targets.iter().zip(rows.iter()) {
                 let missing = !s
                     .items
                     .iter()
-                    .any(|p| p.machine_id == machine && p.protocol == "SSH");
-                if add && missing && s.items.iter().any(|p| p.machine_id == machine) {
-                    s.items.push(probe);
-                    if s.save().is_ok() {
-                        added += 1;
-                    } else {
-                        s.items.pop();
-                    }
+                    .any(|p| p.machine_id == probe.machine_id && p.protocol == "SSH");
+                if *new && pick.is_active() && pick.is_sensitive() && missing {
+                    s.items.push(probe.clone());
+                    added += 1;
                 }
             }
-            cache.insert(
-                machine,
-                crate::ssh_probe::Checked {
-                    access,
-                    checked: crate::ssh_probe::now(),
-                },
-            );
-        }
-        if done < total {
-            return gtk::glib::ControlFlow::Continue;
-        }
-        let _ = crate::ssh_probe::save(&cache);
-        status.set_text(&format!(
-            "SSH key login works on {working} of {total} checked machines{}",
             if added > 0 {
-                format!("; added SSH for {added}")
-            } else {
-                String::new()
+                if let Err(e) = s.save() {
+                    s.items = old;
+                    status.set_text(&e);
+                    return;
+                }
             }
-        ));
+        }
+        status.set_text(&format!("Added SSH endpoints for {added} machines"));
         refresh();
-        gtk::glib::ControlFlow::Break
+        if let Some(d) = d.upgrade() {
+            d.close();
+        }
     });
+    dialog.present();
 }
 
 fn shortcut_action(
@@ -1778,19 +1923,14 @@ pub fn sidebar(
     add.connect_clicked(move |b| {
         editor(b, s.clone(), None, st.clone(), cb.clone(), launcher.clone())
     });
-    let detect = gtk::Button::with_label("Re-check SSH key access");
+    let detect = gtk::Button::with_label("Check SSH key access…");
     detect.set_widget_name("machines-detect-ssh");
     detect.set_tooltip_text(Some(
-        "Find hosts that already accept your SSH key and add their SSH endpoints",
+        "Check which machines already accept your existing SSH keys; review before anything is added",
     ));
     maintenance.append(&detect);
     let (s, st, r) = (store.clone(), status.clone(), refresh.clone());
-    detect.connect_clicked(move |_| detect_ssh_access(&s, &st, r.clone(), true));
-    // Unchecked machines are probed once, shortly after startup.
-    let (s, st, r) = (store.clone(), status.clone(), refresh.clone());
-    gtk::glib::timeout_add_local_once(std::time::Duration::from_secs(3), move || {
-        detect_ssh_access(&s, &st, r, false)
-    });
+    detect.connect_clicked(move |b| ssh_access_review(b, &s, &st, r.clone()));
     let refresh_button = gtk::Button::with_label("Refresh machines");
     maintenance.append(&refresh_button);
     let r = refresh.clone();
@@ -2298,6 +2438,15 @@ pub fn sidebar(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn ssh_config_port_and_hostname_are_used_without_explicit_port() {
+        let g = "user generated-user\nhostname host.example.net\nport 2222\nidentityfile ~/.ssh/id_ed25519\n";
+        assert_eq!(
+            resolved_endpoint(g, "alias"),
+            ("host.example.net".into(), 2222)
+        );
+        assert_eq!(resolved_endpoint("", "alias"), ("alias".into(), 22));
+    }
     #[test]
     fn seventy_nested_profiles_read_only() {
         let dir = std::env::temp_dir().join(ruwac_protocol::id("profiles"));
@@ -3081,8 +3230,8 @@ fn editor_seed(
         chooser.show();
     });
     key_row.append(&choose_key);
-    // Offer keys this user already has; an empty field gets the best one so
-    // the key can be authorized on the host without browsing for it.
+    // Offer keys this user already has; an empty field keeps OpenSSH's own
+    // choice (agent, ~/.ssh/config IdentityFile, default keys).
     let detected = crate::ssh_keys::detect();
     if !detected.is_empty() {
         let list = gtk::Box::new(gtk::Orientation::Vertical, 2);
@@ -3107,9 +3256,6 @@ fn editor_seed(
             .build();
         menu.set_widget_name("ssh-detected-keys");
         key_row.append(&menu);
-        if original.protocol == "SSH" && fields[11].text().is_empty() {
-            fields[11].set_text(&detected[0].path.to_string_lossy());
-        }
     }
     let login = gtk::DropDown::from_strings(&["SSH key", "Password (saved in Secret Service)"]);
     login.set_widget_name("ssh-login-method");
@@ -3131,39 +3277,51 @@ fn editor_seed(
             "SSH identity file (saved path; private key stays on this computer)",
             &key_row,
         );
-        // Show whether a key this user already has works here, before any
-        // attempt to install one.
-        let access = gtk::Label::new(Some("Checking whether your SSH key already works here…"));
+        // Explicit check: does a key this user already has log in here?
+        let access = gtk::Label::new(None);
         access.set_widget_name("ssh-key-access");
         access.set_wrap(true);
         access.set_xalign(0.0);
-        agents.append(&access);
-        let mut probe = original.clone();
-        probe.preferences.identity_file = fields[11].text().into();
-        if probe.server.is_empty() {
-            access.set_text("Enter the host to check SSH key access");
-        } else {
+        let check = gtk::Button::with_label("Check key login");
+        check.set_widget_name("ssh-key-check");
+        check.set_tooltip_text(Some(
+            "One batch-mode OpenSSH login with your existing keys: no password, no new host keys",
+        ));
+        let check_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        check_row.append(&check);
+        check_row.append(&access);
+        agents.append(&check_row);
+        let (fields_check, original_check) = (fields.clone(), original.clone());
+        let access_weak = access.downgrade();
+        check.connect_clicked(move |check| {
+            let mut probe = original_check.clone();
+            probe.server = fields_check[3].text().into();
+            probe.username = fields_check[4].text().into();
+            probe.preferences.identity_file = fields_check[11].text().into();
+            if probe.server.is_empty() {
+                if let Some(a) = access_weak.upgrade() {
+                    a.set_text("Enter the host first");
+                }
+                return;
+            }
+            check.set_sensitive(false);
+            if let Some(a) = access_weak.upgrade() {
+                a.set_text("Checking…");
+            }
             let (tx, rx) = std::sync::mpsc::sync_channel(1);
             std::thread::spawn(move || {
-                let _ = tx.send(crate::ssh_probe::probe(&probe));
+                let keys = crate::ssh_probe::identities();
+                let _ = tx.send(crate::ssh_probe::probe(&probe, &keys));
             });
-            let (access, login) = (access.downgrade(), login.downgrade());
+            let (access, check) = (access_weak.clone(), check.downgrade());
             gtk::glib::timeout_add_local(std::time::Duration::from_millis(100), move || {
-                let Some(access) = access.upgrade() else {
-                    return gtk::glib::ControlFlow::Break;
-                };
                 match rx.try_recv() {
-                    Ok(result) => {
-                        access.set_text(result.describe());
-                        access.add_css_class(if result == crate::ssh_probe::Access::Key {
-                            "success"
-                        } else {
-                            "warning"
-                        });
-                        if result == crate::ssh_probe::Access::Key {
-                            if let Some(login) = login.upgrade() {
-                                login.set_selected(0);
-                            }
+                    Ok(outcome) => {
+                        if let Some(a) = access.upgrade() {
+                            a.set_text(&outcome.describe());
+                        }
+                        if let Some(c) = check.upgrade() {
+                            c.set_sensitive(true);
                         }
                         gtk::glib::ControlFlow::Break
                     }
@@ -3171,7 +3329,7 @@ fn editor_seed(
                     Err(_) => gtk::glib::ControlFlow::Break,
                 }
             });
-        }
+        });
     } else {
         let edit_ssh = gtk::Button::with_label("SSH login and key…");
         edit_ssh.set_widget_name("ssh-endpoint-properties");

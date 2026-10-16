@@ -1,5 +1,5 @@
 //! Explicit SSH rsync transport with a bounded literal file list and verified staging.
-use crate::profiles::{Profile, endpoint};
+use crate::profiles::Profile;
 use sha2::{Digest, Sha256};
 use ssh2::{FileStat, Sftp};
 use std::{
@@ -756,7 +756,7 @@ fn ssh_args(p: &Profile) -> Result<(Vec<String>, String), String> {
             "Rsync requires SSH with a direct route or an explicit jump alias; gateway metadata alone is not a route".into(),
         );
     }
-    let (host, port) = endpoint(&p.server, 22)?;
+    let (host, port) = crate::profiles::ssh_endpoint(&p.server)?;
     if host.is_empty()
         || host.starts_with('-')
         || !host

@@ -1,14 +1,13 @@
 //! While an RDP view has keyboard focus, system shortcuts (Alt+Tab, Super, …)
-//! go to the remote desktop. Pressing AltGr hands the next shortcut back to
-//! the local desktop for `shortcuts::LEADER_WINDOW`.
+//! go to the remote desktop, except in local mode (toggled by an AltGr tap).
 use gtk::{gdk, glib, prelude::*};
-use std::{cell::Cell, rc::Rc, time::Instant};
+use std::{cell::Cell, rc::Rc};
 
 pub struct Grab {
     window: glib::WeakRef<gtk::Window>,
     remote_focus: Box<dyn Fn(&gtk::Widget) -> bool>,
     inhibited: Cell<bool>,
-    local_until: Cell<Option<Instant>>,
+    local: Cell<bool>,
 }
 impl Grab {
     pub fn new(
@@ -19,7 +18,7 @@ impl Grab {
             window: window.as_ref().downgrade(),
             remote_focus: Box::new(remote_focus),
             inhibited: Cell::new(false),
-            local_until: Cell::new(None),
+            local: Cell::new(false),
         })
     }
     /// Re-evaluate after focus, activation or tab changes.
@@ -27,10 +26,7 @@ impl Grab {
         let Some(window) = self.window.upgrade() else {
             return;
         };
-        let local = self
-            .local_until
-            .get()
-            .is_some_and(|until| Instant::now() < until);
+        let local = self.local.get();
         let want = window.is_active()
             && !local
             && gtk::prelude::GtkWindowExt::focus(&window).is_some_and(|f| (self.remote_focus)(&f));
@@ -47,16 +43,8 @@ impl Grab {
         }
         self.inhibited.set(want);
     }
-    /// AltGr: the next shortcut belongs to the local desktop.
-    pub fn hand_to_local(self: &Rc<Self>) {
-        let window = crate::shortcuts::LEADER_WINDOW;
-        self.local_until.set(Some(Instant::now() + window));
+    pub fn set_local(&self, local: bool) {
+        self.local.set(local);
         self.update();
-        let weak = Rc::downgrade(self);
-        glib::timeout_add_local_once(window + std::time::Duration::from_millis(20), move || {
-            if let Some(grab) = weak.upgrade() {
-                grab.update();
-            }
-        });
     }
 }

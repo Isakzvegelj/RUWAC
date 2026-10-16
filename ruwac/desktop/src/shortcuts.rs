@@ -1,9 +1,6 @@
 //! Window-level shortcuts run before terminal/RDP input controllers.
 use gtk::gdk;
-use std::{
-    cell::Cell,
-    time::{Duration, Instant},
-};
+use std::cell::Cell;
 
 /// Ctrl+Shift+T creates a terminal; Ctrl+Shift+R chooses a saved RDP host.
 pub fn new_tab(key: gdk::Key, mods: gdk::ModifierType) -> Option<bool> {
@@ -34,9 +31,6 @@ pub fn select_tab(tabs: &adw::TabView, index: i32) {
     }
 }
 
-/// How long a released AltGr tap keeps the next key local.
-pub const LEADER_WINDOW: Duration = Duration::from_millis(500);
-
 pub fn altgr(key: gdk::Key) -> bool {
     matches!(key, gdk::Key::ISO_Level3_Shift | gdk::Key::Alt_R)
 }
@@ -55,26 +49,46 @@ fn modifier(key: gdk::Key) -> bool {
     )
 }
 
-/// AltGr leader: the first key pressed within LEADER_WINDOW of pressing
-/// AltGr (still held or already released) is a local RUWAC shortcut. Later
-/// AltGr chords remain ordinary layout input for terminals and remote
-/// desktops, and plain Alt+digit always reaches applications.
+/// AltGr tap toggles local mode: a clean press and release of AltGr with no
+/// other key in between. AltGr held with a key stays layout input (@, \ …).
+/// In local mode Alt+1…9/0 switch RUWAC tabs and system shortcuts such as
+/// Alt+Tab go to this computer's desktop; otherwise keys go to the focused
+/// terminal program or remote desktop.
 #[derive(Default)]
-pub struct Leader {
-    armed: Cell<Option<Instant>>,
+pub struct LocalMode {
+    active: Cell<bool>,
+    held: Cell<bool>,
+    chorded: Cell<bool>,
 }
-impl Leader {
-    /// True when this key press belongs to RUWAC rather than the application.
-    pub fn press(&self, key: gdk::Key, now: Instant) -> bool {
-        if altgr(key) {
-            self.armed.set(Some(now + LEADER_WINDOW));
-            return false;
-        }
-        if modifier(key) {
-            return false;
-        }
-        self.armed.take().is_some_and(|deadline| now <= deadline)
+impl LocalMode {
+    pub fn active(&self) -> bool {
+        self.active.get()
     }
+    pub fn press(&self, key: gdk::Key) {
+        if altgr(key) {
+            self.held.set(true);
+            self.chorded.set(false);
+        } else if self.held.get() && !modifier(key) {
+            self.chorded.set(true);
+        }
+    }
+    /// Some(new state) when this release completes an AltGr tap.
+    pub fn release(&self, key: gdk::Key) -> Option<bool> {
+        if !altgr(key) || !self.held.replace(false) || self.chorded.get() {
+            return None;
+        }
+        self.active.set(!self.active.get());
+        Some(self.active.get())
+    }
+}
+
+/// Alt+digit in local mode.
+pub fn alt_tab_index(key: gdk::Key, mods: gdk::ModifierType) -> Option<i32> {
+    let allowed = (gdk::ModifierType::ALT_MASK | gdk::ModifierType::LOCK_MASK).bits();
+    if !mods.contains(gdk::ModifierType::ALT_MASK) || mods.bits() & !allowed != 0 {
+        return None;
+    }
+    tab_index(key)
 }
 
 /// Explicit host chords leave Right Alt/AltGr available to the remote layout.
@@ -131,25 +145,39 @@ mod new_tab_tests {
 }
 
 #[cfg(test)]
-mod leader_tests {
+mod local_mode_tests {
     use super::*;
     #[test]
-    fn altgr_then_key_within_half_a_second_is_local_every_time() {
-        let (leader, t) = (Leader::default(), Instant::now());
-        for round in 0..3u64 {
-            let start = t + Duration::from_secs(round);
-            assert!(!leader.press(gdk::Key::ISO_Level3_Shift, start));
-            assert!(!leader.press(gdk::Key::Shift_L, start + Duration::from_millis(100)));
-            // Held or released does not matter; only the first key counts.
-            assert!(leader.press(gdk::Key::_3, start + Duration::from_millis(400)));
-            assert!(!leader.press(gdk::Key::_4, start + Duration::from_millis(450)));
-        }
-        // Held longer than the window: AltGr+2 is layout input.
-        leader.press(gdk::Key::Alt_R, t);
-        assert!(!leader.press(gdk::Key::_2, t + Duration::from_millis(501)));
-        assert!(!leader.press(gdk::Key::_1, t + Duration::from_millis(510)));
-        assert_eq!(tab_index(gdk::Key::_1), Some(0));
-        assert_eq!(tab_index(gdk::Key::_0), Some(9));
-        assert_eq!(tab_index(gdk::Key::a), None);
+    fn altgr_tap_toggles_and_altgr_chords_do_not() {
+        let mode = LocalMode::default();
+        mode.press(gdk::Key::ISO_Level3_Shift);
+        assert_eq!(mode.release(gdk::Key::ISO_Level3_Shift), Some(true));
+        assert!(mode.active());
+        // AltGr+v types @ on many layouts: no toggle.
+        mode.press(gdk::Key::ISO_Level3_Shift);
+        mode.press(gdk::Key::v);
+        assert_eq!(mode.release(gdk::Key::ISO_Level3_Shift), None);
+        assert!(mode.active());
+        mode.press(gdk::Key::Alt_R);
+        assert_eq!(mode.release(gdk::Key::Alt_R), Some(false));
+        assert_eq!(
+            alt_tab_index(gdk::Key::_2, gdk::ModifierType::ALT_MASK),
+            Some(1)
+        );
+        assert_eq!(
+            alt_tab_index(gdk::Key::_0, gdk::ModifierType::ALT_MASK),
+            Some(9)
+        );
+        assert_eq!(
+            alt_tab_index(gdk::Key::_2, gdk::ModifierType::empty()),
+            None
+        );
+        assert_eq!(
+            alt_tab_index(
+                gdk::Key::_2,
+                gdk::ModifierType::ALT_MASK | gdk::ModifierType::CONTROL_MASK
+            ),
+            None
+        );
     }
 }

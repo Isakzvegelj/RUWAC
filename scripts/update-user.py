@@ -54,7 +54,25 @@ def api(path):
 
 def latest(current):
     version(current)
-    release = api('/releases/latest')
+    return describe(api('/releases/latest'), current)
+
+
+def newer_releases(current, limit=10):
+    """Stable releases newer than `current`, newest first (bounded)."""
+    version(current)
+    found = []
+    for release in api('/releases?per_page=30'):
+        tag = release.get('tag_name', '')
+        if (release.get('draft') is not False or release.get('prerelease') is not False
+                or not isinstance(tag, str) or not re.fullmatch(r'v\d+\.\d+\.\d+', tag)):
+            continue
+        if version(tag[1:]) > version(current):
+            found.append(release)
+    found.sort(key=lambda r: version(r['tag_name'][1:]), reverse=True)
+    return [describe(release, current) for release in found[:limit]]
+
+
+def describe(release, current):
     tag = release.get('tag_name', '')
     if not isinstance(tag, str) or not tag.startswith('v'):
         raise ValueError('Invalid GitHub release tag')
@@ -701,13 +719,20 @@ def main():
         finally:
             os.close(lock)
     else:
-        result = latest(installed_version(prefix, '0.0.0' if args.bootstrap else args.current))
+        installed = installed_version(prefix, '0.0.0' if args.bootstrap else args.current)
+        result = latest(installed)
+        if args.install_auto and result['available'] and not automatic_release_verified(result):
+            # The newest tag is still in qualification: take the newest
+            # qualified release that is still newer than the installed one.
+            fallback = next((r for r in newer_releases(installed) if automatic_release_verified(r)), None)
+            if fallback is not None:
+                result = dict(fallback, newest_tag=result['tag'])
+            else:
+                result['skipped'] = 'waiting for successful source quality and privacy checks on the release commit'
         result['running'] = args.current
         if not args.headless and testing_bundle_setting():
             result['delivery'] = 'testing-bundle'
-        if args.install_auto and result['available'] and not automatic_release_verified(result):
-            result['skipped'] = 'waiting for successful source quality and privacy checks on the release commit'
-        elif (args.install or args.install_auto or args.bootstrap) and result['available']:
+        if 'skipped' not in result and (args.install or args.install_auto or args.bootstrap) and result['available']:
             cache = private_directory(Path(os.environ.get('XDG_CACHE_HOME', Path.home() / '.cache')) / 'RUWAC/updates')
             desktop = not args.headless
             if args.install_auto:

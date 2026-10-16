@@ -34,7 +34,8 @@ class RPMUpdates(unittest.TestCase):
         self.data = {'tag_name':'v0.2.1','draft':False,'prerelease':False,'assets':[
             self.asset(c+'-0.2.1-1.fc44.x86_64.rpm') for c in self.components]}
         self.helper = types.SimpleNamespace(version=updates.version, MAX_BUNDLE_BYTES=updates.MAX_BUNDLE_BYTES,
-            latest=Mock(return_value=self.release), automatic_release_verified=Mock(return_value=True),
+            latest=Mock(return_value=self.release), newer_releases=Mock(side_effect=lambda current:[self.release]),
+            automatic_release_verified=Mock(return_value=True),
             api=Mock(return_value=self.data), download_bundle=Mock(side_effect=lambda a,p:p.write_bytes(b'generated RPM')),
             verify_release_provenance=Mock())
         self.engine = rpm.Updater(self.helper,self.root/'state',self.config,self.owner)
@@ -61,6 +62,24 @@ class RPMUpdates(unittest.TestCase):
         self.assertEqual(len(self.commands[0]),6)
         self.assertFalse(any(p.name.startswith('verified-')for p in (self.root/'state').iterdir()))
         self.assertEqual((self.root/'state/last-transaction.log').stat().st_mode&0o777,0o600)
+
+    def test_newest_unqualified_tag_falls_back_to_newest_complete_release(self):
+        newest={'current':'0.2.0','latest':'0.2.2','tag':'v0.2.2','commit':'b'*40,'available':True}
+        self.helper.latest.return_value=newest
+        self.helper.newer_releases=Mock(side_effect=lambda current:[newest,self.release])
+        self.helper.automatic_release_verified.side_effect=lambda r:r['tag']!='v0.2.2'
+        result=self.engine.install(True)
+        self.assertEqual(result['installed'],'0.2.1')
+        self.assertEqual(result['newest_tag'],'v0.2.2')
+        self.assertEqual(result['skipped_newer'],[{'tag':'v0.2.2','reason':'quality/privacy checks not passed yet'}])
+        self.assertEqual(self.commands[0][:4],['/usr/bin/dnf','-y','upgrade','--no-allow-downgrade'])
+
+    def test_no_complete_newer_release_never_reports_success(self):
+        self.helper.automatic_release_verified.return_value=False
+        result=self.engine.install(True)
+        self.assertNotIn('installed',result)
+        self.assertIsNone(result['installable'])
+        self.assertEqual(self.commands,[])
 
     def test_headless_installation_stays_headless(self):
         self.components=['ruwac']

@@ -331,9 +331,16 @@ class Updates(unittest.TestCase):
             with patch.object(updates, 'api', return_value={'workflow_runs': [dict(matching, **mismatch)]}):
                 self.assertFalse(updates.automatic_release_verified({'commit': COMMIT}))
 
+    def test_newer_releases_are_stable_newer_and_newest_first(self):
+        rows = [{'tag_name': t, 'draft': d, 'prerelease': pr} for t, d, pr in [
+            ('v0.0.3', False, False), ('v0.0.9', True, False), ('v0.0.2', False, False),
+            ('v0.0.1', False, False), ('v0.0.4', False, True), ('v0.0.10', False, False)]]
+        with patch.object(updates, 'api', return_value=rows), patch.object(updates, 'describe', side_effect=lambda r, c: r['tag_name']):
+            self.assertEqual(updates.newer_releases('0.0.1'), ['v0.0.10', 'v0.0.3', 'v0.0.2'])
+
     def test_pending_automatic_quality_gate_never_invokes_installer(self):
         data = updates.preferences(); data['automatic_install'] = True; updates.save_preferences(data)
-        with patch.object(sys, 'argv', ['updater', '--current', '0.0.1', '--install-auto']), patch.object(updates, 'latest', return_value={'available': True}), patch.object(updates, 'automatic_release_verified', return_value=False), patch.object(updates, 'install') as install, contextlib.redirect_stdout(io.StringIO()) as output:
+        with patch.object(sys, 'argv', ['updater', '--current', '0.0.1', '--install-auto']), patch.object(updates, 'latest', return_value={'available': True}), patch.object(updates, 'newer_releases', return_value=[{'available': True, 'tag': 'v0.0.2'}]), patch.object(updates, 'automatic_release_verified', return_value=False), patch.object(updates, 'install') as install, contextlib.redirect_stdout(io.StringIO()) as output:
             updates.main()
         install.assert_not_called()
         self.assertIn('waiting', json.loads(output.getvalue())['skipped'])

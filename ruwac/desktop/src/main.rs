@@ -370,22 +370,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
   // RDP focus sends system shortcuts to the remote; AltGr returns the next one to this desktop.
   let grab=system_shortcuts::Grab::new(&window,{let rv=rdp_views.clone();move|f|rv.borrow().iter().any(|r|r.owns_focus(f))});
   let g=grab.clone();window.connect_focus_widget_notify(move|_|g.update());let g=grab.clone();window.connect_is_active_notify(move|_|g.update());let key_grab=grab.clone();
-  let shortcut_terminal=new_terminal.clone();let shortcut_window=window.downgrade();let shortcut_controls=chrome.controls.clone();let shell=machine_shell.clone();let search=search.clone();let keys=gtk::EventControllerKey::new();keys.set_propagation_phase(gtk::PropagationPhase::Capture);let leader=Rc::new(shortcuts::Leader::default());
-  let (leader_tabs,leader_terminal,leader_shell,leader_search,leader_window,leader_controls)=(tabs.clone(),new_terminal.clone(),machine_shell.clone(),search.clone(),window.downgrade(),chrome.controls.clone());
+  let shortcut_terminal=new_terminal.clone();let shortcut_window=window.downgrade();let shortcut_controls=chrome.controls.clone();let shell=machine_shell.clone();let search=search.clone();let keys=gtk::EventControllerKey::new();keys.set_propagation_phase(gtk::PropagationPhase::Capture);let mode=Rc::new(shortcuts::LocalMode::default());
+  // AltGr tap: local mode (Alt+# tabs, Alt+Tab to this desktop) until the next tap.
+  let badge=gtk::Label::new(Some("Local keys"));badge.add_css_class("local-mode");badge.set_tooltip_text(Some("Local mode: Alt+1…9 switch tabs and system shortcuts such as Alt+Tab stay on this computer. Tap AltGr to send keys to the remote/application again."));badge.set_visible(false);header.pack_end(&badge);
+  let (released,release_grab,release_badge)=(mode.clone(),key_grab.clone(),badge.clone());keys.connect_key_released(move|_,key,_,_|{if let Some(on)=released.release(key){release_grab.set_local(on);release_badge.set_visible(on);}});
+  let leader_tabs=tabs.clone();
   keys.connect_key_pressed(move|_,key,_,mods|{
     // AltGr, then within 0.5 s of pressing it: 1…9/0 tab, T terminal, R RDP host, K machines, Return fullscreen, Home controls.
-    if shortcuts::altgr(key){key_grab.hand_to_local();}
-    if leader.press(key,Instant::now()){
-      if let Some(index)=shortcuts::tab_index(key){shortcuts::select_tab(&leader_tabs,index);return glib::Propagation::Stop;}
-      match key.to_lower(){
-        gdk::Key::t=>{if leader_terminal.is_sensitive(){leader_terminal.emit_clicked();}return glib::Propagation::Stop;}
-        gdk::Key::r=>{leader_shell.view.set_show_sidebar(true);leader_search.set_text("RDP");leader_search.grab_focus();return glib::Propagation::Stop;}
-        gdk::Key::k|gdk::Key::m=>{leader_shell.view.set_show_sidebar(true);leader_search.grab_focus();return glib::Propagation::Stop;}
-        gdk::Key::Return=>{if let Some(w)=leader_window.upgrade(){if w.is_fullscreen(){w.unfullscreen();}else{w.fullscreen();}}return glib::Propagation::Stop;}
-        gdk::Key::Home=>{leader_controls.grab_focus();return glib::Propagation::Stop;}
-        _=>{}
-      }
-    }
+    mode.press(key);
+    if mode.active(){if let Some(index)=shortcuts::alt_tab_index(key,mods){shortcuts::select_tab(&leader_tabs,index);return glib::Propagation::Stop;}}
     if let Some(rdp)=shortcuts::new_tab(key,mods){if rdp{shell.view.set_show_sidebar(true);search.set_text("RDP");search.grab_focus();}else if shortcut_terminal.is_sensitive(){shortcut_terminal.emit_clicked();}return glib::Propagation::Stop;}if shortcuts::local_escape(key,mods){shortcut_controls.grab_focus();return glib::Propagation::Stop;}if shortcuts::fullscreen(key,mods){if let Some(w)=shortcut_window.upgrade(){if w.is_fullscreen(){w.unfullscreen();}else{w.fullscreen();}}return glib::Propagation::Stop;}if chrome::controls_shortcut(key,mods){shortcut_controls.popup();return glib::Propagation::Stop;}if key==gdk::Key::k&&mods.contains(gdk::ModifierType::CONTROL_MASK){shell.view.set_show_sidebar(true);search.grab_focus();return glib::Propagation::Stop;}if key==gdk::Key::Escape&&shell.view.is_collapsed()&&shell.view.shows_sidebar(){shell.view.set_show_sidebar(false);return glib::Propagation::Stop;}glib::Propagation::Proceed});window.add_controller(keys);window.set_content(Some(&box_));
 
 

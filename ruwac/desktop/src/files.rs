@@ -1,5 +1,5 @@
 //! In-window SFTP, using libssh2. No shell interpolation or daemon payload transport.
-use crate::profiles::{Profile, endpoint};
+use crate::profiles::Profile;
 use gtk::prelude::*;
 use sha2::{Digest, Sha256};
 use ssh2::{CheckResult, KnownHostFileKind, OpenFlags, OpenType, RenameFlags, Session};
@@ -20,7 +20,7 @@ pub(super) fn error(_: impl std::fmt::Display) -> String {
     "SFTP operation failed (connection, permissions or server error)".into()
 }
 pub(super) fn connect(p: &Profile) -> Result<Session, String> {
-    let (host, port) = endpoint(&p.server, 22)?;
+    let (host, port) = crate::profiles::ssh_endpoint(&p.server)?;
     let mut session = Session::new().map_err(error)?;
     if p.preferences.ssh_jump_alias.is_empty() {
         let addr = (host.as_str(), port)

@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## v0.4.14 — 2026-10-16 — Stable source release
+
+- Updates: install the newest complete release (quality and privacy checks passed on its commit, every installed package attached) instead of waiting on the newest tag; newer releases still in qualification are listed as skipped, nothing is ever downgraded, and an unavailable package is never reported as installed. Applies to RPM and testing-bundle updates.
+
+- SSH key access: no network checks at startup and no automatically added endpoints (both shipped in v0.4.12–v0.4.13). Machine tools → Check SSH key access… asks first, checks with your existing keys in OpenSSH batch mode (no password, no new or changed host keys, no agent forwarding, one connection per machine, at most 4 at a time), shows Verified key login / Not verified / Unknown host trust / Host key changed / Needs interaction / Unreachable per machine, names the accepted key when OpenSSH reports it, and adds SSH endpoints only for the rows you select. Results are cached against the resolved OpenSSH configuration, known_hosts and your public keys and become stale when those change. The SSH setup has a Check key login button instead of an automatic probe, and no longer pre-fills a detected key.
+
+- SSH endpoints without an explicit `:port` now use OpenSSH's configuration (Port, HostName, User, ProxyJump…) instead of forcing port 22; SFTP, rsync and jump routes use OpenSSH's resolved host and port. `host:port` still overrides.
+
+- AltGr: a clean AltGr tap toggles local keys (shown in the header): Alt+1…9/0 switch tabs and system shortcuts such as Alt+Tab stay on this computer; the next tap returns keys to the terminal program or remote desktop. AltGr held with another key always types layout characters. Replaces the 0.5 s AltGr leader.
+
+- The history view opened by the mouse wheel starts at the newest output.
+
+- The application launcher offers Install verified update (runs `ruwac update --install`).
+
 ## v0.4.13 — 2026-10-16 — Stable source release
 
 - RDP tabs receive system shortcuts (Alt+Tab, Super and similar) while focused, so they act on the remote desktop; GNOME asks once for permission. Pressing AltGr hands the next shortcut back to this computer's desktop for 0.5 s.

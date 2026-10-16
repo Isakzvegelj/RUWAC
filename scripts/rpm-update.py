@@ -151,23 +151,44 @@ class Updater:
             raise ValueError('Invalid RPM update asset')
         return asset
 
+    def installable(self, current, components):
+        """Newest release newer than `current` whose exact commit passed the
+        quality and privacy checks and which has every component package."""
+        pending = []
+        for release in self.helper.newer_releases(current):
+            if not self.helper.automatic_release_verified(release):
+                pending.append({'tag': release['tag'], 'reason': 'quality/privacy checks not passed yet'})
+                continue
+            data = self.helper.api('/releases/tags/' + release['tag'])
+            if data.get('tag_name') != release['tag'] or data.get('draft') is not False or data.get('prerelease') is not False:
+                pending.append({'tag': release['tag'], 'reason': 'unexpected release metadata'})
+                continue
+            assets = [self.asset(release, data, component) for component in components]
+            if any(asset is None for asset in assets):
+                pending.append({'tag': release['tag'], 'reason': 'packages not attached'})
+                continue
+            return (release, assets), pending
+        return None, pending
+
     def install(self, automatic):
         if automatic and not policy(self.config, self.owner):
             return {'distribution': 'rpm', 'automatic_install': False, 'skipped': 'automatic installation disabled'}
         directory(self.state, self.owner, private=True)
         with lock(self.state / '.transaction.lock', self.owner, blocking=False):
             current, components = self.installed()
-            release = dict(self.helper.latest(current), distribution='rpm', delivery='testing-rpm')
-            if not release['available']:
-                return dict(release, distribution='rpm')
-            if not self.helper.automatic_release_verified(release):
-                return dict(release, distribution='rpm', skipped='waiting for exact-source quality and privacy checks')
-            data = self.helper.api('/releases/tags/' + release['tag'])
-            if data.get('tag_name') != release['tag'] or data.get('draft') is not False or data.get('prerelease') is not False:
-                raise ValueError('Unexpected RPM update release')
-            assets = [self.asset(release, data, component) for component in components]
-            if any(asset is None for asset in assets):
-                return dict(release, distribution='rpm', skipped='waiting for all installed component assets')
+            newest = dict(self.helper.latest(current), distribution='rpm', delivery='testing-rpm')
+            if not newest['available']:
+                return newest
+            # The newest tag may still be in qualification or lack packages;
+            # install the newest complete release instead, never an older one
+            # than the installed version.
+            chosen, pending = self.installable(current, components)
+            if chosen is None:
+                return dict(newest, installable=None, pending=pending,
+                            skipped='no newer release is complete yet (quality/privacy checks and all packages)')
+            release, assets = chosen
+            release = dict(release, distribution='rpm', delivery='testing-rpm',
+                           newest_tag=newest['tag'], skipped_newer=pending)
             with tempfile.TemporaryDirectory(prefix='verified-', dir=self.state) as temporary:
                 root = Path(temporary)
                 packages = []

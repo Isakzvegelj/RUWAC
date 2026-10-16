@@ -71,14 +71,19 @@ try:
  eventually(lambda:command('inspect')['active']);before=command('inspect')['tabs'];chord(20);eventually(lambda:command('inspect')['tabs']==before+1)
  def keys(*events,gap=.04):
   for value,state in events:call('NotifyKeyboardKeycode',GLib.Variant('(ub)',(value,state)));time.sleep(gap)
- # Plain Alt+1 belongs to the application; an AltGr (Right Alt) tap then 1 within 0.5 s selects tab 1.
- assert command('inspect')['selected_tab']==before
+ # Remote mode (default): Alt+digit belongs to the application. An AltGr tap enters
+ # local mode (Alt+digit selects tabs); the next tap leaves it. AltGr chords never toggle.
+ # Linux keycodes: 2 = "1" (tab 0), 3 = "2" (tab 1), 11 = "0" (tab 10), 16 = q, 56 = Alt, 100 = AltGr.
+ assert before>=1 and command('inspect')['selected_tab']==before
  keys((56,True),(2,True),(2,False),(56,False));time.sleep(.3);assert command('inspect')['selected_tab']==before
- keys((100,True),(100,False),(2,True),(2,False));eventually(lambda:command('inspect')['selected_tab']==0)
- keys((100,True),(100,False));time.sleep(.7);keys((3,True),(3,False));time.sleep(.3);assert command('inspect')['selected_tab']==0
- keys((100,True),(100,False),(3,True),(3,False));eventually(lambda:command('inspect')['selected_tab']==1)
- keys((100,True),(2,True),(2,False),(100,False));eventually(lambda:command('inspect')['selected_tab']==0)
- checks.append('real-GDK-AltGr-leader-selects-tabs-within-500ms-held-or-tapped-plain-Alt-digit-reaches-application')
+ keys((100,True),(100,False));time.sleep(.2)
+ keys((56,True),(2,True),(2,False),(56,False));eventually(lambda:command('inspect')['selected_tab']==0)
+ keys((56,True),(11,True),(11,False),(56,False));time.sleep(.3);assert command('inspect')['selected_tab']==0
+ keys((100,True),(100,False));time.sleep(.2)
+ keys((56,True),(3,True),(3,False),(56,False));time.sleep(.3);assert command('inspect')['selected_tab']==0
+ keys((100,True),(16,True),(16,False),(100,False));time.sleep(.2)
+ keys((56,True),(3,True),(3,False),(56,False));time.sleep(.3);assert command('inspect')['selected_tab']==0
+ checks.append('real-GDK-AltGr-tap-toggles-local-mode-Alt-digit-tabs-chords-do-not-toggle')
  command('focus-view');chord(19);eventually(lambda:command('sidebar-shell')['shown'])
  call('Stop');checks.append('real-GDK-Ctrl-Shift-T-new-terminal-and-Ctrl-Shift-R-machine-chooser')
  command('snapshot')

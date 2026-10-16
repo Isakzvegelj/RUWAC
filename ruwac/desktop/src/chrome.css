@@ -43,3 +43,6 @@ headerbar.ruwac-bar button.image-button, headerbar.ruwac-bar menubutton > button
 .machine-entry.machine-ssh { border-left-color: #34d399; background: alpha(#34d399, 0.07); }
 .machine-entry.machine-ssh .machine-shortcuts button { background: alpha(#34d399, 0.16); }
 .ruwac-disconnected { padding: 24px 32px; }
+
+/* AltGr local-keys mode indicator. */
+.local-mode { padding: 1px 8px; margin: 0 4px; border-radius: 9px; font-size: 11px; font-weight: bold; color: @ruwac_bar; background: #f5a524; }

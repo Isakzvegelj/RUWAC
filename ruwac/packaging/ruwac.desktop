@@ -7,8 +7,12 @@ Icon=utilities-terminal
 Terminal=false
 Categories=System;TerminalEmulator;RemoteAccess;
 StartupNotify=true
-Actions=NewWindow;
+Actions=NewWindow;Update;
 
 [Desktop Action NewWindow]
 Name=New window
 Exec=/usr/bin/ruwac gui --new-instance
+
+[Desktop Action Update]
+Name=Install verified update
+Exec=/usr/bin/ruwac update --install
