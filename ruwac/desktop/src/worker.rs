@@ -225,6 +225,10 @@ impl Command {
 pub struct State {
     pub frame: Option<Value>,
     pub session_ended: bool,
+    /// The daemon no longer lists this session (killed or removed elsewhere).
+    pub session_gone: bool,
+    /// The connection failed while the session may still exist.
+    pub disconnected: bool,
     pub error: Option<String>,
     pub reply: VecDeque<(String, Value)>,
     pub acknowledgements: u64,
@@ -237,8 +241,46 @@ pub struct Worker {
     stop: Arc<AtomicBool>,
     bytes: Arc<AtomicUsize>,
 }
+/// True only when a reachable daemon positively no longer lists the session.
+fn session_missing(path: &Path, session: &str) -> bool {
+    Rpc::connect(path)
+        .and_then(|mut rpc| rpc.call("session.list", json!({})))
+        .ok()
+        .and_then(|rows| {
+            rows.as_array()
+                .map(|rows| !rows.iter().any(|r| r["id"].as_str() == Some(session)))
+        })
+        .unwrap_or(false)
+}
+/// Start the daemon through the installed sibling CLI, which owns startup.
+fn start_daemon(path: &Path) -> io::Result<()> {
+    let cli = std::env::current_exe()?
+        .parent()
+        .map(|dir| dir.join("ruwac"))
+        .filter(|cli| cli.is_file())
+        .ok_or_else(|| io::Error::other("ruwac CLI not installed beside the desktop"))?;
+    let status = std::process::Command::new(cli)
+        .arg("--socket")
+        .arg(path)
+        .arg("start")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()?;
+    if !status.success() {
+        return Err(io::Error::other("daemon start failed"));
+    }
+    Ok(())
+}
 impl Worker {
     pub fn start(path: std::path::PathBuf, session: String) -> Self {
+        Self::spawn(path, session, false)
+    }
+    /// Reconnect after a lost daemon connection, starting the daemon if absent.
+    pub fn restart(path: std::path::PathBuf, session: String) -> Self {
+        Self::spawn(path, session, true)
+    }
+    fn spawn(path: std::path::PathBuf, session: String, ensure_daemon: bool) -> Self {
         let (tx, rx) = mpsc::sync_channel::<Command>(128);
         let state = Arc::new(Mutex::new(State::default()));
         let stop = Arc::new(AtomicBool::new(false));
@@ -246,7 +288,13 @@ impl Worker {
         let (st, halt, budget) = (state.clone(), stop.clone(), bytes.clone());
         thread::spawn(move || {
             let result = (|| -> io::Result<()> {
-                let mut rpc = Rpc::connect(&path)?;
+                let mut rpc = match Rpc::connect(&path) {
+                    Err(_) if ensure_daemon => {
+                        start_daemon(&path)?;
+                        Rpc::connect(&path)?
+                    }
+                    other => other?,
+                };
                 let schema = rpc.call("schema", json!({}))?;
                 if schema["protocol"] != 0 {
                     return Err(io::Error::other("unsupported daemon API"));
@@ -469,9 +517,16 @@ impl Worker {
                 Ok(())
             })();
             if let Err(e) = result {
-                st.lock().unwrap().error = Some(format!(
-                    "Disconnected: {e}; queued input may be undelivered"
-                ));
+                let gone = session_missing(&path, &session);
+                let mut s = st.lock().unwrap();
+                if gone {
+                    s.session_gone = true;
+                } else {
+                    s.disconnected = true;
+                    s.error = Some(format!(
+                        "Disconnected: {e}; queued input may be undelivered"
+                    ));
+                }
             }
             halt.store(true, Ordering::Relaxed);
         });

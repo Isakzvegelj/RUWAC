@@ -34,4 +34,7 @@ headerbar.ruwac-bar tabbar scrolledwindow { margin: 0; padding: 0; min-height: 2
 headerbar.ruwac-bar tabbar tab button { min-height: 18px; min-width: 18px; padding: 0; margin: 0; }
 headerbar.ruwac-bar button.image-button, headerbar.ruwac-bar menubutton > button { padding-left: 4px; padding-right: 4px; }
 
-.machine-shortcuts button { min-width: 20px; min-height: 22px; padding: 2px; margin: 0; }
+.machine-shortcuts button { min-height: 20px; min-width: 0; padding: 0 6px; margin: 0; font-size: 11px; border-radius: 10px; background: alpha(currentColor, 0.08); }
+.machine-shortcuts button:hover { background: alpha(@ruwac_accent, 0.25); }
+.machine-entry { padding-bottom: 4px; }
+.ruwac-disconnected { padding: 24px 32px; }

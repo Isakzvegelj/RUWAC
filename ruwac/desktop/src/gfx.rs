@@ -17,6 +17,36 @@ pub fn decoder_location(error: &ironrdp::session::SessionError) -> String {
     let mut current: Option<&(dyn std::error::Error + 'static)> = Some(error);
     for _ in 0..8 {
         let Some(e) = current else { break };
+        if let Some(e) = e.downcast_ref::<ironrdp::graphics::progressive::ProgressiveDecodeError>()
+        {
+            use ironrdp::graphics::progressive::ProgressiveDecodeError as E;
+            parts.push(
+                match e {
+                    E::Pdu(_) => "Progressive: malformed PDU",
+                    E::Rlgr(_) => "Progressive: RLGR stream",
+                    E::Srl(_) => "Progressive: SRL stream",
+                    E::MissingBlock(_) => "Progressive: required block missing",
+                    E::TileOutOfBounds { .. } => "Progressive: tile outside surface",
+                    E::InvalidQuantIndex { .. } => "Progressive: quantization index",
+                    E::MissingTileReference { .. } => "Progressive: missing reference tile",
+                    E::SurfaceTooLarge { .. } => "Progressive: surface exceeds limit",
+                }
+                .into(),
+            );
+        }
+        if let Some(e) = e.downcast_ref::<ironrdp::graphics::srl::SrlError>() {
+            use ironrdp::graphics::srl::SrlError as E;
+            parts.push(
+                match e {
+                    E::MissingTerminator => "SRL: missing terminator",
+                    E::Truncated => "SRL: truncated bit stream",
+                    E::InvalidBitCount(_) => "SRL: invalid magnitude width",
+                    E::MagnitudeOutOfRange { .. } => "SRL: magnitude outside width",
+                    E::ZeroRunTooLong => "SRL: zero run exceeds component",
+                }
+                .into(),
+            );
+        }
         let location = if let Some(e) = e.downcast_ref::<ironrdp::session::SessionError>() {
             Some(e.location())
         } else if let Some(e) = e.downcast_ref::<ironrdp::pdu::PduError>() {
@@ -156,6 +186,33 @@ mod tests {
     use super::*;
     use ironrdp::pdu::geometry::ExclusiveRectangle;
     use ironrdp_egfx::pdu::*;
+    #[test]
+    fn microsoft_clearcodec_short_bar_wire_and_srl_end_chunk() {
+        // MS-RDPEGFX Example 4: little-endian 00 0f means YOn=0,YOff=15.
+        let mut band = vec![0, 0, 0, 0, 0, 0, 14, 0, 0, 0, 0, 0, 15];
+        band.extend_from_slice(&[11, 22, 33].repeat(15));
+        let parsed = ironrdp::pdu::codecs::clearcodec::decode_bands_layer(&band).unwrap();
+        match &parsed[0].vbars[0] {
+            ironrdp::pdu::codecs::clearcodec::VBar::ShortCacheMiss(v) => {
+                assert_eq!(v.y_on, 0);
+                assert_eq!(v.y_off_delta, 15);
+            }
+            _ => panic!("expected inline short bar"),
+        }
+        let cache_hit = [0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0x42, 0x40, 1];
+        let parsed = ironrdp::pdu::codecs::clearcodec::decode_bands_layer(&cache_hit).unwrap();
+        assert!(matches!(
+            parsed[0].vbars[0],
+            ironrdp::pdu::codecs::clearcodec::VBar::ShortCacheHit {
+                index: 0x42,
+                y_on: 1
+            }
+        ));
+        assert_eq!(
+            ironrdp::graphics::srl::decode_srl(&[0, 0], 60, 1).unwrap(),
+            vec![0; 60]
+        );
+    }
     fn send(channel: &mut Channel, pdu: GfxPdu) {
         let raw = ironrdp_core::encode_vec(&pdu).unwrap();
         let wire = ironrdp::graphics::zgfx::wrap_uncompressed(&raw);

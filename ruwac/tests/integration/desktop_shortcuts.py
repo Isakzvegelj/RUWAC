@@ -23,7 +23,7 @@ try:
  subprocess.run([a.binary,'--socket',str(sock),'start'],check=True,capture_output=True)
  ids=[]
  for i in range(8):
-  demo="import sys;print('RUWAC  |  Native machine workspace\\n\\nPersistent terminals · SSH · Embedded RDP · Files\\n\\nAlt+1…9 / Alt+0  switch workspace tabs\\nCtrl+A           Screen navigation\\nCtrl+Shift+C/V   desktop copy / paste\\n\\n\\x1b[32mReady\\x1b[0m — programs survive closing the desktop',flush=True);sys.stdin.buffer.read()"
+  demo="import sys;print('RUWAC  |  Native machine workspace\\n\\nPersistent terminals · SSH · Embedded RDP · Files\\n\\nAltGr, 1…9 / 0  switch workspace tabs\\nCtrl+A           Screen navigation\\nCtrl+Shift+C/V   desktop copy / paste\\n\\n\\x1b[32mReady\\x1b[0m — programs survive closing the desktop',flush=True);sys.stdin.buffer.read()"
   with spike.Client(sock) as client:ids.append(client.call('session.create',{'name':f'Workspace {i+1}','argv':[sys.executable,'-u','-c',demo]})['session'])
  argv=[a.gui,'--socket',str(sock),'--fixture-dir',str(root)]
  for sid in ids:argv+=['--session',sid]

@@ -162,6 +162,86 @@ pub fn controls(
     root
 }
 
+/// Agent launches name their sessions "HOST · Codex|Claude|Kimi".
+fn agent_session(name: &str) -> bool {
+    let name = name.to_lowercase();
+    name == "remote agent" || ["codex", "claude", "kimi"].iter().any(|a| name.contains(a))
+}
+
+/// Running agent sessions for the agent menu, filled asynchronously.
+pub fn agent_sessions(
+    tabs: adw::TabView,
+    views: Rc<RefCell<Vec<Rc<View>>>>,
+    socket: PathBuf,
+    broker: Broker,
+) -> gtk::Box {
+    let body = gtk::Box::new(gtk::Orientation::Vertical, 4);
+    body.set_widget_name("agent-sessions");
+    let heading = gtk::Label::new(Some("Running agent sessions"));
+    heading.set_xalign(0.0);
+    heading.add_css_class("heading");
+    body.append(&heading);
+    let status = gtk::Label::new(Some("Loading…"));
+    status.set_xalign(0.0);
+    status.add_css_class("dim-label");
+    body.append(&status);
+    let (tx, rx) = std::sync::mpsc::sync_channel(1);
+    let list_socket = socket.clone();
+    std::thread::spawn(move || {
+        let r = Rpc::connect(&list_socket).and_then(|mut rpc| rpc.call("session.list", json!({})));
+        let _ = tx.send(r);
+    });
+    let weak = body.downgrade();
+    glib::timeout_add_local(Duration::from_millis(20), move || {
+        let Some(body) = weak.upgrade() else {
+            return glib::ControlFlow::Break;
+        };
+        let rows = match rx.try_recv() {
+            Err(std::sync::mpsc::TryRecvError::Empty) => return glib::ControlFlow::Continue,
+            Ok(Ok(Value::Array(rows))) => rows,
+            _ => {
+                status.set_text("Session list unavailable");
+                return glib::ControlFlow::Break;
+            }
+        };
+        let rows: Vec<_> = rows
+            .iter()
+            .filter_map(|r| Some((r["id"].as_str()?.to_owned(), r["name"].as_str()?.to_owned())))
+            .filter(|(_, name)| agent_session(name))
+            .collect();
+        status.set_text(if rows.is_empty() {
+            "None yet — start one from a host below"
+        } else {
+            "Open or switch to a session; its agent keeps running"
+        });
+        for (id, name) in rows {
+            let open = views.borrow().iter().any(|v| v.session == id && !v.finished.get());
+            let button = gtk::Button::with_label(&if open {
+                format!("{name} · open")
+            } else {
+                name.clone()
+            });
+            button.set_widget_name("agent-session");
+            button.add_css_class("flat");
+            button.set_tooltip_text(Some(&id));
+            if let Some(label) = button.child().and_downcast::<gtk::Label>() {
+                label.set_xalign(0.0);
+                label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+            }
+            let (t, v, s, b) = (tabs.clone(), views.clone(), socket.clone(), broker.clone());
+            button.connect_clicked(move |button| {
+                append(&t, &v, &s, &b, &id, &name);
+                if let Some(pop) = button.ancestor(gtk::Popover::static_type()).and_downcast::<gtk::Popover>() {
+                    pop.popdown();
+                }
+            });
+            body.append(&button);
+        }
+        glib::ControlFlow::Break
+    });
+    body
+}
+
 pub fn fixture(widget: &impl IsA<gtk::Widget>, label: &str) -> bool {
     let widget = widget.as_ref();
     if let Some(button) = widget.downcast_ref::<gtk::Button>() {

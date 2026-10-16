@@ -103,7 +103,7 @@ Global `--remote-binary PATH` and `--socket REMOTE_PATH` select an explicit exec
 
 ## Desktop navigation and diagnostics
 
-Launch `ruwac gui`. Alt+1 through Alt+9 select workspace tabs 1–9; Alt+0 selects tab 10. The shortcuts work from terminal, RDP and Files views. Missing tabs are a no-op. Other unbound Ctrl+Alt and Shift+Alt shortcuts remain available to applications. Use `ruwac gui --theme system` to follow the desktop color preference, or `--theme light` / `--theme dark` explicitly.
+Launch `ruwac gui`. Tap AltGr (Right Alt) and, within 0.5 s, press 1–9 to select workspace tabs 1–9 or 0 for tab 10; T opens a terminal, R the RDP host chooser, K the machine search, Return toggles fullscreen and Home focuses the controls. Every tap re-arms the shortcut. Holding AltGr with a key still types layout characters, and plain Alt+digit reaches the terminal or remote application. The shortcuts work from terminal, RDP and Files views. Missing tabs are a no-op. Other unbound Ctrl+Alt and Shift+Alt shortcuts remain available to applications. Use `ruwac gui --theme system` to follow the desktop color preference, or `--theme light` / `--theme dark` explicitly.
 
 `ruwac doctor --desktop` checks local runtime availability without changing it. `ruwac doctor --terminal` inspects the current terminal. After a crashed client leaves raw/no-echo attributes, run `ruwac doctor --terminal --repair` directly in that affected foreground terminal. Repair never targets another terminal and does not reset emulator mouse/private modes. Remote read-only checks use `ruwac --host SSH_HOST doctor`; remote terminal repair is refused.
 

@@ -97,6 +97,19 @@ fn save(path: &Path, state: &State) -> io::Result<()> {
     result
 }
 
+/// Per-window state first; a window without its own file (every "New window"
+/// receives a fresh ID) starts from the geometry of the last closed window.
+fn initial(path: &Path, shared: Option<&Path>) -> io::Result<State> {
+    match load(path) {
+        Err(e) if e.kind() == io::ErrorKind::NotFound => match shared.map(load) {
+            Some(Ok(state)) => Ok(state),
+            Some(Err(e)) if e.kind() != io::ErrorKind::NotFound => Err(e),
+            _ => Ok(State::default()),
+        },
+        other => other,
+    }
+}
+
 pub fn bind(window: &impl IsA<gtk::Window>) {
     let window = window.as_ref();
     let path = match crate::workspace::directory() {
@@ -106,9 +119,12 @@ pub fn bind(window: &impl IsA<gtk::Window>) {
             return;
         }
     };
-    let state = match load(&path) {
+    let shared = crate::workspace::shared_directory()
+        .ok()
+        .map(|dir| dir.join("window-state.json"))
+        .filter(|shared| *shared != path);
+    let state = match initial(&path, shared.as_deref()) {
         Ok(s) => s,
-        Err(e) if e.kind() == io::ErrorKind::NotFound => State::default(),
         Err(_) => {
             eprintln!("Window geometry unavailable: saved state preserved for review");
             return;
@@ -128,6 +144,10 @@ pub fn bind(window: &impl IsA<gtk::Window>) {
         closed_state.borrow_mut().sample(window);
         if save(&closed_path, &closed_state.borrow()).is_err() {
             eprintln!("Window geometry save failed");
+        }
+        // The last closed window defines the size of the next new window.
+        if let Some(shared) = shared.as_deref() {
+            let _ = save(shared, &closed_state.borrow());
         }
         gtk::glib::Propagation::Proceed
     });
@@ -181,6 +201,27 @@ mod tests {
         std::os::unix::fs::symlink(&path, &link).unwrap();
         assert!(load(&link).is_err());
         assert!(save(&link, &state).is_err());
+        fs::remove_dir_all(dir).unwrap();
+    }
+    #[test]
+    fn new_window_inherits_last_closed_geometry() {
+        let dir = std::env::temp_dir().join(ruwac_protocol::id("geometry-test"));
+        fs::create_dir(&dir).unwrap();
+        let (own, shared) = (dir.join("own.json"), dir.join("shared.json"));
+        assert_eq!(initial(&own, Some(&shared)).unwrap(), State::default());
+        let last = State {
+            width: 1500,
+            height: 950,
+            ..State::default()
+        };
+        save(&shared, &last).unwrap();
+        assert_eq!(initial(&own, Some(&shared)).unwrap(), last);
+        let mine = State {
+            width: 900,
+            ..State::default()
+        };
+        save(&own, &mine).unwrap();
+        assert_eq!(initial(&own, Some(&shared)).unwrap(), mine);
         fs::remove_dir_all(dir).unwrap();
     }
 }

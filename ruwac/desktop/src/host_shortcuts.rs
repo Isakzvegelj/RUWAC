@@ -20,6 +20,7 @@ fn scroll(body: &gtk::Box) -> gtk::ScrolledWindow {
 pub fn install(
     window: &adw::ApplicationWindow,
     menus: crate::profiles::ShortcutMenus,
+    sessions: std::rc::Rc<dyn Fn() -> gtk::Box>,
 ) -> gtk::MenuButton {
     MENUS.with(|state| *state.borrow_mut() = Some((window.downgrade(), menus.clone())));
     let button = gtk::MenuButton::new();
@@ -28,7 +29,14 @@ pub fn install(
     button.set_tooltip_text(Some("Agents · saved hosts · Codex, Claude and Kimi"));
     button.update_property(&[gtk::accessible::Property::Label("Saved agent hosts")]);
     let pop = gtk::Popover::new();
-    pop.connect_show(move |pop| pop.set_child(Some(&scroll(&menus(true)))));
+    pop.connect_show(move |pop| {
+        // Running sessions first, then hosts that can start new ones.
+        let body = gtk::Box::new(gtk::Orientation::Vertical, 8);
+        body.append(&sessions());
+        body.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
+        body.append(&menus(true));
+        pop.set_child(Some(&scroll(&body)));
+    });
     button.set_popover(Some(&pop));
     button
 }
@@ -84,6 +92,7 @@ pub fn fixture(window: &adw::ApplicationWindow, q: &serde_json::Value) -> serde_
                     "Recent SSH connections",
                     "Saved connections",
                     "Saved agent hosts",
+                    "Running agent sessions",
                 ]
                 .contains(&label.text().as_str())
                 {
@@ -98,6 +107,7 @@ pub fn fixture(window: &adw::ApplicationWindow, q: &serde_json::Value) -> serde_
                 }
             }
             if w.widget_name().starts_with("saved-host-")
+                || w.widget_name() == "agent-session"
                 || w.widget_name().starts_with("machine-")
                 || w.widget_name().starts_with("ssh-")
                 || w.widget_name() == "terminal-host-menu"

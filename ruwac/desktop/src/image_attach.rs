@@ -197,7 +197,7 @@ pub fn clipboard_route(
                 });
                 Ok(())
             } else {
-                view.worker.send(crate::worker::Command::AttachImage {
+                view.worker.borrow().send(crate::worker::Command::AttachImage {
                     pane: view.target.borrow().clone(),
                     path: image.path.clone(),
                     allowed: allowed.clone(),

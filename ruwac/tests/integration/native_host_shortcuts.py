@@ -31,8 +31,9 @@ try:
  for item in widgets:
   if item['name']in ['machine-connect','machine-terminal','machine-codex','machine-claude','machine-kimi']and item['name']not in first and item['bounds']and item['bounds'][2]>0:first[item['name']]=item
  assert len(first)==5,first
- centers=[v['bounds'][1]+v['bounds'][3]/2 for v in first.values()];assert max(centers)-min(centers)<4,first
- checks.append('RDP-bookmark-configured-SSH-Codex-Claude-Kimi-visible-on-same-row')
+ actions=[v for k,v in first.items() if k!='machine-connect'];centers=[v['bounds'][1]+v['bounds'][3]/2 for v in actions];assert max(centers)-min(centers)<4,first
+ assert min(v['bounds'][1] for v in actions)>=first['machine-connect']['bounds'][1]+first['machine-connect']['bounds'][3]-1,first
+ checks.append('RDP-bookmark-configured-SSH-Codex-Claude-Kimi-labelled-on-one-line-below-name')
  state=profile.read_bytes();command('host-shortcuts',click='machine-terminal')
  eventually(lambda:any(d['width']>0 for d in command('profile-editor',operation='layout')['dialogs']))
  assert any(x['name']=='ssh-choose-key'for x in command('host-shortcuts')['widgets'])
@@ -45,7 +46,7 @@ try:
  assert ssh['username']==pwd.getpwuid(os.getuid()).pw_name and rdp['username']=='generated-service'
  assert ssh['id']!=rdp['id']and ssh['secret_reference']!=rdp['secret_reference'];assert ssh['preferences']['identity_file']==str(key)
  checks.append('linked-SSH-saves-current-user-default-key-path-and-separate-credential-identity')
- time.sleep(.4);header=command('host-shortcuts',operation='header');assert 'Saved agent hosts'in header['sections'];assert sum(x['name']=='saved-host-codex'for x in header['widgets'])>=3;assert sum(x['name']=='saved-host-claude'for x in header['widgets'])>=3
+ time.sleep(.4);header=command('host-shortcuts',operation='header');assert 'Saved agent hosts'in header['sections'];assert 'Running agent sessions'in header['sections'];assert sum(x['name']=='saved-host-codex'for x in header['widgets'])>=3;assert sum(x['name']=='saved-host-claude'for x in header['widgets'])>=3
  assert sum(x['name']=='saved-host-kimi'for x in header['widgets'])>=3
  command('host-shortcuts',close=True)
  menu=command('host-shortcuts',operation='context');assert 'Recent SSH connections'in menu['sections']and'Saved connections'in menu['sections'];assert menu['sections'].index('Recent SSH connections')<menu['sections'].index('Saved connections');command('host-shortcuts',close=True)
@@ -68,6 +69,15 @@ try:
   for value,state in [(29,True),(42,True),(key,True),(key,False),(42,False),(29,False)]:
    call('NotifyKeyboardKeycode',GLib.Variant('(ub)',(value,state)));time.sleep(.04)
  eventually(lambda:command('inspect')['active']);before=command('inspect')['tabs'];chord(20);eventually(lambda:command('inspect')['tabs']==before+1)
+ def keys(*events,gap=.04):
+  for value,state in events:call('NotifyKeyboardKeycode',GLib.Variant('(ub)',(value,state)));time.sleep(gap)
+ # Plain Alt+1 belongs to the application; an AltGr (Right Alt) tap then 1 within 0.5 s selects tab 1.
+ assert command('inspect')['selected_tab']==before
+ keys((56,True),(2,True),(2,False),(56,False));time.sleep(.3);assert command('inspect')['selected_tab']==before
+ keys((100,True),(100,False),(2,True),(2,False));eventually(lambda:command('inspect')['selected_tab']==0)
+ keys((100,True),(100,False));time.sleep(.7);keys((3,True),(3,False));time.sleep(.3);assert command('inspect')['selected_tab']==0
+ keys((100,True),(100,False),(3,True),(3,False));eventually(lambda:command('inspect')['selected_tab']==1)
+ checks.append('real-GDK-AltGr-tap-leader-selects-tabs-within-500ms-plain-Alt-digit-reaches-application')
  command('focus-view');chord(19);eventually(lambda:command('sidebar-shell')['shown'])
  call('Stop');checks.append('real-GDK-Ctrl-Shift-T-new-terminal-and-Ctrl-Shift-R-machine-chooser')
  command('snapshot')

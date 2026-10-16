@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## v0.4.9 — 2026-10-16 — Stable source release
+
+- Open new desktop windows at the size of the last closed window instead of the default; each window still keeps its own geometry. The desktop-menu New window action now supplies the daemon socket.
+
+- Close terminal tabs, and the window when it was the last tab, when their session is removed by `kill-session` or another client, exactly as after `exit`. A lost daemon connection now shows a centred Reconnect panel that restarts the daemon if needed and reattaches, instead of leaving a dead tab with a warning icon.
+
+- Show running Codex/Claude/Kimi sessions at the top of the agent menu, opening or switching to them in one click.
+
+- Place machine Terminal/Codex/Claude/Kimi actions as labelled buttons on their own line under each machine, clear of the sidebar scrollbar.
+
+- Send a valid RDP desktop scale factor so servers honour the display scale, keep the terminal RDP failure reason for diagnostics, name Progressive/SRL decode failures, and track display-control channel readiness.
+
+- Replace Alt+1…9/0 tab switching (including libadwaita's built-in Alt-digit shortcuts) with an AltGr leader: tap AltGr, then within 0.5 s press 1…9/0, T, R, K, Return or Home. Every tap re-arms; AltGr chords and plain Alt+digit reach applications.
+
 ## v0.4.8 — 2026-10-16 — Stable source release
 
 - Correct the independent-client sizing fixture for the reserved split-divider column and include that fixture in local release qualification.

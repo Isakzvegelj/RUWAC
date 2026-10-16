@@ -20,7 +20,7 @@
     "src/image_processing.rs": "95d6817539049d48cbc9347a7318102534ce40ce6167339965abeac8fc525a51",
     "src/lib.rs": "fc5345e0a5220717557c1b590059c101473d459acbf23dd071792386abcf7361",
     "src/pointer.rs": "a21dba6da72c6c21d9216ab7167f2f4a88ec3d9d72234cd1f2b2c7ccd333345b",
-    "src/progressive.rs": "b195651b2d645bcfc839c665b9a17e2b45e313c7d9b8ba6b27485cec8dbf773f",
+    "src/progressive.rs": "1e114c547e862f15c5bab80721b166b57e027a8038e30de6d451c54a2eac07a6",
     "src/quantization.rs": "17e27876b792c6b9046824f787fdf7ad945f2eb1ff32662b31e85dd3afd04e1f",
     "src/rdp6/bitmap_stream/decoder.rs": "f127369afbe9cb50d60334281a6b481e00d5a22e32616457ac7d03c96058659a",
     "src/rdp6/bitmap_stream/encoder.rs": "479c8c196ecaa34be8a6b1ab0214bc0db26ac5742501eed7fce93b1a2152b6bb",
@@ -102,5 +102,6 @@
     "src/progressive.rs",
     "src/clearcodec/mod.rs",
     "src/rdp6/bitmap_stream/encoder.rs"
-  ]
+  ],
+  "active_source_status": "Includes preserved unqualified Windows graphics diagnostic experiment beyond the published candidate; archive and delta retained privately"
 }

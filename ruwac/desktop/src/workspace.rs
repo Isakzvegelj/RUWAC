@@ -228,6 +228,24 @@ pub fn identity(socket: &Path) -> String {
     format!("workspace_{}", &hash[..32])
 }
 pub(super) fn directory() -> io::Result<PathBuf> {
+    let p = shared_directory()?;
+    if let Some(id) = WINDOW.get().filter(|id| !id.is_empty()) {
+        let windows = p.join("windows");
+        for child in [&windows, &windows.join(id)] {
+            if !child.exists() {
+                fs::DirBuilder::new().mode(0o700).create(child)?;
+            }
+            let m = fs::symlink_metadata(child)?;
+            if !m.is_dir() || m.uid() != unsafe { libc::geteuid() } || m.mode() & 0o777 != 0o700 {
+                return Err(io::Error::other("unsafe window workspace directory"));
+            }
+        }
+        return Ok(windows.join(id));
+    }
+    Ok(p)
+}
+/// The private configuration root shared by every desktop window.
+pub(super) fn shared_directory() -> io::Result<PathBuf> {
     let p = std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|p| PathBuf::from(p).join(".config")))
@@ -242,19 +260,6 @@ pub(super) fn directory() -> io::Result<PathBuf> {
     let m = fs::symlink_metadata(&p)?;
     if !m.is_dir() || m.uid() != unsafe { libc::geteuid() } || m.mode() & 0o777 != 0o700 {
         return Err(io::Error::other("unsafe workspace directory"));
-    }
-    if let Some(id) = WINDOW.get().filter(|id| !id.is_empty()) {
-        let windows = p.join("windows");
-        for child in [&windows, &windows.join(id)] {
-            if !child.exists() {
-                fs::DirBuilder::new().mode(0o700).create(child)?;
-            }
-            let m = fs::symlink_metadata(child)?;
-            if !m.is_dir() || m.uid() != unsafe { libc::geteuid() } || m.mode() & 0o777 != 0o700 {
-                return Err(io::Error::other("unsafe window workspace directory"));
-            }
-        }
-        return Ok(windows.join(id));
     }
     Ok(p)
 }

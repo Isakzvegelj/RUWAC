@@ -9,7 +9,7 @@
     "LICENSE-APACHE": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
     "LICENSE-MIT": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
     "README.md": "a28be62d8fe55754231d1f6914fb698001f2873262ff8a1af9d971b7cabff1bc",
-    "src/client.rs": "a232b07efd7d49da42065895ed375f2131b9bda26d3aa49867d4c0033957b125",
+    "src/client.rs": "41dcaa6b1d983c3618abf59c8786dba4b8e0475aca6a4d4c8a37e25a5ff93d3a",
     "src/compositor.rs": "74d7e31ccbd785debf57e46a88f0e3ededc90076cecb58e13be60ce7545aeeb8",
     "src/decode.rs": "50b2b5a59862867074f5145a1b235cdb1498357daef9577acd55baf67cf62d66",
     "src/encode.rs": "e86a8b6ffb315636943a957f073e220db2a01536d55d032203d454c37f8881cc",
@@ -39,5 +39,6 @@
     "Cargo.toml",
     "src/pdu/avc.rs",
     "src/pdu/cmd.rs"
-  ]
+  ],
+  "active_source_status": "Includes preserved unqualified Windows graphics diagnostic experiment beyond the published candidate; archive and delta retained privately"
 }

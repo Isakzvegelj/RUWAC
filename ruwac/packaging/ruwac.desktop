@@ -11,4 +11,4 @@ Actions=NewWindow;
 
 [Desktop Action NewWindow]
 Name=New window
-Exec=/usr/bin/ruwac-desktop --new-instance
+Exec=/usr/bin/ruwac gui --new-instance

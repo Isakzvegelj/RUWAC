@@ -1292,6 +1292,7 @@ pub fn sidebar(
     status.set_visible(false);
     let list = gtk::Box::new(gtk::Orientation::Vertical, 4);
     list.set_widget_name("machines-list-box");
+    list.set_margin_end(10);
     let scroll = gtk::ScrolledWindow::builder()
         .vexpand(true)
         .child(&list)
@@ -1483,8 +1484,12 @@ pub fn sidebar(
                 });
                 row.append(&edit);
                 let entry = gtk::Box::new(gtk::Orientation::Vertical, 0);
+                entry.add_css_class("machine-entry");
                 entry.append(&row);
-                let quick = gtk::Box::new(gtk::Orientation::Horizontal, 2);
+                // Labelled actions on their own line under the name: clear
+                // targets that never sit under the sidebar's scrollbar.
+                let quick = gtk::Box::new(gtk::Orientation::Horizontal, 3);
+                quick.set_margin_start(28);
                 let linked = store
                     .borrow()
                     .items
@@ -1492,13 +1497,14 @@ pub fn sidebar(
                     .filter(|x| x.machine_id == p.machine_id)
                     .cloned()
                     .collect::<Vec<_>>();
-                for (kind, icon, tip, name, enabled) in [
+                for (kind, icon, tip, name, enabled, text) in [
                     (
                         3,
                         "utilities-terminal-symbolic",
                         "Open SSH terminal (configure a separate SSH endpoint if needed)",
                         "machine-terminal",
                         true,
+                        "Terminal",
                     ),
                     (
                         0,
@@ -1508,6 +1514,7 @@ pub fn sidebar(
                         linked
                             .iter()
                             .any(|x| !x.preferences.codex_command.is_empty()),
+                        "Codex",
                     ),
                     (
                         1,
@@ -1517,6 +1524,7 @@ pub fn sidebar(
                         linked
                             .iter()
                             .any(|x| !x.preferences.claude_command.is_empty()),
+                        "Claude",
                     ),
                     (
                         5,
@@ -1526,10 +1534,11 @@ pub fn sidebar(
                         linked
                             .iter()
                             .any(|x| !x.preferences.kimi_command.is_empty()),
+                        "Kimi",
                     ),
                 ] {
                     if enabled {
-                        quick.append(&shortcut_button(
+                        let b = shortcut_button(
                             icon,
                             tip,
                             name,
@@ -1539,11 +1548,14 @@ pub fn sidebar(
                             status.clone(),
                             callback.clone(),
                             agent_launcher.clone(),
-                        ));
+                        );
+                        // Text replaces the icon: labels are clearer in the sidebar.
+                        b.set_label(text);
+                        quick.append(&b);
                     }
                 }
                 quick.add_css_class("machine-shortcuts");
-                row.append(&quick);
+                entry.append(&quick);
                 group_rows.append(&entry);
                 let s = store.clone();
                 let label = star.clone();

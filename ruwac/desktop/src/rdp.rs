@@ -95,7 +95,10 @@ use x509_cert::der::Decode;
 /// ironrdp-displaycontrol 0.8 expects bare capabilities in its client processor,
 /// while the server and MS-RDPEDISP encode an eight-byte DISPLAYCONTROL_HEADER.
 /// Validate that header, then delegate capabilities and layout encoding upstream.
-struct DisplayControlAdapter(ironrdp::displaycontrol::client::DisplayControlClient);
+struct DisplayControlAdapter(
+    ironrdp::displaycontrol::client::DisplayControlClient,
+    Option<Arc<Mutex<State>>>,
+);
 ironrdp_core::impl_as_any!(DisplayControlAdapter);
 impl ironrdp::dvc::DvcClientProcessor for DisplayControlAdapter {}
 impl ironrdp::dvc::DvcProcessor for DisplayControlAdapter {
@@ -104,6 +107,9 @@ impl ironrdp::dvc::DvcProcessor for DisplayControlAdapter {
     }
     fn start(&mut self, id: u32) -> ironrdp::pdu::PduResult<Vec<ironrdp::dvc::DvcMessage>> {
         use ironrdp::dvc::DvcProcessor;
+        if let Some(state) = &self.1 {
+            state.lock().unwrap().display_channel_opened = true;
+        }
         self.0.start(id)
     }
     fn process(
@@ -112,6 +118,9 @@ impl ironrdp::dvc::DvcProcessor for DisplayControlAdapter {
         payload: &[u8],
     ) -> ironrdp::pdu::PduResult<Vec<ironrdp::dvc::DvcMessage>> {
         use ironrdp::dvc::DvcProcessor;
+        if let Some(state) = &self.1 {
+            state.lock().unwrap().display_capability_messages += 1;
+        }
         if payload.len() != 20 || u32::from_le_bytes(payload[4..8].try_into().unwrap()) != 20 {
             return Err(ironrdp::pdu::pdu_other_err!(
                 "DisplayControl",
@@ -301,6 +310,8 @@ struct State {
     frame: Option<Frame>,
     frames: u64,
     display_cap: Option<u64>,
+    display_channel_opened: bool,
+    display_capability_messages: u64,
     clipboard_channel_negotiated: bool,
     display_request: Option<(u16, u16)>,
     desktop_size: Option<(u16, u16)>,
@@ -352,7 +363,20 @@ impl Connection {
                 "disconnected"
             }
             .into();
-            state.status = Some(result.err().unwrap_or_else(|| "RDP disconnected".into()));
+            let failure = result.err();
+            // GTK consumes the transient status label. Retain the sanitized
+            // terminal failure for authenticated diagnostics after that update.
+            if state.authentication_error.is_none()
+                && state.certificate.is_none()
+                && state.protocol_error.is_none()
+            {
+                state.protocol_error = failure.clone();
+            }
+            state.status = Some(
+                failure
+                    .or_else(|| state.protocol_error.clone())
+                    .unwrap_or_else(|| "RDP disconnected".into()),
+            );
         });
         Self {
             id: ruwac_protocol::id("rdp-transport"),
@@ -406,6 +430,8 @@ async fn run(
                 let mut st = state.lock().unwrap();
                 st.frame = None;
                 st.display_cap = None;
+                st.display_channel_opened = false;
+                st.display_capability_messages = 0;
                 st.reactivating = true;
                 st.bridge.reset();
                 st.status = Some(format!(
@@ -508,7 +534,9 @@ fn connector_config(username: String, password: String) -> connector::Config {
         pointer_software_rendering: true,
         multitransport_flags: None,
         performance_flags: PerformanceFlags::default(),
-        desktop_scale_factor: 0,
+        // MS-RDPBCGR requires 100..500; zero also makes deviceScaleFactor
+        // invalid and causes the server to ignore the pair.
+        desktop_scale_factor: 100,
         hardware_id: None,
         license_cache: None,
         timezone_info: TimezoneInfo::default(),
@@ -636,6 +664,7 @@ async fn run_session(
                     cap_state.lock().unwrap().display_cap = Some(caps.max_monitor_area());
                     Ok(Vec::new())
                 }),
+                Some(state.clone()),
             ));
         if p.graphics {
             dynamic = dynamic.with_dynamic_channel(crate::gfx::Channel::new(gfx.clone()));
@@ -922,7 +951,13 @@ async fn run_session(
                         pixels: image.data().to_vec(),
                     })
                 }
-                ActiveStageOutput::Terminate(_) => return Ok(()),
+                ActiveStageOutput::Terminate(reason) => {
+                    // The pinned processor derives this description solely
+                    // from numeric MCS/ErrorInfo codes, never wire text.
+                    state.lock().unwrap().protocol_error =
+                        Some(format!("RDP disconnect: {}", reason.description()));
+                    return Ok(());
+                }
                 ActiveStageOutput::DeactivateAll => {
                     {
                         let mut st = state.lock().unwrap();
@@ -2305,6 +2340,8 @@ impl RdpView {
             desktop_size: self.last_size.get().unwrap_or((1280, 720)),
             clipboard: self.broker.borrow().desktop_enabled(),
             handover: None,
+            // Advertise the implemented lossless EGFX pipeline on standard RDP
+            // too; modern Windows uses it for dynamic desktop updates.
             graphics: true,
             ca: if ca.is_empty() { None } else { Some(ca.into()) },
         };
@@ -2450,7 +2487,7 @@ impl RdpView {
                     "disconnected".into()
                 }
             });
-        serde_json::json!({"id":self.root.widget_name().as_str(),"phase":phase,"connection_stage":connection.as_ref().map(|c|c.state.lock().unwrap().connection_stage.clone()),"size":self.size.get(),"transport_id":connection.as_ref().map(|c|c.id.as_str()),"decoded_updates":connection.as_ref().map(|c|c.state.lock().unwrap().frames).unwrap_or(0),"clipboard_owner":self.broker.borrow().active()==Some(self.id.as_str()),"clipboard_channel_negotiated":connection.as_ref().is_some_and(|c|c.state.lock().unwrap().clipboard_channel_negotiated),"verified_tls_sha256":connection.as_ref().and_then(|c|c.state.lock().unwrap().verified_tls_sha256.clone()),"protocol_error":connection.as_ref().and_then(|c|c.state.lock().unwrap().protocol_error.clone()),"authentication_error":connection.as_ref().and_then(|c|c.state.lock().unwrap().authentication_error.clone()),"certificate_review":self.certificate.borrow().as_ref().map(|r|serde_json::json!({"sha256":r.fingerprint(),"changed":r.changed,"valid_now":r.valid_now})),"profile":self.profile_metadata.borrow().as_ref().map(|p|p.id.clone())})
+        serde_json::json!({"id":self.root.widget_name().as_str(),"phase":phase,"connection_stage":connection.as_ref().map(|c|c.state.lock().unwrap().connection_stage.clone()),"size":self.size.get(),"transport_id":connection.as_ref().map(|c|c.id.as_str()),"decoded_updates":connection.as_ref().map(|c|c.state.lock().unwrap().frames).unwrap_or(0),"clipboard_owner":self.broker.borrow().active()==Some(self.id.as_str()),"display_control":connection.as_ref().map(|c|{let s=c.state.lock().unwrap();serde_json::json!({"channel_opened":s.display_channel_opened,"capability_messages":s.display_capability_messages,"negotiated":s.display_cap.is_some()})}),"clipboard_channel_negotiated":connection.as_ref().is_some_and(|c|c.state.lock().unwrap().clipboard_channel_negotiated),"verified_tls_sha256":connection.as_ref().and_then(|c|c.state.lock().unwrap().verified_tls_sha256.clone()),"protocol_error":connection.as_ref().and_then(|c|c.state.lock().unwrap().protocol_error.clone()),"authentication_error":connection.as_ref().and_then(|c|c.state.lock().unwrap().authentication_error.clone()),"certificate_review":self.certificate.borrow().as_ref().map(|r|serde_json::json!({"sha256":r.fingerprint(),"changed":r.changed,"valid_now":r.valid_now})),"profile":self.profile_metadata.borrow().as_ref().map(|p|p.id.clone())})
     }
     pub fn connect_profile(&self) {
         fn find(w: &gtk::Widget) -> Option<gtk::Button> {
@@ -3955,6 +3992,7 @@ mod tests {
                 *capture.lock().unwrap() = caps.max_monitor_area();
                 Ok(vec![])
             }),
+            None,
         );
         let caps =
             ironrdp::displaycontrol::pdu::DisplayControlCapabilities::new(1, 3840, 2400).unwrap();

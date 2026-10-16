@@ -21,7 +21,10 @@ pub struct View {
     font: RefCell<String>,
     font_size: Cell<u8>,
     line_height: Cell<f32>,
-    pub worker: Worker,
+    pub worker: RefCell<Worker>,
+    socket: PathBuf,
+    dead: gtk::Box,
+    dead_reason: gtk::Label,
     pub frame: RefCell<Option<Value>>,
     pub target: RefCell<String>,
     pub drawn: Cell<u64>,
@@ -109,8 +112,35 @@ impl View {
         copybox.append(&search);
         copybox.append(&scroll);
         stack.add_named(&copybox, Some("copy"));
-        root.append(&stack);
-        let worker = Worker::start(socket, session.clone());
+        // Shown only when the daemon connection is lost while the session may
+        // still exist; ended or removed sessions close their tab instead.
+        let dead = gtk::Box::new(gtk::Orientation::Vertical, 12);
+        dead.set_widget_name("terminal-disconnected");
+        dead.add_css_class("card");
+        dead.add_css_class("ruwac-disconnected");
+        dead.set_halign(gtk::Align::Center);
+        dead.set_valign(gtk::Align::Center);
+        let dead_title = gtk::Label::new(Some("Terminal disconnected"));
+        dead_title.add_css_class("title-3");
+        let dead_reason = gtk::Label::new(None);
+        dead_reason.set_wrap(true);
+        dead_reason.set_max_width_chars(48);
+        dead_reason.set_justify(gtk::Justification::Center);
+        dead_reason.add_css_class("dim-label");
+        let reconnect = gtk::Button::with_label("Reconnect");
+        reconnect.set_widget_name("terminal-reconnect");
+        reconnect.add_css_class("suggested-action");
+        reconnect.add_css_class("pill");
+        reconnect.set_halign(gtk::Align::Center);
+        dead.append(&dead_title);
+        dead.append(&dead_reason);
+        dead.append(&reconnect);
+        dead.set_visible(false);
+        let overlay = gtk::Overlay::new();
+        overlay.set_child(Some(&stack));
+        overlay.add_overlay(&dead);
+        root.append(&overlay);
+        let worker = RefCell::new(Worker::start(socket.clone(), session.clone()));
         let v = Rc::new(Self {
             session,
             root,
@@ -123,6 +153,9 @@ impl View {
             font_size: Cell::new(12),
             line_height: Cell::new(1.30),
             worker,
+            socket,
+            dead,
+            dead_reason,
             frame: RefCell::new(None),
             target: RefCell::new(String::new()),
             drawn: Cell::new(0),
@@ -156,6 +189,12 @@ impl View {
             stack,
         });
         v.apply_appearance(&crate::sidebar_shell::Shell::prefs());
+        let weak = Rc::downgrade(&v);
+        reconnect.connect_clicked(move |_| {
+            if let Some(v) = weak.upgrade() {
+                v.reconnect();
+            }
+        });
         let weak = Rc::downgrade(&v);
         active_history.connect_clicked(move |_| {
             if let Some(v) = weak.upgrade() {
@@ -398,6 +437,7 @@ impl View {
     fn open_history_buffer(&self, primary: bool) {
         if let Err(e) = self
             .worker
+            .borrow()
             .send(Command::History(self.target.borrow().clone(), primary))
         {
             self.warn(&e);
@@ -851,7 +891,7 @@ impl View {
                 }
             }
         }
-        if let Err(e) = self.worker.send(Command::Rpc(m.into(), p)) {
+        if let Err(e) = self.worker.borrow().send(Command::Rpc(m.into(), p)) {
             self.warn(&e);
         }
     }
@@ -881,15 +921,52 @@ impl View {
         }
         if let Err(e) = self
             .worker
+            .borrow()
             .send(Command::Paste(self.target.borrow().clone(), text))
         {
             self.warn(&e);
         }
     }
+    /// Replace a disconnected worker, starting the daemon when it is absent.
+    pub fn reconnect(&self) {
+        if self.detached.get() || self.finished.get() {
+            return;
+        }
+        self.dead.set_visible(false);
+        *self.warning.borrow_mut() = None;
+        // A restarted daemon numbers render revisions from the beginning.
+        *self.frame.borrow_mut() = None;
+        // History restored without its process stays readable after an
+        // explicit reconnect instead of closing like a fresh exit.
+        self.seen_running.set(false);
+        self.status.set_text("Reconnecting to daemon…");
+        let old = self.worker.replace(Worker::restart(
+            self.socket.clone(),
+            self.session.clone(),
+        ));
+        old.close();
+        if self.area.width() > 0 && self.area.height() > 0 {
+            self.command("client.resize",json!({"rows":((self.area.height()as f64/self.cell_height.get())as i32).clamp(4,u16::MAX as i32),"cols":((self.area.width()as f64/self.cell_width.get())as i32).clamp(10,u16::MAX as i32)}));
+        }
+        self.focus();
+    }
     pub fn update(self: &Rc<Self>) {
-        let mut s = self.worker.state.lock().unwrap();
+        let worker = self.worker.borrow();
+        let mut s = worker.state.lock().unwrap();
         if let Some(error) = s.error.take() {
             self.warn(&error);
+        }
+        if s.session_gone {
+            // Removed by exit, kill-session or another client: same as exit.
+            self.finished.set(true);
+            return;
+        }
+        if s.disconnected && !self.detached.get() && !self.dead.is_visible() {
+            self.dead_reason.set_text(&format!(
+                "{}\nThe session may still be running. Reconnect starts the daemon if needed and reattaches; closing this tab does not end the session.",
+                self.warning.borrow().as_deref().unwrap_or("The daemon connection ended.")
+            ));
+            self.dead.set_visible(true);
         }
         if let Some(frame) = s.frame.take() {
             if self
@@ -1326,7 +1403,7 @@ impl View {
                     .get("double_prefix")
                     .is_some_and(|v| v == "previous")
                 {
-                    if self.worker.state.lock().unwrap().supports_previous_window {
+                    if self.worker.borrow().state.lock().unwrap().supports_previous_window {
                         self.navigate("window.previous", json!({"session":self.session}));
                     } else {
                         self.warn("Previous-window navigation requires a newer daemon; the active session is preserved");
@@ -1456,7 +1533,7 @@ impl View {
         }
         *self.selection.borrow_mut() = None;
         self.detached.set(true);
-        self.worker.close();
+        self.worker.borrow().close();
         self.broker.borrow_mut().disconnect(&self.session);
         self.status.set_text("Detached; daemon PTYs preserved");
     }

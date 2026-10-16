@@ -10,9 +10,9 @@
   "patch": "Correct short V-bar YOn/YOff bit positions against MS-RDPEGFX Example 4; all other registry source files unchanged",
   "files": {
     "Cargo.toml": "d7be99eddef37c408a68a080113a9e08d89fdaded4881f7bc2f1b4c356f48f76",
+    "README.md": "a738cb5411e7153b19b1add66687438be92d1d39485015874ee0d2f552fed80c",
     "LICENSE-APACHE": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
     "LICENSE-MIT": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
-    "README.md": "a738cb5411e7153b19b1add66687438be92d1d39485015874ee0d2f552fed80c",
     "src/ber.rs": "d4173c2f1603d8da69b3c59009e73cbfc10a07a0ba644c2f0d2e01b616d628d8",
     "src/geometry.rs": "7391cc62f72c7c4c414d3026efba7ed1179f7f29157ea5ab2f0de0a15b6ad612",
     "src/lib.rs": "3613ff0ff4c2030193a62b4febbc84305753bd63c115f67f945f5e001f10417f",

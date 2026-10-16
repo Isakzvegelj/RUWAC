@@ -1226,6 +1226,17 @@ impl From<ironrdp_core::DecodeError> for ProgressiveDecodeError {
     }
 }
 
+impl core::error::Error for ProgressiveDecodeError {
+    fn source(&self) -> Option<&(dyn core::error::Error + 'static)> {
+        match self {
+            Self::Pdu(e) => Some(e),
+            Self::Rlgr(e) => Some(e),
+            Self::Srl(e) => Some(e),
+            _ => None,
+        }
+    }
+}
+
 impl From<RlgrError> for ProgressiveDecodeError {
     fn from(e: RlgrError) -> Self {
         Self::Rlgr(e)

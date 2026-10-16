@@ -885,7 +885,7 @@ impl GraphicsPipelineClient {
             )
             .map_err(|error| {
                 warn!(?error, "rfx progressive decode failed");
-                pdu_other_err!("rfx progressive decode failed")
+                pdu_other_err!("rfx progressive decode failed", source: error)
             })?;
 
         for tile in tiles {
