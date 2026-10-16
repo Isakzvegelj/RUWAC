@@ -552,6 +552,15 @@ fn divider_cells(v: &Value) -> std::collections::BTreeMap<(u64, u64), u8> {
     }
     out
 }
+/// Two render frames show the same content (revision numbers aside).
+fn same_frame(a: &Value, b: &Value) -> bool {
+    let (Some(a), Some(b)) = (a.as_object(), b.as_object()) else {
+        return false;
+    };
+    a.len() == b.len()
+        && a.iter()
+            .all(|(k, v)| k == "revision" || b.get(k).is_some_and(|w| w == v))
+}
 fn mouse_wanted(v: &Value) -> bool {
     mouse_request(v).is_some()
 }
@@ -1935,7 +1944,10 @@ pub fn attach_with_window(socket: &Path, session: &str, window: Option<&str>) ->
                     "client.render",
                     json!({"revision":snapshot["revision"]}),
                 )?;
-                if fresh["unchanged"] != true {
+                // The revision counts changes in every session of the daemon;
+                // redraw only when this view's content changed, or a client
+                // nested in a RUWAC terminal redraws itself in a loop.
+                if fresh["unchanged"] != true && !same_frame(&fresh, &snapshot) {
                     snapshot = fresh;
                     let ended = snapshot["panes"]
                         .as_array()
@@ -1976,6 +1988,16 @@ pub fn attach_with_window(socket: &Path, session: &str, window: Option<&str>) ->
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn frames_differing_only_in_revision_are_the_same() {
+        let a = json!({"revision":1,"panes":[{"id":"p","grid":{"cells":[["x"]]}}]});
+        let mut b = a.clone();
+        b["revision"] = json!(9);
+        assert!(same_frame(&a, &b));
+        b["panes"][0]["grid"]["cells"][0][0] = json!("y");
+        assert!(!same_frame(&a, &b));
+        assert!(!same_frame(&a, &json!({"unchanged":true})));
+    }
     #[test]
     fn mouse_reports_follow_the_active_program() {
         let frame = |active: &str| {

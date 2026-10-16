@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## v0.4.16 — 2026-10-16 — Stable source release
+
+- Stop nested sessions flickering: the render revision counts changes in every session of the daemon, so a `ruwac -r`/`-S` client inside a RUWAC terminal redrew its whole screen (and hid and re-showed the cursor) about 30 times a second, even when idle, since at least v0.4.8. It now redraws only when its own content changes.
+
+- Standard terminal line spacing (1.00) is the default and replaces the previous 1.30 default in existing preferences; Compact, Normal and Relaxed spacing remain selectable and are kept once chosen.
+
+- The scrollback (history) view uses the terminal's font, size, line spacing and colours and opens at the newest output instead of a blank or top position.
+
 ## v0.4.15 — 2026-10-16 — Stable source release
 
 - Nested `ruwac -r`/`-S` sessions handle the mouse like tmux with mouse mode on: over a program without mouse support (such as a shell) the wheel scrolls the session's history and scrolling back down returns to the live view, a drag selects text into the session's paste buffer, and a middle-click (touchpad three-finger tap) pastes it. Programs that use the mouse still receive every event in their own coordinates. Shift keeps the outer terminal's own selection.

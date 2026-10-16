@@ -10,6 +10,27 @@ use std::{
     path::PathBuf,
     rc::Rc,
 };
+thread_local! {
+    static HISTORY_STYLE: RefCell<Option<gtk::CssProvider>> = const { RefCell::new(None) };
+}
+/// One display-wide stylesheet for every history view, replaced on change.
+fn history_style(css: &str) {
+    HISTORY_STYLE.with(|style| {
+        let mut style = style.borrow_mut();
+        let provider = style.get_or_insert_with(|| {
+            let provider = gtk::CssProvider::new();
+            if let Some(display) = gdk::Display::default() {
+                gtk::style_context_add_provider_for_display(
+                    &display,
+                    &provider,
+                    gtk::STYLE_PROVIDER_PRIORITY_APPLICATION + 1,
+                );
+            }
+            provider
+        });
+        provider.load_from_string(css);
+    });
+}
 pub struct View {
     pub session: String,
     pub root: gtk::Box,
@@ -75,6 +96,7 @@ impl View {
             .monospace(true)
             .wrap_mode(gtk::WrapMode::None)
             .build();
+        copy.add_css_class("ruwac-history");
         // Internal copy selection must not claim compositor PRIMARY implicitly.
         copy.connect_realize(|view| {
             view.buffer()
@@ -153,7 +175,7 @@ impl View {
             cell_height: Cell::new(20.0),
             font: RefCell::new("Monospace".into()),
             font_size: Cell::new(12),
-            line_height: Cell::new(1.30),
+            line_height: Cell::new(1.0),
             worker,
             socket,
             dead,
@@ -1093,9 +1115,11 @@ impl View {
                 if v["truncated"] == true {
                     self.warn("Copy view reached its 8 MiB limit; only the loaded history can be selected");
                 }
-                self.copy
-                    .buffer()
-                    .set_text(v["text"].as_str().unwrap_or(""));
+                // The unused rows below the prompt are history too; drop them
+                // so the view opens on the newest output.
+                let text = v["text"].as_str().unwrap_or("");
+                let text = text.trim_end_matches(|c: char| c == '\n' || c == ' ');
+                self.copy.buffer().set_text(text);
                 self.stack.set_visible_child_name("copy");
                 self.copy_anchor.set(None);
                 self.copy
@@ -1104,14 +1128,28 @@ impl View {
                 self.copy.set_cursor_visible(true);
                 self.copy.grab_focus();
                 // Open at the newest output (where the wheel left the live
-                // view), once the text has been laid out.
-                let copy = self.copy.downgrade();
-                glib::idle_add_local_once(move || {
-                    if let Some(copy) = copy.upgrade() {
-                        let buffer = copy.buffer();
-                        copy.scroll_to_mark(&buffer.get_insert(), 0.0, true, 0.0, 1.0);
-                    }
-                });
+                // view) once the text is laid out: bottom of the scroller.
+                let scroller = self.copy.parent().and_downcast::<gtk::ScrolledWindow>();
+                if let Some(scroller) = scroller {
+                    let adjustment = scroller.vadjustment();
+                    let pending = Rc::new(Cell::new(true));
+                    let weak = adjustment.downgrade();
+                    let p = pending.clone();
+                    adjustment.connect_changed(move |a| {
+                        if p.get() {
+                            a.set_value(a.upper() - a.page_size());
+                        }
+                    });
+                    glib::timeout_add_local_once(
+                        std::time::Duration::from_millis(400),
+                        move || {
+                            pending.set(false);
+                            if let Some(a) = weak.upgrade() {
+                                a.set_value(a.upper() - a.page_size());
+                            }
+                        },
+                    );
+                }
             } else if method == "window.list" {
                 if let Some(index) = self.window_index.take() {
                     if let Some(window) = v.as_array().and_then(|a| a.get(index)) {
@@ -1591,6 +1629,30 @@ impl View {
         if self.area.width() > 0 && self.area.height() > 0 {
             self.command("client.resize",json!({"rows":((self.area.height()as f64/self.cell_height.get())as i32).clamp(4,u16::MAX as i32),"cols":((self.area.width()as f64/self.cell_width.get())as i32).clamp(10,u16::MAX as i32)}));
         }
+        // Scrollback (history view) looks like the terminal: same font, size,
+        // line spacing and colours.
+        let text_height = (metrics.ascent() + metrics.descent()) as f64 / gtk::pango::SCALE as f64;
+        let gap = (self.cell_height.get() - text_height).max(0.0).round() as i32;
+        self.copy.set_pixels_above_lines(gap / 2);
+        self.copy.set_pixels_below_lines(gap - gap / 2);
+        let (bg, fg) = (
+            crate::schemes::current().bg(),
+            crate::schemes::current().fg(),
+        );
+        let hex = |c: (f64, f64, f64)| {
+            format!(
+                "#{:02x}{:02x}{:02x}",
+                (c.0 * 255.0).round() as u8,
+                (c.1 * 255.0).round() as u8,
+                (c.2 * 255.0).round() as u8
+            )
+        };
+        history_style(&format!(
+            "textview.ruwac-history, textview.ruwac-history text {{ font-family: \"{font}\"; font-size: {}pt; background-color: {}; color: {}; }}",
+            prefs.term_size_pt,
+            hex(bg),
+            hex(fg)
+        ));
         self.area.queue_draw();
     }
     pub fn cell_metrics(&self) -> (f64, f64) {

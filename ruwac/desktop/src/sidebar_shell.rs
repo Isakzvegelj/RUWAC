@@ -41,9 +41,11 @@ fn default_font() -> String {
 fn default_size() -> u8 {
     12
 }
+/// Standard terminal line spacing (as GNOME Terminal and most others).
 fn default_height() -> f32 {
-    1.30
+    1.0
 }
+pub const LINE_HEIGHTS: [f32; 4] = [1.0, 1.15, 1.30, 1.45];
 fn default_labels() -> bool {
     true
 }
@@ -57,14 +59,14 @@ pub const FONTS: [&str; 6] = [
 ];
 impl Settings {
     fn validate(&self) -> bool {
-        [1, 2].contains(&self.schema)
+        [1, 2, 3].contains(&self.schema)
             && [
                 "graphite", "nocturne", "fjord", "ember", "paper", "contrast",
             ]
             .contains(&self.scheme.as_str())
             && FONTS.contains(&self.term_font.as_str())
             && (9..=18).contains(&self.term_size_pt)
-            && [1.15, 1.30, 1.45].contains(&self.line_height)
+            && LINE_HEIGHTS.contains(&self.line_height)
             && (200..=420).contains(&self.width)
             && self.collapsed_groups.len() <= 1000
             && !self
@@ -76,7 +78,7 @@ impl Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            schema: 2,
+            schema: 3,
             scheme: default_scheme(),
             term_font: default_font(),
             term_size_pt: default_size(),
@@ -131,7 +133,12 @@ pub fn load() -> Result<Settings, String> {
     if !value.validate() {
         return Err("Existing desktop preferences protected".into());
     }
-    value.schema = 2;
+    // Before schema 3 the default spacing was 1.30; such files never chose
+    // it deliberately, so they get the standard 1.0. Later choices persist.
+    if value.schema < 3 && value.line_height == 1.30 {
+        value.line_height = default_height();
+    }
+    value.schema = 3;
     Ok(value)
 }
 
@@ -151,7 +158,7 @@ pub fn set_group_collapsed(group: &str, collapsed: bool) -> Result<(), String> {
     save(&settings)
 }
 fn save(value: &Settings) -> Result<(), String> {
-    if !value.validate() || value.schema != 2 {
+    if !value.validate() || value.schema != 3 {
         return Err("Invalid desktop preferences".into());
     }
     load()?; // Refuse unknown or unsafe existing settings rather than replacing them.
@@ -198,7 +205,7 @@ impl Shell {
     pub fn update(change: impl FnOnce(&mut Settings)) -> Result<Settings, String> {
         let mut prefs = load()?;
         change(&mut prefs);
-        prefs.schema = 2;
+        prefs.schema = 3;
         save(&prefs)?;
         Ok(prefs)
     }
@@ -265,7 +272,7 @@ impl Shell {
                 v.set_show_sidebar(true);
             }
             if save(&Settings {
-                schema: 2,
+                schema: 3,
                 pinned: p.is_active(),
                 width: w.value_as_int() as u16,
                 ..load().unwrap_or_default()
@@ -283,7 +290,7 @@ impl Shell {
             v.set_min_sidebar_width(w.value());
             v.set_max_sidebar_width(w.value());
             if save(&Settings {
-                schema: 2,
+                schema: 3,
                 pinned: p.is_active(),
                 width: w.value_as_int() as u16,
                 ..load().unwrap_or_default()
@@ -332,14 +339,23 @@ impl Shell {
 mod tests {
     use super::*;
     #[test]
+    fn old_default_spacing_migrates_once_to_standard() {
+        let old: Settings =
+            serde_json::from_str(r#"{"schema":2,"pinned":false,"width":260,"line_height":1.3}"#)
+                .unwrap();
+        assert!(old.validate());
+        assert_eq!(default_height(), 1.0);
+        assert!(LINE_HEIGHTS.contains(&1.0) && LINE_HEIGHTS.contains(&1.30));
+    }
+    #[test]
     fn appearance_schema_defaults_and_rejection() {
         let mut v: Settings =
             serde_json::from_str(r#"{"schema":1,"pinned":false,"width":260}"#).unwrap();
         assert!(v.validate());
         assert_eq!(v.scheme, "graphite");
         assert_eq!(v.term_size_pt, 12);
-        assert_eq!(v.line_height, 1.30);
-        v.schema = 2;
+        assert_eq!(v.line_height, 1.0);
+        v.schema = 3;
         assert!(v.validate());
         v.scheme = "unknown".into();
         assert!(!v.validate());

@@ -407,19 +407,25 @@ impl Chrome {
                 c.update(|p| p.term_size_pt = s.value_as_int() as u8);
             }
         });
-        let height =
-            gtk::DropDown::from_strings(&["Compact · 1.15", "Normal · 1.30", "Relaxed · 1.45"]);
+        let height = gtk::DropDown::from_strings(&[
+            "Standard · 1.00",
+            "Compact · 1.15",
+            "Normal · 1.30",
+            "Relaxed · 1.45",
+        ]);
         height.set_selected(
-            [1.15, 1.30, 1.45]
+            crate::sidebar_shell::LINE_HEIGHTS
                 .iter()
                 .position(|h| *h == self.prefs.borrow().line_height)
-                .unwrap_or(1) as u32,
+                .unwrap_or(0) as u32,
         );
         body.append(&height);
         let weak = Rc::downgrade(self);
         height.connect_selected_notify(move |d| {
             if let Some(c) = weak.upgrade() {
-                c.update(|p| p.line_height = [1.15, 1.30, 1.45][d.selected().min(2) as usize]);
+                c.update(|p| {
+                    p.line_height = crate::sidebar_shell::LINE_HEIGHTS[d.selected().min(3) as usize]
+                });
             }
         });
         let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
@@ -503,7 +509,7 @@ impl Chrome {
                 }
                 if let Some(v) = q["line_height"]
                     .as_f64()
-                    .filter(|v| [1.15, 1.30, 1.45].contains(v))
+                    .filter(|v| crate::sidebar_shell::LINE_HEIGHTS.contains(&(*v as f32)))
                 {
                     p.line_height = v as f32;
                 }
