@@ -550,6 +550,13 @@ fn divider_cells(v: &Value) -> std::collections::BTreeMap<(u64, u64), u8> {
     }
     out
 }
+fn mouse_wanted(v: &Value) -> bool {
+    v["panes"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .any(|p| p["id"] == v["active_pane"] && p["grid"]["mouse"] == true)
+}
 const STATUS_STYLE: &str = "\x1b[0;38;2;16;32;48;48;2;173;216;230m";
 
 fn draw(v: &Value, status: &str) -> io::Result<()> {
@@ -651,7 +658,14 @@ fn draw(v: &Value, status: &str) -> io::Result<()> {
         line,
         " ".repeat((screen_cols as usize).saturating_sub(copy::width(&line)))
     ));
-    out.push_str("\x1b[?1000h\x1b[?1006h");
+    // Request mouse reports only while the active program uses the mouse;
+    // otherwise the outer terminal keeps native selection and middle-click
+    // (touchpad three-finger tap) paste.
+    out.push_str(if mouse_wanted(v) {
+        "\x1b[?1000h\x1b[?1006h"
+    } else {
+        "\x1b[?1000l\x1b[?1006l"
+    });
     if let Some((r, c)) = cursor {
         out.push_str(&format!("\x1b[{};{}H\x1b[?25h", r + 1, c + 1));
     }
@@ -859,12 +873,43 @@ fn plain(s: &mut UnixStream, v: &Value, text: &mut String) -> io::Result<()> {
     if text.is_empty() {
         return Ok(());
     }
-    call(
+    let text = std::mem::take(text);
+    match call(
         s,
         "client.input",
-        json!({"pane":v["active_pane"],"kind":"keyboard","text":std::mem::take(text)}),
-    )?;
-    Ok(())
+        json!({"pane":v["active_pane"],"kind":"keyboard","text":text}),
+    ) {
+        // Typing into restored history (e.g. after a reboot) or an exited
+        // program opens a fresh shell window in the same session and delivers
+        // the keys there; ended windows remain readable history.
+        Err(e) if e.to_string().contains("PANE_EXITED") => {
+            call(s, "window.create", json!({"session":v["session"]}))?;
+            let fresh = call(s, "client.render", json!({}))?;
+            // Shell startup can discard typeahead; wait for its prompt.
+            let deadline = std::time::Instant::now() + Duration::from_secs(3);
+            while std::time::Instant::now() < deadline {
+                let screen = call(
+                    s,
+                    "pane.capture",
+                    json!({"pane":fresh["active_pane"],"lines":50}),
+                )?;
+                if screen["text"]
+                    .as_str()
+                    .is_some_and(|t| !t.trim().is_empty())
+                {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            call(
+                s,
+                "client.input",
+                json!({"pane":fresh["active_pane"],"kind":"keyboard","text":text}),
+            )?;
+            Ok(())
+        }
+        other => other.map(|_| ()),
+    }
 }
 fn command(
     s: &mut UnixStream,
@@ -1737,6 +1782,18 @@ pub fn attach_with_window(socket: &Path, session: &str, window: Option<&str>) ->
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn mouse_reports_follow_the_active_program() {
+        let frame = |active: &str| {
+            json!({"active_pane":active,"panes":[
+                {"id":"pane_shell","grid":{"mouse":false}},
+                {"id":"pane_htop","grid":{"mouse":true}}
+            ]})
+        };
+        assert!(!mouse_wanted(&frame("pane_shell")));
+        assert!(mouse_wanted(&frame("pane_htop")));
+        assert!(!mouse_wanted(&json!({})));
+    }
     #[test]
     fn fragmented_input_and_replies() {
         let mut d = Decoder::default();

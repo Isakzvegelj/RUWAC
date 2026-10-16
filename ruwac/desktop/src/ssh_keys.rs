@@ -142,7 +142,11 @@ mod tests {
         let names: Vec<_> = keys.iter().map(|k| k.label()).collect();
         assert_eq!(
             names,
-            ["id_ed25519 · ed25519 · user@laptop", "work · ed25519", "id_rsa · rsa · user@rsa"]
+            [
+                "id_ed25519 · ed25519 · user@laptop",
+                "work · ed25519",
+                "id_rsa · rsa · user@rsa"
+            ]
         );
         assert_eq!(keys[1].path, other.join("work"));
         fs::remove_dir_all(home).unwrap();

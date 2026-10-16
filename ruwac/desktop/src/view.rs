@@ -940,10 +940,9 @@ impl View {
         // explicit reconnect instead of closing like a fresh exit.
         self.seen_running.set(false);
         self.status.set_text("Reconnecting to daemon…");
-        let old = self.worker.replace(Worker::restart(
-            self.socket.clone(),
-            self.session.clone(),
-        ));
+        let old = self
+            .worker
+            .replace(Worker::restart(self.socket.clone(), self.session.clone()));
         old.close();
         if self.area.width() > 0 && self.area.height() > 0 {
             self.command("client.resize",json!({"rows":((self.area.height()as f64/self.cell_height.get())as i32).clamp(4,u16::MAX as i32),"cols":((self.area.width()as f64/self.cell_width.get())as i32).clamp(10,u16::MAX as i32)}));
@@ -1403,7 +1402,14 @@ impl View {
                     .get("double_prefix")
                     .is_some_and(|v| v == "previous")
                 {
-                    if self.worker.borrow().state.lock().unwrap().supports_previous_window {
+                    if self
+                        .worker
+                        .borrow()
+                        .state
+                        .lock()
+                        .unwrap()
+                        .supports_previous_window
+                    {
                         self.navigate("window.previous", json!({"session":self.session}));
                     } else {
                         self.warn("Previous-window navigation requires a newer daemon; the active session is preserved");

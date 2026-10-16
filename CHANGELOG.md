@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## v0.4.11 — 2026-10-16 — Stable source release
+
+- Typing into a restored or ended pane in `ruwac -r`/`-S` (for example after a reboot) opens a fresh shell window in the same session and delivers the keys there, instead of failing with `PANE_EXITED`; ended windows remain readable history.
+
+- The CLI client requests terminal mouse reports only while the active program uses the mouse, restoring native selection and middle-click (touchpad three-finger tap) paste inside nested RUWAC sessions.
+
+- Add conventional CLI short forms: `-v`/`-V` version, `-h` help, `ls`/`list`/`-l` session list, `new NAME` for `-S NAME`, and `kill NAME` for `kill-session`.
+
+- Apply Rust formatting so the source quality check passes again; the RPM updater waits for that check before installing.
+
 ## v0.4.10 — 2026-10-16 — Stable source release
 
 - Detect the SSH keys you already have (keys in `~/.ssh` with a public half, and `IdentityFile` entries in `~/.ssh/config`) in machine SSH setup: a Detected keys menu, and an empty key field is filled with the preferred key (ed25519, then ECDSA, then RSA). Only public keys and the SSH config are read.

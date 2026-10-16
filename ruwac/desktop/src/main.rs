@@ -32,9 +32,9 @@ mod sessions;
 #[path = "../../crates/ruwac-pty/src/shell.rs"]
 mod shell;
 mod shortcuts;
-mod ssh_keys;
 mod sidebar_shell;
 mod ssh_jump;
+mod ssh_keys;
 mod staging;
 mod terminal_style;
 mod tiles;

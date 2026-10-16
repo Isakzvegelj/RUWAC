@@ -75,6 +75,18 @@ fn session_listing(reply: &Value) -> io::Result<String> {
     }
     Ok(out)
 }
+/// Conventional short forms for existing commands.
+fn alias(command: &str) -> Option<&'static str> {
+    Some(match command {
+        "-v" | "-V" => "--version",
+        "-h" | "-?" => "--help",
+        "ls" | "list" | "-l" | "--list" => "-ls",
+        "kill" | "-k" => "kill-session",
+        "new" => "-S",
+        _ => return None,
+    })
+}
+
 fn main() {
     if let Err(e) = run() {
         eprintln!("ruwac: {e}");
@@ -290,6 +302,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
     if remote_binary.is_some() && host.is_none() {
         return Err("--remote-binary requires --host".into());
+    }
+    if let Some(first) = a.first_mut() {
+        if let Some(canonical) = alias(first) {
+            *first = canonical.into();
+        }
     }
     if a.first().is_some_and(|command| command == "update") {
         if host.is_some() || explicit_socket.is_some() {
@@ -689,7 +706,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 "Updates (Fedora 44): ruwac update --check | --install | --rollback | --auto-check on|off|status | --auto-install on|off|status | --testing-bundles on|off|status.\nTesting bundle delivery is opt-in for Fedora 44 x86_64; source builds require development dependencies; --headless retains a CLI-only installation. No running processes are restarted."
             );
             println!(
-                "RUWAC\n  ruwac -ls [--json]  # list persistent sessions\n  ruwac -S NAME -X COMMAND  # Screen control aliases; kill/quit close programs\n  ruwac -dmS NAME  # create a detached named session\n  ruwac -x NAME  # share an existing session (also -r)\n  ruwac -R NAME  # attach or create an exact named session\n  ruwac -S NAME  # create or attach a named terminal session\n  ruwac -r NAME_OR_SESSION_ID  # reattach an existing session\n  ruwac kill-session NAME_OR_SESSION_ID  # closes all programs in this session\n  ruwac job list [--session session_ID] [--query TEXT] --json\n  ruwac job query --id pane_ID --json\n  ruwac workspace describe|list|saved [--json]\n  ruwac workspace events subscribe --types tab,focus,layout,rdp --json\n  ruwac workspace events poll --subscription subscription_ID --after CURSOR --limit 50 --json\n  ruwac workspace events unsubscribe --subscription subscription_ID --json\n  ruwac workspace save --name NAME --json\n  ruwac workspace open|restore --id workspace_ID --json\n  ruwac host list [--query TEXT] [--group GROUP] [--protocol SSH|RDP] [--favorites] [--limit 1..50] [--offset N --snapshot TOKEN] --json\n  ruwac host query --id endpoint_ID --json\n  ruwac rdp list --json\n  ruwac rdp query|reconnect|disconnect --id view_ID --json\n  ruwac rdp open --profile endpoint_ID [--activate] --json\n  ruwac workspace activate --id tab_ID --json\n  ruwac workspace focus --id view_ID --json\n  ruwac doctor [--desktop] [--terminal [--repair]] [--json]\n  ruwac --version\n  ruwac start  # starts/reuses a private persistent daemon\n  ruwac gui [--session session_ID]\n  ruwac session create --name NAME --detach --json\n  ruwac session list --json\n  ruwac pane list --session session_ID --json\n  ruwac pane send-text --id pane_ID --text TEXT --json\n  ruwac pane send-text --id pane_ID --file UTF8_FILE --json\n  ruwac pane send-key --id pane_ID --key Enter --json\n  ruwac pane capture --id pane_ID --lines 250 [--buffer active|primary] --json\n  ruwac pane wait --id pane_ID --contains TEXT --timeout-ms 5000 --json\n  ruwac --socket PATH serve\n  ruwac --socket PATH rpc METHOD --params JSON [--idempotency KEY]\n  ruwac --socket PATH request < request.json\n  ruwac --socket PATH attach --session session_ID\n  ruwac image-stage PNG PRIVATE_DIRECTORY\n  ruwac --socket PATH image-attach pane_ID PNG PRIVATE_DIRECTORY\n  ruwac --socket PATH health|version|capabilities|schema|describe\nRemote: ruwac --host SSH_HOST [--remote-binary PATH] [--socket REMOTE_PATH] COMMAND.\n  ruwac --host SSH_HOST describe\n  ruwac --host SSH_HOST pane send-text --id pane_ID --file LOCAL_UTF8_FILE\n  ruwac --host SSH_HOST attach --session session_ID\n  ruwac --host SSH_HOST image-attach pane_ID LOCAL_PNG REMOTE_PRIVATE_DIRECTORY\nHost/workspace/RDP commands address an already-running remote GUI with its explicit permissions. Uses existing SSH keys/config and verified host keys; no credential or agent forwarding. Without explicit --socket, the remote CLI selects its own private default.\nImage attachment: explicit local or SSH Codex draft; no automatic submission. No desktop clipboard or full Screen compatibility claim."
+                "RUWAC\n  ruwac -ls [--json]  # list persistent sessions\n  ruwac -S NAME -X COMMAND  # Screen control aliases; kill/quit close programs\n  ruwac -dmS NAME  # create a detached named session\n  ruwac -x NAME  # share an existing session (also -r)\n  ruwac -R NAME  # attach or create an exact named session\n  ruwac -S NAME  # create or attach a named terminal session\n  ruwac -r NAME_OR_SESSION_ID  # reattach an existing session\n  ruwac kill-session NAME_OR_SESSION_ID  # closes all programs in this session\n  ruwac job list [--session session_ID] [--query TEXT] --json\n  ruwac job query --id pane_ID --json\n  ruwac workspace describe|list|saved [--json]\n  ruwac workspace events subscribe --types tab,focus,layout,rdp --json\n  ruwac workspace events poll --subscription subscription_ID --after CURSOR --limit 50 --json\n  ruwac workspace events unsubscribe --subscription subscription_ID --json\n  ruwac workspace save --name NAME --json\n  ruwac workspace open|restore --id workspace_ID --json\n  ruwac host list [--query TEXT] [--group GROUP] [--protocol SSH|RDP] [--favorites] [--limit 1..50] [--offset N --snapshot TOKEN] --json\n  ruwac host query --id endpoint_ID --json\n  ruwac rdp list --json\n  ruwac rdp query|reconnect|disconnect --id view_ID --json\n  ruwac rdp open --profile endpoint_ID [--activate] --json\n  ruwac workspace activate --id tab_ID --json\n  ruwac workspace focus --id view_ID --json\n  ruwac doctor [--desktop] [--terminal [--repair]] [--json]\n  ruwac --version  # also -v / -V\n  Short forms: -h help · ls/list/-l sessions · new NAME = -S NAME · kill NAME = kill-session NAME\n  ruwac start  # starts/reuses a private persistent daemon\n  ruwac gui [--session session_ID]\n  ruwac session create --name NAME --detach --json\n  ruwac session list --json\n  ruwac pane list --session session_ID --json\n  ruwac pane send-text --id pane_ID --text TEXT --json\n  ruwac pane send-text --id pane_ID --file UTF8_FILE --json\n  ruwac pane send-key --id pane_ID --key Enter --json\n  ruwac pane capture --id pane_ID --lines 250 [--buffer active|primary] --json\n  ruwac pane wait --id pane_ID --contains TEXT --timeout-ms 5000 --json\n  ruwac --socket PATH serve\n  ruwac --socket PATH rpc METHOD --params JSON [--idempotency KEY]\n  ruwac --socket PATH request < request.json\n  ruwac --socket PATH attach --session session_ID\n  ruwac image-stage PNG PRIVATE_DIRECTORY\n  ruwac --socket PATH image-attach pane_ID PNG PRIVATE_DIRECTORY\n  ruwac --socket PATH health|version|capabilities|schema|describe\nRemote: ruwac --host SSH_HOST [--remote-binary PATH] [--socket REMOTE_PATH] COMMAND.\n  ruwac --host SSH_HOST describe\n  ruwac --host SSH_HOST pane send-text --id pane_ID --file LOCAL_UTF8_FILE\n  ruwac --host SSH_HOST attach --session session_ID\n  ruwac --host SSH_HOST image-attach pane_ID LOCAL_PNG REMOTE_PRIVATE_DIRECTORY\nHost/workspace/RDP commands address an already-running remote GUI with its explicit permissions. Uses existing SSH keys/config and verified host keys; no credential or agent forwarding. Without explicit --socket, the remote CLI selects its own private default.\nImage attachment: explicit local or SSH Codex draft; no automatic submission. No desktop clipboard or full Screen compatibility claim."
             );
         }
         _ => return Err("unknown command; use --help".into()),
@@ -700,6 +717,20 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod named_session_tests {
     use super::*;
+
+    #[test]
+    fn conventional_short_forms_map_to_existing_commands() {
+        assert_eq!(alias("-v"), Some("--version"));
+        assert_eq!(alias("-V"), Some("--version"));
+        assert_eq!(alias("-h"), Some("--help"));
+        assert_eq!(alias("ls"), Some("-ls"));
+        assert_eq!(alias("new"), Some("-S"));
+        assert_eq!(alias("kill"), Some("kill-session"));
+        // Discovery and Screen flags keep their meaning.
+        for kept in ["version", "-ls", "-S", "-r", "-x", "update", "gui"] {
+            assert_eq!(alias(kept), None);
+        }
+    }
 
     #[test]
     fn readable_list_drops_terminal_controls_and_handles_empty() {

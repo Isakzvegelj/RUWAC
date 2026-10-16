@@ -215,7 +215,10 @@ pub fn agent_sessions(
             "Open or switch to a session; its agent keeps running"
         });
         for (id, name) in rows {
-            let open = views.borrow().iter().any(|v| v.session == id && !v.finished.get());
+            let open = views
+                .borrow()
+                .iter()
+                .any(|v| v.session == id && !v.finished.get());
             let button = gtk::Button::with_label(&if open {
                 format!("{name} · open")
             } else {
@@ -231,7 +234,10 @@ pub fn agent_sessions(
             let (t, v, s, b) = (tabs.clone(), views.clone(), socket.clone(), broker.clone());
             button.connect_clicked(move |button| {
                 append(&t, &v, &s, &b, &id, &name);
-                if let Some(pop) = button.ancestor(gtk::Popover::static_type()).and_downcast::<gtk::Popover>() {
+                if let Some(pop) = button
+                    .ancestor(gtk::Popover::static_type())
+                    .and_downcast::<gtk::Popover>()
+                {
                     pop.popdown();
                 }
             });

@@ -197,12 +197,14 @@ pub fn clipboard_route(
                 });
                 Ok(())
             } else {
-                view.worker.borrow().send(crate::worker::Command::AttachImage {
-                    pane: view.target.borrow().clone(),
-                    path: image.path.clone(),
-                    allowed: allowed.clone(),
-                    done: send,
-                })
+                view.worker
+                    .borrow()
+                    .send(crate::worker::Command::AttachImage {
+                        pane: view.target.borrow().clone(),
+                        path: image.path.clone(),
+                        allowed: allowed.clone(),
+                        done: send,
+                    })
             };
             if let Err(error) = queued {
                 done(Err(error));
