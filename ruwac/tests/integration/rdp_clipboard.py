@@ -71,6 +71,51 @@ try:
    started=time.perf_counter();command('gui','rdp-open',port=port);r=spike.eventually(lambda:r if (r:=command('gui','rdp-inspect',rdp=tab)).get('size')==([1280,720] if a.honor_client_size else [320,180]) else False,20);assert r['status'].startswith('Connected'),r;r['connect_to_decoded_frame_ms']=(time.perf_counter()-started)*1000;connections.append(r)
   return {'server':ready,'connections':connections,'authentication':'actual CredSSP/NLA','frames':'decoded live loopback server frames, generated desktop'}
  case('RDP-NATIVE-AUTH-3',lifecycle)
+ def initial_size():
+  assert a.honor_client_size,'Requires the real peer to honor initial desktop dimensions'
+  fixture=root/'initial-size-server';fixture.mkdir(mode=0o700)
+  for name in ['cert.pem','key.pem']:(fixture/name).write_bytes((root/name).read_bytes());(fixture/name).chmod(0o600)
+  endpoint=start([a.server,str(fixture)],'initial-size-server');spike.eventually(lambda:(fixture/'server-ready.json').exists(),10);ports=json.loads((fixture/'server-ready.json').read_text())['ports']
+  reference='generated-initial-size-'+root.name
+  subprocess.run(['secret-tool','store','--label=RUWAC disposable initial-size test','application','RUWAC','profile',reference],input=b'generated-local-only',env=env,check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=10)
+  evidence=[]
+  try:
+   for index,(width,height)in enumerate([(1400,900),(1600,1000),(1100,700)]):
+    command('gui','rdp-display',rdp=0,mode='fit',window_width=width,window_height=height)
+    spike.eventually(lambda:command('gui','rdp-inspect',rdp=0)['window_width']==width,10)
+    name='Generated initial display '+str(index)
+    command('gui','profile-editor',operation='new',response='keep',fields={'0':name,'1':'Generated display','3':'127.0.0.1:'+str(ports[0]),'4':'fixture','9':reference,'10':str(root/'cert.pem'),'13':3})
+    spike.eventually(lambda:any(d['width']>0 and d['height']>0 for d in command('gui','profile-editor',operation='layout')['dialogs']),10)
+    saved=command('gui','profile-editor',operation='inspect',response='connect');assert not saved['error'],saved
+    state=spike.eventually(lambda:r if (r:=command('gui','rdp-inspect',rdp=3)).get('display_mode')=='Dynamic'and r['status'].startswith('Connected')and r['size']==r['viewport']and r['size'][0]==width else False,20)
+    expected=state['size'];trace=state['metrics']['decoded_sizes'];assert trace and all(size==expected for size in trace),{'expected_first_size':expected,'actual_decoded_trace':trace}
+    time.sleep(.4);assert command('gui','rdp-inspect',rdp=3)['metrics']['decoded_sizes']==trace
+    evidence.append({'window':[width,height],'first_framebuffer':trace[0],'all_decoded_sizes':trace,'production_path':'native profile Save & Connect, stored generated Secret Service credential'})
+    command('gui','close-rdp',rdp=3)
+   # The real IPC path opens an unselected tab. Cancel before the deferred
+   # worker starts, then prove a subsequent background connection completes
+   # without stealing tab selection or clipboard ownership.
+   item=next(p for p in saved['items']if p['name']==name)
+   command('gui','rdp-permission',enabled=True);command('gui','switch',view=0);focus('gui')
+   before=command('gui','inspect');neighbors=[command('gui','rdp-inspect',rdp=i)['transport_id']for i in range(3)]
+   def api(verb,*args):
+    result=subprocess.run([a.binary,'--socket',str(sock),'rdp',verb,*args,'--json'],env=env,capture_output=True,text=True,timeout=8);assert result.returncode==0,(verb,result.stderr,result.stdout);return json.loads(result.stdout)['result']
+   opened=api('open','--profile',item['id']);assert opened['phase']=='connecting'and opened['transport_id']is None,opened
+   api('disconnect','--id',opened['id']);time.sleep(.3)
+   cancelled=api('query','--id',opened['id']);assert cancelled['transport_id']is None and cancelled['decoded_updates']==0,cancelled
+   command('gui','close-rdp',rdp=3)
+   opened=api('open','--profile',item['id']);vid=opened['id']
+   live=spike.eventually(lambda:r if (r:=api('query','--id',vid))['phase']=='connected'and r['size'][0]==1100 else False,20)
+   assert live['size'][0]==1100,live
+   hidden=command('gui','rdp-inspect',rdp=3);assert hidden['metrics']['decoded_sizes']==[live['size']],hidden
+   after=command('gui','inspect');assert after['selected_tab']==before['selected_tab']and after['clipboard_owner']==before['clipboard_owner'],(before,after)
+   assert [command('gui','rdp-inspect',rdp=i)['transport_id']for i in range(3)]==neighbors
+   api('disconnect','--id',vid);command('gui','close-rdp',rdp=3);command('gui','rdp-permission',enabled=False)
+   return {'connections':evidence,'pending_cancel_before_worker_and_credential_lookup':True,'background_first_framebuffer':live['size'],'background_focus_clipboard_neighbors_preserved':True,'authentication':'actual loopback CredSSP and decoded framebuffer; no external-host claim'}
+  finally:
+   subprocess.run(['secret-tool','clear','application','RUWAC','profile',reference],env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=10)
+   endpoint.terminate();endpoint.wait(timeout=5)
+ case('RDP-NATIVE-INITIAL-SIZE',initial_size)
  def lifecycle_api():
   def api(verb,*args,ok=True):
    r=subprocess.run([a.binary,'--socket',str(sock),'rdp',verb,*args,'--json'],env=env,capture_output=True,text=True,timeout=8)
@@ -89,7 +134,9 @@ try:
   for name in ['cert.pem','key.pem']:(api_dir/name).write_bytes((root/name).read_bytes());(api_dir/name).chmod(0o600)
   api_server=start([a.server,str(api_dir)],'api-server');spike.eventually(lambda:(api_dir/'server-ready.json').exists(),10);api_ready=json.loads((api_dir/'server-ready.json').read_text())
   reference='generated-api-'+root.name
-  r=command('gui','profile-editor',operation='new',fields={'0':'R16 API profile','1':'Generated automation','3':'127.0.0.1:'+str(api_ready['ports'][0]),'4':'fixture','9':reference,'10':str(root/'cert.pem'),'13':0});assert not r['error'],r
+  command('gui','profile-editor',operation='new',response='keep',fields={'0':'R16 API profile','1':'Generated automation','3':'127.0.0.1:'+str(api_ready['ports'][0]),'4':'fixture','9':reference,'10':str(root/'cert.pem'),'13':0})
+  spike.eventually(lambda:any(d['width']>0 and d['height']>0 for d in command('gui','profile-editor',operation='layout')['dialogs']),10)
+  r=command('gui','profile-editor',operation='inspect',response='save');assert not r['error'],r
   item=next(p for p in r['items']if p['name']=='R16 API profile')
   subprocess.run(['secret-tool','store','--label=RUWAC disposable API test','application','RUWAC','profile',reference],input=b'generated-local-only',env=env,check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=10)
   for method,params,error,key in [

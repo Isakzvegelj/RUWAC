@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v0.4.6 — 2026-10-16 — Stable source release
+
+- Wait for stable GTK viewport allocation before authenticating a new Dynamic RDP connection, preventing a temporary smaller desktop. Preserve background tab focus, explicit cancellation and hidden reconnect sizes.
+
 ## v0.4.5 — 2026-10-16 — Stable source release
 
 - Use advertised terminal size limits up to 512 rows, 1024 columns and 262144 cells, with explicit bounded large-render replies and versioned checkpoint support. Preserve running older daemons.

@@ -1041,6 +1041,32 @@ fn stable_resize(raw: (u16, u16), previous: (u16, u16)) -> (u16, u16) {
     };
     (axis(raw.0, previous.0), axis(raw.1, previous.1))
 }
+#[derive(Default)]
+struct InitialViewport {
+    sample: Option<((u16, u16), std::time::Instant)>,
+}
+impl InitialViewport {
+    fn observe(&mut self, size: Option<(u16, u16)>, now: std::time::Instant) -> Option<(u16, u16)> {
+        let Some(size) = size else {
+            self.sample = None;
+            return None;
+        };
+        match self.sample {
+            Some((old, since)) if stable_resize(size, old) == old => {
+                (now.duration_since(since) >= Duration::from_millis(100)).then_some(old)
+            }
+            _ => {
+                self.sample = Some((size, now));
+                None
+            }
+        }
+    }
+}
+struct PendingConnect {
+    profile: Profile,
+    began: std::time::Instant,
+    viewport: InitialViewport,
+}
 struct AutoGdm {
     armed: bool,
     sequence: crate::gdm::Sequence,
@@ -1091,7 +1117,8 @@ pub struct RdpView {
     connection: RefCell<Option<Connection>>,
     surface: RefCell<Option<gtk::cairo::ImageSurface>>,
     size: Cell<(u16, u16)>,
-    last_size: Cell<(u16, u16)>,
+    last_size: Cell<Option<(u16, u16)>>,
+    pending_connect: RefCell<Option<PendingConnect>>,
     surface_generation: Cell<u64>,
     rendered_generation: Cell<u64>,
     last_pixel: Cell<[u8; 4]>,
@@ -1297,7 +1324,8 @@ impl RdpView {
             connection: RefCell::new(None),
             surface: RefCell::new(None),
             size: Cell::new((0, 0)),
-            last_size: Cell::new((1280, 720)),
+            last_size: Cell::new(None),
+            pending_connect: RefCell::new(None),
             surface_generation: Cell::new(0),
             rendered_generation: Cell::new(0),
             last_pixel: Cell::new([0; 4]),
@@ -1366,6 +1394,7 @@ impl RdpView {
                 if let Some(v) = weak.upgrade() {
                     v.assist_epoch.fetch_add(1, Ordering::AcqRel);
                     v.transient_pin.borrow_mut().take();
+                    v.cancel_pending_connect("Connection cancelled: settings changed");
                 }
             });
         }
@@ -1767,6 +1796,7 @@ impl RdpView {
             let Some(v) = w.upgrade() else {
                 return glib::ControlFlow::Break;
             };
+            v.pending_connect_tick();
             v.update();
             v.auto_gdm_tick();
             cancel_auto.set_visible(v.auto_gdm.borrow().armed);
@@ -1963,7 +1993,7 @@ impl RdpView {
                 .collect();
             serde_json::json!({"decoded_updates":s.frames,"decoded_sizes":s.decoded_sizes,"update_intervals_ms":times})
         });
-        serde_json::json!({"transport_id":self.connection.borrow().as_ref().map(|c|c.id.as_str()),"requested_size":self.requested.get(),"display_mode":format!("{:?}",self.mode.get()),"reconnect_visible":self.disconnect_card.is_visible(),"metrics":metrics,"gnome_auto":{"armed":self.auto_gdm.borrow().armed,"step":format!("{:?}",self.auto_gdm.borrow().sequence.step),"input_epoch":self.assist_epoch.load(Ordering::Acquire),"guards":{"canvas_focus":self.area.has_focus(),"window_active":self.root.root().and_downcast::<gtk::Window>().is_some_and(|w|w.is_active()),"selected":self.selected.borrow().as_ref().is_some_and(|f|f()),"profile_current":self.profile_metadata.borrow().as_ref().is_some_and(crate::profiles::assist_profile_current),"rendered_generation":self.rendered_generation.get(),"surface_generation":self.surface_generation.get()},"generation":self.connection.borrow().as_ref().map(|c|c.state.lock().unwrap().generation),"handovers":self.connection.borrow().as_ref().map(|c|c.state.lock().unwrap().handovers)},"last_pixel":self.last_pixel.get(),"status":self.status.text().as_str(),"size":self.size.get(),"zoom":self.zoom.get(),"pan":[self.scroll.hadjustment().value(),self.scroll.vadjustment().value()],"viewport":[self.area.width(),self.area.height()],"window_width":self.root.root().and_then(|r|r.downcast::<gtk::Window>().ok()).map(|w|w.width()),"active":self.broker.borrow().active()==Some(self.id.as_str()),"epoch":self.broker.borrow().epoch(),"pending":self.pending.borrow().is_some(),"received_generation":self.received_generation.get(),"offers":self.offers_seen.get(),"policy":format!("{:?}",self.policy.get())})
+        serde_json::json!({"connection_pending":self.pending_connect.borrow().is_some(),"transport_id":self.connection.borrow().as_ref().map(|c|c.id.as_str()),"requested_size":self.requested.get(),"display_mode":format!("{:?}",self.mode.get()),"reconnect_visible":self.disconnect_card.is_visible(),"metrics":metrics,"gnome_auto":{"armed":self.auto_gdm.borrow().armed,"step":format!("{:?}",self.auto_gdm.borrow().sequence.step),"input_epoch":self.assist_epoch.load(Ordering::Acquire),"guards":{"canvas_focus":self.area.has_focus(),"window_active":self.root.root().and_downcast::<gtk::Window>().is_some_and(|w|w.is_active()),"selected":self.selected.borrow().as_ref().is_some_and(|f|f()),"profile_current":self.profile_metadata.borrow().as_ref().is_some_and(crate::profiles::assist_profile_current),"rendered_generation":self.rendered_generation.get(),"surface_generation":self.surface_generation.get()},"generation":self.connection.borrow().as_ref().map(|c|c.state.lock().unwrap().generation),"handovers":self.connection.borrow().as_ref().map(|c|c.state.lock().unwrap().handovers)},"last_pixel":self.last_pixel.get(),"status":self.status.text().as_str(),"size":self.size.get(),"zoom":self.zoom.get(),"pan":[self.scroll.hadjustment().value(),self.scroll.vadjustment().value()],"viewport":[self.area.width(),self.area.height()],"window_width":self.root.root().and_then(|r|r.downcast::<gtk::Window>().ok()).map(|w|w.width()),"active":self.broker.borrow().active()==Some(self.id.as_str()),"epoch":self.broker.borrow().epoch(),"pending":self.pending.borrow().is_some(),"received_generation":self.received_generation.get(),"offers":self.offers_seen.get(),"policy":format!("{:?}",self.policy.get())})
     }
     pub fn fixture_policy(&self, index: u32) {
         fn find(w: &gtk::Widget) -> Option<gtk::DropDown> {
@@ -2223,6 +2253,7 @@ impl RdpView {
         Some(p)
     }
     pub fn configure(&self, p: &crate::profiles::Profile) {
+        self.cancel_pending_connect("Connection cancelled: profile changed");
         self.assist_epoch.fetch_add(1, Ordering::AcqRel);
         self.assist_button
             .set_visible(p.preferences.rdp_mode == "gnome-remote-login");
@@ -2265,45 +2296,102 @@ impl RdpView {
                 .set_text("Host, user and secret reference are required");
             return Err("Configured user and credential reference required".into());
         }
-        let initial_size = if self.mode.get() == Scale::Dynamic
-            && self.scroll.width() >= 200
-            && self.scroll.height() >= 200
-        {
-            let scale = self
-                .area
-                .native()
-                .and_then(|n| n.surface())
-                .map(|s| s.scale())
-                .unwrap_or(1.0);
-            stable_resize(
-                (
-                    ((self.scroll.width() as f64 * scale).clamp(200.0, 4096.0) as u16) / 2 * 2,
-                    (self.scroll.height() as f64 * scale).clamp(200.0, 4096.0) as u16,
-                ),
-                self.desired.get(),
-            )
-        } else {
-            self.last_size.get()
-        };
-        self.close();
-        self.certificate.borrow_mut().take();
-        self.review_certificate.set_visible(false);
-        let connection = Connection::start(Profile {
+        let profile = Profile {
             host,
             port,
             user: user.into(),
             reference: reference.into(),
             reconnect: self.reconnect.get(),
-            desktop_size: initial_size,
+            desktop_size: self.last_size.get().unwrap_or((1280, 720)),
             clipboard: self.broker.borrow().desktop_enabled(),
             handover: None,
-            graphics: self
-                .profile_metadata
-                .borrow()
-                .as_ref()
-                .is_some_and(|p| p.preferences.rdp_mode.starts_with("gnome-")),
+            graphics: true,
             ca: if ca.is_empty() { None } else { Some(ca.into()) },
-        });
+        };
+        self.close();
+        self.certificate.borrow_mut().take();
+        self.review_certificate.set_visible(false);
+        if self.mode.get() == Scale::Dynamic {
+            // New tabs and fullscreen transitions have no trustworthy canvas
+            // allocation in their creation callback. Do not authenticate at a
+            // temporary fallback size and move remote windows a second time.
+            *self.pending_connect.borrow_mut() = Some(PendingConnect {
+                profile,
+                began: std::time::Instant::now(),
+                viewport: InitialViewport::default(),
+            });
+            if activate {
+                self.focus();
+            }
+            self.status.set_text("Waiting for desktop layout…");
+        } else {
+            self.start_connection(profile, activate);
+        }
+        Ok(())
+    }
+    fn cancel_pending_connect(&self, reason: &str) {
+        if self.pending_connect.borrow_mut().take().is_some() {
+            self.status.set_text(reason);
+        }
+    }
+    fn connection_viewport(&self) -> Option<(u16, u16)> {
+        let scale = self
+            .area
+            .native()
+            .and_then(|n| n.surface())
+            .map(|s| s.scale())
+            .unwrap_or(1.0);
+        let dimensions = |w: i32, h: i32| {
+            (w > 0 && h > 0).then(|| {
+                (
+                    ((w as f64 * scale).clamp(200.0, 4096.0) as u16) / 2 * 2,
+                    (h as f64 * scale).clamp(200.0, 4096.0) as u16,
+                )
+            })
+        };
+        if self.root.is_mapped() {
+            return dimensions(self.scroll.width(), self.scroll.height());
+        }
+        // A hidden reconnect keeps its last actual framebuffer, including a
+        // split workspace's smaller viewport. A new background tab uses the
+        // allocated TabView without selecting it or taking clipboard ownership.
+        self.last_size.get().or_else(|| {
+            self.root
+                .ancestor(adw::TabView::static_type())
+                .filter(|tabs| tabs.is_mapped())
+                .and_then(|tabs| dimensions(tabs.width(), tabs.height()))
+        })
+    }
+    fn pending_connect_tick(&self) {
+        if self.pending_connect.borrow().is_none() {
+            return;
+        }
+        if self.mode.get() != Scale::Dynamic {
+            self.cancel_pending_connect("Connection cancelled: display mode changed");
+            return;
+        }
+        let now = std::time::Instant::now();
+        let size = self.connection_viewport();
+        let mut pending = self.pending_connect.borrow_mut();
+        let Some(request) = pending.as_mut() else {
+            return;
+        };
+        if now.duration_since(request.began) > Duration::from_secs(15) {
+            pending.take();
+            self.status
+                .set_text("Desktop layout is unavailable; show this window and reconnect");
+            return;
+        }
+        let Some(size) = request.viewport.observe(size, now) else {
+            return;
+        };
+        let mut request = pending.take().unwrap();
+        drop(pending);
+        request.profile.desktop_size = size;
+        self.start_connection(request.profile, false);
+    }
+    fn start_connection(&self, profile: Profile, activate: bool) {
+        let connection = Connection::start(profile);
         *self.bridge.borrow_mut() = connection.state.lock().unwrap().bridge.clone();
         *self.connection.borrow_mut() = Some(connection);
         let mut automatic = AutoGdm::default();
@@ -2319,12 +2407,14 @@ impl RdpView {
         }
         self.status
             .set_text("Connecting with certificate validation…");
-        Ok(())
     }
     pub fn automation_reconnect(&self) -> Result<(), String> {
         self.begin_connect(false)
     }
     pub fn event_state(&self) -> (String, bool) {
+        if self.pending_connect.borrow().is_some() {
+            return ("connecting".into(), false);
+        }
         self.connection
             .borrow()
             .as_ref()
@@ -2353,7 +2443,13 @@ impl RdpView {
         let phase = connection
             .as_ref()
             .map(|c| c.state.lock().unwrap().phase.clone())
-            .unwrap_or_else(|| "disconnected".into());
+            .unwrap_or_else(|| {
+                if self.pending_connect.borrow().is_some() {
+                    "connecting".into()
+                } else {
+                    "disconnected".into()
+                }
+            });
         serde_json::json!({"id":self.root.widget_name().as_str(),"phase":phase,"connection_stage":connection.as_ref().map(|c|c.state.lock().unwrap().connection_stage.clone()),"size":self.size.get(),"transport_id":connection.as_ref().map(|c|c.id.as_str()),"decoded_updates":connection.as_ref().map(|c|c.state.lock().unwrap().frames).unwrap_or(0),"clipboard_owner":self.broker.borrow().active()==Some(self.id.as_str()),"clipboard_channel_negotiated":connection.as_ref().is_some_and(|c|c.state.lock().unwrap().clipboard_channel_negotiated),"verified_tls_sha256":connection.as_ref().and_then(|c|c.state.lock().unwrap().verified_tls_sha256.clone()),"protocol_error":connection.as_ref().and_then(|c|c.state.lock().unwrap().protocol_error.clone()),"authentication_error":connection.as_ref().and_then(|c|c.state.lock().unwrap().authentication_error.clone()),"certificate_review":self.certificate.borrow().as_ref().map(|r|serde_json::json!({"sha256":r.fingerprint(),"changed":r.changed,"valid_now":r.valid_now})),"profile":self.profile_metadata.borrow().as_ref().map(|p|p.id.clone())})
     }
     pub fn connect_profile(&self) {
@@ -2437,6 +2533,10 @@ impl RdpView {
         serde_json::json!({"held_buttons":self.buttons.borrow().len(),"position_before":position_before,"position":self.pointer_position.get(),"state":self.fixture_inspect()})
     }
     pub fn set_profile(&self, host: &str, user: &str, reference: &str, ca: &str) {
+        self.cancel_pending_connect("Connection cancelled: settings changed");
+        if self.entries[0].text() != host {
+            self.last_size.set(None);
+        }
         for (e, value) in self.entries.iter().zip([host, user, reference, ca]) {
             e.set_text(value);
         }
@@ -3519,6 +3619,7 @@ impl RdpView {
         }
     }
     pub fn close(&self) {
+        self.pending_connect.borrow_mut().take();
         *self.auto_gdm.borrow_mut() = AutoGdm::default();
         self.rendered_generation.set(0);
         self.surface_generation.set(0);
@@ -3624,7 +3725,7 @@ impl RdpView {
                 self.surface.borrow_mut().take();
             }
             self.size.set((f.width, f.height));
-            self.last_size.set((f.width, f.height));
+            self.last_size.set(Some((f.width, f.height)));
             if let Some(p) = f.pixels.get(f.pixels.len().saturating_sub(4)..) {
                 if p.len() == 4 {
                     self.last_pixel.set(p.try_into().unwrap());
@@ -3949,6 +4050,54 @@ mod authenticated_fixture;
 #[cfg(test)]
 mod resize_stability_tests {
     use super::*;
+    #[test]
+    fn initial_connection_waits_for_stable_real_allocation() {
+        let start = std::time::Instant::now();
+        let mut gate = InitialViewport::default();
+        assert_eq!(gate.observe(None, start), None);
+        assert_eq!(gate.observe(Some((1400, 868)), start), None);
+        assert_eq!(
+            gate.observe(Some((1400, 868)), start + Duration::from_millis(99)),
+            None
+        );
+        assert_eq!(
+            gate.observe(Some((1400, 868)), start + Duration::from_millis(100)),
+            Some((1400, 868))
+        );
+    }
+    #[test]
+    fn initial_connection_restarts_wait_when_layout_changes() {
+        let start = std::time::Instant::now();
+        let mut gate = InitialViewport::default();
+        gate.observe(Some((1280, 720)), start);
+        assert_eq!(
+            gate.observe(Some((1400, 868)), start + Duration::from_millis(90)),
+            None
+        );
+        assert_eq!(
+            gate.observe(Some((1400, 868)), start + Duration::from_millis(150)),
+            None
+        );
+        assert_eq!(
+            gate.observe(Some((1400, 868)), start + Duration::from_millis(190)),
+            Some((1400, 868))
+        );
+    }
+    #[test]
+    fn initial_connection_loses_unmapped_sample_without_jitter_accumulation() {
+        let start = std::time::Instant::now();
+        let mut gate = InitialViewport::default();
+        gate.observe(Some((1400, 868)), start);
+        assert_eq!(
+            gate.observe(Some((1402, 869)), start + Duration::from_millis(100)),
+            Some((1400, 868))
+        );
+        gate.observe(None, start + Duration::from_millis(110));
+        assert_eq!(
+            gate.observe(Some((1400, 868)), start + Duration::from_millis(120)),
+            None
+        );
+    }
     #[test]
     fn allocation_jitter_does_not_accumulate() {
         let mut previous = (1000, 700);

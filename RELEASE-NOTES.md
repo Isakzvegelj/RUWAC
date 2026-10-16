@@ -1,9 +1,7 @@
-# RUWAC natural terminal grids and status controls
+# RUWAC initial Dynamic RDP sizing
 
-Current engines advertise up to 512 rows, 1024 columns and a 262144-cell budget. GTK and TUI clients use the actual allocation within those bounds. Smaller simultaneous attachments retain the documented minimum-size policy. Existing running daemons keep their capabilities and live processes; old engines retain their previous 100-row/200-column limits until an owner-controlled update.
+New Dynamic RDP connections wait for a stable allocated viewport before the existing credential lookup and authenticated connection start. This prevents a newly opened tab from negotiating a temporary 1280×720 desktop and immediately resizing again. The wait is bounded; Disconnect or changed settings cancel the queued request. Fixed/local-scaled display modes retain their behavior.
 
-Requests and ordinary replies remain limited to 1 MiB. Terminal render clients explicitly opt into bounded replies up to 64 MiB. Oversized responses receive a correlated error before any partial frame is written, keeping the connection usable. Large snapshots use a separate bounded server budget. Checkpoints with larger active or retained buffers use schema 6; existing smaller archives remain compatible, and older readers preserve files they cannot read.
+A new background tab uses the allocated workspace without selecting itself or taking clipboard ownership. An existing hidden connection retains its last actual framebuffer size. Existing daemon, terminal sessions, profiles, clipboard and authentication infrastructure are preserved.
 
-The CLI status bar renders and hit-tests one shared layout: clipped Unicode labels stay clickable, the selected window stays visible, and arrows navigate hidden windows. Bottom-row clicks remain local. Native rendering also avoids redundant frame copies and unnecessary blank-glyph layout while retaining styles and decorations.
-
-Qualification distinguishes actual private PTYs, kernel sizes, generated colour frames, checkpoint files and native GTK/Wayland pixels from physical input and external-host interoperability. The RSA advisory, full Fedora distribution qualification and seamless RDP frontend handoff remain separate open gates.
+Qualification uses actual GTK/Wayland, disposable Secret Service credentials and an authenticated loopback peer. Three initial window sizes, queued cancellation, background connection, reconnect, clipboard and neighboring transports are tested separately from physical input and external Windows/Fedora interoperability. The RSA advisory and complete signed Fedora distribution remain open; this source release does not claim full product acceptance.
