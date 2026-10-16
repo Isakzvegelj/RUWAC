@@ -90,7 +90,8 @@ def main():
                 assert one.call('client.render', {})['active_pane'] == created['pane']
                 assert two.call('client.render', {})['active_pane'] == pane_b
                 panes = {p['id']: p for p in admin.call('pane.list', {'session': sid})}
-                assert panes[pane_a]['cols'] == 50 and panes[pane_b]['cols'] == 100
+                # The vertical split reserves one column for its divider.
+                assert panes[pane_a]['cols'] == 49 and panes[pane_b]['cols'] == 100
                 record('FOCUS-IMPLICIT-SPLIT-TARGET')
 
                 one.call('pane.select', {'pane': pane_a})

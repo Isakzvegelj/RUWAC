@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v0.4.8 — 2026-10-16 — Stable source release
+
+- Correct the independent-client sizing fixture for the reserved split-divider column and include that fixture in local release qualification.
+
 ## v0.4.7 — 2026-10-16 — Stable source release
 
 - Accept exact session IDs in reattach and Screen-control aliases, provide scoped `kill-session`, and refuse ambiguous duplicate names.
