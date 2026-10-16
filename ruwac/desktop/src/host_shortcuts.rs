@@ -63,6 +63,36 @@ pub fn popup(area: &gtk::DrawingArea, x: f64, y: f64) {
     });
 }
 
+/// Right-click on a button lists SSH hosts that open a terminal directly.
+pub fn attach_ssh_menu(button: &gtk::Button) {
+    let click = gtk::GestureClick::builder().button(3).build();
+    let target = button.downgrade();
+    click.connect_pressed(move |gesture, _, _, _| {
+        gesture.set_state(gtk::EventSequenceState::Claimed);
+        let Some(button) = target.upgrade() else {
+            return;
+        };
+        MENUS.with(|state| {
+            let Some((_, menus)) = state.borrow().as_ref().map(|(w, m)| (w.clone(), m.clone()))
+            else {
+                return;
+            };
+            let pop = gtk::Popover::new();
+            pop.set_widget_name("new-terminal-ssh-menu");
+            pop.set_parent(&button);
+            pop.set_child(Some(&scroll(&menus(false))));
+            pop.connect_closed(|pop| pop.unparent());
+            pop.popup();
+        });
+    });
+    button.add_controller(click);
+    let tip = button
+        .tooltip_text()
+        .map(|t| t.to_string())
+        .unwrap_or_default();
+    button.set_tooltip_text(Some(&format!("{tip}\nRight-click: SSH hosts")));
+}
+
 /// Native fixture drives the actual menus without connecting to any saved host.
 pub fn fixture(window: &adw::ApplicationWindow, q: &serde_json::Value) -> serde_json::Value {
     let widgets = RefCell::new(Vec::new());
@@ -90,7 +120,7 @@ pub fn fixture(window: &adw::ApplicationWindow, q: &serde_json::Value) -> serde_
             if let Some(label) = w.downcast_ref::<gtk::Label>() {
                 if [
                     "Recent SSH connections",
-                    "Saved connections",
+                    "Saved SSH hosts",
                     "Saved agent hosts",
                     "Running agent sessions",
                 ]

@@ -1,5 +1,6 @@
 mod about;
 mod agent_launch;
+mod askpass;
 mod chrome;
 mod clipboard;
 mod cliprdr;
@@ -35,6 +36,7 @@ mod shortcuts;
 mod sidebar_shell;
 mod ssh_jump;
 mod ssh_keys;
+mod ssh_probe;
 mod staging;
 mod terminal_style;
 mod tiles;
@@ -57,6 +59,9 @@ use std::{
 };
 use view::View;
 fn main() {
+    if let Some(status) = askpass::run_if_requested() {
+        std::process::exit(status);
+    }
     if let Err(e) = run() {
         eprintln!("ruwac-desktop: {e}");
         std::process::exit(1);
@@ -123,7 +128,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
             "--help" => {
                 println!(
-                    "ruwac-desktop --socket PRIVATE_SOCKET [--session SESSION]... [--staging-dir PRIVATE_DIRECTORY]\nOptional --new-instance opens a separate desktop process while preserving existing windows. --window-id window_HEX uses an independent saved workspace; the New window button supplies it.\nOptional --allow-workspace-control authorizes workspace lifecycle and focus operations; --allow-rdp-control separately authorizes RDP lifecycle control.\nAltGr tap then 1…9/0 (within 0.5 s) selects workspace tabs; --theme dark|light|system (default dark).\nCtrl+Alt+A GUI controls; Ctrl+A goes to applications; Ctrl+Shift+C/V desktop selection; Shift+drag overrides application mouse.\nMachines overlays the workspace and hides after selection; pin and width controls are in Preferences. Optional --show-machines opens it at startup.\nOptional independent GTK client; daemon owns PTYs. Attach PNG to Codex targets the selected local Codex draft; no automatic submission."
+                    "ruwac-desktop --socket PRIVATE_SOCKET [--session SESSION]... [--staging-dir PRIVATE_DIRECTORY]\nOptional --new-instance opens a separate desktop process while preserving existing windows. --window-id window_HEX uses an independent saved workspace; the New window button supplies it.\nOptional --allow-workspace-control authorizes workspace lifecycle and focus operations; --allow-rdp-control separately authorizes RDP lifecycle control.\nAltGr then 1…9/0 within 0.5 s selects workspace tabs; --theme dark|light|system (default dark).\nCtrl+Alt+A GUI controls; Ctrl+A goes to applications; Ctrl+Shift+C/V desktop selection; Shift+drag overrides application mouse.\nMachines overlays the workspace and hides after selection; pin and width controls are in Preferences. Optional --show-machines opens it at startup.\nOptional independent GTK client; daemon owns PTYs. Attach PNG to Codex targets the selected local Codex draft; no automatic submission."
                 );
                 return Ok(());
             }
@@ -324,8 +329,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
   });
   let rv=rdp_views.clone();let t=tabs.clone();let b=broker.clone();let(sock,views)=(socket.clone(),all.clone());let fv=file_views.clone();
   let (agent_parent,agent_tabs,agent_views,agent_socket,agent_broker)=(window.clone(),tabs.clone(),all.clone(),socket.clone(),broker.clone());let launch:profiles::AgentLauncher=Rc::new(move|profile,kind|agent_launch::launch(&agent_parent,profile,kind,&agent_tabs,&agent_views,&agent_socket,&agent_broker));
-  let (sidebar,search,restore_profile,open_rdp_profile,host_inventory,image_profile,shortcut_menus)=profiles::sidebar(launch,move|profile,persist,lease|{if profile.protocol=="RDP"{let v=rdp::RdpView::new(b.clone());let weak_tabs=t.downgrade();let root=v.root.downgrade();v.bind_selection(Rc::new(move||weak_tabs.upgrade().zip(root.upgrade()).is_some_and(|(t,r)|t.selected_page().is_some_and(|p|tiles::contains(&p.child(),&r)))));v.configure(&profile);v.set_preferences_sink(persist);v.set_trust_sink(lease.trust_sink());lease.bind(&v.root);let page=tiles::append(&t,&v.root);page.set_title(&profile.name);rv.borrow_mut().push(v.clone());t.set_selected_page(&page);v.focus();v.connect_profile();}else{let file_panel=files::panel(profile.clone());fv.borrow_mut().push((file_panel.clone(),profile.clone()));lease.fork().bind(&file_panel);let file_page=tiles::append(&t,&file_panel);file_page.set_title(&format!("{} / {} · Files",profile.group,profile.name));let socket=sock.clone();let name=profile.name.clone();let argv=profiles::ssh_argv(&profile);let(tx,rx)=std::sync::mpsc::sync_channel(1);std::thread::spawn(move||{let result=(||->Result<String,String>{let mut client=worker::Rpc::connect(&socket).map_err(|e|e.to_string())?;let reply=client.call("session.create",json!({"name":name,"argv":argv?})).map_err(|e|e.to_string())?;reply["session"].as_str().map(str::to_owned).ok_or("SSH session creation failed".into())})();let _=tx.send(result);});let(t,b,views,socket)=(t.clone(),b.clone(),views.clone(),sock.clone());let mut pending_lease=Some(lease);glib::timeout_add_local(Duration::from_millis(10),move||{match rx.try_recv(){Ok(Ok(session))=>{let v=View::new(socket.clone(),session,b.clone());if let Some(lease)=pending_lease.take(){lease.bind(&v.root);}let page=tiles::append(&t,&v.root);page.set_title(&profile.name);views.borrow_mut().push(v.clone());t.set_selected_page(&page);v.focus();glib::ControlFlow::Break},Ok(Err(_))|Err(std::sync::mpsc::TryRecvError::Disconnected)=>glib::ControlFlow::Break,Err(std::sync::mpsc::TryRecvError::Empty)=>glib::ControlFlow::Continue}});}});
-  let (agent_tabs,agent_views,agent_socket,agent_broker)=(tabs.clone(),all.clone(),socket.clone(),broker.clone());chrome.actions.append(&host_shortcuts::install(&window,shortcut_menus,Rc::new(move||sessions::agent_sessions(agent_tabs.clone(),agent_views.clone(),agent_socket.clone(),agent_broker.clone()))));
+  let (sidebar,search,restore_profile,open_rdp_profile,host_inventory,image_profile,shortcut_menus)=profiles::sidebar(launch,move|profile,persist,lease|{if profile.protocol=="RDP"{let v=rdp::RdpView::new(b.clone());let weak_tabs=t.downgrade();let root=v.root.downgrade();v.bind_selection(Rc::new(move||weak_tabs.upgrade().zip(root.upgrade()).is_some_and(|(t,r)|t.selected_page().is_some_and(|p|tiles::contains(&p.child(),&r)))));v.configure(&profile);v.set_preferences_sink(persist);v.set_trust_sink(lease.trust_sink());lease.bind(&v.root);let page=tiles::append(&t,&v.root);page.set_title(&profile.name);rv.borrow_mut().push(v.clone());t.set_selected_page(&page);v.focus();v.connect_profile();}else{let file_panel=files::panel(profile.clone());fv.borrow_mut().push((file_panel.clone(),profile.clone()));lease.fork().bind(&file_panel);let file_page=tiles::append(&t,&file_panel);file_page.set_title(&format!("{} / {} · Files",profile.group,profile.name));let socket=sock.clone();let name=profile.name.clone();let argv=profiles::ssh_argv(&profile).map(|a|profiles::session_argv(&profile,a));let(tx,rx)=std::sync::mpsc::sync_channel(1);std::thread::spawn(move||{let result=(||->Result<String,String>{let mut client=worker::Rpc::connect(&socket).map_err(|e|e.to_string())?;let reply=client.call("session.create",json!({"name":name,"argv":argv?})).map_err(|e|e.to_string())?;reply["session"].as_str().map(str::to_owned).ok_or("SSH session creation failed".into())})();let _=tx.send(result);});let(t,b,views,socket)=(t.clone(),b.clone(),views.clone(),sock.clone());let mut pending_lease=Some(lease);glib::timeout_add_local(Duration::from_millis(10),move||{match rx.try_recv(){Ok(Ok(session))=>{let v=View::new(socket.clone(),session,b.clone());if let Some(lease)=pending_lease.take(){lease.bind(&v.root);}let page=tiles::append(&t,&v.root);page.set_title(&profile.name);views.borrow_mut().push(v.clone());t.set_selected_page(&page);v.focus();glib::ControlFlow::Break},Ok(Err(_))|Err(std::sync::mpsc::TryRecvError::Disconnected)=>glib::ControlFlow::Break,Err(std::sync::mpsc::TryRecvError::Empty)=>glib::ControlFlow::Continue}});}});
+  let (agent_tabs,agent_views,agent_socket,agent_broker)=(tabs.clone(),all.clone(),socket.clone(),broker.clone());chrome.actions.append(&host_shortcuts::install(&window,shortcut_menus,Rc::new(move||sessions::agent_sessions(agent_tabs.clone(),agent_views.clone(),agent_socket.clone(),agent_broker.clone()))));host_shortcuts::attach_ssh_menu(&new_terminal);
   sidebar.append(&agent_launch::button(&window,host_inventory.clone(),image_profile.clone(),tabs.clone(),all.clone(),socket.clone(),broker.clone()));
   tools.append(&remote_image::button(&window,all.clone(),tabs.clone(),stage.clone(),host_inventory.clone(),image_profile.clone()));
   let known_sessions:Rc<RefCell<std::collections::HashSet<String>>>=Rc::new(RefCell::new(available.as_array().into_iter().flatten().filter_map(|s|s["id"].as_str().map(str::to_owned)).collect()));
@@ -360,10 +365,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
   }
   let(fv,ph)=(file_views.clone(),placeholders.clone());tabs.connect_close_page(move|_,p|{fv.borrow_mut().retain(|(v,_)|!tiles::contains(&p.child(),v));ph.borrow_mut().retain(|(v,_)|!tiles::contains(&p.child(),v));glib::Propagation::Proceed});
   let machine_shell=Rc::new(sidebar_shell::Shell::new(&sidebar,&tabs,&choices,show_machines));workspace_overlay.set_child(Some(&machine_shell.view));chrome.actions.append(&machine_shell.button);tabs.set_hexpand(true);let (t,m,f)=(tabs.clone(),focus_memory.clone(),focus_view.clone());machine_shell.view.connect_show_sidebar_notify(move|v|{if !v.shows_sidebar(){tiles::focus_selected(&t,&m,&f);let(v,t,m,f)=(v.downgrade(),t.clone(),m.clone(),f.clone());glib::timeout_add_local_once(Duration::from_millis(250),move||{if v.upgrade().is_some_and(|v|!v.shows_sidebar()&&v.root().and_downcast::<gtk::Window>().is_some_and(|w|w.is_active())){tiles::focus_selected(&t,&m,&f);}});}});
-  let shortcut_terminal=new_terminal.clone();let shortcut_window=window.downgrade();let shortcut_controls=chrome.controls.clone();let shell=machine_shell.clone();let search=search.clone();let keys=gtk::EventControllerKey::new();keys.set_propagation_phase(gtk::PropagationPhase::Capture);let leader=Rc::new(shortcuts::Leader::default());let released=leader.clone();keys.connect_key_released(move|_,key,_,_|released.release(key,Instant::now()));
+  let shortcut_terminal=new_terminal.clone();let shortcut_window=window.downgrade();let shortcut_controls=chrome.controls.clone();let shell=machine_shell.clone();let search=search.clone();let keys=gtk::EventControllerKey::new();keys.set_propagation_phase(gtk::PropagationPhase::Capture);let leader=Rc::new(shortcuts::Leader::default());
   let (leader_tabs,leader_terminal,leader_shell,leader_search,leader_window,leader_controls)=(tabs.clone(),new_terminal.clone(),machine_shell.clone(),search.clone(),window.downgrade(),chrome.controls.clone());
   keys.connect_key_pressed(move|_,key,_,mods|{
-    // AltGr tap, then within 0.5 s: 1…9/0 tab, T terminal, R RDP host, K machines, Return fullscreen, Home controls.
+    // AltGr, then within 0.5 s of pressing it: 1…9/0 tab, T terminal, R RDP host, K machines, Return fullscreen, Home controls.
     if leader.press(key,Instant::now()){
       if let Some(index)=shortcuts::tab_index(key){shortcuts::select_tab(&leader_tabs,index);return glib::Propagation::Stop;}
       match key.to_lower(){

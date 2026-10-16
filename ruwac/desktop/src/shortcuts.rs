@@ -55,41 +55,25 @@ fn modifier(key: gdk::Key) -> bool {
     )
 }
 
-/// AltGr leader: a lone AltGr tap makes the next key, pressed within
-/// LEADER_WINDOW, a local RUWAC shortcut. AltGr held together with another
-/// key stays ordinary layout input for terminals and remote desktops, so
-/// plain Alt+digit also reaches applications.
+/// AltGr leader: the first key pressed within LEADER_WINDOW of pressing
+/// AltGr (still held or already released) is a local RUWAC shortcut. Later
+/// AltGr chords remain ordinary layout input for terminals and remote
+/// desktops, and plain Alt+digit always reaches applications.
 #[derive(Default)]
 pub struct Leader {
-    held: Cell<bool>,
-    chorded: Cell<bool>,
     armed: Cell<Option<Instant>>,
 }
 impl Leader {
     /// True when this key press belongs to RUWAC rather than the application.
     pub fn press(&self, key: gdk::Key, now: Instant) -> bool {
         if altgr(key) {
-            self.held.set(true);
-            self.chorded.set(false);
-            self.armed.set(None);
-            return false;
-        }
-        if self.held.get() {
-            self.chorded.set(true);
+            self.armed.set(Some(now + LEADER_WINDOW));
             return false;
         }
         if modifier(key) {
             return false;
         }
         self.armed.take().is_some_and(|deadline| now <= deadline)
-    }
-    pub fn release(&self, key: gdk::Key, now: Instant) {
-        if altgr(key) && self.held.replace(false) && !self.chorded.get() {
-            self.armed.set(Some(now + LEADER_WINDOW));
-        }
-    }
-    pub fn armed(&self, now: Instant) -> bool {
-        self.armed.get().is_some_and(|deadline| now <= deadline)
     }
 }
 
@@ -150,26 +134,20 @@ mod new_tab_tests {
 mod leader_tests {
     use super::*;
     #[test]
-    fn altgr_tap_maps_only_the_next_key_within_half_a_second() {
+    fn altgr_then_key_within_half_a_second_is_local_every_time() {
         let (leader, t) = (Leader::default(), Instant::now());
-        // Every tap re-arms.
         for round in 0..3u64 {
             let start = t + Duration::from_secs(round);
             assert!(!leader.press(gdk::Key::ISO_Level3_Shift, start));
-            leader.release(gdk::Key::ISO_Level3_Shift, start);
             assert!(!leader.press(gdk::Key::Shift_L, start + Duration::from_millis(100)));
+            // Held or released does not matter; only the first key counts.
             assert!(leader.press(gdk::Key::_3, start + Duration::from_millis(400)));
             assert!(!leader.press(gdk::Key::_4, start + Duration::from_millis(450)));
         }
-        // Too late.
-        leader.press(gdk::Key::ISO_Level3_Shift, t);
-        leader.release(gdk::Key::ISO_Level3_Shift, t);
-        assert!(!leader.press(gdk::Key::_1, t + Duration::from_millis(501)));
-        // AltGr held with a key is layout input (e.g. AltGr+2) and does not arm.
+        // Held longer than the window: AltGr+2 is layout input.
         leader.press(gdk::Key::Alt_R, t);
-        assert!(!leader.press(gdk::Key::_2, t));
-        leader.release(gdk::Key::Alt_R, t);
-        assert!(!leader.press(gdk::Key::_1, t + Duration::from_millis(10)));
+        assert!(!leader.press(gdk::Key::_2, t + Duration::from_millis(501)));
+        assert!(!leader.press(gdk::Key::_1, t + Duration::from_millis(510)));
         assert_eq!(tab_index(gdk::Key::_1), Some(0));
         assert_eq!(tab_index(gdk::Key::_0), Some(9));
         assert_eq!(tab_index(gdk::Key::a), None);

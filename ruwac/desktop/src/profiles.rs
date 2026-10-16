@@ -74,6 +74,10 @@ pub struct Preferences {
     #[serde(skip_serializing_if = "String::is_empty")]
     pub identity_secret_reference: String,
     pub known_hosts: String,
+    /// "password" answers SSH password prompts from the endpoint's saved
+    /// Secret Service credential; empty means key (or SSH configuration).
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub ssh_auth: String,
 }
 impl Default for Preferences {
     fn default() -> Self {
@@ -101,6 +105,7 @@ impl Default for Preferences {
             identity_file: String::new(),
             identity_secret_reference: String::new(),
             known_hosts: String::new(),
+            ssh_auth: String::new(),
         }
     }
 }
@@ -199,6 +204,26 @@ pub fn ssh_argv(p: &Profile) -> Result<Vec<String>, String> {
     }
     argv.extend(["--".into(), host]);
     Ok(argv)
+}
+/// Session argv for an SSH command line built from this profile. Password
+/// logins run ssh with the desktop binary as SSH_ASKPASS, which reads the
+/// endpoint's saved credential; the secret never enters argv or the profile.
+pub fn session_argv(p: &Profile, argv: Vec<String>) -> Vec<String> {
+    let askpass = std::env::current_exe()
+        .ok()
+        .filter(|_| p.preferences.ssh_auth == "password");
+    match askpass {
+        Some(exe) => [
+            "env".to_string(),
+            format!("SSH_ASKPASS={}", exe.display()),
+            "SSH_ASKPASS_REQUIRE=force".into(),
+            format!("{}={}", crate::askpass::REFERENCE, p.secret_reference),
+        ]
+        .into_iter()
+        .chain(argv)
+        .collect(),
+        None => argv,
+    }
 }
 impl Profile {
     pub fn matches(&self, s: &str) -> bool {
@@ -1007,6 +1032,116 @@ fn ssh_seed(source: &Profile) -> Profile {
     p
 }
 
+/// Find hosts that already accept this user's SSH key. Each machine is probed
+/// once (again when `recheck`); an RDP-only machine whose host accepts the
+/// key gets an SSH endpoint, so Terminal and agents work without reinstalling
+/// keys. Probes never prompt and never send passwords.
+fn detect_ssh_access(
+    store: &Rc<RefCell<Store>>,
+    status: &gtk::Label,
+    refresh: Rc<dyn Fn()>,
+    recheck: bool,
+) {
+    let cache = crate::ssh_probe::load();
+    let items = store.borrow().items.clone();
+    let mut machines: Vec<String> = items.iter().map(|p| p.machine_id.clone()).collect();
+    machines.sort();
+    machines.dedup();
+    let mut targets = Vec::new();
+    for machine in machines {
+        if !recheck && cache.contains_key(&machine) {
+            continue;
+        }
+        let endpoints: Vec<&Profile> = items.iter().filter(|p| p.machine_id == machine).collect();
+        let existing = endpoints.iter().find(|p| p.protocol == "SSH");
+        let probe = match existing {
+            Some(p) => (*p).clone(),
+            None => match endpoints.iter().find(|p| p.protocol == "RDP") {
+                Some(rdp) => {
+                    let mut seed = ssh_seed(rdp);
+                    // Leave the account to ~/.ssh/config or the local default.
+                    seed.username.clear();
+                    seed
+                }
+                None => continue,
+            },
+        };
+        if probe.server.is_empty()
+            || (!probe.preferences.gateway.is_empty()
+                && probe.preferences.ssh_jump_alias.is_empty())
+        {
+            continue;
+        }
+        targets.push((machine, probe, existing.is_none()));
+    }
+    if targets.is_empty() {
+        if recheck {
+            status.set_text("No machines with an address to check");
+        }
+        return;
+    }
+    let total = targets.len();
+    status.set_text(&format!("Checking SSH key access on {total} machines…"));
+    let queue = std::sync::Arc::new(std::sync::Mutex::new(targets));
+    let (tx, rx) = std::sync::mpsc::channel();
+    for _ in 0..4.min(total) {
+        let (queue, tx) = (queue.clone(), tx.clone());
+        std::thread::spawn(move || {
+            while let Some((machine, probe, add)) = queue.lock().unwrap().pop() {
+                let access = crate::ssh_probe::probe(&probe);
+                if tx.send((machine, probe, add, access)).is_err() {
+                    return;
+                }
+            }
+        });
+    }
+    let (store, status) = (store.clone(), status.clone());
+    let mut cache = cache;
+    let (mut done, mut working, mut added) = (0, 0, 0);
+    gtk::glib::timeout_add_local(std::time::Duration::from_millis(200), move || {
+        while let Ok((machine, probe, add, access)) = rx.try_recv() {
+            done += 1;
+            if access == crate::ssh_probe::Access::Key {
+                working += 1;
+                let mut s = store.borrow_mut();
+                let missing = !s
+                    .items
+                    .iter()
+                    .any(|p| p.machine_id == machine && p.protocol == "SSH");
+                if add && missing && s.items.iter().any(|p| p.machine_id == machine) {
+                    s.items.push(probe);
+                    if s.save().is_ok() {
+                        added += 1;
+                    } else {
+                        s.items.pop();
+                    }
+                }
+            }
+            cache.insert(
+                machine,
+                crate::ssh_probe::Checked {
+                    access,
+                    checked: crate::ssh_probe::now(),
+                },
+            );
+        }
+        if done < total {
+            return gtk::glib::ControlFlow::Continue;
+        }
+        let _ = crate::ssh_probe::save(&cache);
+        status.set_text(&format!(
+            "SSH key login works on {working} of {total} checked machines{}",
+            if added > 0 {
+                format!("; added SSH for {added}")
+            } else {
+                String::new()
+            }
+        ));
+        refresh();
+        gtk::glib::ControlFlow::Break
+    });
+}
+
 fn shortcut_action(
     button: &gtk::Button,
     store: &Rc<RefCell<Store>>,
@@ -1141,7 +1276,11 @@ fn shortcut_menu(
     let mut saved = items
         .iter()
         .filter(|p| {
-            !agents_only
+            // Terminal menus list machines that can open SSH directly.
+            (!agents_only
+                && items
+                    .iter()
+                    .any(|x| x.machine_id == p.machine_id && x.protocol == "SSH"))
                 || p.protocol == "SSH"
                 || !p.preferences.codex_command.is_empty()
                 || !p.preferences.claude_command.is_empty()
@@ -1171,7 +1310,7 @@ fn shortcut_menu(
     } else {
         vec![
             ("Recent SSH connections", recent),
-            ("Saved connections", saved),
+            ("Saved SSH hosts", saved),
         ]
     };
     for (heading, rows) in sections {
@@ -1372,6 +1511,22 @@ pub fn sidebar(
                     p.name.clone(),
                 )
             });
+            // One row per machine: its RDP endpoint (else the first listed)
+            // stands for the machine; other endpoints appear in the subtitle.
+            let mut primary: std::collections::HashMap<String, String> = Default::default();
+            for (_, p) in &rows {
+                let entry = primary
+                    .entry(p.machine_id.clone())
+                    .or_insert_with(|| p.id.clone());
+                if p.protocol == "RDP"
+                    && !rows
+                        .iter()
+                        .any(|(_, x)| x.id == *entry && x.protocol == "RDP")
+                {
+                    *entry = p.id.clone();
+                }
+            }
+            rows.retain(|(_, p)| primary.get(&p.machine_id) == Some(&p.id));
             for g in &store.borrow().groups {
                 if !rows.iter().any(|(_, p)| p.group == g.path)
                     && (search.text().is_empty()
@@ -1442,14 +1597,24 @@ pub fn sidebar(
                 name.set_xalign(0.0);
                 name.set_ellipsize(gtk::pango::EllipsizeMode::End);
                 name.add_css_class("heading");
+                let mut others: Vec<String> = store
+                    .borrow()
+                    .items
+                    .iter()
+                    .filter(|x| x.machine_id == p.machine_id && x.protocol != p.protocol)
+                    .map(|x| x.protocol.clone())
+                    .collect();
+                others.sort();
+                others.dedup();
                 let endpoint = gtk::Label::new(Some(&format!(
-                    "{} · {}",
+                    "{} · {}{}",
                     p.protocol,
                     if p.preferences.label.is_empty() {
                         &p.server
                     } else {
                         &p.preferences.label
-                    }
+                    },
+                    others.iter().map(|o| format!(" + {o}")).collect::<String>()
                 )));
                 endpoint.set_xalign(0.0);
                 endpoint.set_ellipsize(gtk::pango::EllipsizeMode::End);
@@ -1511,14 +1676,13 @@ pub fn sidebar(
                     entry.add_css_class("machine-ssh");
                     entry.set_tooltip_text(Some("SSH endpoint configured"));
                 }
-                for (kind, icon, tip, name, enabled, text) in [
+                for (kind, icon, tip, name, enabled) in [
                     (
                         3,
                         "utilities-terminal-symbolic",
                         "Open SSH terminal (configure a separate SSH endpoint if needed)",
                         "machine-terminal",
                         true,
-                        "Terminal",
                     ),
                     (
                         0,
@@ -1528,7 +1692,6 @@ pub fn sidebar(
                         linked
                             .iter()
                             .any(|x| !x.preferences.codex_command.is_empty()),
-                        "Codex",
                     ),
                     (
                         1,
@@ -1538,7 +1701,6 @@ pub fn sidebar(
                         linked
                             .iter()
                             .any(|x| !x.preferences.claude_command.is_empty()),
-                        "Claude",
                     ),
                     (
                         5,
@@ -1548,7 +1710,6 @@ pub fn sidebar(
                         linked
                             .iter()
                             .any(|x| !x.preferences.kimi_command.is_empty()),
-                        "Kimi",
                     ),
                 ] {
                     if enabled {
@@ -1563,8 +1724,6 @@ pub fn sidebar(
                             callback.clone(),
                             agent_launcher.clone(),
                         );
-                        // Text replaces the icon: labels are clearer in the sidebar.
-                        b.set_label(text);
                         quick.append(&b);
                     }
                 }
@@ -1618,6 +1777,19 @@ pub fn sidebar(
     let launcher = agent_launcher.clone();
     add.connect_clicked(move |b| {
         editor(b, s.clone(), None, st.clone(), cb.clone(), launcher.clone())
+    });
+    let detect = gtk::Button::with_label("Re-check SSH key access");
+    detect.set_widget_name("machines-detect-ssh");
+    detect.set_tooltip_text(Some(
+        "Find hosts that already accept your SSH key and add their SSH endpoints",
+    ));
+    maintenance.append(&detect);
+    let (s, st, r) = (store.clone(), status.clone(), refresh.clone());
+    detect.connect_clicked(move |_| detect_ssh_access(&s, &st, r.clone(), true));
+    // Unchecked machines are probed once, shortly after startup.
+    let (s, st, r) = (store.clone(), status.clone(), refresh.clone());
+    gtk::glib::timeout_add_local_once(std::time::Duration::from_secs(3), move || {
+        detect_ssh_access(&s, &st, r, false)
     });
     let refresh_button = gtk::Button::with_label("Refresh machines");
     maintenance.append(&refresh_button);
@@ -2939,12 +3111,67 @@ fn editor_seed(
             fields[11].set_text(&detected[0].path.to_string_lossy());
         }
     }
+    let login = gtk::DropDown::from_strings(&["SSH key", "Password (saved in Secret Service)"]);
+    login.set_widget_name("ssh-login-method");
+    login.set_selected(u32::from(original.preferences.ssh_auth == "password"));
     if original.protocol == "SSH" {
+        form_row(&agents, "Login", &login);
+        let password_hint = gtk::Label::new(Some(
+            "Enter the password in the password field above and choose Set / replace; it is supplied to ssh from Secret Service.",
+        ));
+        password_hint.set_wrap(true);
+        password_hint.set_xalign(0.0);
+        password_hint.add_css_class("dim-label");
+        password_hint.set_visible(login.selected() == 1);
+        agents.append(&password_hint);
+        let hint = password_hint.clone();
+        login.connect_selected_notify(move |l| hint.set_visible(l.selected() == 1));
         form_row(
             &agents,
             "SSH identity file (saved path; private key stays on this computer)",
             &key_row,
         );
+        // Show whether a key this user already has works here, before any
+        // attempt to install one.
+        let access = gtk::Label::new(Some("Checking whether your SSH key already works here…"));
+        access.set_widget_name("ssh-key-access");
+        access.set_wrap(true);
+        access.set_xalign(0.0);
+        agents.append(&access);
+        let mut probe = original.clone();
+        probe.preferences.identity_file = fields[11].text().into();
+        if probe.server.is_empty() {
+            access.set_text("Enter the host to check SSH key access");
+        } else {
+            let (tx, rx) = std::sync::mpsc::sync_channel(1);
+            std::thread::spawn(move || {
+                let _ = tx.send(crate::ssh_probe::probe(&probe));
+            });
+            let (access, login) = (access.downgrade(), login.downgrade());
+            gtk::glib::timeout_add_local(std::time::Duration::from_millis(100), move || {
+                let Some(access) = access.upgrade() else {
+                    return gtk::glib::ControlFlow::Break;
+                };
+                match rx.try_recv() {
+                    Ok(result) => {
+                        access.set_text(result.describe());
+                        access.add_css_class(if result == crate::ssh_probe::Access::Key {
+                            "success"
+                        } else {
+                            "warning"
+                        });
+                        if result == crate::ssh_probe::Access::Key {
+                            if let Some(login) = login.upgrade() {
+                                login.set_selected(0);
+                            }
+                        }
+                        gtk::glib::ControlFlow::Break
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Empty) => gtk::glib::ControlFlow::Continue,
+                    Err(_) => gtk::glib::ControlFlow::Break,
+                }
+            });
+        }
     } else {
         let edit_ssh = gtk::Button::with_label("SSH login and key…");
         edit_ssh.set_widget_name("ssh-endpoint-properties");
@@ -3136,7 +3363,7 @@ fn editor_seed(
             let(s,id,machine_id,st,parent)=(store.clone(),original.id.clone(),original.machine_id.clone(),status.clone(),d.clone());confirm.connect_response(move|c,r|{if r==gtk::ResponseType::Accept {let mut s=s.borrow_mut();let old=s.items.clone();s.items.retain(|p|p.id!=id&&(!machine||p.machine_id!=machine_id));if let Err(e)=s.save(){s.items=old;st.set_text(&e);}else{drop(s);st.set_text("Metadata deleted; previous library retained for Undo");refresh_widgets(parent.transient_for().as_ref());parent.close();}}c.close();});confirm.present();return;
         }
         if response!=gtk::ResponseType::Accept && response!=gtk::ResponseType::Other(1) && response!=gtk::ResponseType::Other(3) && response!=gtk::ResponseType::Other(5){d.close();return;}
-        let mut p=original.clone();p.preferences.kimi_command=kimi_command.text().into();p.preferences.agent_install_missing=auto_install.is_active();p.preferences.agent_session=agent_session.text().into();p.preferences.codex_command=codex_command.text().into();p.preferences.claude_command=claude_command.text().into();p.preferences.agent_backend=["ruwac","screen","tmux","direct"][backend.selected()as usize].into();p.name=fields[0].text().into();p.group=fields[1].text().into();p.machine_id=fields[2].text().into();p.server=fields[3].text().into();p.username=fields[4].text().into();p.preferences.label=fields[5].text().into();p.preferences.network=fields[6].text().into();p.preferences.gateway=fields[7].text().into();p.preferences.ssh_jump_alias=ssh_jump.text().into();p.tags=fields[8].text().split(',').map(str::trim).filter(|s|!s.is_empty()).map(str::to_owned).collect();p.secret_reference=fields[9].text().into();p.preferences.trust=fields[10].text().into();p.preferences.identity_file=fields[11].text().into();p.preferences.identity_secret_reference=identity_reference.text().into();p.preferences.known_hosts=fields[12].text().into();p.protocol=if protocol.selected()==1{"SSH"}else{"RDP"}.into();p.preferences.display=["fit","native","stretch","dynamic"][display.selected() as usize].into();p.preferences.clipboard=clipboard.selected();p.preferences.zoom=zoom.value();p.preferences.fullscreen=full.is_active();p.preferences.reconnect=retry.is_active();p.inherit=inherit.is_active();p.inherit_connection=inherit_connection.is_active();p.inherit_credential=inherit_credential.is_active();p.preferences.rdp_mode=["","gnome-remote-login","gnome-desktop-sharing"][rdp_mode.selected() as usize].into();p.preferences.gnome_auto_login=gnome_auto.is_active();p.preferences.gnome_username=gnome_user.text().into();p.preferences.gnome_secret_reference=if p.preferences.rdp_mode=="gnome-remote-login"||!original.preferences.gnome_secret_reference.is_empty(){gnome_ref.text().into()}else{String::new()};
+        let mut p=original.clone();p.preferences.ssh_auth=if p.protocol=="SSH"&&login.selected()==1{"password".into()}else{String::new()};p.preferences.kimi_command=kimi_command.text().into();p.preferences.agent_install_missing=auto_install.is_active();p.preferences.agent_session=agent_session.text().into();p.preferences.codex_command=codex_command.text().into();p.preferences.claude_command=claude_command.text().into();p.preferences.agent_backend=["ruwac","screen","tmux","direct"][backend.selected()as usize].into();p.name=fields[0].text().into();p.group=fields[1].text().into();p.machine_id=fields[2].text().into();p.server=fields[3].text().into();p.username=fields[4].text().into();p.preferences.label=fields[5].text().into();p.preferences.network=fields[6].text().into();p.preferences.gateway=fields[7].text().into();p.preferences.ssh_jump_alias=ssh_jump.text().into();p.tags=fields[8].text().split(',').map(str::trim).filter(|s|!s.is_empty()).map(str::to_owned).collect();p.secret_reference=fields[9].text().into();p.preferences.trust=fields[10].text().into();p.preferences.identity_file=fields[11].text().into();p.preferences.identity_secret_reference=identity_reference.text().into();p.preferences.known_hosts=fields[12].text().into();p.protocol=if protocol.selected()==1{"SSH"}else{"RDP"}.into();p.preferences.display=["fit","native","stretch","dynamic"][display.selected() as usize].into();p.preferences.clipboard=clipboard.selected();p.preferences.zoom=zoom.value();p.preferences.fullscreen=full.is_active();p.preferences.reconnect=retry.is_active();p.inherit=inherit.is_active();p.inherit_connection=inherit_connection.is_active();p.inherit_credential=inherit_credential.is_active();p.preferences.rdp_mode=["","gnome-remote-login","gnome-desktop-sharing"][rdp_mode.selected() as usize].into();p.preferences.gnome_auto_login=gnome_auto.is_active();p.preferences.gnome_username=gnome_user.text().into();p.preferences.gnome_secret_reference=if p.preferences.rdp_mode=="gnome-remote-login"||!original.preferences.gnome_secret_reference.is_empty(){gnome_ref.text().into()}else{String::new()};
         if response==gtk::ResponseType::Other(1){p.id=ruwac_protocol::id("endpoint");p.machine_id=ruwac_protocol::id("machine");p.secret_reference=p.id.clone();if !p.preferences.gnome_secret_reference.is_empty(){p.preferences.gnome_secret_reference=format!("{}.gnome",p.id);}p.name.push_str(" (copy)");}
         if response==gtk::ResponseType::Other(3){p.name=original.name.clone();p.group=original.group.clone();p.id=ruwac_protocol::id("endpoint");p.secret_reference=p.id.clone();if !p.preferences.gnome_secret_reference.is_empty(){p.preferences.gnome_secret_reference=format!("{}.gnome",p.id);}}
         if let Err(e)=p.validate(){info.set_text(&e);return;}

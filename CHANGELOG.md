@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+## v0.4.12 — 2026-10-16 — Stable source release
+
+- Nested `ruwac` sessions: send each mouse event to the pane under the pointer in that pane's own coordinates (clicks in split panes previously landed on the wrong row), let the engine encode it for the program, focus a pane by clicking it, and request drag/motion reports when programs such as btm or Codex use them.
+
+- Stop the nested client blinking: repaint frames in place instead of clearing the whole screen on every update; the screen is cleared only on the first frame and after a resize.
+
+- AltGr shortcuts now count from the AltGr press: AltGr held or tapped, then a key within 0.5 s (1…9/0 tabs, T, R, K, Return, Home). Later AltGr chords type layout characters.
+
+- A session that ends without any input from you (for example a failed SSH or agent launch) stays open with its output instead of closing; exits you cause still close the tab.
+
+- Show one sidebar row per machine (its RDP endpoint, with other endpoints such as `+ SSH` in the subtitle) and use icon actions with tooltips (SSH terminal, Codex, Claude, Kimi).
+
+- Detect which hosts already accept your SSH key: each machine is checked once with a batch-mode probe (no prompts, no passwords), RDP machines that accept the key get an SSH endpoint automatically, and Machine tools offers Re-check SSH key access. The SSH setup shows whether key login already works.
+
+- Choose SSH key or saved-password login per SSH endpoint; saved passwords are supplied from Secret Service through a built-in askpass helper, with dialogs for host-key confirmation and other prompts.
+
+- Right-click New term to open a terminal on a saved SSH host.
+
 ## v0.4.11 — 2026-10-16 — Stable source release
 
 - Typing into a restored or ended pane in `ruwac -r`/`-S` (for example after a reboot) opens a fresh shell window in the same session and delivers the keys there, instead of failing with `PANE_EXITED`; ended windows remain readable history.

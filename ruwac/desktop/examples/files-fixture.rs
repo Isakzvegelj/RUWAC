@@ -1,4 +1,6 @@
 //! Explicit fixture driver for the production SFTP and Secret Service adapters.
+#[path = "../src/askpass.rs"]
+mod askpass;
 #[path = "../src/credentials.rs"]
 mod credentials;
 #[path = "../src/files.rs"]
@@ -17,6 +19,8 @@ mod sidebar_shell;
 mod ssh_jump;
 #[path = "../src/ssh_keys.rs"]
 mod ssh_keys;
+#[path = "../src/ssh_probe.rs"]
+mod ssh_probe;
 use std::{
     path::Path,
     sync::{

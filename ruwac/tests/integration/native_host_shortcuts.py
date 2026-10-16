@@ -49,7 +49,7 @@ try:
  time.sleep(.4);header=command('host-shortcuts',operation='header');assert 'Saved agent hosts'in header['sections'];assert 'Running agent sessions'in header['sections'];assert sum(x['name']=='saved-host-codex'for x in header['widgets'])>=3;assert sum(x['name']=='saved-host-claude'for x in header['widgets'])>=3
  assert sum(x['name']=='saved-host-kimi'for x in header['widgets'])>=3
  command('host-shortcuts',close=True)
- menu=command('host-shortcuts',operation='context');assert 'Recent SSH connections'in menu['sections']and'Saved connections'in menu['sections'];assert menu['sections'].index('Recent SSH connections')<menu['sections'].index('Saved connections');command('host-shortcuts',close=True)
+ menu=command('host-shortcuts',operation='context');assert 'Recent SSH connections'in menu['sections']and'Saved SSH hosts'in menu['sections'];assert menu['sections'].index('Recent SSH connections')<menu['sections'].index('Saved SSH hosts');command('host-shortcuts',close=True)
  checks.append('native-agent-dropdown-and-terminal-context-recent-before-saved-actions')
  command('profile-editor',operation='edit',response='keep');eventually(lambda:any(d['width']>0 for d in command('profile-editor',operation='layout')['dialogs']))
  controls=command('host-shortcuts')['widgets'];assert any(x['name']=='machine-install-ruwac'and x['sensitive']for x in controls);assert any(x['name']=='ssh-endpoint-properties'for x in controls);assert any(x['name']=='ssh-authorize-key'and x['sensitive']for x in controls)
@@ -77,7 +77,8 @@ try:
  keys((100,True),(100,False),(2,True),(2,False));eventually(lambda:command('inspect')['selected_tab']==0)
  keys((100,True),(100,False));time.sleep(.7);keys((3,True),(3,False));time.sleep(.3);assert command('inspect')['selected_tab']==0
  keys((100,True),(100,False),(3,True),(3,False));eventually(lambda:command('inspect')['selected_tab']==1)
- checks.append('real-GDK-AltGr-tap-leader-selects-tabs-within-500ms-plain-Alt-digit-reaches-application')
+ keys((100,True),(2,True),(2,False),(100,False));eventually(lambda:command('inspect')['selected_tab']==0)
+ checks.append('real-GDK-AltGr-leader-selects-tabs-within-500ms-held-or-tapped-plain-Alt-digit-reaches-application')
  command('focus-view');chord(19);eventually(lambda:command('sidebar-shell')['shown'])
  call('Stop');checks.append('real-GDK-Ctrl-Shift-T-new-terminal-and-Ctrl-Shift-R-machine-chooser')
  command('snapshot')

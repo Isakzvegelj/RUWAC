@@ -32,6 +32,8 @@ pub struct View {
     pub detached: Cell<bool>,
     pub finished: Cell<bool>,
     seen_running: Cell<bool>,
+    /// Set once the person types or pastes here.
+    typed: Cell<bool>,
     pub broker: Broker,
     window_index: Cell<Option<usize>>,
     pub warning: RefCell<Option<String>>,
@@ -163,6 +165,7 @@ impl View {
             detached: Cell::new(false),
             finished: Cell::new(false),
             seen_running: Cell::new(false),
+            typed: Cell::new(false),
             broker,
             window_index: Cell::new(None),
             warning: RefCell::new(None),
@@ -896,6 +899,7 @@ impl View {
         }
     }
     pub fn input(&self, text: &str) {
+        self.typed.set(true);
         if self.target.borrow().is_empty() || self.navigation.get() {
             let mut pending = self.early.borrow_mut();
             if pending.iter().map(String::len).sum::<usize>() + text.len() > 256 * 1024 {
@@ -919,6 +923,7 @@ impl View {
                 .set_text("Paste rejected: text cap, NUL or end marker");
             return;
         }
+        self.typed.set(true);
         if let Err(e) = self
             .worker
             .borrow()
@@ -985,7 +990,9 @@ impl View {
             {
                 self.seen_running.set(true);
             }
-            if self.seen_running.get() && s.session_ended {
+            // Close after an exit the person caused; a program that ends by
+            // itself (e.g. a failed SSH or agent launch) stays readable.
+            if self.seen_running.get() && s.session_ended && self.typed.get() {
                 self.finished.set(true);
             }
             if !panes

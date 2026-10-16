@@ -12,6 +12,8 @@ use std::{
     time::{Duration, Instant},
 };
 static STOP: AtomicBool = AtomicBool::new(false);
+/// The next live frame starts from a cleared screen (first frame, resize).
+static CLEAR: AtomicBool = AtomicBool::new(true);
 extern "C" fn signal(_: i32) {
     STOP.store(true, Ordering::Relaxed);
 }
@@ -551,20 +553,95 @@ fn divider_cells(v: &Value) -> std::collections::BTreeMap<(u64, u64), u8> {
     out
 }
 fn mouse_wanted(v: &Value) -> bool {
-    v["panes"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .any(|p| p["id"] == v["active_pane"] && p["grid"]["mouse"] == true)
+    mouse_request(v).is_some()
+}
+/// The outer terminal's mouse mode for the active program: clicks (1000),
+/// drags (1002) or all motion (1003); None keeps native selection and paste.
+fn mouse_request(v: &Value) -> Option<u16> {
+    let p = v["panes"]
+        .as_array()?
+        .iter()
+        .find(|p| p["id"] == v["active_pane"])?;
+    let g = &p["grid"];
+    if g["mouse"] != true {
+        None
+    } else if g["mouse_motion"] == true {
+        Some(1003)
+    } else if g["mouse_drag"] == true {
+        Some(1002)
+    } else {
+        Some(1000)
+    }
+}
+/// An SGR mouse report from the outer terminal mapped to the pane under the
+/// pointer: (pane, structured event in pane coordinates, pane wants mouse).
+fn route_mouse(v: &Value, bytes: &[u8]) -> Option<(String, Value, bool)> {
+    let text = std::str::from_utf8(bytes).ok()?.strip_prefix("\x1b[<")?;
+    let release = text.ends_with('m');
+    if !release && !text.ends_with('M') {
+        return None;
+    }
+    let mut parts = text[..text.len() - 1].split(';').map(str::parse::<u64>);
+    let (button, x, y) = (
+        parts.next()?.ok()?,
+        parts.next()?.ok()?,
+        parts.next()?.ok()?,
+    );
+    let (col, row) = (x.checked_sub(1)?, y.checked_sub(1)?);
+    v["panes"].as_array()?.iter().find_map(|p| {
+        let r = &p["rect"];
+        let (px, py) = (r["x"].as_u64()?, r["y"].as_u64()?);
+        let (w, h) = (r["cols"].as_u64()?, r["rows"].as_u64()?);
+        (px <= col && col < px + w && py <= row && row < py + h).then(|| {
+            (
+                p["id"].as_str().unwrap_or("").to_owned(),
+                json!({"button":button,"x":col - px + 1,"y":row - py + 1,"release":release}),
+                p["grid"]["mouse"] == true,
+            )
+        })
+    })
 }
 const STATUS_STYLE: &str = "\x1b[0;38;2;16;32;48;48;2;173;216;230m";
 
 fn draw(v: &Value, status: &str) -> io::Result<()> {
     let mut out = format!(
-        "\x1b]2;RUWAC {}\x07\x1b[?25l\x1b[0m\x1b[H\x1b[2J",
-        window_identity(v).chars().take(160).collect::<String>()
+        "\x1b]2;RUWAC {}\x07\x1b[?25l\x1b[0m\x1b[H{}",
+        window_identity(v).chars().take(160).collect::<String>(),
+        if CLEAR.swap(false, Ordering::Relaxed) {
+            "\x1b[2J"
+        } else {
+            ""
+        }
     );
 
+    let (screen_rows, screen_cols) = terminal_dimensions();
+    // Panes repaint every cell they own; erase only what lies outside them,
+    // before drawing, so frames replace each other without a blank flash.
+    let rects: Vec<(u64, u64, u64, u64)> = v["panes"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|p| {
+            let r = &p["rect"];
+            (
+                r["x"].as_u64().unwrap_or(0),
+                r["y"].as_u64().unwrap_or(0),
+                r["cols"].as_u64().unwrap_or(0),
+                r["rows"].as_u64().unwrap_or(0),
+            )
+        })
+        .collect();
+    for row in 0..u64::from(screen_rows.saturating_sub(1)) {
+        let right = rects
+            .iter()
+            .filter(|&&(_, y, _, h)| y <= row && row < y + h)
+            .map(|&(x, _, w, _)| x + w)
+            .max()
+            .unwrap_or(0);
+        if right < u64::from(screen_cols) {
+            out.push_str(&format!("\x1b[{};{}H\x1b[0m\x1b[K", row + 1, right + 1));
+        }
+    }
     let active = v["active_pane"].as_str().unwrap_or("");
     let mut cursor = None;
     if let Some(panes) = v["panes"].as_array() {
@@ -649,7 +726,6 @@ fn draw(v: &Value, status: &str) -> io::Result<()> {
     }
     // The daemon bounds the PTY grid, but chrome belongs to the physical
     // terminal. Keep the bar at its bottom even beyond the engine grid limits.
-    let (screen_rows, screen_cols) = terminal_dimensions();
     let line = status_line(v, (screen_rows.saturating_sub(1), screen_cols), status);
     out.push_str(&format!(
         "\x1b[{};1H{}{}{}\x1b[0m",
@@ -661,10 +737,11 @@ fn draw(v: &Value, status: &str) -> io::Result<()> {
     // Request mouse reports only while the active program uses the mouse;
     // otherwise the outer terminal keeps native selection and middle-click
     // (touchpad three-finger tap) paste.
-    out.push_str(if mouse_wanted(v) {
-        "\x1b[?1000h\x1b[?1006h"
-    } else {
-        "\x1b[?1000l\x1b[?1006l"
+    out.push_str(match mouse_request(v) {
+        Some(1003) => "\x1b[?1002l\x1b[?1000h\x1b[?1003h\x1b[?1006h",
+        Some(1002) => "\x1b[?1003l\x1b[?1000h\x1b[?1002h\x1b[?1006h",
+        Some(_) => "\x1b[?1002l\x1b[?1003l\x1b[?1000h\x1b[?1006h",
+        None => "\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l",
     });
     if let Some((r, c)) = cursor {
         out.push_str(&format!("\x1b[{};{}H\x1b[?25h", r + 1, c + 1));
@@ -1308,9 +1385,26 @@ pub fn attach_with_window(socket: &Path, session: &str, window: Option<&str>) ->
                             }
                             continue;
                         }
-                        let result=String::from_utf8(b).map_err(io::Error::other).and_then(|text|call(&mut s,"client.input",json!({"pane":snapshot["active_pane"],"kind":"mouse","text":text})));
-                        if let Err(e) = result {
-                            status = e.to_string();
+                        // Route to the pane under the pointer, in that pane's
+                        // coordinates; the engine encodes it for the program.
+                        let Some((pane, event, wants)) = route_mouse(&snapshot, &b) else {
+                            continue;
+                        };
+                        let press = event["release"] != true
+                            && event["button"].as_u64().is_some_and(|b| b & 32 == 0);
+                        if press && snapshot["active_pane"].as_str() != Some(pane.as_str()) {
+                            call(&mut s, "pane.select", json!({"pane":pane}))?;
+                            snapshot = call(&mut s, "client.render", json!({}))?;
+                        }
+                        if wants {
+                            let result = call(
+                                &mut s,
+                                "client.input",
+                                json!({"pane":pane,"kind":"mouse","text":"","mouse_event":event}),
+                            );
+                            if let Err(e) = result {
+                                status = e.to_string();
+                            }
                         }
                     }
                 }
@@ -1722,6 +1816,7 @@ pub fn attach_with_window(socket: &Path, session: &str, window: Option<&str>) ->
         let new_screen_size = terminal_dimensions();
         if new_screen_size != screen_size {
             screen_size = new_screen_size;
+            CLEAR.store(true, Ordering::Relaxed);
             dirty = true;
         }
         let newsize = dimensions(limits);
@@ -1793,6 +1888,30 @@ mod tests {
         assert!(!mouse_wanted(&frame("pane_shell")));
         assert!(mouse_wanted(&frame("pane_htop")));
         assert!(!mouse_wanted(&json!({})));
+    }
+    #[test]
+    fn mouse_reports_route_to_the_pane_under_the_pointer() {
+        let frame = json!({"active_pane":"pane_top","panes":[
+            {"id":"pane_top","rect":{"x":0,"y":0,"cols":80,"rows":10},"grid":{"mouse":false}},
+            {"id":"pane_btm","rect":{"x":0,"y":11,"cols":80,"rows":12},
+             "grid":{"mouse":true,"mouse_motion":true}}
+        ]});
+        // Screen row 13 is row 2 of the lower pane.
+        let (pane, event, wants) = route_mouse(&frame, b"\x1b[<0;5;13M").unwrap();
+        assert_eq!(pane, "pane_btm");
+        assert_eq!(event, json!({"button":0,"x":5,"y":2,"release":false}));
+        assert!(wants);
+        let (pane, event, wants) = route_mouse(&frame, b"\x1b[<64;1;1M").unwrap();
+        assert_eq!((pane.as_str(), wants), ("pane_top", false));
+        assert_eq!(event["button"], 64);
+        assert!(
+            route_mouse(&frame, b"\x1b[<0;5;11M").is_none(),
+            "divider row"
+        );
+        let mut active = frame.clone();
+        active["active_pane"] = json!("pane_btm");
+        assert_eq!(mouse_request(&active), Some(1003));
+        assert_eq!(mouse_request(&frame), None);
     }
     #[test]
     fn fragmented_input_and_replies() {

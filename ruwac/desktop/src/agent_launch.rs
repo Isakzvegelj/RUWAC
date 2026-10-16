@@ -248,7 +248,7 @@ fn open_terminal(
             "RUWAC setup"
         }
     );
-    let planned = argv(&profile, kind, "ruwac", "");
+    let planned = argv(&profile, kind, "ruwac", "").map(|a| profiles::session_argv(&profile, a));
     let (tx, rx) = std::sync::mpsc::sync_channel(1);
     let sock = socket.clone();
     let name = title.clone();
@@ -321,7 +321,7 @@ pub fn button(
         let (tabs,views,local_socket,broker,reader)=(tabs.clone(),views.clone(),local_socket.clone(),broker.clone(),reader.clone());
         dialog.connect_response(move |d,response| {
             if response!=gtk::ResponseType::Accept { d.close();return; }
-            let plan=rows.get(endpoint.selected() as usize).and_then(|r|r["id"].as_str()).ok_or("Choose an SSH endpoint".to_string()).and_then(|id|reader(id)).and_then(|mut p|{p.preferences.agent_backend=["ruwac","screen","tmux","direct"][backend.selected()as usize].into();if agent.selected()==0{p.preferences.codex_command=command.text().into();}else if agent.selected()==1{p.preferences.claude_command=command.text().into();}else{p.preferences.kimi_command=command.text().into();}argv(&p,[0,1,5][agent.selected()as usize],&binary.text(),&socket.text())});
+            let plan=rows.get(endpoint.selected() as usize).and_then(|r|r["id"].as_str()).ok_or("Choose an SSH endpoint".to_string()).and_then(|id|reader(id)).and_then(|mut p|{p.preferences.agent_backend=["ruwac","screen","tmux","direct"][backend.selected()as usize].into();if agent.selected()==0{p.preferences.codex_command=command.text().into();}else if agent.selected()==1{p.preferences.claude_command=command.text().into();}else{p.preferences.kimi_command=command.text().into();}argv(&p,[0,1,5][agent.selected()as usize],&binary.text(),&socket.text()).map(|a|profiles::session_argv(&p,a))});
             let argv=match plan {Ok(a)=>a,Err(e)=>{status.set_text(&e);return;}};
             open.set_sensitive(false);status.set_text("Opening remote agent terminal…");
             let (tx,rx)=std::sync::mpsc::sync_channel(1);let socket=local_socket.clone();
