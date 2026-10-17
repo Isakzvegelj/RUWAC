@@ -67,6 +67,8 @@ def packages(root, output, desktop=True, require_private=False, require_tag=Fals
         for name in applications:
             shutil.copy2(root / 'target/release' / name, payload / 'target/release' / name)
         shutil.copy2(root / 'LICENSE', payload / 'LICENSE')
+        for name in ['ruwac.1', 'si.z4.ruwac.svg']:
+            shutil.copy2(root / 'ruwac/packaging' / name, payload / name)
         for name in ['rpm-update.py', 'update-user.py']:
             shutil.copy2(root / 'scripts' / name, payload / name)
         for name in ['ruwac-rpm-update.service', 'ruwac-rpm-update.timer']:

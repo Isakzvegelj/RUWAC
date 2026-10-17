@@ -45,7 +45,7 @@ fn default_size() -> u8 {
 fn default_height() -> f32 {
     1.0
 }
-pub const LINE_HEIGHTS: [f32; 4] = [1.0, 1.15, 1.30, 1.45];
+pub const LINE_HEIGHTS: [f32; 5] = [0.95, 1.0, 1.15, 1.30, 1.45];
 fn default_labels() -> bool {
     true
 }
@@ -232,7 +232,7 @@ impl Shell {
         let button = gtk::ToggleButton::with_label("Machines");
         button.set_widget_name("machines-toggle");
         button.set_tooltip_text(Some(
-            "Show/hide Machines · Ctrl+K searches · Escape closes the overlay",
+            "Show/hide Machines · Alt+M / Ctrl+K searches · Escape closes the overlay",
         ));
         button.set_active(view.shows_sidebar());
         let v = view.downgrade();

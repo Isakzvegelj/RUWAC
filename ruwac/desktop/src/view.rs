@@ -1001,6 +1001,18 @@ impl View {
         }
         self.focus();
     }
+    pub fn tab_status(&self) -> crate::tiles::TabStatus {
+        use crate::tiles::TabStatus;
+        if self.warning.borrow().is_some() {
+            TabStatus::Error
+        } else if self.ended.get() || self.finished.get() || self.dead.is_visible() {
+            TabStatus::Offline
+        } else if self.frame.borrow().is_none() {
+            TabStatus::Busy
+        } else {
+            TabStatus::Ready
+        }
+    }
     pub fn update(self: &Rc<Self>) {
         let worker = self.worker.borrow();
         worker.set_visible(self.area.is_mapped());
@@ -1661,7 +1673,8 @@ impl View {
             gtk::pango::FontDescription::from_string(&format!("{font} {}", prefs.term_size_pt));
         let layout = self.area.create_pango_layout(Some("M"));
         layout.set_font_description(Some(&description));
-        self.cell_width.set(layout.pixel_size().0.max(1) as f64);
+        self.cell_width
+            .set((layout.size().0 as f64 / gtk::pango::SCALE as f64).max(1.));
         let metrics = self.area.pango_context().metrics(Some(&description), None);
         self.cell_height.set(
             (((metrics.ascent() + metrics.descent()) as f64 / gtk::pango::SCALE as f64)

@@ -60,8 +60,10 @@ install -D -m 0644 update-user.py %{buildroot}%{_datadir}/ruwac/update-user.py
 ln -s ../share/ruwac/rpm-update.py %{buildroot}%{_bindir}/ruwac-rpm-update
 install -D -m 0644 ruwac-rpm-update.service %{buildroot}%{ruwac_unitdir}/ruwac-rpm-update.service
 install -D -m 0644 ruwac-rpm-update.timer %{buildroot}%{ruwac_unitdir}/ruwac-rpm-update.timer
+install -D -m 0644 ruwac.1 %{buildroot}%{_mandir}/man1/ruwac.1
 %if %{with desktop}
 install -D -m 0755 target/release/ruwac-desktop %{buildroot}%{_bindir}/ruwac-desktop
+install -D -m 0644 si.z4.ruwac.svg %{buildroot}%{_datadir}/icons/hicolor/scalable/apps/si.z4.ruwac.svg
 install -D -m 0644 ruwac.desktop %{buildroot}%{_datadir}/applications/si.z4.ruwac.desktop
 %endif
 
@@ -69,6 +71,7 @@ install -D -m 0644 ruwac.desktop %{buildroot}%{_datadir}/applications/si.z4.ruwa
 %license LICENSE notices/core
 %doc TESTING.txt
 %{_bindir}/ruwac
+%{_mandir}/man1/ruwac.1*
 %dir %{_datadir}/ruwac
 %{_datadir}/ruwac/rpm-installation.json
 %{_datadir}/ruwac/rpm-update.py
@@ -83,4 +86,5 @@ install -D -m 0644 ruwac.desktop %{buildroot}%{_datadir}/applications/si.z4.ruwa
 %doc TESTING.txt
 %{_bindir}/ruwac-desktop
 %{_datadir}/applications/si.z4.ruwac.desktop
+%{_datadir}/icons/hicolor/scalable/apps/si.z4.ruwac.svg
 %endif

@@ -690,15 +690,6 @@ pub fn set_page_icon(page: &adw::TabPage, name: &str) {
         page.set_icon(Some(&gtk::gio::ThemedIcon::new(name)));
     }
 }
-pub fn set_page_indicator(page: &adw::TabPage, name: Option<&str>) {
-    let current = page
-        .indicator_icon()
-        .and_downcast::<gtk::gio::ThemedIcon>()
-        .and_then(|i| i.names().first().map(|n| n.to_string()));
-    if current.as_deref() != name {
-        page.set_indicator_icon(name.map(gtk::gio::ThemedIcon::new).as_ref());
-    }
-}
 pub fn set_page_tooltip(page: &adw::TabPage, text: &str) {
     if page.tooltip().as_deref() != Some(text) {
         page.set_tooltip(text);
@@ -713,4 +704,36 @@ pub fn set_page_loading(page: &adw::TabPage, loading: bool) {
     if page.is_loading() != loading {
         page.set_loading(loading);
     }
+}
+
+/// Full-colour, shape-distinct indicators, independent of GTK's private tab CSS.
+#[derive(Clone, Copy)]
+pub enum TabStatus {
+    Ready,
+    Busy,
+    Error,
+    Offline,
+}
+pub fn set_page_status(page: &adw::TabPage, status: TabStatus) {
+    use gtk::gio::prelude::*;
+    thread_local! {
+        static ICONS: Vec<gtk::gio::BytesIcon> = [
+            ("#34d399", "M4 8l3 3 5-6"),
+            ("#f5c451", "M8 4v4l3 2"),
+            ("#f0737a", "M8 4v5m0 2v1"),
+            ("#9b9ca3", "M4 8h8"),
+        ].iter().map(|(color,path)| {
+            let svg = format!(r##"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="{color}"/><path d="{path}" stroke="#131416" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>"##);
+            gtk::gio::BytesIcon::new(&gtk::glib::Bytes::from_owned(svg.into_bytes()))
+        }).collect();
+    }
+    ICONS.with(|icons| {
+        let icon = &icons[status as usize];
+        if !page
+            .indicator_icon()
+            .is_some_and(|current| current.equal(Some(icon)))
+        {
+            page.set_indicator_icon(Some(icon));
+        }
+    });
 }

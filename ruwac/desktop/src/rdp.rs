@@ -2461,6 +2461,22 @@ impl RdpView {
             })
             .unwrap_or(("disconnected".into(), false))
     }
+    /// Cheap production tab summary: no fixture metrics, credential/profile
+    /// freshness checks, cadence vectors or framebuffer snapshots.
+    pub fn tab_summary(&self) -> (String, String) {
+        let (phase, _) = self.event_state();
+        let (w, h) = self.size.get();
+        let text = format!(
+            "{}\nState: {}\nEndpoint: {}\nDesktop size: {} × {}\nLatency: not measured\nClipboard: {:?}",
+            self.tab_title(),
+            self.status.text(),
+            self.entries[0].text(),
+            w,
+            h,
+            self.policy.get()
+        );
+        (phase, text)
+    }
     pub fn tab_title(&self) -> String {
         self.profile_metadata
             .borrow()

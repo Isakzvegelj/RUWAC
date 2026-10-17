@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Real isolated GTK host menus and GDK chords; no external connection or key grant."""
-import argparse,json,os,pwd,subprocess,tempfile,time
+import argparse,json,os,pwd,subprocess,tempfile,time,shutil
 from pathlib import Path
 from spike import Client,eventually
 p=argparse.ArgumentParser();p.add_argument('--binary',required=True);p.add_argument('--gui',required=True);p.add_argument('--evidence',type=Path,required=True);a=p.parse_args()
@@ -11,7 +11,16 @@ for key,name in [('HOME','home'),('XDG_CONFIG_HOME','config'),('XDG_DATA_HOME','
 profile=Path(env['XDG_CONFIG_HOME'])/'RUWAC/machines.json';profile.parent.mkdir(mode=0o700)
 def endpoint(i,name,protocol,last_used=0):
  return {'id':'endpoint_demo'+str(i),'machine_id':'machine_demo'+str(i),'name':name,'group':'Generated','protocol':protocol,'server':'127.0.0.1','username':'generated-service'if protocol=='RDP'else'generated-ssh','secret_reference':'generated-reference'+str(i),'favorite':i==0,'last_used':last_used,'tags':[],'preferences':{'codex_command':'codex resume --all','claude_command':'claude --resume','kimi_command':'kimi --session'}}
-profile.write_text(json.dumps({'schema':1,'items':[endpoint(0,'Demo','RDP'),endpoint(1,'Recent generated','SSH',20),endpoint(2,'Saved generated','SSH')],'groups':[]}));profile.chmod(0o600)
+items=[endpoint(0,'Demo','RDP'),endpoint(1,'Recent generated','SSH',20),endpoint(2,'Saved generated','SSH')]
+for index,name,host in [(3,'ZZ verified','verified.generated.test'),(4,'ZZ unknown trust','unknown.generated.test'),(5,'ZZ rejected key','rejected.generated.test')]:
+ item=endpoint(index,name,'RDP');item['server']=host;items.append(item)
+profile.write_text(json.dumps({'schema':1,'items':items,'groups':[]}));profile.chmod(0o600)
+# A generated SSH peer models only the auto-probe boundary. Other SSH calls
+# remain real; actual key/trust interoperability is covered by ssh_access.py.
+wrappers=root/'bin';wrappers.mkdir();trace=root/'auto-ssh.jsonl'
+wrapper=wrappers/'ssh';real=shutil.which('ssh')
+wrapper.write_text('#!/usr/bin/python3\nimport os,sys,json\na=sys.argv[1:]\nh=a[a.index("--")+1]if"--"in a else""\nif "BatchMode=yes"in a and h.endswith(".generated.test"):\n with open('+repr(str(trace))+',"a")as f:f.write(json.dumps(a)+"\\n")\n if h=="verified.generated.test":sys.exit(0)\n print("Host key verification failed"if h.startswith("unknown")else"Permission denied (publickey)",file=sys.stderr);sys.exit(255)\nos.execv('+repr(real)+',["ssh"]+a)\n')
+wrapper.chmod(0o755);env['PATH']=str(wrappers)+os.pathsep+env['PATH']
 sock=root/'control.sock';fixture=root/'fixture';fixture.mkdir(mode=0o700);seq=0;children=[];checks=[]
 def start(argv,name):
  log=(root/(name+'.log')).open('w');child=subprocess.Popen(argv,env=env,stdout=log,stderr=log);children.append((child,log));return child
@@ -27,10 +36,22 @@ try:
  start([a.binary,'--socket',str(sock),'serve'],'daemon');eventually(sock.exists)
  gui=start([a.gui,'--new-instance','--socket',str(sock),'--show-machines','--fixture-dir',str(fixture)],'gui');eventually(lambda:command('inspect').get('target'),20)
  command('chrome',width=1100,height=800,collapse=False);time.sleep(.4)
- widgets=command('host-shortcuts')['widgets'];first={}
- for item in widgets:
-  if item['name']in ['machine-connect','machine-terminal','machine-codex','machine-claude','machine-kimi']and item['name']not in first and item['bounds']and item['bounds'][2]>0:first[item['name']]=item
- assert len(first)==5,first
+ eventually(lambda:any(x['machine_id']=='machine_demo3'and x['protocol']=='SSH'for x in json.loads(profile.read_text())['items']),15)
+ auto_items=json.loads(profile.read_text())['items']
+ assert not any(x['protocol']=='SSH'and x['machine_id']in ['machine_demo4','machine_demo5']for x in auto_items)
+ auto=next(x for x in auto_items if x['machine_id']=='machine_demo3'and x['protocol']=='SSH')
+ assert auto['username']=='' and auto['secret_reference']!='generated-reference3'
+ calls=[json.loads(line)for line in trace.read_text().splitlines()]
+ assert all('StrictHostKeyChecking=yes'in c and 'PasswordAuthentication=no'in c and c[-1]=='true'for c in calls)
+ checks.append('generated-SSH-probe-auto-adds-only-verified-bookmark-no-unknown-trust-password-or-key-install')
+
+ # Key verification can rebuild rows asynchronously; wait for allocated widgets.
+ def allocated_row():
+  first={}
+  for item in command('host-shortcuts')['widgets']:
+   if item['name']in ['machine-connect','machine-terminal','machine-codex','machine-claude','machine-kimi']and item['name']not in first and item['bounds']and min(item['bounds'][2:])>=16:first[item['name']]=item
+  return first if len(first)==5 else None
+ first=eventually(allocated_row,10)
  actions=[v for k,v in first.items() if k!='machine-connect'];centers=[v['bounds'][1]+v['bounds'][3]/2 for v in actions];assert max(centers)-min(centers)<4,first
  assert min(v['bounds'][1] for v in actions)>=first['machine-connect']['bounds'][1]+first['machine-connect']['bounds'][3]-1,first
  checks.append('RDP-bookmark-configured-SSH-Codex-Claude-Kimi-labelled-on-one-line-below-name')
@@ -80,6 +101,32 @@ try:
  keys((100,True),(100,False));time.sleep(.2)
  keys((56,True),(3,True),(3,False),(56,False));eventually(lambda:command('inspect')['selected_tab']==1)
  checks.append('real-GDK-Alt-digit-switches-tabs-by-default-Map-keys-sends-to-program-chords-do-not-toggle')
+ # New host shortcuts use real GDK input, even with collapsed header actions.
+ command('chrome',collapse=True);command('sidebar-shell',shown=False);command('focus-view')
+ keys((56,True),(50,True),(50,False),(56,False)) # Alt+M
+ eventually(lambda:command('sidebar-shell')['shown'])
+ command('sidebar-shell',shown=False);command('focus-view')
+ keys((56,True),(30,True),(30,False),(56,False)) # Alt+A
+ eventually(lambda:'Saved agent hosts' in command('host-shortcuts')['sections'])
+ keys((1,True),(1,False));command('host-shortcuts',close=True);time.sleep(.35)
+ tabs=command('tab-status')['tabs']
+ assert any(x['title']=='Terminal · '+os.uname().nodename for x in tabs),tabs
+ assert any(x.get('colour_icon') and '#34d399' in x.get('svg','') for x in tabs),tabs
+ command('focus-view');time.sleep(.2);eventually(lambda:command('inspect')['active']);keys((100,True),(100,False));time.sleep(.2)
+ keys((56,True),(50,True),(50,False),(56,False));eventually(lambda:command('sidebar-shell')['shown'])
+ command('sidebar-shell',shown=False);command('focus-view')
+ keys((56,True),(30,True),(30,False),(56,False));eventually(lambda:'Saved agent hosts' in command('host-shortcuts')['sections'])
+ keys((1,True),(1,False));command('host-shortcuts',close=True);time.sleep(.35);command('focus-view');keys((100,True),(100,False))
+ checks.append('real-GDK-Alt-M-and-Alt-A-work-with-collapsed-actions-and-Map-keys-host-title-colour-status')
+
+ command('focus-view');time.sleep(.5)
+ before_draw=command('inspect')['drawn'][0]
+ with Client(sock)as c:
+  extra=c.call('session.create',{'name':'generated-idle-neighbor','argv':['/bin/bash','--noprofile','--norc']})
+  c.call('pane.sendText',{'pane':extra['pane'],'text':"for i in 1 2 3 4 5; do printf 'neighbor update\\n'; sleep .15; done\n"})
+  time.sleep(1.5)
+ assert command('inspect')['drawn'][0]==before_draw,'unrelated session redrew idle canvas'
+ checks.append('idle-selected-canvas-does-not-redraw-for-other-session-output')
  command('focus-view');chord(19);eventually(lambda:command('sidebar-shell')['shown'])
  call('Stop');checks.append('real-GDK-Ctrl-Shift-T-new-terminal-and-Ctrl-Shift-R-machine-chooser')
  command('snapshot')
@@ -108,7 +155,11 @@ try:
  command('chrome',maximized=False)
  eventually(lambda:command('chrome')['window_width']==1240 and command('chrome')['window_height']==880)
  checks.append('native-close-reopen-restores-size-tabs-and-existing-session-identities-without-duplicates')
- command('focus-view',view=0);target=command('inspect')['target']
+ command('focus-view',view=0)
+ before_height=command('inspect')['cell_metrics'][1]
+ command('chrome',line_height=.95);eventually(lambda:command('inspect')['cell_metrics'][1]<before_height)
+ command('chrome',line_height=1.0)
+ target=command('inspect')['target']
  with Client(sock)as c:
   candidates=[pane for session in c.call('session.list',{}) for pane in c.call('pane.list',{'session':session['id']})]
   selected=next(pane for pane in candidates if pane['id']==target)

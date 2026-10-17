@@ -132,8 +132,8 @@ try:
  assert command('chrome')['term_size_pt']==14
  assert command('inspect')['grid_size']!=before_grid,(before_grid,command('inspect'))
  command('snapshot');assert (fixture/'native-rust.png').is_file()
- prefs=json.loads((Path(env['XDG_CONFIG_HOME'])/'RUWAC/ui.json').read_text());assert prefs['schema']==2 and prefs['term_size_pt']==14 and prefs['collapsed_groups']==['Lab/A']
- checks.append('six-live-palettes-and-persisted-schema2-font-size')
+ prefs=json.loads((Path(env['XDG_CONFIG_HOME'])/'RUWAC/ui.json').read_text());assert prefs['schema']==3 and prefs['term_size_pt']==14 and prefs['collapsed_groups']==['Lab/A']
+ checks.append('six-live-palettes-and-persisted-schema3-font-size')
  command('sidebar-shell',shown=True)
  result=command('profile-editor',operation='new',fields={'0':'Generated agent host','1':'Agents','3':'127.0.0.1:22222','4':'fixture','13':1},named={'machine-codex-command':'codex resume --all','machine-claude-command':'claude --resume','machine-agent-backend':2},response='save')
  assert not result.get('error'),result
@@ -170,7 +170,9 @@ try:
  target=eventually(lambda:q['target'] if (q:=command('inspect',view=1)).get('target') and q['target'] not in known else None)
  eventually(lambda:'GENERATED_USER_PROMPT>' in rpc('pane.capture',{'pane':target})['text'])
  assert 'GENERATED_RC_LOADED' in rpc('pane.capture',{'pane':target})['text']
- count=command('inspect')['tabs'];rpc('pane.sendText',{'pane':target,'text':'exit\r'})
+ count=command('inspect')['tabs']
+ # Exercise the GUI input path; an external RPC exit intentionally retains history.
+ for letter in ['e','x','i','t','Return']:command('key',view=1,key=letter)
  eventually(lambda:command('inspect')['tabs']==count-1)
  assert second.poll() is None and daemon.poll() is None
  checks.append('native-real-Bash-login-loads-rc-and-exit-closes-only-ended-tab')
@@ -191,7 +193,7 @@ try:
  terminate(second);terminate(primary)
  final=rpc('session.create',{'name':'Generated final shell','argv':['/bin/bash','-l']})
  last=gui('--session',final['session']);eventually(lambda:command('inspect').get('target')==final['pane'],20)
- rpc('pane.sendText',{'pane':final['pane'],'text':'exit\r'})
+ for letter in ['e','x','i','t','Return']:command('key',view=0,key=letter)
  eventually(lambda:last.poll() is not None,8)
  assert daemon.poll() is None and any(p['id']==final['pane'] and p['ended'] for p in rpc('pane.list',{'session':final['session']}))
  checks.append('native-last-shell-exit-closes-GTK-window-and-retains-daemon-history')

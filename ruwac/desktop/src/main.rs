@@ -131,7 +131,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
             "--help" => {
                 println!(
-                    "ruwac-desktop --socket PRIVATE_SOCKET [--session SESSION]... [--staging-dir PRIVATE_DIRECTORY]\nOptional --new-instance opens a separate desktop process while preserving existing windows. --window-id window_HEX uses an independent saved workspace; the New window button supplies it.\nOptional --allow-workspace-control authorizes workspace lifecycle and focus operations; --allow-rdp-control separately authorizes RDP lifecycle control.\nAltGr then 1…9/0 within 0.5 s selects workspace tabs; --theme dark|light|system (default dark).\nCtrl+Alt+A GUI controls; Ctrl+A goes to applications; Ctrl+Shift+C/V desktop selection; Shift+drag overrides application mouse.\nMachines overlays the workspace and hides after selection; pin and width controls are in Preferences. Optional --show-machines opens it at startup.\nOptional independent GTK client; daemon owns PTYs. Attach PNG to Codex targets the selected local Codex draft; no automatic submission."
+                    "ruwac-desktop --socket PRIVATE_SOCKET [--session SESSION]... [--staging-dir PRIVATE_DIRECTORY]\nOptional --new-instance opens a separate desktop process while preserving existing windows. --window-id window_HEX uses an independent saved workspace; the New window button supplies it.\nOptional --allow-workspace-control authorizes workspace lifecycle and focus operations; --allow-rdp-control separately authorizes RDP lifecycle control.\nAlt+1…9/0 selects workspace tabs; AltGr tap toggles Map keys. Alt+M machines; Alt+A agents; --theme dark|light|system (default dark).\nCtrl+Alt+A GUI controls; Ctrl+A goes to applications; Ctrl+Shift+C/V desktop selection; Shift+drag overrides application mouse.\nMachines overlays the workspace and hides after selection; pin and width controls are in Preferences. Optional --show-machines opens it at startup.\nOptional independent GTK client; daemon owns PTYs. Attach PNG to Codex targets the selected local Codex draft; no automatic submission."
                 );
                 return Ok(());
             }
@@ -242,8 +242,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
   app.style_manager().set_color_scheme(theme);
   if let Some(window)=app.active_window(){window.present();return;}
   let window=adw::ApplicationWindow::builder().application(app).title(format!("RUWAC {}", env!("CARGO_PKG_VERSION"))).default_width(1040).default_height(780).build();
-  window_state::bind(&window);
-  let box_=gtk::Box::new(gtk::Orientation::Vertical,0);let header=adw::HeaderBar::new();box_.append(&header);let tabs=adw::TabView::new();tabs.remove_shortcuts(adw::TabViewShortcuts::ALT_DIGITS|adw::TabViewShortcuts::ALT_ZERO);/* Alt+digit reaches applications; tabs use the AltGr leader. */let focus_memory:tiles::FocusMemory=Rc::new(RefCell::new(std::collections::HashMap::new()));tabs.set_vexpand(true);let bar=adw::TabBar::builder().view(&tabs).autohide(false).build();header.set_title_widget(Some(&bar));let tools=gtk::Box::new(gtk::Orientation::Horizontal,6);tools.set_margin_start(6);tools.set_margin_end(6);tools.set_margin_top(4);tools.set_margin_bottom(4);let workspace_overlay=gtk::Overlay::new();workspace_overlay.set_vexpand(true);box_.append(&workspace_overlay);
+  window.set_icon_name(Some("si.z4.ruwac"));window_state::bind(&window);
+  let box_=gtk::Box::new(gtk::Orientation::Vertical,0);let header=adw::HeaderBar::new();box_.append(&header);let tabs=adw::TabView::new();tabs.remove_shortcuts(adw::TabViewShortcuts::ALT_DIGITS|adw::TabViewShortcuts::ALT_ZERO);/* Window capture handles Alt+digit according to Map keys. */let focus_memory:tiles::FocusMemory=Rc::new(RefCell::new(std::collections::HashMap::new()));tabs.set_vexpand(true);let bar=adw::TabBar::builder().view(&tabs).autohide(false).build();header.set_title_widget(Some(&bar));let tools=gtk::Box::new(gtk::Orientation::Horizontal,6);tools.set_margin_start(6);tools.set_margin_end(6);tools.set_margin_top(4);tools.set_margin_bottom(4);let workspace_overlay=gtk::Overlay::new();workspace_overlay.set_vexpand(true);box_.append(&workspace_overlay);
   let appearance_views=all.clone();let chrome=chrome::Chrome::new(&window,&header,&bar,&box_,Rc::new(move|prefs|for view in appearance_views.borrow().iter(){view.apply_appearance(prefs);}));
   updates::attach(&header,&window,fixture.is_none());
   if let Some(message)=workspace_warning.as_ref(){box_.append(&gtk::Label::new(Some(message)));}
@@ -345,7 +345,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
       Err(std::sync::mpsc::TryRecvError::Empty)=>glib::ControlFlow::Continue,
       Err(_)=>glib::ControlFlow::Break});
   }));
-  let (agent_tabs,agent_views,agent_socket,agent_broker)=(tabs.clone(),all.clone(),socket.clone(),broker.clone());chrome.actions.append(&host_shortcuts::install(&window,shortcut_menus,Rc::new(move||sessions::agent_sessions(agent_tabs.clone(),agent_views.clone(),agent_socket.clone(),agent_broker.clone()))));host_shortcuts::attach_ssh_menu(&new_terminal);
+  let (agent_tabs,agent_views,agent_socket,agent_broker)=(tabs.clone(),all.clone(),socket.clone(),broker.clone());let agent_menu=host_shortcuts::install(&window,shortcut_menus,Rc::new(move||sessions::agent_sessions(agent_tabs.clone(),agent_views.clone(),agent_socket.clone(),agent_broker.clone())));chrome.actions.append(&agent_menu);host_shortcuts::attach_ssh_menu(&new_terminal);
   sidebar.append(&agent_launch::button(&window,host_inventory.clone(),image_profile.clone(),tabs.clone(),all.clone(),socket.clone(),broker.clone()));
   tools.append(&remote_image::button(&window,all.clone(),tabs.clone(),stage.clone(),host_inventory.clone(),image_profile.clone()));
   let known_sessions:Rc<RefCell<std::collections::HashSet<String>>>=Rc::new(RefCell::new(available.as_array().into_iter().flatten().filter_map(|s|s["id"].as_str().map(str::to_owned)).collect()));
@@ -388,9 +388,20 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
   let badge=gtk::Label::new(Some("Map keys"));badge.add_css_class("local-mode");badge.set_tooltip_text(Some("Map keys: Alt+1…9 and system shortcuts such as Alt+Tab and Super go to the terminal program or remote desktop (a RUWAC session switches its windows with Alt+N). Tap AltGr again for RUWAC tabs and this computer's shortcuts."));badge.set_visible(false);header.pack_end(&badge);
   let (released,release_grab,release_badge)=(mode.clone(),key_grab.clone(),badge.clone());keys.connect_key_released(move|_,key,_,_|{if let Some(on)=released.release(key){release_grab.set_local(!on);release_badge.set_visible(on);}});
 
+  let menu_chrome=chrome.clone();let menu_epoch=Rc::new(Cell::new(0u64));
   keys.connect_key_pressed(move|_,key,_,mods|{
-    // AltGr, then within 0.5 s of pressing it: 1…9/0 tab, T terminal, R RDP host, K machines, Return fullscreen, Home controls.
+    // Host menu chords precede application input, in either Map keys mode.
     mode.press(key);
+    if key==gdk::Key::Escape{menu_epoch.set(menu_epoch.get().wrapping_add(1));}
+    if let Some(agents)=shortcuts::host_menu(key,mods){
+      menu_epoch.set(menu_epoch.get().wrapping_add(1));let ticket=menu_epoch.get();
+      if agents{menu_chrome.show_actions();if agent_menu.is_mapped(){agent_menu.popup();}else{
+        let epoch=menu_epoch.clone();let slot=Rc::new(RefCell::new(None));let pending=slot.clone();
+        let handler=agent_menu.connect_map(move|menu|{if let Some(id)=pending.borrow_mut().take(){menu.disconnect(id);}if epoch.get()==ticket&&menu.root().and_downcast::<gtk::Window>().is_some_and(|w|w.is_active()){menu.popup();}});*slot.borrow_mut()=Some(handler);
+      }}
+      else{shell.view.set_show_sidebar(true);search.grab_focus();}
+      return glib::Propagation::Stop;
+    }
     if !mode.active(){if let Some(index)=shortcuts::alt_tab_index(key,mods){shortcuts::select_tab(&tab_switch,index);return glib::Propagation::Stop;}}
     if let Some(rdp)=shortcuts::new_tab(key,mods){if rdp{shell.view.set_show_sidebar(true);search.set_text("RDP");search.grab_focus();}else if shortcut_terminal.is_sensitive(){shortcut_terminal.emit_clicked();}return glib::Propagation::Stop;}if shortcuts::local_escape(key,mods){shortcut_controls.grab_focus();return glib::Propagation::Stop;}if shortcuts::fullscreen(key,mods){if let Some(w)=shortcut_window.upgrade(){if w.is_fullscreen(){w.unfullscreen();}else{w.fullscreen();}}return glib::Propagation::Stop;}if chrome::controls_shortcut(key,mods){shortcut_controls.popup();return glib::Propagation::Stop;}if key==gdk::Key::k&&mods.contains(gdk::ModifierType::CONTROL_MASK){shell.view.set_show_sidebar(true);search.grab_focus();return glib::Propagation::Stop;}if key==gdk::Key::Escape&&shell.view.is_collapsed()&&shell.view.shows_sidebar(){shell.view.set_show_sidebar(false);return glib::Propagation::Stop;}glib::Propagation::Proceed});window.add_controller(keys);window.set_content(Some(&box_));
 
@@ -434,15 +445,16 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
     for i in 0..chrome_tabs.n_pages(){let page=chrome_tabs.nth_page(i);let remote=chrome_remote.borrow();let terminal=chrome_terminal.borrow();
       if let Some(v)=remote.iter().find(|v|tiles::contains(&page.child(),&v.root)){
-        tiles::set_page_icon(&page,"video-display-symbolic");let meta=v.fixture_inspect();let warning=meta["status"].as_str().unwrap_or("");
-        let endpoint=v.configuration().map(|p|p.server).unwrap_or_else(||"Unconfigured".into());
-        tiles::set_page_tooltip(&page,&glib::markup_escape_text(&format!("{}\nState: {}\nEndpoint: {}\nDesktop size: {} × {}\nLatency: not measured\nClipboard: {}",page.title(),warning,endpoint,meta["size"][0],meta["size"][1],meta["policy"].as_str().unwrap_or("unavailable"))));
-        let phase=v.metadata()["phase"].as_str().unwrap_or("disconnected").to_owned();
-        let icon=match phase.as_str(){"connected"=>"emblem-ok-symbolic","connecting"|"reconnecting"=>"network-transmit-receive-symbolic","error"=>"dialog-warning-symbolic",_=>"network-offline-symbolic"};
-        tiles::set_page_indicator(&page,Some(icon));tiles::set_page_loading(&page,matches!(phase.as_str(),"connecting"|"reconnecting"));
+        tiles::set_page_icon(&page,"video-display-symbolic");let (phase,summary)=v.tab_summary();
+        tiles::set_page_tooltip(&page,&glib::markup_escape_text(&summary));
+        let status=match phase.as_str(){"connected"=>tiles::TabStatus::Ready,"connecting"|"reconnecting"|"display_change"=>tiles::TabStatus::Busy,"error"=>tiles::TabStatus::Error,_=>tiles::TabStatus::Offline};
+        tiles::set_page_status(&page,status);tiles::set_page_loading(&page,matches!(phase.as_str(),"connecting"|"reconnecting"|"display_change"));
         if page.child().first_child().as_ref()==Some(v.root.upcast_ref()){tiles::set_page_title(&page,&v.tab_title());}
       }else if let Some(v)=terminal.iter().find(|v|tiles::contains(&page.child(),&v.root)){
-        tiles::set_page_icon(&page,"utilities-terminal-symbolic");tiles::set_page_tooltip(&page,&glib::markup_escape_text(&format!("{}\n{}",page.title(),v.status.text())));tiles::set_page_indicator(&page,v.warning.borrow().as_ref().map(|_|"dialog-warning-symbolic"));
+        tiles::set_page_icon(&page,"utilities-terminal-symbolic");
+        if page.child().first_child().as_ref()==Some(v.root.upcast_ref()) && page.title()=="Terminal"{tiles::set_page_title(&page,&sessions::terminal_title("Terminal"));}
+        tiles::set_page_tooltip(&page,&glib::markup_escape_text(&format!("{}\n{}",page.title(),v.status.text())));
+        tiles::set_page_status(&page,v.tab_status());
       }
     }
     glib::ControlFlow::Continue
@@ -505,6 +517,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
   glib::timeout_add_local(Duration::from_millis(16),move||{
    tick.set(tick.get()+1);let now=Instant::now();max_gap.set(max_gap.get().max(now.duration_since(last.replace(now)).as_millis()));for v in vv.borrow().iter(){v.update();}
    if let Some(dir)=fixture.as_ref(){let request=dir.join("gui-request.json");if let Ok(bytes)=std::fs::read(&request){if let Ok(q)=serde_json::from_slice::<Value>(&bytes){let seq=q["seq"].as_u64().unwrap_or(0);if seq>sequence.get(){sequence.set(seq);let index=q["view"].as_u64().unwrap_or(0)as usize;let view=vv.borrow().get(index).cloned();let reply_dir=dir.clone();let reply=move|result:Value|{let path=reply_dir.join("gui-response.json");let temp=reply_dir.join("gui-response.tmp");let _=std::fs::write(&temp,json!({"seq":seq,"result":result}).to_string());let _=std::fs::rename(temp,path);};if view.is_none(){match q["action"].as_str().unwrap_or(""){
+    "tab-status"=>reply(json!({"tabs":(0..tabs.n_pages()).map(|i|{let p=tabs.nth_page(i);let icon=p.indicator_icon().and_downcast::<gtk::gio::BytesIcon>();json!({"title":p.title().as_str(),"colour_icon":icon.is_some(),"svg":icon.map(|i|String::from_utf8_lossy(i.bytes().as_ref()).to_string())})}).collect::<Vec<_>>()})),
     "compact-controls"=>reply(compact::fixture(window.upcast_ref(),&q)),
     "chrome"=>reply(chrome.fixture(&window,&machine_shell.view,&q)),
     "rdp-tab-menu"=>{let index=q["tab"].as_i64().unwrap_or(0)as i32;if index>=0&&index<tabs.n_pages(){let page=tabs.nth_page(index);tabs.emit_by_name::<()>("setup-menu",&[&Some(page.clone())]);let action=q["control"].as_str().unwrap_or("fit");if ["fit","dynamic","native","disconnect","reconnect"].contains(&action){let _=gtk::prelude::WidgetExt::activate_action(&window,&format!("connection.{action}"),None);}reply(json!({"title":page.title().to_string(),"status_icon":page.indicator_icon().is_some(),"icon":page.icon().is_some()}));tabs.emit_by_name::<()>("setup-menu",&[&None::<adw::TabPage>]);}},
@@ -579,6 +592,7 @@ v.set_display(q["mode"].as_str().unwrap_or("fit"),q["zoom"].as_f64().unwrap_or(1
     "grid-copy"=>{v.select_grid_fixture();v.copy_clipboard(false);reply(json!({"offered":true}));},
     "cancel"=>{v.broker.borrow_mut().local_copy();reply(json!({"epoch":v.broker.borrow().epoch()}));},
     "snapshot"=>{if let Some(clock)=window.frame_clock(){let paint=gtk::WidgetPaintable::new(Some(&window));let window=window.clone();let dir=dir.clone();let slot=Rc::new(RefCell::new(None));let owned=slot.clone();let attempts=Rc::new(Cell::new(0u8));window.queue_draw();let id=clock.connect_after_paint(move|clock|{attempts.set(attempts.get()+1);let snap=gtk::Snapshot::new();paint.snapshot(&snap,window.width()as f64,window.height()as f64);let node=snap.to_node();let renderer=window.renderer();let mut saved=false;if let(Some(node),Some(renderer))=(&node,&renderer){let texture=renderer.render_texture(node,None);saved=texture.save_to_png(dir.join("native-rust.png")).is_ok();}if saved||attempts.get()>=5{if let Some(id)=owned.borrow_mut().take(){clock.disconnect(id);}reply(json!({"image":"native-rust.png","saved":saved,"mapped":window.is_mapped(),"width":window.width(),"height":window.height(),"node":node.is_some(),"renderer":renderer.is_some(),"after_paint":true}));}else{window.queue_draw();}});*slot.borrow_mut()=Some(id);}else{reply(json!({"saved":false,"error":"Frame clock unavailable"}));}},
+    "tab-status"=>reply(json!({"tabs":(0..tabs.n_pages()).map(|i|{let p=tabs.nth_page(i);let icon=p.indicator_icon().and_downcast::<gtk::gio::BytesIcon>();json!({"title":p.title().as_str(),"colour_icon":icon.is_some(),"svg":icon.map(|i|String::from_utf8_lossy(i.bytes().as_ref()).to_string())})}).collect::<Vec<_>>()})),
     "compact-controls"=>reply(compact::fixture(window.upcast_ref(),&q)),
     "chrome"=>reply(chrome.fixture(&window,&machine_shell.view,&q)),
     "rdp-tab-menu"=>{let index=q["tab"].as_i64().unwrap_or(0)as i32;if index>=0&&index<tabs.n_pages(){let page=tabs.nth_page(index);tabs.emit_by_name::<()>("setup-menu",&[&Some(page.clone())]);let action=q["control"].as_str().unwrap_or("fit");if ["fit","dynamic","native","disconnect","reconnect"].contains(&action){let _=gtk::prelude::WidgetExt::activate_action(&window,&format!("connection.{action}"),None);}reply(json!({"title":page.title().to_string(),"status_icon":page.indicator_icon().is_some(),"icon":page.icon().is_some()}));tabs.emit_by_name::<()>("setup-menu",&[&None::<adw::TabPage>]);}},

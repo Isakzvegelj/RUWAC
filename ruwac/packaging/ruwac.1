@@ -1,0 +1,175 @@
+.TH RUWAC 1 "2026-10-17" "RUWAC" "User Commands"
+.SH NAME
+ruwac \- persistent terminal multiplexer and remote workspace
+.SH SYNOPSIS
+.B ruwac \-S
+.I NAME
+.br
+.B ruwac \-r
+.I NAME_OR_SESSION_ID
+.br
+.B ruwac \-ls
+.RB [ \-\-json ]
+.br
+.B ruwac kill-session
+.I NAME_OR_SESSION_ID
+.br
+.B ruwac gui
+.RI [ OPTIONS ]
+.SH DESCRIPTION
+RUWAC keeps terminals in a headless daemon. Closing a client detaches its
+view while programs continue running. Several clients may share a session
+with independent focus. The optional GTK desktop provides terminal, SSH,
+RDP, machine-bookmark, file-transfer and coding-agent views.
+.PP
+Detachment does not provide process survival across a reboot or daemon
+termination. Saved history and workspace layouts are distinct from live
+processes. RDP transports currently belong to the desktop process.
+.SH BASIC COMMANDS
+.TP
+.BI "\-S " NAME
+Create and attach a named session, or attach the existing exact name.
+Starts the daemon when required.
+.TP
+.BI "\-r " NAME_OR_SESSION_ID
+Reattach only. Duplicate names are refused; use the full ID from \-ls.
+.TP
+.BI "\-x " NAME
+Attach an existing session for shared access.
+.TP
+.BI "\-R " NAME
+Attach or create a named session.
+.TP
+.BI "\-dmS " NAME
+Create a detached session.
+.TP
+.B \-ls
+List persistent sessions, window counts, state and exact IDs.
+.TP
+.BI "kill-session " NAME_OR_SESSION_ID
+End all programs in only the selected session. This is destructive.
+.TP
+.BI "attach \-\-session " SESSION_ID
+Explicit attachment syntax, also usable by older clients.
+.TP
+.BI "pane list \-\-session " SESSION_ID " \-\-json"
+List panes, process IDs and ended/restored state.
+.SH TERMINAL KEYS
+The CLI prefix is Ctrl+A. Press the prefix, then a command key.
+.TP
+.B d
+Detach; programs continue.
+.TP
+.B c
+New terminal window.
+.TP
+.B n / p
+Next / previous window.
+.TP
+.B 0 through 9
+Select a window. Alt+digits also selects windows in the CLI.
+.TP
+.B s / |
+Split horizontally / vertically.
+.TP
+.B Tab / z
+Change pane / toggle zoom.
+.TP
+.B [ / ]
+Selection/history mode / paste internal buffer.
+.TP
+.B a
+Send literal prefix to the application. Repeated prefixes support nesting.
+.PP
+The clickable bottom bar selects windows. In a shell, scrolling enters
+history, dragging selects and middle-click pastes. Mouse-aware applications
+receive their own events. Shift+drag uses the outer terminal selection.
+.PP
+The native desktop sends Ctrl+A to applications, including nested tmux;
+its own control prefix is Ctrl+Alt+A.
+.SH DESKTOP KEYS
+.TP
+.B Alt+M / Alt+A
+Open Machines and focus search / open Agents and running agent sessions.
+These host menu keys work in either Map keys mode.
+.TP
+.B Alt+1 through Alt+9 / Alt+0
+Select desktop tabs 1 through 10 by default.
+.TP
+.B AltGr tap
+Toggle Map keys. When enabled, Alt+digits and system shortcuts go to the
+focused terminal or remote desktop. Holding AltGr with another key remains
+normal keyboard-layout input.
+.TP
+.B Ctrl+Shift+T / Ctrl+Shift+R
+New terminal / choose an RDP machine.
+.TP
+.B Ctrl+Alt+Enter
+Toggle fullscreen.
+.TP
+.B Ctrl+Alt+Home
+Release remote focus to local controls.
+.TP
+.B Ctrl+Shift+C / Ctrl+Shift+V
+Desktop copy / paste.
+.SH REMOTE USE
+.B ruwac \-\-host SSH_HOST
+.I COMMAND
+runs the corresponding command over verified SSH. For example:
+.PP
+.nf
+ruwac --host example-host -r development
+ruwac --host example-host session list --json
+.fi
+.PP
+SSH and RDP accounts and credential references are independent. Unknown or
+changed host identities require review; no password belongs in command-line
+arguments. Optional provider installation does not log in to the provider.
+.SH UPDATES
+.TP
+.B update \-\-check
+Check published releases.
+.TP
+.B update \-\-install
+Install the newest eligible verified release for the current delivery mode.
+Does not restart live sessions or RDP connections.
+.TP
+.B update \-\-rollback
+Select the previous per-user installation. RPM rollback uses its supported
+package-management path. See the command output for delivery-specific limits.
+.TP
+.B update \-\-auto-check on|off|status
+Control periodic checks.
+.TP
+.B update \-\-auto-install on|off|status
+Control optional automatic installation.
+.SH FILES
+.TP
+.I $XDG_RUNTIME_DIR/ruwac/
+Private daemon sockets and runtime state. An explicit socket's parent must
+be owned by the current user with mode 0700.
+.TP
+.I $XDG_CONFIG_HOME/RUWAC/
+Private machine metadata, desktop settings and saved workspaces. If unset,
+XDG_CONFIG_HOME defaults to ~/.config. Passwords are stored in Secret Service.
+.SH ENVIRONMENT
+.TP
+.B RUWAC_SOCKET
+Select a daemon socket. \-\-socket PATH overrides it.
+.TP
+.B SHELL
+Selected login shell for new terminal processes. Existing shells are preserved.
+.SH LIMITATIONS
+Common Screen commands are supported; the complete GNU Screen language is
+not implemented. Current packaged builds target Fedora 44 x86_64. Windows
+and macOS native clients are not qualified. External RDP and physical input
+coverage varies; a stable version number is not universal interoperability
+or security qualification. Consult the source acceptance and security reports.
+.SH AUTHOR
+Denis Zvegelj.
+.SH SEE ALSO
+.BR ssh (1),
+.BR screen (1),
+.BR tmux (1)
+.PP
+https://github.com/w3fans/RUWAC

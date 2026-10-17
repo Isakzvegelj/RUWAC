@@ -45,11 +45,13 @@ def main():
         assert not subprocess.check_output(['rpm', '-qp', '--scripts', str(rpm)], stderr=subprocess.DEVNULL).strip(), 'Packages must not restart sessions or change user configuration'
         requires = subprocess.check_output(['rpm', '-qp', '--requires', str(rpm)], stderr=subprocess.DEVNULL, text=True).splitlines()
         if name == 'ruwac':
+            assert any(path.startswith('/usr/share/man/man1/ruwac.1') for path in paths)
             assert not any(re.search(r'gtk|gdk|adwaita|rdp|pango|cairo', item, re.I) for item in requires)
         else:
             assert 'ruwac = ' + version + '-' + release in requires
             assert any('libgtk-4.so' in item for item in requires)
             assert '/usr/share/applications/si.z4.ruwac.desktop' in paths
+            assert '/usr/share/icons/hicolor/scalable/apps/si.z4.ruwac.svg' in paths
         source = subprocess.Popen(['rpm2cpio', str(rpm)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         result = subprocess.run(['cpio', '-idm', '--quiet', '--no-absolute-filenames'], cwd=unpacked, stdin=source.stdout, capture_output=True)
         source.stdout.close()

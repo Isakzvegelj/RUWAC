@@ -26,7 +26,9 @@ pub fn install(
     let button = gtk::MenuButton::new();
     button.set_widget_name("agent-host-menu");
     button.set_icon_name("applications-science-symbolic");
-    button.set_tooltip_text(Some("Agents · saved hosts · Codex, Claude and Kimi"));
+    button.set_tooltip_text(Some(
+        "Agents · Alt+A · saved hosts · Codex, Claude and Kimi",
+    ));
     button.update_property(&[gtk::accessible::Property::Label("Saved agent hosts")]);
     let pop = gtk::Popover::new();
     pop.connect_show(move |pop| {
@@ -88,8 +90,9 @@ pub fn attach_ssh_menu(button: &gtk::Button) {
     button.add_controller(click);
     let tip = button
         .tooltip_text()
+        .or_else(|| button.label())
         .map(|t| t.to_string())
-        .unwrap_or_default();
+        .unwrap_or_else(|| "New terminal".into());
     button.set_tooltip_text(Some(&format!("{tip}\nRight-click: SSH hosts")));
 }
 

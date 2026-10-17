@@ -44,8 +44,11 @@ impl Access {
 }
 
 /// Batch options come first: for each option ssh keeps the first value.
-const BATCH: [&str; 9] = [
+const BATCH: [&str; 12] = [
     "BatchMode=yes",
+    "ControlMaster=no",
+    "ControlPath=none",
+    "ControlPersist=no",
     "PasswordAuthentication=no",
     "KbdInteractiveAuthentication=no",
     "StrictHostKeyChecking=yes",
@@ -356,6 +359,7 @@ mod tests {
             .unwrap();
         assert!(batch < ask, "ssh keeps the first value given");
         assert!(argv.contains(&"PasswordAuthentication=no".to_string()));
+        assert!(argv.contains(&"ControlPath=none".to_string()));
         assert!(
             argv.iter().position(|a| a == "k.pub").unwrap()
                 < argv.iter().position(|a| a == "--").unwrap()

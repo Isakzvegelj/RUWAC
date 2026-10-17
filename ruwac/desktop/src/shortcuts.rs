@@ -16,6 +16,18 @@ pub fn new_tab(key: gdk::Key, mods: gdk::ModifierType) -> Option<bool> {
     }
 }
 
+/// Quick host menus remain available even while keys are mapped to a remote.
+pub fn host_menu(key: gdk::Key, mods: gdk::ModifierType) -> Option<bool> {
+    if (mods - gdk::ModifierType::LOCK_MASK) != gdk::ModifierType::ALT_MASK {
+        return None;
+    }
+    match key.to_unicode()?.to_ascii_lowercase() {
+        'm' => Some(false),
+        'a' => Some(true),
+        _ => None,
+    }
+}
+
 pub fn altgr(key: gdk::Key) -> bool {
     matches!(key, gdk::Key::ISO_Level3_Shift | gdk::Key::Alt_R)
 }
@@ -171,5 +183,32 @@ mod local_mode_tests {
             alt_tab_index(gdk::Key::_2, gdk::ModifierType::empty()),
             None
         );
+    }
+}
+
+#[cfg(test)]
+mod menu_tests {
+    use super::*;
+    #[test]
+    fn menu_chords_exclude_remote_altgr_ctrl_and_super() {
+        assert_eq!(
+            host_menu(gdk::Key::m, gdk::ModifierType::ALT_MASK),
+            Some(false)
+        );
+        assert_eq!(
+            host_menu(
+                gdk::Key::a,
+                gdk::ModifierType::ALT_MASK | gdk::ModifierType::LOCK_MASK
+            ),
+            Some(true)
+        );
+        for mods in [
+            gdk::ModifierType::empty(),
+            gdk::ModifierType::CONTROL_MASK | gdk::ModifierType::ALT_MASK,
+            gdk::ModifierType::ALT_MASK | gdk::ModifierType::SUPER_MASK,
+            gdk::ModifierType::ALT_MASK | gdk::ModifierType::SHIFT_MASK,
+        ] {
+            assert_eq!(host_menu(gdk::Key::m, mods), None);
+        }
     }
 }

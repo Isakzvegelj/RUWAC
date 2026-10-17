@@ -286,3 +286,7 @@ Installation references: [Codex](https://learn.chatgpt.com/docs/codex/cli), [Cla
 The desktop restores its last normal window size, maximized/fullscreen state and saved workspace tabs. Terminal processes stay in the independent daemon when a desktop window closes. Separate window identities keep their own geometry and workspace; remote RDP transports reconnect when a restored tab is opened. Window placement is managed by the desktop compositor.
 
 Repeated `Terminal` names are independent persistent sessions created by GUI terminal tabs. Use `ruwac -r session_ID` (or `ruwac attach --session session_ID`) to select one exactly. `ruwac kill-session NAME_OR_SESSION_ID` closes every program in that selected session; ambiguous names are refused. Screen-style `ruwac -S session_ID -X quit` also closes that session. Closing a GUI window detaches and preserves its terminal processes.
+
+Product purpose, requested capabilities, realized scope and recent code-review findings: [functionality audit](spec/RUWAC_FUNCTIONALITY_AUDIT.md).
+
+After installation, `man ruwac` documents session commands, keyboard controls and updates. Machines: Alt+M; Agents: Alt+A. Preferences → Tight line spacing reduces vertical spacing; existing saved appearance settings are preserved.

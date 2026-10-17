@@ -49,7 +49,7 @@ def files(root):
   elif len(r.parts)==1 and r.name in ROOT_FILES:out.append(r)
   elif r.parts[0]=='spec' and len(r.parts)==2 and r.suffix=='.md':out.append(r)
   elif r.parts[0]=='ruwac' and r.parts[1]=='desktop' and (r.name in {'Cargo.toml','Cargo.lock','chrome.css'} or r.suffix=='.rs'):out.append(r)
-  elif r.as_posix() in {'ruwac/packaging/ruwac.spec','ruwac/packaging/ruwac.desktop','ruwac/packaging/ruwac-rpm-update.service','ruwac/packaging/ruwac-rpm-update.timer'}:out.append(r)
+  elif r.as_posix() in {'ruwac/packaging/ruwac.1','ruwac/packaging/si.z4.ruwac.svg','ruwac/packaging/codex-shortcut-symbolic.svg','ruwac/packaging/ruwac.spec','ruwac/packaging/ruwac.desktop','ruwac/packaging/ruwac-rpm-update.service','ruwac/packaging/ruwac-rpm-update.timer'}:out.append(r)
   elif r.parts[0]=='ruwac' and r.parts[1]=='gui' and r.suffix=='.py':out.append(r)
   elif r.parts[0]=='architecture' and len(r.parts)==2 and r.name in ARCH_FILES:out.append(r)
   elif r.as_posix() in GITHUB_FILES:out.append(r)

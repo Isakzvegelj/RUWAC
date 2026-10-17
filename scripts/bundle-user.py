@@ -516,6 +516,10 @@ def assemble(root, output, require_private=False):
             artifacts[artifact] = digest(target)
         (destination / 'ruwac').mkdir()
         (destination / 'ruwac/Cargo.toml').write_text('[workspace.package]\nversion = "' + version + '"\n')
+        packaging = destination / 'ruwac/packaging'
+        packaging.mkdir(parents=True)
+        for name in ['ruwac.1', 'si.z4.ruwac.svg']:
+            shutil.copyfile(root / 'ruwac/packaging' / name, packaging / name)
         shutil.copyfile(root / 'scripts/install-user.py', destination / 'install-user.py')
         shutil.copyfile(root / 'LICENSE', destination / 'LICENSE')
         (destination / 'README.txt').write_text('''RUWAC Fedora 44 x86_64 testing candidate

@@ -51,6 +51,9 @@ class Bundles(unittest.TestCase):
             binary = root / 'target/release' / name
             binary.write_text('#!/bin/sh\nprintf "RUWAC ' + version + '\\n"\n')
             binary.chmod(0o755)
+        packaging=root/'ruwac/packaging';packaging.mkdir()
+        for name in ['ruwac.1','si.z4.ruwac.svg']:
+            shutil.copyfile(ROOT/'ruwac/packaging'/name,packaging/name)
         (root / 'notices').mkdir()
         (root / 'notices/index.json').write_text('{"generated":true}\n')
         (root / 'LICENSE').write_text('Generated fixture\n')
@@ -73,6 +76,26 @@ class Bundles(unittest.TestCase):
             result = runpy.run_path(str(ROOT / 'scripts/install-user.py'), run_name='__main__')
             os.close(result['lock'])
         return prefix
+
+    def test_manual_icon_keywords_and_owned_launcher_migration(self):
+        first=self.fixture('0.0.1');prefix=self.install(first)
+        man=prefix/'share/man/man1/ruwac.1';icon=prefix/'share/icons/hicolor/scalable/apps/si.z4.ruwac.svg'
+        self.assertTrue(man.is_file() and icon.is_file())
+        launcher=prefix/'share/applications/si.z4.ruwac.desktop'
+        text=launcher.read_text();self.assertIn('Keywords=terminal;ssh;rdp;',text)
+        legacy=text.replace('Icon=si.z4.ruwac\nKeywords=terminal;ssh;rdp;remote desktop;multiplexer;screen;tmux;sftp;Codex;Claude;Kimi;','Icon=utilities-terminal')
+        launcher.write_text(legacy)
+        self.install(self.fixture('0.0.2'))
+        self.assertEqual(launcher.read_text(),text)
+        self.assertIn('releases/0.0.2/',str(man.resolve()))
+        self.assertIn('releases/0.0.2/',str(icon.resolve()))
+
+    def test_unrelated_manpage_is_protected(self):
+        prefix=self.root/'prefix';folder=prefix/'share/man/man1';folder.mkdir(parents=True)
+        page=folder/'ruwac.1';page.write_text('unrelated')
+        with self.assertRaisesRegex(SystemExit,'unrelated resource'):
+            self.install(self.fixture())
+        self.assertEqual(page.read_text(),'unrelated')
 
     def test_registry_license_tampering_is_rejected(self):
         package = self.package()

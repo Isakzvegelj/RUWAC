@@ -21,7 +21,7 @@ pub fn append(
     }
     let v = View::new(socket.clone(), id.into(), broker.clone());
     let page = crate::tiles::append(tabs, &v.root);
-    page.set_title(name);
+    page.set_title(&terminal_title(name));
     views.borrow_mut().push(v.clone());
     tabs.set_selected_page(&page);
     v.focus();
@@ -34,6 +34,7 @@ pub fn controls(
 ) -> gtk::Box {
     let root = gtk::Box::new(gtk::Orientation::Horizontal, 6);
     let add = gtk::Button::with_label("New terminal");
+    add.set_widget_name("terminal-new");
     let reopen = gtk::Button::with_label("Sessions…");
     root.append(&add);
     root.append(&reopen);
@@ -251,8 +252,11 @@ pub fn agent_sessions(
 pub fn fixture(widget: &impl IsA<gtk::Widget>, label: &str) -> bool {
     let widget = widget.as_ref();
     if let Some(button) = widget.downcast_ref::<gtk::Button>() {
-        if button.label().as_deref() == Some(label)
-            || button.tooltip_text().as_deref() == Some(label)
+        if (label == "New terminal" && button.widget_name() == "terminal-new")
+            || button.label().as_deref() == Some(label)
+            || button
+                .tooltip_text()
+                .is_some_and(|t| t.lines().next() == Some(label))
         {
             button.emit_clicked();
             return true;
@@ -266,4 +270,31 @@ pub fn fixture(widget: &impl IsA<gtk::Widget>, label: &str) -> bool {
         child = w.next_sibling();
     }
     false
+}
+
+/// Only the generic local tab gets a host suffix; named remote/agent sessions
+/// retain their explicit endpoint names. No shell command or network lookup.
+pub fn terminal_title(name: &str) -> String {
+    if name != "Terminal" {
+        return name.into();
+    }
+    static HOST: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    let host = HOST.get_or_init(|| {
+        let mut buf = [0u8; 256];
+        if unsafe { libc::gethostname(buf.as_mut_ptr().cast(), buf.len()) } != 0 {
+            return "local".into();
+        }
+        let end = buf.iter().position(|b| *b == 0).unwrap_or(buf.len());
+        let text: String = String::from_utf8_lossy(&buf[..end])
+            .chars()
+            .filter(|c| !c.is_control())
+            .take(80)
+            .collect();
+        if text.is_empty() {
+            "local".into()
+        } else {
+            text
+        }
+    });
+    format!("Terminal · {host}")
 }

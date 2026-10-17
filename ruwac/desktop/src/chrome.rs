@@ -270,6 +270,10 @@ impl Chrome {
         self.pop.set_child(Some(&container));
         self.dock.set_visible(docked);
     }
+    /// A keyboard menu must also work when header actions are collapsed.
+    pub fn show_actions(&self) {
+        self.reveal.set_reveal_child(true);
+    }
     pub fn dock_toggle_active(&self) -> bool {
         self.prefs.borrow().controls_docked
     }
@@ -408,8 +412,9 @@ impl Chrome {
             }
         });
         let height = gtk::DropDown::from_strings(&[
+            "Tight · 0.95",
             "Standard · 1.00",
-            "Compact · 1.15",
+            "Relaxed · 1.15",
             "Normal · 1.30",
             "Relaxed · 1.45",
         ]);
@@ -424,7 +429,7 @@ impl Chrome {
         height.connect_selected_notify(move |d| {
             if let Some(c) = weak.upgrade() {
                 c.update(|p| {
-                    p.line_height = crate::sidebar_shell::LINE_HEIGHTS[d.selected().min(3) as usize]
+                    p.line_height = crate::sidebar_shell::LINE_HEIGHTS[d.selected().min(4) as usize]
                 });
             }
         });

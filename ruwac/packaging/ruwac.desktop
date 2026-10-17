@@ -3,9 +3,10 @@ Type=Application
 Name=RUWAC
 Comment=Persistent terminals, remote desktops and files
 Exec=/usr/bin/ruwac gui
-Icon=utilities-terminal
+Icon=si.z4.ruwac
 Terminal=false
 Categories=System;TerminalEmulator;RemoteAccess;
+Keywords=terminal;ssh;rdp;remote desktop;multiplexer;screen;tmux;sftp;Codex;Claude;Kimi;
 StartupNotify=true
 Actions=NewWindow;Update;
 

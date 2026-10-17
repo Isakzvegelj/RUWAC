@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+
+## v0.4.19 — 2026-10-17 — Stable source release
+
+- Fix a reviewed TUI shell-exit regression that removed the last session before querying it, producing STALE_ID and losing ended history. Exit the view cleanly while preserving history and live sibling windows.
+
+- Install a recognizable workspace icon, launcher search keywords and `man ruwac`; add a tighter font-spacing option and automatic verified-key SSH bookmarks without copying RDP credentials or changing remote host trust.
+- Add Alt+M Machines and Alt+A Agents access, hostname-labelled terminal tabs, coloured connection states and a stronger blue terminal status bar; reduce RDP tab-status inspection overhead and document the functionality/recent-change audit.
+
 ## v0.4.18 — 2026-10-17 — Stable source release
 
 - Map keys (AltGr tap; shown as a Map keys badge) replaces Local keys with the opposite default: normally Alt+1…9/0 switch RUWAC tabs directly and system shortcuts such as Alt+Tab stay with this computer; with Map keys on, they go to the terminal program or remote desktop (a RUWAC session switches its windows with Alt+N).

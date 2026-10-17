@@ -1080,6 +1080,125 @@ fn ssh_seed(source: &Profile) -> Profile {
     p
 }
 
+/// Discover existing key access for RDP bookmarks, with no password prompts,
+/// host-trust changes or remote key installation. Only successful, still-current
+/// results become separate SSH endpoints. Work is bounded to two SSH processes.
+fn auto_ssh_endpoints(store: &Rc<RefCell<Store>>, refresh: Rc<dyn Fn()>) {
+    thread_local! {
+        static RUNNING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+        static CHECKED: RefCell<std::collections::HashSet<String>> = RefCell::new(std::collections::HashSet::new());
+    }
+    if RUNNING.with(|v| v.get()) || store.borrow().error.is_some() {
+        return;
+    }
+    let sources: Vec<_> = {
+        let s = store.borrow();
+        s.items
+            .iter()
+            .filter(|p| {
+                p.protocol == "RDP"
+                    && !s
+                        .items
+                        .iter()
+                        .any(|x| x.machine_id == p.machine_id && x.protocol == "SSH")
+            })
+            .filter(|p| {
+                CHECKED.with(|c| {
+                    !c.borrow().contains(&format!(
+                        "{}:{}:{}:{}",
+                        p.id, p.server, p.preferences.identity_file, p.preferences.known_hosts
+                    ))
+                })
+            })
+            .take(32)
+            .cloned()
+            .collect()
+    };
+    if sources.is_empty() {
+        return;
+    }
+    for p in &sources {
+        CHECKED.with(|c| {
+            c.borrow_mut().insert(format!(
+                "{}:{}:{}:{}",
+                p.id, p.server, p.preferences.identity_file, p.preferences.known_hosts
+            ));
+        });
+    }
+    RUNNING.with(|v| v.set(true));
+    let (tx, rx) = std::sync::mpsc::channel();
+    let queue = std::sync::Arc::new(std::sync::Mutex::new(sources));
+    for _ in 0..2 {
+        let (tx, queue) = (tx.clone(), queue.clone());
+        std::thread::spawn(move || {
+            let keys = crate::ssh_probe::identities();
+            loop {
+                let Some(source) = queue.lock().unwrap().pop() else {
+                    return;
+                };
+                let mut probe = ssh_seed(&source);
+                // Leave account and identity choice to the existing OpenSSH config.
+                probe.username.clear();
+                let outcome = crate::ssh_probe::probe(&probe, &keys);
+                if tx.send((source, probe, outcome)).is_err() {
+                    return;
+                }
+            }
+        });
+    }
+    drop(tx);
+    let weak = Rc::downgrade(store);
+    gtk::glib::timeout_add_local(std::time::Duration::from_millis(250), move || {
+        let Some(store) = weak.upgrade() else {
+            RUNNING.with(|v| v.set(false));
+            return gtk::glib::ControlFlow::Break;
+        };
+        let mut added = false;
+        loop {
+            match rx.try_recv() {
+                Ok((source, probe, outcome)) => {
+                    let mut s = store.borrow_mut();
+                    if outcome.access != crate::ssh_probe::Access::Verified
+                        || s.error.is_some()
+                        || !s.items.iter().any(|p| {
+                            p.id == source.id
+                                && p.machine_id == source.machine_id
+                                && p.server == source.server
+                                && p.preferences.identity_file == source.preferences.identity_file
+                                && p.preferences.known_hosts == source.preferences.known_hosts
+                        })
+                        || s.items
+                            .iter()
+                            .any(|p| p.machine_id == probe.machine_id && p.protocol == "SSH")
+                    {
+                        continue;
+                    }
+                    let old = s.items.clone();
+                    s.items.push(probe);
+                    if s.save().is_ok() {
+                        added = true;
+                    } else {
+                        s.items = old;
+                    }
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {
+                    if added {
+                        refresh();
+                    }
+                    return gtk::glib::ControlFlow::Continue;
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    if added {
+                        refresh();
+                    }
+                    RUNNING.with(|v| v.set(false));
+                    return gtk::glib::ControlFlow::Break;
+                }
+            }
+        }
+    });
+}
+
 /// Which machines already accept this user's existing SSH public keys.
 /// Nothing is contacted before the person confirms, and SSH endpoints are
 /// added only for rows they select after reviewing the results.
@@ -1414,10 +1533,13 @@ fn shortcut_button(
     launch: AgentLauncher,
 ) -> gtk::Button {
     let b = if icon == "ruwac-codex" {
-        // Codex: a code glyph reads better than any stock icon.
-        let b = gtk::Button::with_label("</>");
-        b.add_css_class("codex-glyph");
-        b
+        // RUWAC's own recognisable shortcut glyph, not a vendor trademark.
+        let icon = gtk::gio::BytesIcon::new(&gtk::glib::Bytes::from_static(include_bytes!(
+            "../../packaging/codex-shortcut-symbolic.svg"
+        )));
+        let image = gtk::Image::from_gicon(&icon);
+        image.set_pixel_size(19);
+        gtk::Button::builder().child(&image).build()
     } else {
         gtk::Button::from_icon_name(icon)
     };
@@ -2422,6 +2544,21 @@ pub fn sidebar(
         gtk::glib::ControlFlow::Continue
     });
     refresh();
+    let (auto_store, auto_refresh) = (Rc::downgrade(&store), Rc::downgrade(&refresh));
+    let auto_root = root.downgrade();
+    gtk::glib::timeout_add_local(std::time::Duration::from_secs(30), move || {
+        let (Some(_root), Some(s), Some(r)) = (
+            auto_root.upgrade(),
+            auto_store.upgrade(),
+            auto_refresh.upgrade(),
+        ) else {
+            return gtk::glib::ControlFlow::Break;
+        };
+        auto_ssh_endpoints(&s, r);
+        gtk::glib::ControlFlow::Continue
+    });
+    let (s, r) = (store.clone(), refresh.clone());
+    gtk::glib::idle_add_local_once(move || auto_ssh_endpoints(&s, r));
     let image_store = store.clone();
     let image_profile: ImageProfileReader = Rc::new(move |id| {
         let s = image_store.borrow();

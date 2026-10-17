@@ -50,16 +50,16 @@ try:
     view = attach(session['session'], 'exit')
     view.send(b'exit\r')
     eventually(lambda: view.p.poll() is not None, 4)
-    assert view.finish() == 0
     views.remove(view)
+    assert view.finish() == 0
     assert rpc('pane.list', {'session': session['session']})[0]['ended']
     assert rpc('pane.capture', {'pane': session['pane']})['text']
     results.append('shell-exit-returns-client-and-restores-terminal-with-history-retained')
     history = attach(session['session'], 'history')
     time.sleep(.2)
     assert history.p.poll() is None
-    assert history.finish() == 0
     views.remove(history)
+    assert history.finish() == 0
     results.append('explicit-ended-history-attachment-remains-inspectable')
     other = shell('Other live window')
     view = attach(other['session'], 'other-window')
@@ -71,8 +71,8 @@ try:
     view.send(b'SURVIVOR_INPUT\r')
     eventually(lambda: 'SURVIVOR_INPUT' in rpc('pane.capture', {'pane': survivor['pane']})['text'])
     assert next(p for p in rpc('pane.list', {'session': other['session']}) if p['id'] == survivor['pane'])['pid'] == survivor['pid']
-    assert view.finish() == 0
     views.remove(view)
+    assert view.finish() == 0
     results.append('exiting-current-window-selects-another-live-window-without-killing-it')
     print('Terminal exit PASS', len(results), 'groups')
 finally:

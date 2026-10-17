@@ -639,7 +639,7 @@ fn route_mouse(v: &Value, bytes: &[u8]) -> Option<(String, Value, bool)> {
         })
     })
 }
-const STATUS_STYLE: &str = "\x1b[0;38;2;16;32;48;48;2;173;216;230m";
+const STATUS_STYLE: &str = "\x1b[0;38;2;16;32;48;48;2;122;167;245m";
 
 fn draw(v: &Value, status: &str) -> io::Result<()> {
     let mut out = format!(
@@ -2004,13 +2004,9 @@ pub fn attach_with_window(socket: &Path, session: &str, window: Option<&str>) ->
                         {
                             break;
                         }
-                        // Like Screen: a window whose programs exited is removed;
-                        // when it was the last one, the session ends with it.
-                        for pane in snapshot["panes"].as_array().into_iter().flatten() {
-                            if pane["ended"] == true {
-                                let _ = call(&mut s, "pane.close", json!({"pane":pane["id"]}));
-                            }
-                        }
+                        // Exit the view or select a live sibling. Removing the
+                        // last ended pane here deletes the session before the
+                        // query below and loses explicitly reattachable history.
                         let panes = call(&mut s, "pane.list", json!({"session":session}))?;
                         if let Some(live) = panes
                             .as_array()
