@@ -561,6 +561,18 @@ fn same_frame(a: &Value, b: &Value) -> bool {
         && a.iter()
             .all(|(k, v)| k == "revision" || b.get(k).is_some_and(|w| w == v))
 }
+/// Window index for Alt+0…9 (ESC followed by a digit).
+fn alt_digit(key: &copy::Key) -> Option<usize> {
+    match key {
+        copy::Key::Sequence(s) => s
+            .strip_prefix('\x1b')
+            .filter(|d| d.len() == 1)
+            .and_then(|d| d.chars().next())
+            .and_then(|c| c.to_digit(10))
+            .map(|d| d as usize),
+        _ => None,
+    }
+}
 fn mouse_wanted(v: &Value) -> bool {
     mouse_request(v).is_some()
 }
@@ -1716,6 +1728,30 @@ pub fn attach_with_window(socket: &Path, session: &str, window: Option<&str>) ->
                                     }
                                 }
                                 Mode::Live => {
+                                    // Alt+0…9 selects window 0…9, as labelled in the status bar.
+                                    if let Some(index) = alt_digit(&key).filter(|_| !prefix) {
+                                        plain(&mut s, &snapshot, &mut pending)?;
+                                        let rows = call(
+                                            &mut s,
+                                            "window.list",
+                                            json!({"session":session}),
+                                        )?;
+                                        match rows.as_array().and_then(|a| a.get(index)) {
+                                            Some(row) => {
+                                                call(
+                                                    &mut s,
+                                                    "window.select",
+                                                    json!({"window":row["id"]}),
+                                                )?;
+                                                snapshot =
+                                                    call(&mut s, "client.render", json!({}))?;
+                                                status.clear();
+                                            }
+                                            None => status = format!("No window {index}"),
+                                        }
+                                        refresh = true;
+                                        return Ok(());
+                                    }
                                     if prefix {
                                         prefix = false;
                                         plain(&mut s, &snapshot, &mut pending)?;
@@ -1988,6 +2024,14 @@ pub fn attach_with_window(socket: &Path, session: &str, window: Option<&str>) ->
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn alt_digit_selects_windows_by_status_bar_number() {
+        assert_eq!(alt_digit(&copy::Key::Sequence("\x1b1".into())), Some(1));
+        assert_eq!(alt_digit(&copy::Key::Sequence("\x1b0".into())), Some(0));
+        assert_eq!(alt_digit(&copy::Key::Sequence("\x1ba".into())), None);
+        assert_eq!(alt_digit(&copy::Key::Sequence("\x1b[A".into())), None);
+        assert_eq!(alt_digit(&copy::Key::Char('1')), None);
+    }
     #[test]
     fn frames_differing_only_in_revision_are_the_same() {
         let a = json!({"revision":1,"panes":[{"id":"p","grid":{"cells":[["x"]]}}]});

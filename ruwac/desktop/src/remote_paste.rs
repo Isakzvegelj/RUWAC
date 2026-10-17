@@ -24,6 +24,16 @@ pub fn remember(session: &str, profile: &Profile) {
     }
 }
 
+/// A reopened session keeps its endpoint.
+pub fn alias(old: &str, new: &str) {
+    TARGETS.with(|t| {
+        let profile = t.borrow().get(old).cloned();
+        if let Some(profile) = profile {
+            t.borrow_mut().insert(new.into(), profile);
+        }
+    });
+}
+
 fn image_only(clipboard: &gdk::Clipboard) -> bool {
     let formats = clipboard.formats();
     formats.contain_mime_type("image/png")

@@ -45,7 +45,10 @@ pub struct View {
     pub worker: RefCell<Worker>,
     socket: PathBuf,
     dead: gtk::Box,
+    dead_title: gtk::Label,
     dead_reason: gtk::Label,
+    /// The card offers to reopen an ended remote session rather than reattach.
+    ended: Cell<bool>,
     pub frame: RefCell<Option<Value>>,
     pub target: RefCell<String>,
     pub drawn: Cell<u64>,
@@ -156,9 +159,16 @@ impl View {
         reconnect.add_css_class("suggested-action");
         reconnect.add_css_class("pill");
         reconnect.set_halign(gtk::Align::Center);
+        let close_tab = gtk::Button::with_label("Close tab");
+        close_tab.set_widget_name("terminal-close-ended");
+        close_tab.add_css_class("pill");
+        let dead_actions = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        dead_actions.set_halign(gtk::Align::Center);
+        dead_actions.append(&reconnect);
+        dead_actions.append(&close_tab);
         dead.append(&dead_title);
         dead.append(&dead_reason);
-        dead.append(&reconnect);
+        dead.append(&dead_actions);
         dead.set_visible(false);
         let overlay = gtk::Overlay::new();
         overlay.set_child(Some(&stack));
@@ -179,7 +189,9 @@ impl View {
             worker,
             socket,
             dead,
+            dead_title,
             dead_reason,
+            ended: Cell::new(false),
             frame: RefCell::new(None),
             target: RefCell::new(String::new()),
             drawn: Cell::new(0),
@@ -217,7 +229,20 @@ impl View {
         let weak = Rc::downgrade(&v);
         reconnect.connect_clicked(move |_| {
             if let Some(v) = weak.upgrade() {
-                v.reconnect();
+                if v.ended.get() {
+                    if !crate::launches::reopen(&v.session) {
+                        v.status
+                            .set_text("This session cannot be reopened; use New term");
+                    }
+                } else {
+                    v.reconnect();
+                }
+            }
+        });
+        let weak = Rc::downgrade(&v);
+        close_tab.connect_clicked(move |_| {
+            if let Some(v) = weak.upgrade() {
+                v.finished.set(true);
             }
         });
         let weak = Rc::downgrade(&v);
@@ -988,6 +1013,9 @@ impl View {
             return;
         }
         if s.disconnected && !self.detached.get() && !self.dead.is_visible() {
+            self.ended.set(false);
+            self.dead_title.set_text("Terminal disconnected");
+            self.dead.set_valign(gtk::Align::Center);
             self.dead_reason.set_text(&format!(
                 "{}\nThe session may still be running. Reconnect starts the daemon if needed and reattaches; closing this tab does not end the session.",
                 self.warning.borrow().as_deref().unwrap_or("The daemon connection ended.")
@@ -1012,10 +1040,24 @@ impl View {
             {
                 self.seen_running.set(true);
             }
-            // Close after an exit the person caused; a program that ends by
-            // itself (e.g. a failed SSH or agent launch) stays readable.
-            if self.seen_running.get() && s.session_ended && self.typed.get() {
-                self.finished.set(true);
+            if self.seen_running.get() && s.session_ended && !self.finished.get() {
+                // A local shell the person exited closes. Remote sessions (a
+                // dropped SSH connection looks the same) and programs that
+                // ended by themselves stay readable with Reconnect / Close.
+                if self.typed.get() && !crate::launches::is_remote(&self.session) {
+                    self.finished.set(true);
+                } else if !self.dead.is_visible() {
+                    self.ended.set(true);
+                    self.dead_title.set_text("Session ended");
+                    self.dead_reason.set_text(if crate::launches::is_remote(&self.session) {
+                        "The remote program or SSH connection ended. Reconnect opens it again in a new tab."
+                    } else {
+                        "The program ended. Its output stays readable above this card."
+                    });
+                    self.dead.set_valign(gtk::Align::End);
+                    self.dead.set_margin_bottom(24);
+                    self.dead.set_visible(true);
+                }
             }
             if !panes
                 .iter()
@@ -1654,6 +1696,21 @@ impl View {
             hex(fg)
         ));
         self.area.queue_draw();
+    }
+    /// Test hook: press this view's Reconnect button; reports the card state.
+    pub fn fixture_reconnect(&self) -> Value {
+        let visible = self.dead.is_visible();
+        let ended = self.ended.get();
+        let found: RefCell<Option<gtk::Button>> = RefCell::new(None);
+        crate::chrome::walk(self.dead.upcast_ref(), &|w| {
+            if w.widget_name() == "terminal-reconnect" {
+                if let Some(b) = w.downcast_ref::<gtk::Button>() {
+                    found.borrow_mut().get_or_insert(b.clone());
+                }
+            }
+        });
+        let clicked = found.into_inner().map(|b| b.emit_clicked()).is_some();
+        json!({"card_visible": visible, "ended": ended, "clicked": clicked})
     }
     pub fn cell_metrics(&self) -> (f64, f64) {
         (self.cell_width.get(), self.cell_height.get())

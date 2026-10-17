@@ -16,21 +16,6 @@ pub fn new_tab(key: gdk::Key, mods: gdk::ModifierType) -> Option<bool> {
     }
 }
 
-/// Workspace tab for 1…9 and 0 (tab 10); used after an AltGr tap.
-pub fn tab_index(key: gdk::Key) -> Option<i32> {
-    match key.to_unicode()? {
-        c @ '1'..='9' => Some(c as i32 - '1' as i32),
-        '0' => Some(9),
-        _ => None,
-    }
-}
-pub fn select_tab(tabs: &adw::TabView, index: i32) {
-    // Missing tabs are deliberately a no-op.
-    if index < tabs.n_pages() {
-        tabs.set_selected_page(&tabs.nth_page(index));
-    }
-}
-
 pub fn altgr(key: gdk::Key) -> bool {
     matches!(key, gdk::Key::ISO_Level3_Shift | gdk::Key::Alt_R)
 }
@@ -49,11 +34,10 @@ fn modifier(key: gdk::Key) -> bool {
     )
 }
 
-/// AltGr tap toggles local mode: a clean press and release of AltGr with no
+/// AltGr tap toggles local keys: a clean press and release of AltGr with no
 /// other key in between. AltGr held with a key stays layout input (@, \ …).
-/// In local mode Alt+1…9/0 switch RUWAC tabs and system shortcuts such as
-/// Alt+Tab go to this computer's desktop; otherwise keys go to the focused
-/// terminal program or remote desktop.
+/// With local keys, system shortcuts such as Alt+Tab go to this computer's
+/// desktop; otherwise an RDP view sends them to the remote desktop.
 #[derive(Default)]
 pub struct LocalMode {
     active: Cell<bool>,
@@ -80,15 +64,6 @@ impl LocalMode {
         self.active.set(!self.active.get());
         Some(self.active.get())
     }
-}
-
-/// Alt+digit in local mode.
-pub fn alt_tab_index(key: gdk::Key, mods: gdk::ModifierType) -> Option<i32> {
-    let allowed = (gdk::ModifierType::ALT_MASK | gdk::ModifierType::LOCK_MASK).bits();
-    if !mods.contains(gdk::ModifierType::ALT_MASK) || mods.bits() & !allowed != 0 {
-        return None;
-    }
-    tab_index(key)
 }
 
 /// Explicit host chords leave Right Alt/AltGr available to the remote layout.
@@ -160,24 +135,5 @@ mod local_mode_tests {
         assert!(mode.active());
         mode.press(gdk::Key::Alt_R);
         assert_eq!(mode.release(gdk::Key::Alt_R), Some(false));
-        assert_eq!(
-            alt_tab_index(gdk::Key::_2, gdk::ModifierType::ALT_MASK),
-            Some(1)
-        );
-        assert_eq!(
-            alt_tab_index(gdk::Key::_0, gdk::ModifierType::ALT_MASK),
-            Some(9)
-        );
-        assert_eq!(
-            alt_tab_index(gdk::Key::_2, gdk::ModifierType::empty()),
-            None
-        );
-        assert_eq!(
-            alt_tab_index(
-                gdk::Key::_2,
-                gdk::ModifierType::ALT_MASK | gdk::ModifierType::CONTROL_MASK
-            ),
-            None
-        );
     }
 }

@@ -97,7 +97,7 @@ fn argv(
         return ssh_command(
             profile,
             format!(
-                "python3 -c {} --bootstrap --headless",
+                "python3 -c {} --bootstrap --headless --prebuilt",
                 quote(include_str!("../../../scripts/update-user.py"))
             ),
         );
@@ -249,6 +249,7 @@ fn open_terminal(
         }
     );
     let planned = argv(&profile, kind, "ruwac", "").map(|a| profiles::session_argv(&profile, a));
+    let launch_argv = planned.clone().unwrap_or_default();
     let (tx, rx) = std::sync::mpsc::sync_channel(1);
     let sock = socket.clone();
     let name = title.clone();
@@ -267,6 +268,7 @@ fn open_terminal(
         Ok(Ok(r)) => {
             if let Some(id) = r["session"].as_str() {
                 crate::remote_paste::remember(id, &target);
+                crate::launches::remember(id, &title, &launch_argv);
                 sessions::append(&t, &v, &s, &b, id, &title);
             }
             gtk::glib::ControlFlow::Break
@@ -480,7 +482,12 @@ mod tests {
         custom.preferences.agent_backend = "unknown".into();
         assert!(argv(&custom, 0, "ruwac", "").is_err());
         let install = argv(&p, 2, "ruwac", "").unwrap();
-        assert!(install.last().unwrap().ends_with("--bootstrap --headless"));
+        assert!(
+            install
+                .last()
+                .unwrap()
+                .ends_with("--bootstrap --headless --prebuilt")
+        );
         assert!(!install.join(" ").contains(&p.secret_reference));
         let mut rdp = p.clone();
         rdp.protocol = "RDP".into();

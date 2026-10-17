@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## v0.4.17 — 2026-10-17 — Stable source release
+
+- Alt+1…9/0 always reach the program and are never taken for RUWAC tab switching (use Ctrl+PgUp/PgDn for tabs). A RUWAC session client (`ruwac -r`/`-S`) now switches to window N on Alt+N, matching the numbers in its status bar, so Alt+# works inside RDP, SSH or nested RUWAC sessions. Local keys (AltGr tap) only decide whether system shortcuts such as Alt+Tab go to this computer.
+
+- SSH and agent tabs whose connection or program ends stay open with a Session ended card: Reconnect opens the same connection again in a new tab, Close tab closes it. Typing `exit` in a local terminal still closes the tab.
+
+- Remote RUWAC CLI installation uses the verified prebuilt Fedora bundle (no compiler needed) and builds from source only where no bundle exists.
+
 ## v0.4.16 — 2026-10-16 — Stable source release
 
 - Stop nested sessions flickering: the render revision counts changes in every session of the daemon, so a `ruwac -r`/`-S` client inside a RUWAC terminal redrew its whole screen (and hid and re-showed the cursor) about 30 times a second, even when idle, since at least v0.4.8. It now redraws only when its own content changes.

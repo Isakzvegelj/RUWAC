@@ -144,5 +144,19 @@ class BundleUpdates(unittest.TestCase):
                 compiler.assert_not_called()
 
 
+    def test_remote_prebuilt_install_uses_bundle_without_preference_or_compiler(self):
+        with patch.object(Path, 'read_text', return_value='ID=fedora\nVERSION_ID=44\n'), \
+                patch.object(updates, 'testing_bundle_setting', return_value=False), \
+                patch.object(updates, 'bundle_asset', return_value=self.asset()), \
+                patch.object(updates, 'automatic_release_verified', return_value=True), \
+                patch.object(updates.platform, 'machine', return_value='x86_64'), \
+                patch.object(updates, 'install_testing_bundle', return_value={'installed': '0.1.2'}) as bundle, \
+                patch.object(updates.shutil, 'which') as compiler:
+            result = updates.install(RELEASE, self.root / 'prefix', self.root / 'cache', desktop=False, prebuilt=True)
+        self.assertEqual(result, {'installed': '0.1.2'})
+        self.assertEqual(bundle.call_args.args[5:], (False,))
+        self.assertTrue(bundle.call_args.kwargs['prebuilt'])
+        compiler.assert_not_called()
+
 if __name__ == '__main__':
     unittest.main()

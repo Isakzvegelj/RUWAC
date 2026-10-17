@@ -318,7 +318,7 @@ def rpm_operation(operation):
     return value
 
 
-def install_testing_bundle(release, asset, prefix, cache, automatic):
+def install_testing_bundle(release, asset, prefix, cache, automatic, desktop=True, prebuilt=False):
     lock = locked_file(cache / '.update.lock')
     root = Path(tempfile.mkdtemp(prefix='testing-', dir=cache))
     try:
@@ -330,9 +330,10 @@ def install_testing_bundle(release, asset, prefix, cache, automatic):
             raise ValueError('A newer installation appeared; refusing bundle downgrade')
         preference_lock = locked_file(settings_path().parent / '.settings.lock')
         try:
-            if not testing_bundle_setting() or (automatic and not automatic_install_setting()):
+            if not (prebuilt or testing_bundle_setting()) or (automatic and not automatic_install_setting()):
                 return dict(release, skipped='testing bundle or automatic installation disabled during download')
-            run(['python3', str(bundle / 'install-user.py'), '--build-root', str(bundle), '--prefix', str(prefix), '--desktop'])
+            run(['python3', str(bundle / 'install-user.py'), '--build-root', str(bundle), '--prefix', str(prefix)]
+                + (['--desktop'] if desktop else []))
         finally:
             os.close(preference_lock)
         return dict(release, installed=release['latest'], delivery='testing-bundle', running_sessions='preserved')
@@ -610,11 +611,17 @@ def rollback(prefix):
         os.close(lock)
 
 
-def install(release, prefix, cache, desktop=True, automatic=False):
+def install(release, prefix, cache, desktop=True, automatic=False, prebuilt=False):
     os_release = Path('/etc/os-release').read_text()
     os_info = dict(line.split('=', 1) for line in os_release.splitlines() if '=' in line)
     if os_info.get('ID', '').strip('"') != 'fedora' or os_info.get('VERSION_ID', '').strip('"') != '44':
         raise ValueError('This source updater is currently validated for Fedora 44')
+    # `prebuilt` (remote CLI installation) uses the verified bundle when one
+    # exists for this platform, so the host needs no compiler toolchain.
+    if prebuilt and platform.machine() == 'x86_64':
+        asset = bundle_asset(release)
+        if asset is not None and automatic_release_verified(release):
+            return install_testing_bundle(release, asset, prefix, cache, automatic, desktop, prebuilt=True)
     if desktop and testing_bundle_setting():
         if platform.machine() != 'x86_64':
             raise ValueError('Fedora testing bundles currently require x86_64; select source builds on other architectures')
@@ -624,7 +631,7 @@ def install(release, prefix, cache, desktop=True, automatic=False):
         return install_testing_bundle(release, asset, prefix, cache, automatic)
     for tool in ['git', 'cargo', 'cc', 'pkg-config', 'python3']:
         if not shutil.which(tool):
-            raise ValueError('Missing build dependency: ' + tool + '; see Fedora update instructions')
+            raise ValueError('Missing build dependency: ' + tool + '; no verified prebuilt bundle is available for this release and platform; see Fedora update instructions')
     if desktop:
         # libssh2-sys already builds its bundled library when system headers are absent.
         for package in ['gtk4', 'libadwaita-1', 'openssl', 'sqlite3']:
@@ -666,6 +673,7 @@ def main():
     modes.add_argument('--check-auto', action='store_true')
     modes.add_argument('--install', action='store_true')
     modes.add_argument('--bootstrap', action='store_true', help='Build/install the latest published version when no CLI is installed')
+    parser.add_argument('--prebuilt', action='store_true', help='Prefer the verified prebuilt Fedora bundle over a source build')
     modes.add_argument('--install-auto', action='store_true')
     modes.add_argument('--auto-install', choices=['on', 'off', 'status'])
     modes.add_argument('--rollback', action='store_true')
@@ -741,7 +749,7 @@ def main():
                 if set(artifacts) not in [{'ruwac'}, {'ruwac', 'ruwac-desktop'}]:
                     raise ValueError('Unknown installed components; automatic update refused')
                 desktop = 'ruwac-desktop' in artifacts
-            result = install(result, prefix, cache, desktop, automatic=args.install_auto)
+            result = install(result, prefix, cache, desktop, automatic=args.install_auto, prebuilt=args.prebuilt)
     print(json.dumps(result))
 
 
