@@ -7,8 +7,6 @@ use gtk::{gdk, glib, prelude::*};
 use std::{
     cell::RefCell,
     collections::HashMap,
-    io::{Read, Write},
-    process::{Command, Stdio},
     rc::Rc,
     time::{Duration, Instant},
 };
@@ -34,15 +32,63 @@ pub fn alias(old: &str, new: &str) {
     });
 }
 
-fn image_only(clipboard: &gdk::Clipboard) -> bool {
-    let formats = clipboard.formats();
-    formats.contain_mime_type("image/png")
-        && !formats.contain_mime_type("text/plain")
-        && !formats.contain_mime_type("text/plain;charset=utf-8")
+#[derive(Clone)]
+struct Configuration {
+    stage: Option<std::path::PathBuf>,
+    reader: crate::profiles::ImageProfileReader,
 }
-
-/// True when the paste was taken over (SSH tab, image-only clipboard).
+thread_local! { static CONFIGURATION: RefCell<Option<Configuration>> = const { RefCell::new(None) }; }
+pub fn configure(stage: Option<std::path::PathBuf>, reader: crate::profiles::ImageProfileReader) {
+    CONFIGURATION.with(|v| *v.borrow_mut() = Some(Configuration { stage, reader }));
+}
+static WORKERS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+struct Permit;
+impl Permit {
+    fn acquire() -> Result<Self, String> {
+        WORKERS
+            .fetch_update(
+                std::sync::atomic::Ordering::AcqRel,
+                std::sync::atomic::Ordering::Acquire,
+                |n| (n < 2).then_some(n + 1),
+            )
+            .map_err(|_| "Two image pastes are already in progress")?;
+        Ok(Self)
+    }
+}
+impl Drop for Permit {
+    fn drop(&mut self) {
+        WORKERS.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
+    }
+}
+fn image_only(clipboard: &gdk::Clipboard) -> bool {
+    let f = clipboard.formats();
+    f.contain_mime_type("image/png")
+        && !f.contain_mime_type("text/plain")
+        && !f.contain_mime_type("text/plain;charset=utf-8")
+}
+fn same_endpoint(a: &Profile, b: &Profile) -> bool {
+    // Recency, display name and favorites do not change a running SSH route.
+    a.id == b.id
+        && a.machine_id == b.machine_id
+        && a.protocol == b.protocol
+        && a.server == b.server
+        && a.username == b.username
+        && a.secret_reference == b.secret_reference
+        && serde_json::to_value(&a.preferences).ok() == serde_json::to_value(&b.preferences).ok()
+}
+fn quote(path: &str) -> String {
+    if path
+        .bytes()
+        .all(|b| b.is_ascii_alphanumeric() || b"/._-".contains(&b))
+    {
+        return path.into();
+    }
+    format!("'{}'", path.replace('\'', "'\\''"))
+}
+/// Keep Ctrl+V behavior: upload the PNG, then paste its path into the same
+/// focused terminal. Never infer a different destination from terminal text.
 pub fn try_paste(view: &Rc<View>) -> bool {
+    use std::sync::atomic::Ordering;
     let Some(profile) = TARGETS.with(|t| t.borrow().get(&view.session).cloned()) else {
         return false;
     };
@@ -50,138 +96,223 @@ pub fn try_paste(view: &Rc<View>) -> bool {
     if !image_only(&clipboard) {
         return false;
     }
-    view.status
-        .set_text(&format!("Copying clipboard image to {}…", profile.name));
-    let weak = Rc::downgrade(view);
-    clipboard.read_texture_async(None::<&gtk::gio::Cancellable>, move |result| {
-        let Some(view) = weak.upgrade() else {
-            return;
-        };
-        let png = match result {
-            Ok(Some(texture)) => texture.save_to_png_bytes().to_vec(),
-            _ => {
-                view.warn("Clipboard image unavailable");
-                return;
-            }
-        };
-        if png.len() > ruwac_clipboard::MAX_IMAGE_BYTES {
-            view.warn("Clipboard image is too large to send");
-            return;
-        }
-        let (tx, rx) = std::sync::mpsc::sync_channel(1);
-        std::thread::spawn(move || {
-            let _ = tx.send(upload(&profile, &png));
-        });
-        let weak = Rc::downgrade(&view);
-        glib::timeout_add_local(Duration::from_millis(50), move || {
-            let Some(view) = weak.upgrade() else {
-                return glib::ControlFlow::Break;
-            };
-            match rx.try_recv() {
-                Ok(Ok(path)) => {
-                    view.paste(path.clone());
-                    view.status.set_text(&format!("Image sent: {path}"));
-                    glib::ControlFlow::Break
-                }
-                Ok(Err(e)) => {
-                    view.warn(&format!("Image not sent: {e}"));
-                    glib::ControlFlow::Break
-                }
-                Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
-                Err(_) => glib::ControlFlow::Break,
-            }
-        });
-    });
-    true
-}
-
-/// Remote command: private folder, unique name, absolute path on stdout.
-fn remote_command(name: &str) -> String {
-    format!(
-        "umask 077; d=\"$HOME/.cache/ruwac/images\"; mkdir -p \"$d\" && f=\"$d/{name}.png\" && cat > \"$f\" && printf %s \"$f\""
-    )
-}
-
-fn upload(profile: &Profile, png: &[u8]) -> Result<String, String> {
-    let mut argv = crate::profiles::ssh_argv(profile)?;
-    let host = argv
-        .iter()
-        .position(|a| a == "--")
-        .ok_or("Invalid SSH command")?;
-    argv.splice(
-        host..host,
-        [
-            "-T",
-            "-o",
-            "ConnectTimeout=10",
-            "-o",
-            "ForwardAgent=no",
-            "-o",
-            "ClearAllForwardings=yes",
-        ]
-        .map(String::from),
-    );
-    argv.push(remote_command(&ruwac_protocol::id("image")));
-    let mut command = Command::new(&argv[0]);
-    command
-        .args(&argv[1..])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    if profile.preferences.ssh_auth == "password" {
-        if let Ok(exe) = std::env::current_exe() {
-            command
-                .env("SSH_ASKPASS", exe)
-                .env("SSH_ASKPASS_REQUIRE", "force")
-                .env(crate::askpass::REFERENCE, &profile.secret_reference);
-        }
-    }
-    let mut child = command.spawn().map_err(|_| "ssh unavailable".to_string())?;
-    let written = child.stdin.take().map(|mut s| s.write_all(png));
-    let deadline = Instant::now() + Duration::from_secs(60);
-    let status = loop {
-        match child.try_wait() {
-            Ok(Some(status)) => break status,
-            Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(50)),
-            _ => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return Err("timed out".into());
-            }
+    let Some(configuration) = CONFIGURATION.with(|c| c.borrow().clone()) else {
+        view.warn("Image paste configuration unavailable");
+        return true;
+    };
+    let Some(stage) = configuration.stage.clone() else {
+        view.warn("Private image staging unavailable");
+        return true;
+    };
+    let permit = match Permit::acquire() {
+        Ok(v) => v,
+        Err(e) => {
+            view.warn(&e);
+            return true;
         }
     };
-    let (mut out, mut err) = (String::new(), String::new());
-    if let Some(mut s) = child.stdout.take() {
-        let _ = s.by_ref().take(4096).read_to_string(&mut out);
+    let pane = view.target.borrow().clone();
+    let epoch = view.broker.borrow().epoch();
+    let allowed = view.begin_image_paste();
+    let weak = Rc::downgrade(view);
+    let read_generation = Rc::new(std::cell::Cell::new(None));
+    let current: Rc<dyn Fn() -> bool> = Rc::new({
+        let read_generation = read_generation.clone();
+        let (weak, pane, profile, reader, allowed) = (
+            weak.clone(),
+            pane.clone(),
+            profile.clone(),
+            configuration.reader.clone(),
+            allowed.clone(),
+        );
+        move || {
+            weak.upgrade().is_some_and(|v| {
+                allowed.load(Ordering::Acquire)
+                    && !v.detached.get()
+                    && !v.finished.get()
+                    && v.area.has_focus()
+                    && v.area.is_mapped()
+                    && *v.target.borrow() == pane
+                    && v.image_paste_destination_alive(&pane)
+                    && v.broker.borrow().epoch() == epoch
+                    && read_generation.get().is_none_or(|generation| {
+                        v.broker
+                            .borrow()
+                            .last_transfer
+                            .as_ref()
+                            .is_some_and(|t| t.generation == generation)
+                    })
+                    && v.broker.borrow().active() == Some(v.session.as_str())
+                    && v.root
+                        .root()
+                        .and_downcast::<gtk::Window>()
+                        .is_some_and(|w| w.is_active())
+                    && reader(&profile.id).is_ok_and(|p| same_endpoint(&profile, &p))
+            })
+        }
+    });
+    if !current() {
+        view.end_image_paste(&allowed);
+        view.warn("Select the original SSH pane and unchanged endpoint before pasting an image");
+        return true;
     }
-    if let Some(mut s) = child.stderr.take() {
-        let _ = s.by_ref().take(4096).read_to_string(&mut err);
-    }
-    if !status.success() || !matches!(written, Some(Ok(()))) || !out.starts_with('/') {
-        let reason = err
-            .lines()
-            .last()
-            .unwrap_or("upload failed")
-            .trim()
-            .to_string();
-        return Err(if reason.is_empty() {
-            "upload failed".into()
-        } else {
-            reason
-        });
-    }
-    Ok(out.trim().to_string())
+    let limit = match crate::staging::available(&stage) {
+        Ok(n) => n,
+        Err(e) => {
+            view.end_image_paste(&allowed);
+            view.warn(&e.to_string());
+            return true;
+        }
+    };
+    view.status
+        .set_text(&format!("Copying clipboard image to {}…", profile.name));
+    let (tx, rx) = std::sync::mpsc::sync_channel(1);
+    let (valid, ticket) = (current.clone(), allowed.clone());
+    crate::clipboard::ingest_png(
+        &clipboard,
+        stage,
+        view.broker.clone(),
+        epoch,
+        limit,
+        Duration::ZERO,
+        move |result| {
+            let image = match result {
+                Ok(v) => v,
+                Err(e) => {
+                    let _ = tx.send(Err(e));
+                    return;
+                }
+            };
+            if !valid() {
+                let _ = std::fs::remove_file(&image.path);
+                let _ = tx.send(Err("Image paste cancelled before upload".into()));
+                return;
+            }
+            std::thread::spawn(move || {
+                let _permit = permit;
+                let result = std::fs::read(&image.path)
+                    .map_err(|_| "Staged PNG unavailable".to_string())
+                    .and_then(|bytes| {
+                        crate::remote_paste_upload::upload(
+                            &profile,
+                            &bytes,
+                            &ticket,
+                            Duration::from_secs(60),
+                        )
+                    });
+                let _ = std::fs::remove_file(&image.path);
+                let _ = tx.send(result);
+            });
+        },
+    );
+    read_generation.set(
+        view.broker
+            .borrow()
+            .last_transfer
+            .as_ref()
+            .map(|t| t.generation),
+    );
+    let deadline = Instant::now() + Duration::from_secs(75);
+    let mut delivery: Option<std::sync::mpsc::Receiver<Result<(), String>>> = None;
+    glib::timeout_add_local(Duration::from_millis(16), move || {
+        let Some(view) = weak.upgrade() else {
+            allowed.store(false, Ordering::Release);
+            return glib::ControlFlow::Break;
+        };
+        if !current() || Instant::now() >= deadline {
+            if view.end_image_paste(&allowed) {
+                view.status.set_text("Image paste cancelled: focus, pane, endpoint or clipboard changed. No alternate destination used.");
+            }
+            return glib::ControlFlow::Break;
+        }
+        if let Some(receive) = delivery.as_ref() {
+            match receive.try_recv() {
+                Ok(result) => {
+                    if view.end_image_paste(&allowed) {
+                        match result{Ok(())=>view.status.set_text("Image path pasted into the original SSH pane"),Err(e)=>view.warn(&format!("Image copied but path paste failed: {e}. Inspect the original pane before retrying."))}
+                    }
+                    return glib::ControlFlow::Break;
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    if view.end_image_paste(&allowed) {
+                        view.warn("Image paste worker disconnected; inspect the original pane before retrying");
+                    }
+                    return glib::ControlFlow::Break;
+                }
+                Err(_) => return glib::ControlFlow::Continue,
+            }
+        }
+        match rx.try_recv() {
+            Ok(Ok(path)) => {
+                match view.guarded_image_path(pane.clone(), quote(&path), allowed.clone()) {
+                    Ok(receive) => delivery = Some(receive),
+                    Err(e) => {
+                        if view.end_image_paste(&allowed) {
+                            view.warn(&e);
+                        }
+                        return glib::ControlFlow::Break;
+                    }
+                }
+            }
+            Ok(Err(e)) => {
+                if view.end_image_paste(&allowed) {
+                    view.warn(&format!("Image not sent: {e}"));
+                }
+                return glib::ControlFlow::Break;
+            }
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                if view.end_image_paste(&allowed) {
+                    view.warn("Image upload worker disconnected");
+                }
+                return glib::ControlFlow::Break;
+            }
+            Err(_) => (),
+        }
+        glib::ControlFlow::Continue
+    });
+    true
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     #[test]
-    fn remote_command_writes_private_file_and_prints_its_path() {
-        let c = remote_command("image_abc");
-        assert!(c.starts_with("umask 077;"));
-        assert!(c.contains("$HOME/.cache/ruwac/images"));
-        assert!(c.ends_with("printf %s \"$f\""));
-        assert!(c.contains("image_abc.png"));
+    fn endpoint_binding_ignores_recency_but_rejects_retargeting_or_credentials() {
+        let p:Profile=serde_json::from_value(serde_json::json!({"id":"endpoint_generated","machine_id":"machine_generated","name":"Generated","group":"","protocol":"SSH","server":"127.0.0.1:22222","username":"","secret_reference":"generated","favorite":false,"last_used":0,"tags":[]})).unwrap();
+        let mut other = p.clone();
+        other.last_used = 42;
+        other.favorite = true;
+        assert!(same_endpoint(&p, &other));
+        other.server = "127.0.0.1:22223".into();
+        assert!(!same_endpoint(&p, &other));
+        other = p.clone();
+        other.secret_reference = "other-generated".into();
+        assert!(!same_endpoint(&p, &other));
+        other = p.clone();
+        other.preferences.identity_file = "/generated/another-key".into();
+        assert!(!same_endpoint(&p, &other));
+        assert_eq!(
+            quote("/generated/image_abc.png"),
+            "/generated/image_abc.png"
+        );
     }
+    #[test]
+    fn quotes_spaces_and_metacharacters_without_shell_expansion() {
+        assert_eq!(quote("/tmp/a b'c.png"), "'/tmp/a b'\\''c.png'");
+    }
+}
+
+/// Available only through an explicitly configured private GUI fixture.
+pub fn fixture(view: &Rc<View>, q: &serde_json::Value) -> serde_json::Value {
+    if let Some(p) = q.get("profile") {
+        match serde_json::from_value::<Profile>(p.clone()) {
+            Ok(p) if p.protocol == "SSH" && p.validate().is_ok() => remember(&view.session, &p),
+            _ => return serde_json::json!({"error":"Invalid fixture SSH profile"}),
+        }
+    }
+    if q["reconnect"] == true {
+        view.reconnect();
+    }
+    let handled = q["paste"] == true && try_paste(view);
+    serde_json::json!({"handled":handled,"pending":view.image_paste_pending(),"status":view.status.text().as_str(),"warning":*view.warning.borrow()})
 }

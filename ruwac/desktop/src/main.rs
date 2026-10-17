@@ -30,6 +30,7 @@ mod remote_content;
 mod remote_image;
 mod remote_keys;
 mod remote_paste;
+mod remote_paste_upload;
 mod schemes;
 mod sessions;
 #[path = "../../crates/ruwac-pty/src/shell.rs"]
@@ -379,6 +380,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(index)=restored_selected{let offset=tabs.n_pages()-restored_tabs.len()as i32;let i=offset+index as i32;if i>=0&&i<tabs.n_pages(){tabs.set_selected_page(&tabs.nth_page(i));}}
   }
   let(fv,ph)=(file_views.clone(),placeholders.clone());tabs.connect_close_page(move|_,p|{fv.borrow_mut().retain(|(v,_)|!tiles::contains(&p.child(),v));ph.borrow_mut().retain(|(v,_)|!tiles::contains(&p.child(),v));glib::Propagation::Proceed});
+  remote_paste::configure(stage.clone(),image_profile.clone());
+  let paste_views=all.clone();window.connect_is_active_notify(move|w|{if !w.is_active(){for v in paste_views.borrow().iter(){v.cancel_image_paste();}}});
   let machine_shell=Rc::new(sidebar_shell::Shell::new(&sidebar,&tabs,&choices,show_machines));workspace_overlay.set_child(Some(&machine_shell.view));chrome.actions.append(&machine_shell.button);tabs.set_hexpand(true);let (t,m,f)=(tabs.clone(),focus_memory.clone(),focus_view.clone());machine_shell.view.connect_show_sidebar_notify(move|v|{if !v.shows_sidebar(){tiles::focus_selected(&t,&m,&f);let(v,t,m,f)=(v.downgrade(),t.clone(),m.clone(),f.clone());glib::timeout_add_local_once(Duration::from_millis(250),move||{if v.upgrade().is_some_and(|v|!v.shows_sidebar()&&v.root().and_downcast::<gtk::Window>().is_some_and(|w|w.is_active())){tiles::focus_selected(&t,&m,&f);}});}});
   // RDP focus sends system shortcuts to the remote; AltGr returns the next one to this desktop.
   let grab=system_shortcuts::Grab::new(&window,{let rv=rdp_views.clone();move|f|rv.borrow().iter().any(|r|r.owns_focus(f))});
@@ -542,6 +545,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     "host-shortcuts"=>{if q["operation"]=="context"{v.click(20.0,20.0,3,gtk::gdk::ModifierType::SHIFT_MASK,false);}reply(host_shortcuts::fixture(&window,&q));},
     "agent-launch-dialog"=>{if q["operation"]=="show"{sessions::fixture(&window,"Open remote agent…");}reply(agent_launch::fixture(&q));},
     "remote-image-dialog"=>reply(remote_image::fixture(&window,&q)),
+    "ssh-image-paste"=>reply(remote_paste::fixture(&v,&q)),
     "workspace-picker"=>{if q["operation"]=="show"{reply(json!({"clicked":sessions::fixture(&window,"Workspaces…")}));}else{reply(workspace_picker::fixture(q["operation"].as_str().unwrap_or("inspect"),q["value"].as_str()));}},
     "workspace-permission"=>{consent.set_active(q["enabled"]==true);reply(json!({"focus_control":control_policy.get(),"native_checkbutton":true}));},
     "ipc-delay"=>{reply(json!({"synthetic_main_loop_delay":true}));std::thread::sleep(Duration::from_millis(q["ms"].as_u64().unwrap_or(0).min(4000)));},
@@ -604,6 +608,7 @@ v.set_display(q["mode"].as_str().unwrap_or("fit"),q["zoom"].as_f64().unwrap_or(1
    glib::ControlFlow::Continue
   });
  });
+    app.connect_shutdown(|_| remote_paste_upload::shutdown());
     app.run_with_args::<&str>(&[]);
     for (server, source) in services.borrow_mut().drain(..) {
         source.remove();

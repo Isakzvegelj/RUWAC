@@ -6,6 +6,9 @@ use std::{cell::RefCell, rc::Rc};
 
 /// Names the endpoint's Secret Service credential reference.
 pub const REFERENCE: &str = "RUWAC_ASKPASS_REF";
+/// Background image delivery may use saved credentials but never opens a dialog.
+pub const ONLY_SAVED: &str = "RUWAC_ASKPASS_ONLY_SAVED";
+pub const KEY_REFERENCE: &str = "RUWAC_ASKPASS_KEY_REF";
 
 /// Some(exit status) when ssh started this process as its askpass program.
 pub fn run_if_requested() -> Option<i32> {
@@ -56,6 +59,22 @@ fn first_attempt() -> bool {
 }
 
 fn answer(reference: &str, prompt: &str) -> i32 {
+    if std::env::var(ONLY_SAVED).as_deref() == Ok("1") {
+        let selected = if password_prompt(prompt) {
+            Some(reference.to_owned())
+        } else if prompt.to_lowercase().contains("passphrase for key") {
+            std::env::var(KEY_REFERENCE).ok().filter(|r| !r.is_empty())
+        } else {
+            None
+        };
+        return selected
+            .and_then(|r| crate::credentials::lookup(&r).ok())
+            .map(|secret| {
+                println!("{secret}");
+                0
+            })
+            .unwrap_or(1);
+    }
     if password_prompt(prompt) && first_attempt() {
         if let Ok(secret) = crate::credentials::lookup(reference) {
             println!("{secret}");

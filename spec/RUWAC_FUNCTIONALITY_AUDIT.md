@@ -62,7 +62,7 @@ results are distinguished from tests re-executed for the current batch in the
 | Integrated SFTP file panel | Partial | Upload/download, integrity, progress, cancel and resumable transfer work; recursive/rsync and clean-environment qualification retain separate limits. Share enumeration does not constitute an integrated SMB file client. |
 | Codex/Claude/Kimi host actions | Implemented | Saved commands, compact shortcuts, header/context menus, recent SSH, RUWAC/Screen/tmux/direct backends; generated launch tests are not proof of every provider account. Other providers, including Grok, remain future work. |
 | Agent installation and shared sessions | Implemented | Explicit opt-in provider/bootstrap installation, remote RUWAC action and named agent windows sharing a session. No automatic provider authentication. |
-| PNG attachment to local/remote agent | Partial | Explicit draft/staging and SSH image transfer paths exist; newer implicit SSH clipboard upload has focus/timeout issues identified below. |
+| PNG attachment to local/remote agent | Partial | Owner confirms useful local/remote image paste. Explicit draft/staging and SSH paths exist; implicit delivery is now bound to the original pane with cancellable bounded I/O. Persistent launch associations and broader provider acceptance remain open. |
 | Job/activity and workspace automation | Partial | Job queries, events and permission-controlled workspace/RDP APIs exist; comprehensive resource-exhaustion and activity classification acceptance remain incomplete. |
 | Fedora installation, updates and RPMs | Partial | GitHub source, testing bundle/RPM delivery, provenance checks, rollback and optional update timers exist; Fedora repository inclusion, clean-machine DNF and distribution qualification remain open. |
 | Public privacy, license and provenance | Partial | Apache-2.0 original source, dependency notices, scanners and publication inventory exist. Historical privacy cleanup still needs owner decisions; RSA advisory remains unsuppressed. |
@@ -91,20 +91,21 @@ are tied to code and observable behavior.
 | TUI exit cleanup removed the last ended pane, then queried its deleted session | Normal shell exit returned STALE_ID and erased reattachable history; the existing real-PTY exit regression caught it. | Removed destructive cleanup: exit the view cleanly or select a live sibling, preserving ended history. |
 | Same-content comparisons omit daemon-global render revision | Correctly avoids unrelated-session full redraw/flicker. | Retained; continued nested/idle regression coverage is required. |
 | Hidden/idle terminal polling backs off and commands wake it | Reduces idle CPU while retaining input response. | Retained; measure rather than add another polling subsystem. |
-| Remote image upload writes all stdin before starting its 60-second wait | A peer that stops reading can block the worker before the stated deadline. | Open defect: use bounded concurrent I/O with timeout/cancellation. |
-| SSH image upload completion calls `view.paste()` without a captured pane/focus generation | A pane switch during transfer may paste the path into an unintended pane. Saved in-memory target maps also do not survive a new GUI process. | Open defect: bind transfer to immutable endpoint/pane and revalidate on completion; do not claim FocusBroker parity. |
+| Remote image upload writes all stdin before starting its 60-second wait | A peer that stops reading can block the worker before the stated deadline. | Fixed: nonblocking full-duplex upload, bounded stdout/stderr, a single deadline and owned process-group cleanup. |
+| SSH image upload completion calls `view.paste()` without a captured pane/focus generation | A pane switch during transfer may paste the path into an unintended pane. Saved in-memory target maps also do not survive a new GUI process. | Fixed pane/focus part: capture endpoint/pane, reuse bounded GDK PNG ingestion and revoke guarded delivery on changes. Open persistence defect: associations remain in memory across only the current frontend lifetime. |
 | Agent-session menu identifies agents by substrings in the name | Can misclassify an unrelated name or miss a custom shared name. | Open usability defect: persist an explicit launch/provider kind. |
 | PTY reaper emits end after a fixed 300 ms delay and reader may still emit later data | Child exit now handles inherited PTY descriptors, but output-drain ordering is heuristic. | Open reliability test: delayed buffered output/background descriptors under pressure. |
 | Color CSS targeted private tab nodes | Could fail silently across libadwaita versions. | Status now uses cached full-color icons with distinct shapes, not private CSS selectors. |
 
 Font spacing review found that the previous “Compact” label selected 1.15× spacing, which increased rather than reduced spacing. The label is corrected, a 0.95× Tight choice is available and glyph cell widths retain fractional Pango precision. Existing saved font choices are preserved.
 
-This batch intentionally keeps the immediate UI scope small. The open image
-transfer and PTY findings are not claimed fixed by a navigation/color change.
+This batch intentionally keeps the immediate UI scope small. The SSH image focus and transport corrections follow the navigation batch; the
+persistent association and PTY drain findings remain open.
 
 ## Remaining acceptance priorities
 
-1. Fix asynchronous SSH image transfer target binding and bounded I/O.
+1. Persist and restore authenticated SSH/agent launch associations without
+   inferring endpoints from names or terminal output.
 2. Exercise saved-bookmark navigation and active-session choice with realistic
    inventories; add explicit launch metadata rather than infer provider type.
 3. Validate Windows dynamic resizing/clipboard and mixed external hosts, followed

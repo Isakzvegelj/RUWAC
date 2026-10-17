@@ -63,6 +63,32 @@ Private configuration may set RUWAC_SCROLLBACK_LINES (default 50000) and RUWAC_S
 
 “Machines” toggles the sidebar; Ctrl+K searches names, full groups, endpoints and tags. Favorites and recent-use filters are available. All matching profiles appear in one scrollable list; group headings collapse or expand their machines. Choose a Remmina file explicitly to preview approved nonsecret metadata, then import it. Passwords and key/certificate files are never imported. To update an existing endpoint, preview the file, explicitly select its endpoint identity, and use Review merge into selected endpoint. Review the field changes before Apply; local IDs, credential references, trust/key paths and preferences are preserved. Active endpoints and changes made after review require closing tabs or reviewing again. Cancel leaves metadata unchanged; Undo restores the previous private library. RDP entries open native tabs; SSH entries create daemon-owned SSH terminals. Native profile editing and Set/replace/forget credential controls are implemented.
 
+## Pasting images into SSH terminals
+
+The existing Ctrl+V image workflow is retained: when an SSH bookmark's terminal
+is focused and the clipboard contains only a PNG, RUWAC copies it to the same
+SSH endpoint and pastes its remote path into that original pane. Continue typing
+in the same pane while it uploads. Ordinary local Codex clipboard behavior and
+the explicit local/remote draft-attachment actions use their existing paths.
+
+Changing tabs, panes, active window, endpoint configuration or clipboard owner
+cancels pending path delivery. A new image paste supersedes the previous one.
+RUWAC never redirects the result to the newly selected terminal. An interrupted
+operation may leave a complete private PNG in the remote cache; it does not
+submit a provider turn or claim that a model has consumed the image.
+
+The upload uses the selected OpenSSH route and existing verified host identity.
+Saved SSH passwords and key passphrases stay in Secret Service; background image
+paste does not open authentication dialogs or approve new host keys. Use the
+normal connection setup when authentication needs attention. The byte count and
+SHA-256 must match before an owned 0600 PNG is published in the remote owned
+0700 cache directory. Temporary uploads are removed on ordinary failure.
+
+The current receiver expects a Linux shell and standard coreutils on the remote
+host. It bounds stdin, both output pipes and process exit with one deadline.
+SSH associations for restored sessions still need persistent launch metadata;
+opening a saved SSH bookmark supplies the association today.
+
 ## Machine workspaces and Files
 
 Use Machines → New machine / endpoint or Network groups / defaults, and Edit beside an endpoint. Add endpoint retains the machine identity; duplicate creates new identities and credential references. Set/replace/forget credentials use system Secret Service. Metadata Undo restores the previous private library. RDP connects inside its tab; SSH opens a persistent terminal plus a native Files tab. Files verifies known_hosts before authentication and offers navigation, upload/download, explicit overwrite and progress. Pause transfer retains a private journal and partial; Pending transfers… resumes or explicitly discards the selected job. Resume verifies the original host, source and retained prefix before continuing and verifies the complete staged file before commit. Original files remain protected during overwrite and interrupted rename recovery. For encrypted SSH keys, configure the key file and the separate SSH key passphrase reference, then use Set / replace key passphrase; only the Secret Service reference is saved. Transfers currently handle individual regular files up to 32 GiB, with 128 pending jobs; recursive transfer and rsync remain open. Dynamic RDP uses negotiated Display Control; fit/native/stretch, zoom, fullscreen and Pan viewport remain available. See the current acceptance report for fixture evidence and remaining defects.

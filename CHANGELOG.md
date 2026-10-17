@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## v0.4.20 — 2026-10-18 — Stable source release
+
+- Preserve working SSH image paste while binding asynchronous completion to the original endpoint and pane, with cancellable guarded delivery, private hash-verified upload and bounded full-duplex SSH transport.
+- Keep typing during upload and existing local/explicit remote attachment paths; stop background authentication dialogs and wait for complete PTY status-row bytes in the regression test.
+
 
 ## v0.4.19 — 2026-10-17 — Stable source release
 

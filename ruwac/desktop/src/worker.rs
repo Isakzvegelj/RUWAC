@@ -144,13 +144,20 @@ impl Rpc {
         Ok(result)
     }
 }
-fn paste(rpc: &mut Rpc, pane: &str, text: &str, atomic: bool, halt: &AtomicBool) -> io::Result<()> {
+fn paste(
+    rpc: &mut Rpc,
+    pane: &str,
+    text: &str,
+    atomic: bool,
+    halt: &AtomicBool,
+    allowed: Option<&AtomicBool>,
+) -> io::Result<()> {
     if text.len() > 1024 * 1024 || text.contains('\0') || text.contains("\x1b[201~") {
         return Err(io::Error::other(
             "paste text rejected before input delivery",
         ));
     }
-    if halt.load(Ordering::Relaxed) {
+    if halt.load(Ordering::Relaxed) || allowed.is_some_and(|a| !a.load(Ordering::Acquire)) {
         return Err(io::Error::other("paste cancelled before delivery"));
     }
     if !atomic {
@@ -175,7 +182,7 @@ fn paste(rpc: &mut Rpc, pane: &str, text: &str, atomic: bool, halt: &AtomicBool)
     let result = (|| -> io::Result<()> {
         let mut offset = 0;
         while offset < text.len() {
-            if halt.load(Ordering::Relaxed) {
+            if halt.load(Ordering::Relaxed) || allowed.is_some_and(|a| !a.load(Ordering::Acquire)) {
                 return Err(io::Error::other("paste cancelled; no input committed"));
             }
             let mut end = (offset + 32 * 1024).min(text.len());
@@ -185,7 +192,7 @@ fn paste(rpc: &mut Rpc, pane: &str, text: &str, atomic: bool, halt: &AtomicBool)
             rpc.call("client.paste", json!({"operation":"chunk","token":token,"offset":offset,"text":&text[offset..end]}))?;
             offset = end;
         }
-        if halt.load(Ordering::Relaxed) {
+        if halt.load(Ordering::Relaxed) || allowed.is_some_and(|a| !a.load(Ordering::Acquire)) {
             return Err(io::Error::other("paste cancelled; no input committed"));
         }
         rpc.call("client.paste", json!({"operation":"commit","token":token}))?;
@@ -201,6 +208,12 @@ fn paste(rpc: &mut Rpc, pane: &str, text: &str, atomic: bool, halt: &AtomicBool)
 pub enum Command {
     Rpc(String, Value),
     Paste(String, String),
+    GuardedPaste {
+        pane: String,
+        text: String,
+        allowed: Arc<AtomicBool>,
+        done: SyncSender<Result<(), String>>,
+    },
     History(String, bool),
     AttachImage {
         pane: String,
@@ -214,7 +227,7 @@ impl Command {
     fn bytes(&self) -> usize {
         match self {
             Self::Rpc(_, v) => v.to_string().len(),
-            Self::Paste(_, s) => s.len(),
+            Self::Paste(_, s) | Self::GuardedPaste { text: s, .. } => s.len(),
             Self::History(s, _) => s.len(),
             Self::AttachImage { pane, path, .. } => pane.len() + path.as_os_str().len(),
             Self::Close => 0,
@@ -460,12 +473,33 @@ impl Worker {
                                 }
                                 result.map(|()|("pane.history".into(),json!({"pane":pane,"text":text,"total_lines":total,"truncated":truncated,"buffer":if primary {"primary"}else{"active"}})))
                             }
+                            Command::GuardedPaste {
+                                pane,
+                                text,
+                                allowed,
+                                done,
+                            } => {
+                                let result = paste(
+                                    &mut rpc,
+                                    &pane,
+                                    &text,
+                                    capabilities["atomic_paste"] == true,
+                                    &halt,
+                                    Some(&allowed),
+                                );
+                                let _ = done.try_send(
+                                    result.as_ref().map(|_| ()).map_err(|e| e.to_string()),
+                                );
+                                result
+                                    .map(|()| ("guarded-paste".into(), json!({"bytes":text.len()})))
+                            }
                             Command::Paste(pane, text) => paste(
                                 &mut rpc,
                                 &pane,
                                 &text,
                                 capabilities["atomic_paste"] == true,
                                 &halt,
+                                None,
                             )
                             .map(|()| ("paste".into(), json!({"bytes":text.len()}))),
                         };

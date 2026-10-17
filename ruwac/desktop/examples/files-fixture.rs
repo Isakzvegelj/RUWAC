@@ -13,6 +13,8 @@ mod files_rsync;
 mod profiles;
 #[path = "../src/rdp_trust.rs"]
 mod rdp_trust;
+#[path = "../src/remote_paste_upload.rs"]
+mod remote_paste_upload;
 #[path = "../src/sidebar_shell.rs"]
 mod sidebar_shell;
 #[path = "../src/ssh_jump.rs"]
@@ -30,6 +32,9 @@ use std::{
     time::Duration,
 };
 fn main() {
+    if let Some(status) = askpass::run_if_requested() {
+        std::process::exit(status);
+    }
     let args: Vec<_> = std::env::args().collect();
     let result = (|| -> Result<serde_json::Value, String> {
         if args.get(1).map(String::as_str) == Some("credentials") {
@@ -50,6 +55,20 @@ fn main() {
         )
         .map_err(|_| "invalid fixture profile")?;
         p.validate()?;
+        if args[1] == "ssh-image-paste" {
+            let bytes = std::fs::read(args.get(3).ok_or("PNG input required")?)
+                .map_err(|_| "PNG input unavailable")?;
+            let allowed = Arc::new(AtomicBool::new(true));
+            if let Some(ms) = args.get(4).and_then(|v| v.parse::<u64>().ok()) {
+                let ticket = allowed.clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(Duration::from_millis(ms));
+                    ticket.store(false, std::sync::atomic::Ordering::Release);
+                });
+            }
+            return remote_paste_upload::upload(&p, &bytes, &allowed, Duration::from_secs(10))
+                .map(|path| serde_json::json!({"path":path}));
+        }
         if args[1] == "ssh-argv" {
             return Ok(serde_json::json!({"argv": profiles::ssh_argv(&p)?}));
         }

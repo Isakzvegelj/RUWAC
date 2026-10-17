@@ -59,6 +59,7 @@ pub struct View {
     /// Set once the person types or pastes here.
     typed: Cell<bool>,
     pub broker: Broker,
+    image_paste: RefCell<Option<std::sync::Arc<std::sync::atomic::AtomicBool>>>,
     window_index: Cell<Option<usize>>,
     pub warning: RefCell<Option<String>>,
     selection: RefCell<Option<((usize, usize), (usize, usize))>>,
@@ -201,6 +202,7 @@ impl View {
             seen_running: Cell::new(false),
             typed: Cell::new(false),
             broker,
+            image_paste: RefCell::new(None),
             window_index: Cell::new(None),
             warning: RefCell::new(None),
             selection: RefCell::new(None),
@@ -395,6 +397,7 @@ impl View {
         let w = Rc::downgrade(&v);
         focus.connect_leave(move |_| {
             if let Some(v) = w.upgrade() {
+                v.cancel_image_paste();
                 v.release_mouse();
                 if v.prefix.replace(false) {
                     v.input(&v.literal_prefix());
@@ -930,7 +933,91 @@ impl View {
         *self.warning.borrow_mut() = Some(message.into());
         self.status.set_text(message);
     }
+    fn set_target(&self, target: String) {
+        if *self.target.borrow() != target {
+            self.cancel_image_paste();
+        }
+        *self.target.borrow_mut() = target;
+    }
+    pub fn image_paste_destination_alive(&self, pane: &str) -> bool {
+        let worker = self.worker.borrow();
+        let state = worker.state.lock().unwrap();
+        !state.disconnected
+            && !state.session_gone
+            && self
+                .frame
+                .borrow()
+                .as_ref()
+                .and_then(|f| f["panes"].as_array())
+                .is_some_and(|panes| {
+                    panes
+                        .iter()
+                        .any(|p| p["id"] == pane && p["ended"] != true && p["restored"] != true)
+                })
+    }
+    pub fn image_paste_pending(&self) -> bool {
+        self.image_paste
+            .borrow()
+            .as_ref()
+            .is_some_and(|v| v.load(std::sync::atomic::Ordering::Acquire))
+    }
+    pub fn end_image_paste(&self, ticket: &std::sync::Arc<std::sync::atomic::AtomicBool>) -> bool {
+        if self
+            .image_paste
+            .borrow()
+            .as_ref()
+            .is_some_and(|v| std::sync::Arc::ptr_eq(v, ticket))
+        {
+            self.image_paste.borrow_mut().take();
+            ticket.store(false, std::sync::atomic::Ordering::Release);
+            true
+        } else {
+            false
+        }
+    }
+    pub fn cancel_image_paste(&self) {
+        if let Some(ticket) = self.image_paste.borrow_mut().take() {
+            ticket.store(false, std::sync::atomic::Ordering::Release);
+            self.status
+                .set_text("Image paste cancelled; no new target selected");
+        }
+    }
+    pub fn begin_image_paste(&self) -> std::sync::Arc<std::sync::atomic::AtomicBool> {
+        self.cancel_image_paste();
+        let ticket = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+        *self.image_paste.borrow_mut() = Some(ticket.clone());
+        ticket
+    }
+    pub fn guarded_image_path(
+        &self,
+        pane: String,
+        text: String,
+        allowed: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    ) -> Result<std::sync::mpsc::Receiver<Result<(), String>>, String> {
+        self.typed.set(true);
+        let (done, rx) = std::sync::mpsc::sync_channel(1);
+        self.worker.borrow().send(Command::GuardedPaste {
+            pane,
+            text,
+            allowed,
+            done,
+        })?;
+        Ok(rx)
+    }
     pub fn command(&self, m: &str, mut p: Value) {
+        if matches!(
+            m,
+            "client.focus"
+                | "pane.select"
+                | "window.select"
+                | "window.cycle"
+                | "window.previous"
+                | "window.create"
+                | "pane.create"
+                | "pane.close"
+        ) {
+            self.cancel_image_paste();
+        }
         if matches!(m, "window.create" | "pane.create") && p.get("argv").is_none() {
             match crate::shell::default_argv() {
                 Ok(argv) => p["argv"] = json!(argv),
@@ -962,6 +1049,7 @@ impl View {
         );
     }
     pub fn paste(&self, text: String) {
+        self.cancel_image_paste();
         if text.len() > ruwac_clipboard::MAX_DESKTOP_TEXT
             || text.contains('\0')
             || text.contains("\x1b[201~")
@@ -981,6 +1069,7 @@ impl View {
     }
     /// Replace a disconnected worker, starting the daemon when it is absent.
     pub fn reconnect(&self) {
+        self.cancel_image_paste();
         if self.detached.get() || self.finished.get() {
             return;
         }
@@ -1076,7 +1165,7 @@ impl View {
                 .iter()
                 .any(|p| p["id"].as_str() == Some(self.target.borrow().as_str()))
             {
-                *self.target.borrow_mut() = frame["active_pane"].as_str().unwrap_or("").into();
+                self.set_target(frame["active_pane"].as_str().unwrap_or("").into());
             }
             if self.warning.borrow().is_none() {
                 let active = panes.iter().find(|p| p["id"] == frame["active_pane"]);
@@ -1116,7 +1205,7 @@ impl View {
             }
             if self.navigation.get() {
                 if self.expected_window.borrow().as_deref() == frame["window"].as_str() {
-                    *self.target.borrow_mut() = frame["active_pane"].as_str().unwrap_or("").into();
+                    self.set_target(frame["active_pane"].as_str().unwrap_or("").into());
                     self.navigation.set(false);
                     *self.expected_window.borrow_mut() = None;
                 }
@@ -1136,7 +1225,7 @@ impl View {
         if let Some((method, v)) = s.reply.pop_front() {
             if method == "pane.create" {
                 if let Some(pane) = v["pane"].as_str() {
-                    *self.target.borrow_mut() = pane.into();
+                    self.set_target(pane.into());
                     self.navigation.set(false);
                     let pending = std::mem::take(&mut *self.early.borrow_mut());
                     for text in pending {
@@ -1155,8 +1244,7 @@ impl View {
                     .map(str::to_string);
                 if let Some(frame) = self.frame.borrow().as_ref() {
                     if self.expected_window.borrow().as_deref() == frame["window"].as_str() {
-                        *self.target.borrow_mut() =
-                            frame["active_pane"].as_str().unwrap_or("").into();
+                        self.set_target(frame["active_pane"].as_str().unwrap_or("").into());
                         self.navigation.set(false);
                         *self.expected_window.borrow_mut() = None;
                         let pending = std::mem::take(&mut *self.early.borrow_mut());
@@ -1244,7 +1332,7 @@ impl View {
                 self.release_mouse();
                 *self.selection.borrow_mut() = None;
             }
-            *self.target.borrow_mut() = p.clone();
+            self.set_target(p.clone());
             self.command("pane.select", json!({"pane":p}));
         }
         self.focus();
@@ -1578,7 +1666,7 @@ impl View {
                                 })
                                 .unwrap_or(0);
                             let next = p[(i + 1) % p.len()]["id"].as_str().unwrap().to_string();
-                            *self.target.borrow_mut() = next.clone();
+                            self.set_target(next.clone());
                             self.command("pane.select", json!({"pane":next}));
                         }
                     }
@@ -1650,6 +1738,7 @@ impl View {
         }
     }
     pub fn close(&self) {
+        self.cancel_image_paste();
         self.release_mouse();
         if self.prefix.replace(false) {
             self.input(&self.literal_prefix());
@@ -1983,5 +2072,11 @@ mod palette_tests {
             foreground(&json!(["x", false, 2, 257, false, false])),
             color(&json!(2), true)
         );
+    }
+}
+
+impl Drop for View {
+    fn drop(&mut self) {
+        self.cancel_image_paste();
     }
 }

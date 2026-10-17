@@ -58,7 +58,7 @@ try:
     view = Tui(binary, sock, inner['session'], root / 'direct.pty', env=env)
     views.append(view)
     eventually(lambda: '│'.encode() in view.data and '─'.encode() in view.data)
-    assert b'\x1b[0;38;2;16;32;48;48;2;122;167;245m' in view.data
+    eventually(lambda: b'\x1b[0;38;2;16;32;48;48;2;122;167;245m' in view.data)
     for item in rpc('pane.list', {'session': inner['session']}):
         def corners():
             cells = next(p for p in render(inner['session'])['panes'] if p['id']==item['id'])['grid']['cells'][0]
