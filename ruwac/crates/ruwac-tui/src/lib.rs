@@ -561,6 +561,16 @@ fn same_frame(a: &Value, b: &Value) -> bool {
         && a.iter()
             .all(|(k, v)| k == "revision" || b.get(k).is_some_and(|w| w == v))
 }
+/// Acknowledge a new daemon revision even when another session caused it.
+/// Otherwise every later poll asks for the same full, unchanged view again.
+fn accept_render_frame(snapshot: &mut Value, fresh: Value) -> bool {
+    if fresh["unchanged"] == true {
+        return false;
+    }
+    let changed = !same_frame(&fresh, snapshot);
+    *snapshot = fresh;
+    changed
+}
 /// Window index for Alt+0…9 (ESC followed by a digit).
 fn alt_digit(key: &copy::Key) -> Option<usize> {
     match key {
@@ -1983,8 +1993,7 @@ pub fn attach_with_window(socket: &Path, session: &str, window: Option<&str>) ->
                 // The revision counts changes in every session of the daemon;
                 // redraw only when this view's content changed, or a client
                 // nested in a RUWAC terminal redraws itself in a loop.
-                if fresh["unchanged"] != true && !same_frame(&fresh, &snapshot) {
-                    snapshot = fresh;
+                if accept_render_frame(&mut snapshot, fresh) {
                     let ended = snapshot["panes"]
                         .as_array()
                         .is_some_and(|p| !p.is_empty() && p.iter().all(|p| p["ended"] == true));
@@ -1994,6 +2003,13 @@ pub fn attach_with_window(socket: &Path, session: &str, window: Option<&str>) ->
                         if window.is_some_and(|window| snapshot["window"].as_str() == Some(window))
                         {
                             break;
+                        }
+                        // Like Screen: a window whose programs exited is removed;
+                        // when it was the last one, the session ends with it.
+                        for pane in snapshot["panes"].as_array().into_iter().flatten() {
+                            if pane["ended"] == true {
+                                let _ = call(&mut s, "pane.close", json!({"pane":pane["id"]}));
+                            }
                         }
                         let panes = call(&mut s, "pane.list", json!({"session":session}))?;
                         if let Some(live) = panes
@@ -2024,6 +2040,35 @@ pub fn attach_with_window(socket: &Path, session: &str, window: Option<&str>) ->
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn unrelated_revision_is_acknowledged_without_repeated_full_frames() {
+        let mut snapshot = json!({"revision":1,"panes":[{"id":"p","grid":{"cells":[["x"]]}}]});
+        let mut server = snapshot.clone();
+        server["revision"] = json!(2);
+        let mut full_frames = 0;
+        let mut redraws = 0;
+        for _ in 0..120 {
+            let fresh = if snapshot["revision"] == server["revision"] {
+                json!({"revision":server["revision"],"unchanged":true})
+            } else {
+                full_frames += 1;
+                server.clone()
+            };
+            redraws += usize::from(accept_render_frame(&mut snapshot, fresh));
+        }
+        assert_eq!(
+            full_frames, 1,
+            "unrelated output must not force full snapshots forever"
+        );
+        assert_eq!(redraws, 0, "an identical visible screen must not repaint");
+        assert_eq!(snapshot["revision"], 2);
+        assert_eq!(snapshot["panes"][0]["grid"]["cells"][0][0], "x");
+
+        server["revision"] = json!(3);
+        server["panes"][0]["grid"]["cells"][0][0] = json!("y");
+        assert!(accept_render_frame(&mut snapshot, server));
+        assert_eq!(snapshot["panes"][0]["grid"]["cells"][0][0], "y");
+    }
     #[test]
     fn alt_digit_selects_windows_by_status_bar_number() {
         assert_eq!(alt_digit(&copy::Key::Sequence("\x1b1".into())), Some(1));

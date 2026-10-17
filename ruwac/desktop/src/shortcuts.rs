@@ -34,10 +34,34 @@ fn modifier(key: gdk::Key) -> bool {
     )
 }
 
-/// AltGr tap toggles local keys: a clean press and release of AltGr with no
+/// Workspace tab for 1…9 and 0 (tab 10).
+pub fn tab_index(key: gdk::Key) -> Option<i32> {
+    match key.to_unicode()? {
+        c @ '1'..='9' => Some(c as i32 - '1' as i32),
+        '0' => Some(9),
+        _ => None,
+    }
+}
+pub fn select_tab(tabs: &adw::TabView, index: i32) {
+    // Missing tabs are deliberately a no-op.
+    if index < tabs.n_pages() {
+        tabs.set_selected_page(&tabs.nth_page(index));
+    }
+}
+/// Alt+digit (no other modifiers) selects a RUWAC tab unless keys are mapped.
+pub fn alt_tab_index(key: gdk::Key, mods: gdk::ModifierType) -> Option<i32> {
+    let allowed = (gdk::ModifierType::ALT_MASK | gdk::ModifierType::LOCK_MASK).bits();
+    if !mods.contains(gdk::ModifierType::ALT_MASK) || mods.bits() & !allowed != 0 {
+        return None;
+    }
+    tab_index(key)
+}
+
+/// AltGr tap toggles Map keys: a clean press and release of AltGr with no
 /// other key in between. AltGr held with a key stays layout input (@, \ …).
-/// With local keys, system shortcuts such as Alt+Tab go to this computer's
-/// desktop; otherwise an RDP view sends them to the remote desktop.
+/// Off (default): Alt+1…9/0 switch RUWAC tabs and system shortcuts such as
+/// Alt+Tab stay with this computer. On: they go to the terminal program or
+/// remote desktop (a RUWAC session switches its windows with Alt+N).
 #[derive(Default)]
 pub struct LocalMode {
     active: Cell<bool>,
@@ -135,5 +159,17 @@ mod local_mode_tests {
         assert!(mode.active());
         mode.press(gdk::Key::Alt_R);
         assert_eq!(mode.release(gdk::Key::Alt_R), Some(false));
+        assert_eq!(
+            alt_tab_index(gdk::Key::_2, gdk::ModifierType::ALT_MASK),
+            Some(1)
+        );
+        assert_eq!(
+            alt_tab_index(gdk::Key::_0, gdk::ModifierType::ALT_MASK),
+            Some(9)
+        );
+        assert_eq!(
+            alt_tab_index(gdk::Key::_2, gdk::ModifierType::empty()),
+            None
+        );
     }
 }

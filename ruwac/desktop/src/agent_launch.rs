@@ -166,6 +166,17 @@ fn argv(
         quote(command),
         quote(&profile.preferences.agent_session)
     );
+    // Optional: install the RUWAC CLI first (prebuilt, per user) when missing.
+    let script = if profile.preferences.ruwac_install_missing {
+        format!(
+            "{{ command -v {} >/dev/null 2>&1 || test -x \"$HOME/.local/bin/ruwac\" || {{ echo 'Installing RUWAC…'; python3 -c {} --bootstrap --headless --prebuilt; }}; }} && {}",
+            quote(binary),
+            quote(include_str!("../../../scripts/update-user.py")),
+            script
+        )
+    } else {
+        script
+    };
     ssh_command(profile, format!("bash -lc {}", quote(&script)))
 }
 
@@ -399,6 +410,17 @@ mod tests {
         assert!(argv(&missing, 4, "ruwac", "").is_err());
     }
 
+    #[test]
+    fn missing_ruwac_is_installed_first_only_when_enabled() {
+        let mut profile: profiles::Profile = serde_json::from_value(json!({"id":"endpoint_demo","machine_id":"machine_demo","name":"Demo","group":"Test","protocol":"SSH","server":"127.0.0.1:2222","username":"generated-user","secret_reference":"GENERATED-SECRET-REF","favorite":false,"last_used":0,"tags":[]})).unwrap();
+        let plain = argv(&profile, 0, "ruwac", "").unwrap();
+        assert!(!plain.last().unwrap().contains("--prebuilt"));
+        profile.preferences.ruwac_install_missing = true;
+        let install = argv(&profile, 0, "ruwac", "").unwrap();
+        let command = install.last().unwrap();
+        assert!(command.contains("--bootstrap --headless --prebuilt"));
+        assert!(command.contains("command -v"));
+    }
     #[test]
     fn defaults_open_resume_pickers_without_a_prompt() {
         assert_eq!(agent_command(0).unwrap(), ("codex", "codex resume --all"));

@@ -49,6 +49,10 @@ pub struct Preferences {
     pub kimi_command: String,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub agent_install_missing: bool,
+    /// Install the RUWAC CLI (verified prebuilt package) when an agent
+    /// launch finds it missing on the machine.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub ruwac_install_missing: bool,
     #[serde(skip_serializing_if = "String::is_empty")]
     pub agent_backend: String,
     #[serde(skip_serializing_if = "String::is_empty")]
@@ -87,6 +91,7 @@ impl Default for Preferences {
             claude_command: String::new(),
             kimi_command: String::new(),
             agent_install_missing: false,
+            ruwac_install_missing: false,
             agent_backend: String::new(),
             agent_session: String::new(),
             gnome_username: String::new(),
@@ -1064,6 +1069,7 @@ fn ssh_seed(source: &Profile) -> Profile {
         claude_command: source.preferences.claude_command.clone(),
         kimi_command: source.preferences.kimi_command.clone(),
         agent_install_missing: source.preferences.agent_install_missing,
+        ruwac_install_missing: source.preferences.ruwac_install_missing,
         agent_backend: source.preferences.agent_backend.clone(),
         agent_session: source.preferences.agent_session.clone(),
         identity_file: source.preferences.identity_file.clone(),
@@ -1352,7 +1358,10 @@ fn shortcut_action(
             }
             p.preferences.agent_install_missing |=
                 machine.iter().any(|x| x.preferences.agent_install_missing);
-            if kind == 3 {
+            p.preferences.ruwac_install_missing |=
+                machine.iter().any(|x| x.preferences.ruwac_install_missing);
+            if kind == 3 || kind == 6 {
+                FILES_REQUEST.with(|f| f.set(kind == 6));
                 open(p, sink, lease);
             } else {
                 launch(p, kind);
@@ -1365,18 +1374,32 @@ fn shortcut_action(
             .iter()
             .find(|p| p.id == id)
             .map(ssh_seed);
-        if let Some(seed) = seed {
-            editor_seed(
-                button,
-                store.clone(),
-                None,
-                status.clone(),
-                open.clone(),
-                launch.clone(),
-                Some(seed),
-            );
+        // A connect icon connects: add an SSH endpoint from the machine's
+        // address (account, port and route from ~/.ssh/config) and open it.
+        // The pen edits it if the defaults do not fit.
+        if let Some(mut seed) = seed {
+            seed.username.clear();
+            let id = seed.id.clone();
+            {
+                let mut s = store.borrow_mut();
+                s.items.push(seed);
+                if let Err(e) = s.save() {
+                    s.items.pop();
+                    status.set_text(&e);
+                    return;
+                }
+            }
+            status.set_text("Added an SSH endpoint from this machine's address; the pen edits it");
+            shortcut_action(button, store, status, open, launch, &id, kind);
         }
     }
+}
+thread_local! {
+    /// The next SSH open shows the SFTP file browser instead of a terminal.
+    static FILES_REQUEST: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+pub fn take_files_request() -> bool {
+    FILES_REQUEST.with(|f| f.replace(false))
 }
 
 fn shortcut_button(
@@ -1390,7 +1413,14 @@ fn shortcut_button(
     open: ConnectionOpener,
     launch: AgentLauncher,
 ) -> gtk::Button {
-    let b = gtk::Button::from_icon_name(icon);
+    let b = if icon == "ruwac-codex" {
+        // Codex: a code glyph reads better than any stock icon.
+        let b = gtk::Button::with_label("</>");
+        b.add_css_class("codex-glyph");
+        b
+    } else {
+        gtk::Button::from_icon_name(icon)
+    };
     b.add_css_class("flat");
     b.set_widget_name(name);
     b.set_tooltip_text(Some(tip));
@@ -1490,7 +1520,7 @@ fn shortcut_menu(
                 ),
                 (
                     0,
-                    "system-run-symbolic",
+                    "ruwac-codex",
                     "Open Codex",
                     "saved-host-codex",
                     linked
@@ -1825,13 +1855,20 @@ pub fn sidebar(
                     (
                         3,
                         "utilities-terminal-symbolic",
-                        "Open SSH terminal (configure a separate SSH endpoint if needed)",
+                        "Open SSH terminal",
                         "machine-terminal",
                         true,
                     ),
                     (
+                        6,
+                        "folder-symbolic",
+                        "Open files (SFTP)",
+                        "machine-files",
+                        true,
+                    ),
+                    (
                         0,
-                        "system-run-symbolic",
+                        "ruwac-codex",
                         "Open Codex",
                         "machine-codex",
                         linked
@@ -3419,6 +3456,12 @@ fn editor_seed(
     auto_install.set_widget_name("machine-agent-auto-install");
     auto_install.set_active(original.preferences.agent_install_missing);
     agents.append(&auto_install);
+    let ruwac_install = gtk::CheckButton::with_label(
+        "Install RUWAC automatically when missing (verified prebuilt package)",
+    );
+    ruwac_install.set_widget_name("machine-ruwac-auto-install");
+    ruwac_install.set_active(original.preferences.ruwac_install_missing);
+    agents.append(&ruwac_install);
     let note = gtk::Label::new(Some(
         "Opt-in per-user official installers run in the SSH terminal only for a new agent process. Existing tools and agent logins are preserved. Sign in inside the agent when requested.",
     ));
@@ -3521,7 +3564,7 @@ fn editor_seed(
             let(s,id,machine_id,st,parent)=(store.clone(),original.id.clone(),original.machine_id.clone(),status.clone(),d.clone());confirm.connect_response(move|c,r|{if r==gtk::ResponseType::Accept {let mut s=s.borrow_mut();let old=s.items.clone();s.items.retain(|p|p.id!=id&&(!machine||p.machine_id!=machine_id));if let Err(e)=s.save(){s.items=old;st.set_text(&e);}else{drop(s);st.set_text("Metadata deleted; previous library retained for Undo");refresh_widgets(parent.transient_for().as_ref());parent.close();}}c.close();});confirm.present();return;
         }
         if response!=gtk::ResponseType::Accept && response!=gtk::ResponseType::Other(1) && response!=gtk::ResponseType::Other(3) && response!=gtk::ResponseType::Other(5){d.close();return;}
-        let mut p=original.clone();p.preferences.ssh_auth=if p.protocol=="SSH"&&login.selected()==1{"password".into()}else{String::new()};p.preferences.kimi_command=kimi_command.text().into();p.preferences.agent_install_missing=auto_install.is_active();p.preferences.agent_session=agent_session.text().into();p.preferences.codex_command=codex_command.text().into();p.preferences.claude_command=claude_command.text().into();p.preferences.agent_backend=["ruwac","screen","tmux","direct"][backend.selected()as usize].into();p.name=fields[0].text().into();p.group=fields[1].text().into();p.machine_id=fields[2].text().into();p.server=fields[3].text().into();p.username=fields[4].text().into();p.preferences.label=fields[5].text().into();p.preferences.network=fields[6].text().into();p.preferences.gateway=fields[7].text().into();p.preferences.ssh_jump_alias=ssh_jump.text().into();p.tags=fields[8].text().split(',').map(str::trim).filter(|s|!s.is_empty()).map(str::to_owned).collect();p.secret_reference=fields[9].text().into();p.preferences.trust=fields[10].text().into();p.preferences.identity_file=fields[11].text().into();p.preferences.identity_secret_reference=identity_reference.text().into();p.preferences.known_hosts=fields[12].text().into();p.protocol=if protocol.selected()==1{"SSH"}else{"RDP"}.into();p.preferences.display=["fit","native","stretch","dynamic"][display.selected() as usize].into();p.preferences.clipboard=clipboard.selected();p.preferences.zoom=zoom.value();p.preferences.fullscreen=full.is_active();p.preferences.reconnect=retry.is_active();p.inherit=inherit.is_active();p.inherit_connection=inherit_connection.is_active();p.inherit_credential=inherit_credential.is_active();p.preferences.rdp_mode=["","gnome-remote-login","gnome-desktop-sharing"][rdp_mode.selected() as usize].into();p.preferences.gnome_auto_login=gnome_auto.is_active();p.preferences.gnome_username=gnome_user.text().into();p.preferences.gnome_secret_reference=if p.preferences.rdp_mode=="gnome-remote-login"||!original.preferences.gnome_secret_reference.is_empty(){gnome_ref.text().into()}else{String::new()};
+        let mut p=original.clone();p.preferences.ssh_auth=if p.protocol=="SSH"&&login.selected()==1{"password".into()}else{String::new()};p.preferences.kimi_command=kimi_command.text().into();p.preferences.agent_install_missing=auto_install.is_active();p.preferences.ruwac_install_missing=ruwac_install.is_active();p.preferences.agent_session=agent_session.text().into();p.preferences.codex_command=codex_command.text().into();p.preferences.claude_command=claude_command.text().into();p.preferences.agent_backend=["ruwac","screen","tmux","direct"][backend.selected()as usize].into();p.name=fields[0].text().into();p.group=fields[1].text().into();p.machine_id=fields[2].text().into();p.server=fields[3].text().into();p.username=fields[4].text().into();p.preferences.label=fields[5].text().into();p.preferences.network=fields[6].text().into();p.preferences.gateway=fields[7].text().into();p.preferences.ssh_jump_alias=ssh_jump.text().into();p.tags=fields[8].text().split(',').map(str::trim).filter(|s|!s.is_empty()).map(str::to_owned).collect();p.secret_reference=fields[9].text().into();p.preferences.trust=fields[10].text().into();p.preferences.identity_file=fields[11].text().into();p.preferences.identity_secret_reference=identity_reference.text().into();p.preferences.known_hosts=fields[12].text().into();p.protocol=if protocol.selected()==1{"SSH"}else{"RDP"}.into();p.preferences.display=["fit","native","stretch","dynamic"][display.selected() as usize].into();p.preferences.clipboard=clipboard.selected();p.preferences.zoom=zoom.value();p.preferences.fullscreen=full.is_active();p.preferences.reconnect=retry.is_active();p.inherit=inherit.is_active();p.inherit_connection=inherit_connection.is_active();p.inherit_credential=inherit_credential.is_active();p.preferences.rdp_mode=["","gnome-remote-login","gnome-desktop-sharing"][rdp_mode.selected() as usize].into();p.preferences.gnome_auto_login=gnome_auto.is_active();p.preferences.gnome_username=gnome_user.text().into();p.preferences.gnome_secret_reference=if p.preferences.rdp_mode=="gnome-remote-login"||!original.preferences.gnome_secret_reference.is_empty(){gnome_ref.text().into()}else{String::new()};
         if response==gtk::ResponseType::Other(1){p.id=ruwac_protocol::id("endpoint");p.machine_id=ruwac_protocol::id("machine");p.secret_reference=p.id.clone();if !p.preferences.gnome_secret_reference.is_empty(){p.preferences.gnome_secret_reference=format!("{}.gnome",p.id);}p.name.push_str(" (copy)");}
         if response==gtk::ResponseType::Other(3){p.name=original.name.clone();p.group=original.group.clone();p.id=ruwac_protocol::id("endpoint");p.secret_reference=p.id.clone();if !p.preferences.gnome_secret_reference.is_empty(){p.preferences.gnome_secret_reference=format!("{}.gnome",p.id);}}
         if let Err(e)=p.validate(){info.set_text(&e);return;}

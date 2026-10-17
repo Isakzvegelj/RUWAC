@@ -17,7 +17,7 @@ impl Pty {
         argv: &[String],
         rows: u16,
         cols: u16,
-        mut output: impl FnMut(Vec<u8>) + Send + 'static,
+        output: impl FnMut(Vec<u8>) + Send + 'static,
     ) -> Result<Self, String> {
         if argv.is_empty() || argv.iter().any(|s| s.contains('\0')) {
             return Err("argv must be a nonempty NUL-free array".into());
@@ -49,21 +49,35 @@ impl Pty {
                 }
             }
         });
+        // The pane ends when its own process exits, like a desktop terminal,
+        // even if something it started in the background still holds the
+        // terminal open (e.g. an SSH ControlPersist master). An empty chunk
+        // reports the end exactly once.
+        let output = Arc::new(Mutex::new(output));
+        let ended = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let (reader_output, reader_ended) = (output.clone(), ended.clone());
         thread::spawn(move || {
             let mut b = [0; 8192];
             loop {
                 match reader.read(&mut b) {
                     Ok(0) | Err(_) => break,
-                    Ok(n) => output(b[..n].to_vec()),
+                    Ok(n) => (reader_output.lock().unwrap())(b[..n].to_vec()),
                 }
             }
-            output(Vec::new());
+            if !reader_ended.swap(true, std::sync::atomic::Ordering::AcqRel) {
+                (reader_output.lock().unwrap())(Vec::new());
+            }
         });
         let child = Arc::new(Mutex::new(child));
         let reaper = child.clone();
         thread::spawn(move || {
             loop {
                 if reaper.lock().unwrap().try_wait().ok().flatten().is_some() {
+                    // Let the final output (e.g. "logout") arrive first.
+                    thread::sleep(std::time::Duration::from_millis(300));
+                    if !ended.swap(true, std::sync::atomic::Ordering::AcqRel) {
+                        (output.lock().unwrap())(Vec::new());
+                    }
                     break;
                 }
                 thread::sleep(std::time::Duration::from_millis(100));

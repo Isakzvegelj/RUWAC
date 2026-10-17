@@ -678,3 +678,39 @@ pub fn restore(
         page.set_title(&tab.title);
     }
 }
+
+/// Tab decorations change only when their value does: every set redraws the
+/// tab bar, and the status timer runs ten times a second.
+pub fn set_page_icon(page: &adw::TabPage, name: &str) {
+    let same = page
+        .icon()
+        .and_downcast::<gtk::gio::ThemedIcon>()
+        .is_some_and(|i| i.names().first().map(|n| n.as_str()) == Some(name));
+    if !same {
+        page.set_icon(Some(&gtk::gio::ThemedIcon::new(name)));
+    }
+}
+pub fn set_page_indicator(page: &adw::TabPage, name: Option<&str>) {
+    let current = page
+        .indicator_icon()
+        .and_downcast::<gtk::gio::ThemedIcon>()
+        .and_then(|i| i.names().first().map(|n| n.to_string()));
+    if current.as_deref() != name {
+        page.set_indicator_icon(name.map(gtk::gio::ThemedIcon::new).as_ref());
+    }
+}
+pub fn set_page_tooltip(page: &adw::TabPage, text: &str) {
+    if page.tooltip().as_deref() != Some(text) {
+        page.set_tooltip(text);
+    }
+}
+pub fn set_page_title(page: &adw::TabPage, title: &str) {
+    if page.title().as_str() != title {
+        page.set_title(title);
+    }
+}
+pub fn set_page_loading(page: &adw::TabPage, loading: bool) {
+    if page.is_loading() != loading {
+        page.set_loading(loading);
+    }
+}

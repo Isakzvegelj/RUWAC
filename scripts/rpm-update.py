@@ -228,8 +228,8 @@ def main():
     modes = parser.add_mutually_exclusive_group(required=True)
     modes.add_argument('--enable-testing', action='store_true')
     modes.add_argument('--disable', action='store_true')
-    modes.add_argument('--status', action='store_true')
-    modes.add_argument('--install', action='store_true')
+    modes.add_argument('-s', '--status', action='store_true')
+    modes.add_argument('-i', '--install', action='store_true')
     modes.add_argument('--install-auto', action='store_true')
     args = parser.parse_args()
     if args.status:

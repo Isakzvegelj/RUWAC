@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## v0.4.18 — 2026-10-17 — Stable source release
+
+- Map keys (AltGr tap; shown as a Map keys badge) replaces Local keys with the opposite default: normally Alt+1…9/0 switch RUWAC tabs directly and system shortcuts such as Alt+Tab stay with this computer; with Map keys on, they go to the terminal program or remote desktop (a RUWAC session switches its windows with Alt+N).
+
+- `exit` ends a terminal even when a background process it started (for example an SSH ControlPersist master) still holds the terminal open: a pane now ends when its own process exits. Takes effect after the daemon restarts. In `ruwac -r`/`-S`, a window whose programs exited is removed like in Screen, and the session ends with its last window.
+
+- Lower idle CPU: tabs redraw only when their content changes, hidden tabs and quiet screens are polled less often (input still wakes them at once), tab decorations are no longer reset ten times a second, and idle nested clients stop re-requesting full frames after changes in other sessions.
+
+- Machine actions connect directly: Terminal, Codex, Claude and Kimi on a machine without an SSH endpoint add one from its address (account, port and route from `~/.ssh/config`) and connect; the pen is the only editor. A Files icon opens the SFTP browser; the Terminal icon no longer opens it alongside. Codex uses a `</>` glyph.
+
+- Optional per machine: install the RUWAC CLI automatically (verified prebuilt package) when an agent launch finds it missing.
+
+- `ruwac-rpm-update -i` and `-s` are short for `--install` and `--status`.
+
 ## v0.4.17 — 2026-10-17 — Stable source release
 
 - Alt+1…9/0 always reach the program and are never taken for RUWAC tab switching (use Ctrl+PgUp/PgDn for tabs). A RUWAC session client (`ruwac -r`/`-S`) now switches to window N on Alt+N, matching the numbers in its status bar, so Alt+# works inside RDP, SSH or nested RUWAC sessions. Local keys (AltGr tap) only decide whether system shortcuts such as Alt+Tab go to this computer.

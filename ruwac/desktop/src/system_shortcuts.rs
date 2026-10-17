@@ -1,5 +1,5 @@
-//! While an RDP view has keyboard focus, system shortcuts (Alt+Tab, Super, …)
-//! go to the remote desktop, except in local mode (toggled by an AltGr tap).
+//! With Map keys on (AltGr tap) and an RDP view focused, system shortcuts
+//! (Alt+Tab, Super, …) go to the remote desktop; otherwise to this computer.
 use gtk::{gdk, glib, prelude::*};
 use std::{cell::Cell, rc::Rc};
 
@@ -18,7 +18,7 @@ impl Grab {
             window: window.as_ref().downgrade(),
             remote_focus: Box::new(remote_focus),
             inhibited: Cell::new(false),
-            local: Cell::new(false),
+            local: Cell::new(true),
         })
     }
     /// Re-evaluate after focus, activation or tab changes.

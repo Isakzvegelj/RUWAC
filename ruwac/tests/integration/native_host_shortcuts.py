@@ -34,18 +34,15 @@ try:
  actions=[v for k,v in first.items() if k!='machine-connect'];centers=[v['bounds'][1]+v['bounds'][3]/2 for v in actions];assert max(centers)-min(centers)<4,first
  assert min(v['bounds'][1] for v in actions)>=first['machine-connect']['bounds'][1]+first['machine-connect']['bounds'][3]-1,first
  checks.append('RDP-bookmark-configured-SSH-Codex-Claude-Kimi-labelled-on-one-line-below-name')
- state=profile.read_bytes();command('host-shortcuts',click='machine-terminal')
- eventually(lambda:any(d['width']>0 for d in command('profile-editor',operation='layout')['dialogs']))
- assert any(x['name']=='ssh-choose-key'for x in command('host-shortcuts')['widgets'])
- command('profile-editor',operation='inspect',ssh_setup=True,response='cancel');assert profile.read_bytes()==state
- checks.append('missing-SSH-opens-explicit-setup-and-cancel-preserves-library')
- command('host-shortcuts',click='machine-terminal');eventually(lambda:any(d['width']>0 for d in command('profile-editor',operation='layout')['dialogs']))
- key=root/'generated-key';key.write_text('Generated inert key selection; never used for login.\n');key.chmod(0o600)
- result=command('profile-editor',operation='inspect',ssh_setup=True,fields={'11':str(key)},response='save');assert not result.get('error'),result
+ # A connect icon connects: no setup form. The machine gets an SSH endpoint from its
+ # address (account, port and route left to ~/.ssh/config) and a terminal opens.
+ tabs_before=command('inspect')['tabs'];command('host-shortcuts',click='machine-terminal')
+ eventually(lambda:any(x['machine_id']=='machine_demo0'and x['protocol']=='SSH'for x in json.loads(profile.read_text())['items']))
+ eventually(lambda:command('inspect')['tabs']==tabs_before+1)
  items=json.loads(profile.read_text())['items'];ssh=next(x for x in items if x['machine_id']=='machine_demo0'and x['protocol']=='SSH');rdp=next(x for x in items if x['id']=='endpoint_demo0')
- assert ssh['username']==pwd.getpwuid(os.getuid()).pw_name and rdp['username']=='generated-service'
- assert ssh['id']!=rdp['id']and ssh['secret_reference']!=rdp['secret_reference'];assert ssh['preferences']['identity_file']==str(key)
- checks.append('linked-SSH-saves-current-user-default-key-path-and-separate-credential-identity')
+ assert ssh['username']=='' and rdp['username']=='generated-service'
+ assert ssh['id']!=rdp['id']and ssh['secret_reference']!=rdp['secret_reference'];assert not ssh.get('preferences',{}).get('identity_file')
+ checks.append('connect-icon-adds-ssh-endpoint-from-config-and-opens-terminal-without-setup-form')
  time.sleep(.4);header=command('host-shortcuts',operation='header');assert 'Saved agent hosts'in header['sections'];assert 'Running agent sessions'in header['sections'];assert sum(x['name']=='saved-host-codex'for x in header['widgets'])>=3;assert sum(x['name']=='saved-host-claude'for x in header['widgets'])>=3
  assert sum(x['name']=='saved-host-kimi'for x in header['widgets'])>=3
  command('host-shortcuts',close=True)
@@ -71,17 +68,18 @@ try:
  eventually(lambda:command('inspect')['active']);before=command('inspect')['tabs'];chord(20);eventually(lambda:command('inspect')['tabs']==before+1)
  def keys(*events,gap=.04):
   for value,state in events:call('NotifyKeyboardKeycode',GLib.Variant('(ub)',(value,state)));time.sleep(gap)
- # Alt+digit always belongs to the program (a RUWAC session switches its own windows),
- # in both modes; an AltGr tap toggles local keys and AltGr chords never toggle.
- # Linux keycodes: 2 = "1", 3 = "2", 16 = q, 56 = Alt, 100 = AltGr.
- assert before>=1 and command('inspect')['selected_tab']==before
- keys((56,True),(2,True),(2,False),(56,False));time.sleep(.3);assert command('inspect')['selected_tab']==before
+ # Default: Alt+1…9 switch RUWAC tabs. An AltGr tap turns Map keys on (Alt+digit goes to the
+ # program); the next tap turns it off. AltGr chords never toggle.
+ # Linux keycodes: 2 = "1" (tab 0), 3 = "2" (tab 1), 16 = q, 56 = Alt, 100 = AltGr.
+ assert before>=1
+ keys((56,True),(2,True),(2,False),(56,False));eventually(lambda:command('inspect')['selected_tab']==0)
  keys((100,True),(100,False));time.sleep(.2)
- keys((56,True),(2,True),(2,False),(56,False));time.sleep(.3);assert command('inspect')['selected_tab']==before
+ keys((56,True),(3,True),(3,False),(56,False));time.sleep(.3);assert command('inspect')['selected_tab']==0
  keys((100,True),(16,True),(16,False),(100,False));time.sleep(.2)
+ keys((56,True),(3,True),(3,False),(56,False));time.sleep(.3);assert command('inspect')['selected_tab']==0
  keys((100,True),(100,False));time.sleep(.2)
- keys((56,True),(3,True),(3,False),(56,False));time.sleep(.3);assert command('inspect')['selected_tab']==before
- checks.append('real-GDK-Alt-digit-reaches-program-in-both-modes-AltGr-tap-toggles-local-keys')
+ keys((56,True),(3,True),(3,False),(56,False));eventually(lambda:command('inspect')['selected_tab']==1)
+ checks.append('real-GDK-Alt-digit-switches-tabs-by-default-Map-keys-sends-to-program-chords-do-not-toggle')
  command('focus-view');chord(19);eventually(lambda:command('sidebar-shell')['shown'])
  call('Stop');checks.append('real-GDK-Ctrl-Shift-T-new-terminal-and-Ctrl-Shift-R-machine-chooser')
  command('snapshot')

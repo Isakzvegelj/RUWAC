@@ -16,7 +16,7 @@ use std::{
         mpsc::{self, SyncSender},
     },
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 pub struct Rpc {
     stream: UnixStream,
@@ -240,6 +240,17 @@ pub struct Worker {
     pub state: Arc<Mutex<State>>,
     stop: Arc<AtomicBool>,
     bytes: Arc<AtomicUsize>,
+    visible: Arc<AtomicBool>,
+}
+/// Two render frames show the same content (revision numbers aside). The
+/// revision counts changes in every session of the daemon.
+fn same_frame(a: &Value, b: &Value) -> bool {
+    let (Some(a), Some(b)) = (a.as_object(), b.as_object()) else {
+        return false;
+    };
+    a.len() == b.len()
+        && a.iter()
+            .all(|(k, v)| k == "revision" || b.get(k).is_some_and(|w| w == v))
 }
 /// True only when a reachable daemon positively no longer lists the session.
 fn session_missing(path: &Path, session: &str) -> bool {
@@ -285,7 +296,9 @@ impl Worker {
         let state = Arc::new(Mutex::new(State::default()));
         let stop = Arc::new(AtomicBool::new(false));
         let bytes = Arc::new(AtomicUsize::new(0));
-        let (st, halt, budget) = (state.clone(), stop.clone(), bytes.clone());
+        let visible = Arc::new(AtomicBool::new(true));
+        let (st, halt, budget, seen) =
+            (state.clone(), stop.clone(), bytes.clone(), visible.clone());
         thread::spawn(move || {
             let result = (|| -> io::Result<()> {
                 let mut rpc = match Rpc::connect(&path) {
@@ -338,6 +351,10 @@ impl Worker {
                     return Ok(());
                 }
                 let mut revision = None;
+                // Last frame handed to the view; identical frames are not redrawn.
+                let mut shown: Option<Value> = None;
+                // Poll fast while output or input is recent, slowly when quiet.
+                let mut active = Instant::now();
                 while !halt.load(Ordering::Relaxed) {
                     for _ in 0..16 {
                         let Some(cmd) = early.pop_front().or_else(|| rx.try_recv().ok()) else {
@@ -505,13 +522,29 @@ impl Worker {
                             return Err(io::Error::other("stale render revision"));
                         }
                         revision = Some(r);
-                        let mut s = st.lock().unwrap();
-                        if s.frame.is_some() {
-                            s.coalesced += 1;
+                        if !shown.as_ref().is_some_and(|last| same_frame(last, &frame)) {
+                            active = Instant::now();
+                            shown = Some(frame.clone());
+                            let mut s = st.lock().unwrap();
+                            if s.frame.is_some() {
+                                s.coalesced += 1;
+                            }
+                            s.frame = Some(frame);
                         }
-                        s.frame = Some(frame);
                     }
-                    thread::sleep(Duration::from_millis(20));
+                    // Tabs out of view poll slowly; a quiet screen polls at 10 Hz.
+                    // Any command (typing, resize) ends the wait immediately.
+                    let wait = if !seen.load(Ordering::Relaxed) {
+                        250
+                    } else if active.elapsed() < Duration::from_secs(1) {
+                        20
+                    } else {
+                        100
+                    };
+                    if let Ok(cmd) = rx.recv_timeout(Duration::from_millis(wait)) {
+                        early.push_back(cmd);
+                        active = Instant::now();
+                    }
                 }
                 rpc.call("session.detach", json!({}))?;
                 Ok(())
@@ -535,7 +568,12 @@ impl Worker {
             state,
             stop,
             bytes,
+            visible,
         }
+    }
+    /// Whether the view is on screen (polls fast) or hidden (polls slowly).
+    pub fn set_visible(&self, visible: bool) {
+        self.visible.store(visible, Ordering::Relaxed);
     }
     pub fn send(&self, cmd: Command) -> Result<(), String> {
         if self.stop.load(Ordering::Relaxed) {

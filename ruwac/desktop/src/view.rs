@@ -1003,6 +1003,7 @@ impl View {
     }
     pub fn update(self: &Rc<Self>) {
         let worker = self.worker.borrow();
+        worker.set_visible(self.area.is_mapped());
         let mut s = worker.state.lock().unwrap();
         if let Some(error) = s.error.take() {
             self.warn(&error);
