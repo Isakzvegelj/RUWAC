@@ -97,6 +97,17 @@ jobs:
         run: |
           cargo clippy --locked --workspace --all-targets --manifest-path ruwac/Cargo.toml
           cargo clippy --locked --all-targets --manifest-path ruwac/desktop/Cargo.toml
+      - name: Prepare private runtime for desktop unit tests
+        run: |
+          python3 - <<'PY'
+          import os, stat
+          from pathlib import Path
+          runtime = Path('/run/user') / str(os.getuid())
+          runtime.mkdir(mode=0o700, parents=True, exist_ok=True)
+          metadata = runtime.lstat()
+          assert stat.S_ISDIR(metadata.st_mode)
+          assert metadata.st_uid == os.getuid() and stat.S_IMODE(metadata.st_mode) == 0o700
+          PY
       - name: Rust unit tests
         run: |
           cargo test --locked --workspace --manifest-path ruwac/Cargo.toml

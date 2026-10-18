@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v0.4.25 — 2026-10-18 — Stable source release
+
+- Prepare the isolated hosted test container's private user runtime before desktop unit tests, so agent launch reconstruction exercises its protected SSH transport instead of the terminal-only fallback.
+
 ## v0.4.24 — 2026-10-18 — Stable source release
 
 - Copy available Remmina service passwords from Secret Service during reviewed import, including missing passwords for matching existing profiles, while retaining saved RUWAC credentials. Prompt for certificate review on the selected foreground connection and show connection failures clearly during Fedora automatic sign-in.

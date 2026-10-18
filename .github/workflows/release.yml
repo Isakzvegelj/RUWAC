@@ -106,6 +106,17 @@ jobs:
           assert os.environ['GITHUB_REF_NAME'] == 'v' + version
           assert subprocess.check_output(['git','rev-parse',os.environ['GITHUB_REF_NAME']+'^{commit}'],text=True).strip() == os.environ['GITHUB_SHA']
           PYCODE
+      - name: Prepare private runtime for desktop unit tests
+        run: |
+          python3 - <<'PY'
+          import os, stat
+          from pathlib import Path
+          runtime = Path('/run/user') / str(os.getuid())
+          runtime.mkdir(mode=0o700, parents=True, exist_ok=True)
+          metadata = runtime.lstat()
+          assert stat.S_ISDIR(metadata.st_mode)
+          assert metadata.st_uid == os.getuid() and stat.S_IMODE(metadata.st_mode) == 0o700
+          PY
       - name: Build and test the tagged compiled applications
         run: |
           command -v openssl
