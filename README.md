@@ -63,7 +63,7 @@ Private configuration may set RUWAC_SCROLLBACK_LINES (default 50000) and RUWAC_S
 
 “New RDP tab” opens the in-process client. Supply an authorized host:port, username, a Secret Service profile reference and optional trusted CA PEM. The lookup uses attributes application=RUWAC and profile=the reference; secrets are not stored in the project. System certificate/hostname validation is mandatory. Fit/native/stretch/fullscreen and explicit send-key actions are implemented. Text and PNG CLIPRDR works in both directions with five clipboard policies, explicit send/receive and remote paste. Authenticated loopback sessions are tested; dynamic resizing is qualified against authenticated loopback sessions; external Windows/GNOME hosts remain unqualified.
 
-“Machines” toggles the sidebar; Ctrl+K searches names, full groups, endpoints and tags. Favorites and recent-use filters are available. All matching profiles appear in one scrollable list; group headings collapse or expand their machines. Choose a Remmina file explicitly to preview approved nonsecret metadata, then import it. Passwords and key/certificate files are never imported. To update an existing endpoint, preview the file, explicitly select its endpoint identity, and use Review merge into selected endpoint. Review the field changes before Apply; local IDs, credential references, trust/key paths and preferences are preserved. Active endpoints and changes made after review require closing tabs or reviewing again. Cancel leaves metadata unchanged; Undo restores the previous private library. RDP entries open native tabs; SSH entries create daemon-owned SSH terminals. Native profile editing and Set/replace/forget credential controls are implemented.
+“Machines” toggles the sidebar; Ctrl+K searches names, full groups, endpoints and tags. Favorites and recent-use filters are available. All matching profiles appear in one scrollable list; group headings collapse or expand their machines. Choose a Remmina file explicitly to preview approved nonsecret metadata, then import it. The keyring checkbox copies available saved service passwords into RUWAC's Secret Service entries; existing RUWAC passwords are retained. Certificates and private key files are excluded. To update an existing endpoint's metadata, preview the file, explicitly select its endpoint identity, and use Review merge into selected endpoint. Review the field changes before Apply; local IDs, credential references, trust/key paths and preferences are preserved. Active endpoints and changes made after review require closing tabs or reviewing again. Cancel leaves metadata unchanged; Undo restores the previous private library. RDP entries open native tabs; SSH entries create daemon-owned SSH terminals. Native profile editing and Set/replace/forget credential controls are implemented.
 
 ## Pasting images into SSH terminals
 
@@ -79,7 +79,19 @@ RUWAC never redirects the result to the newly selected terminal. An interrupted
 operation may leave a complete private PNG in the remote cache; it does not
 submit a provider turn or claim that a model has consumed the image.
 
-The upload uses the selected OpenSSH route and existing verified host identity.
+New saved terminal and agent launches own a private OpenSSH control connection.
+Implicit image paste opens another channel on that same authenticated connection;
+it does not resolve the bookmark or jump configuration again. The socket owner
+must be the original pane's SSH process. Missing, closed or replaced connections
+refuse image upload without a new-network fallback; reopen the bookmark explicitly.
+
+The remote receiver verifies the byte count and SHA-256 before reporting readiness.
+The local uploader authorizes publication only while its cancellation ticket and
+deadline remain valid. EOF or cancellation before that commit removes the temporary
+upload. A later clipboard/focus change can leave an already committed private PNG
+in the cache, but cannot redirect or paste its path into another terminal.
+
+The original connection uses the selected OpenSSH route and verified host identity.
 Saved SSH passwords and key passphrases stay in Secret Service; background image
 paste does not open authentication dialogs or approve new host keys. Use the
 normal connection setup when authentication needs attention. The byte count and
@@ -102,25 +114,38 @@ Agent commands and backend choices are retained as nonsecret launch settings;
 passwords and key passphrases remain in Secret Service. The catalog contains no
 generated SSH argv or duplicate credential references. Private storage is bounded;
 a failure to save is shown while the live connection remains usable. Changes to
-external OpenSSH configuration or aliases are not tracked by the saved-profile
-fingerprint; reopen the bookmark after changing that configuration. A replaced
+external OpenSSH configuration do not redirect an existing protected image channel;
+explicit reconnect uses the current configuration. Older catalog entries without
+a protected transport remain usable as terminals and require reopening the bookmark
+for implicit image uploads. A replaced
 daemon gets a separate catalog; recovered ended histories are not treated as
 verified live SSH connections.
 
 ## Machine workspaces and Files
 
-Use Machines → New machine / endpoint or Network groups / defaults, and Edit beside an endpoint. Add endpoint retains the machine identity; duplicate creates new identities and credential references. Set/replace/forget credentials use system Secret Service. Metadata Undo restores the previous private library. RDP connects inside its tab; SSH opens a persistent terminal plus a native Files tab. Files verifies known_hosts before authentication and offers navigation, upload/download, explicit overwrite and progress. Pause transfer retains a private journal and partial; Pending transfers… resumes or explicitly discards the selected job. Resume verifies the original host, source and retained prefix before continuing and verifies the complete staged file before commit. Original files remain protected during overwrite and interrupted rename recovery. For encrypted SSH keys, configure the key file and the separate SSH key passphrase reference, then use Set / replace key passphrase; only the Secret Service reference is saved. Transfers currently handle individual regular files up to 32 GiB, with 128 pending jobs; recursive transfer and rsync remain open. Dynamic RDP uses negotiated Display Control; fit/native/stretch, zoom, fullscreen and Pan viewport remain available. See the current acceptance report for fixture evidence and remaining defects.
+Use Machines → New machine / endpoint or Network groups / defaults, and Edit beside an endpoint. Add endpoint retains the machine identity; duplicate creates new identities and credential references. Set/replace/forget credentials use system Secret Service. Metadata Undo restores the previous private library. RDP connects inside its tab. The SSH Terminal action opens a persistent terminal; use the separate Files action to open the native SFTP/rsync view. Files verifies known_hosts before authentication and offers navigation, upload/download, explicit overwrite and progress. Pause transfer retains a private journal and partial; Pending transfers… resumes or explicitly discards the selected job. Resume verifies the original host, source and retained prefix before continuing and verifies the complete staged file before commit. Original files remain protected during overwrite and interrupted rename recovery. For encrypted SSH keys, configure the key file and the separate SSH key passphrase reference, then use Set / replace key passphrase; only the Secret Service reference is saved. SFTP transfers individual regular files up to 32 GiB, with 128 pending jobs. The Files view also offers staged rsync file/folder copies over verified key/agent SSH, explicit whole-destination replacement and interrupted-copy recovery. Partial rsync data restarts rather than resuming; see [file transfer limits](spec/RUWAC_FILES.md). Dynamic RDP uses negotiated Display Control; fit/native/stretch, zoom, fullscreen and Pan viewport remain available. See the current acceptance report for fixture evidence and remaining defects.
 
 To create or reconnect to a named terminal session, run `ruwac -S d` in an interactive terminal. Use `ruwac -r d` to reattach without creating a missing session. Multiple clients can attach simultaneously, with independent selected windows and panes. Double Ctrl+A forwards the prefix into a nested terminal; Ctrl+A then o toggles the previous RUWAC window. Exact duplicate names require an explicit session ID. The same shortcut works with `ruwac --host SSH_HOST -S d`.
 
 ## Install and open the workspace
 
-Use the existing build workflow after a controller-assigned release:
+From the root of a released source checkout, build both workspaces and install
+with the same external Cargo target directory. Desktop builds require the
+[development libraries](CONTRIBUTING.md#build-and-validate), including SQLite.
 
 ```sh
-./build.sh --release --desktop --install-user
-ruwac gui
+export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$(mktemp -d)}"
+cargo build --release --locked --manifest-path ruwac/Cargo.toml
+cargo build --release --locked --manifest-path ruwac/desktop/Cargo.toml
+python3 scripts/install-user.py --build-root "$PWD" --target-dir "$CARGO_TARGET_DIR" --desktop
+"$HOME/.local/bin/ruwac" gui
 ```
+
+For a headless installation, build only the first workspace and omit `--desktop`.
+`--target-dir` applies to source builds; testing bundles retain their verified
+internal artifact paths. The source installer does not allocate a release version.
+Private maintainer build/release adapters are not included in public source
+archives; the Cargo commands above do not require them.
 
 The per-user installer adds a RUWAC desktop launcher and commands in the standard user binary directory. `ruwac gui` starts or reuses the persistent daemon. Use New terminal for another session and Sessions to reopen a running one. Closing a terminal tab detaches it; automatic checkpoints and normal window close save terminal/RDP/Files tabs, split geometry and selected tab. RDP restores disconnected, and Files restores its directory without automatic authentication. `ruwac start` starts the daemon without a graphical client.
 
@@ -147,7 +172,7 @@ Global `--remote-binary PATH` and `--socket REMOTE_PATH` select an explicit exec
 
 ## Desktop navigation and diagnostics
 
-Launch `ruwac gui`. Tap AltGr (Right Alt) on its own to switch to local keys, shown in the header: Alt+1–9 select workspace tabs 1–9 and Alt+0 tab 10, and system shortcuts such as Alt+Tab stay on this computer. Tap AltGr again to send keys to the terminal program or remote desktop (the default). AltGr held together with another key always types layout characters. The shortcuts work from terminal, RDP and Files views. Missing tabs are a no-op. Other unbound Ctrl+Alt and Shift+Alt shortcuts remain available to applications. Use `ruwac gui --theme system` to follow the desktop color preference, or `--theme light` / `--theme dark` explicitly.
+Launch `ruwac gui`. By default, Alt+1–9 select workspace tabs 1–9 and Alt+0 selects tab 10; system shortcuts such as Alt+Tab stay on this computer. Tap AltGr (Right Alt) on its own to enable **Map keys**, shown in the header: those keys then go to the terminal program or remote desktop. A current RUWAC attached client receiving Alt+digits selects its own windows. Tap AltGr again to return to workspace tabs and local system shortcuts. AltGr held with another key always types keyboard-layout characters. The shortcuts work from terminal, RDP and Files views. Missing tabs are a no-op. Other unbound Ctrl+Alt and Shift+Alt shortcuts remain available to applications. Use `ruwac gui --theme system` to follow the desktop color preference, or `--theme light` / `--theme dark` explicitly.
 
 `ruwac doctor --desktop` checks local runtime availability without changing it. `ruwac doctor --terminal` inspects the current terminal. After a crashed client leaves raw/no-echo attributes, run `ruwac doctor --terminal --repair` directly in that affected foreground terminal. Repair never targets another terminal and does not reset emulator mouse/private modes. Remote read-only checks use `ruwac --host SSH_HOST doctor`; remote terminal repair is refused.
 
@@ -282,9 +307,23 @@ Use **Machines → Import from Remmina → Import all Remmina profiles…** to r
 and import metadata from the discovered native, legacy and Flatpak locations.
 Confirm **Import all** to save the batch. Existing profiles are retained, matching
 duplicates are skipped, unreadable/unsupported files are counted, and changed files
-or a changed library require a fresh review. Import excludes passwords, certificates
-and private key paths; source Remmina files are read-only. The 1000-profile limit is
+or a changed library require a fresh review. **Include saved passwords from Remmina's keyring**
+copies available service passwords, including missing passwords for matching existing
+profiles. It never replaces an existing RUWAC password or copies a service password
+into the separate GNOME user login. Missing, locked or legacy encrypted-file passwords
+require **Edit → Set/replace credential**. Turn the checkbox off for metadata only.
+Certificates and private key paths are excluded; source Remmina files are read-only. The 1000-profile limit is
 checked before writing any of the batch.
+
+Remmina's TLS-error bypass is not imported. On a self-signed RDP server, use
+**Review certificate** and verify its identity before trusting it. Fedora Remote
+Login needs the RDP service account and the separate GNOME desktop account;
+configure both before enabling automatic sign-in.
+
+Terminal selection joins soft screen wraps and retains actual line breaks. It
+also removes row padding after shell continuation backslashes. Current daemons supply wrap metadata directly. Compatible older daemons supply it
+through a read-only history check that must match the displayed cells. Live engines
+and their running programs are preserved.
 
 ### Machine groups
 

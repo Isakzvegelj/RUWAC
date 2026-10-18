@@ -23,10 +23,13 @@ done
 test "$(stat -c %a -- "$d")" = 700
 t=$(mktemp "$d/.upload-XXXXXXXXXXXX")
 trap 'rm -f -- "$t"' EXIT HUP INT TERM
-cat > "$t"
+head -c {bytes} > "$t"
 test "$(wc -c < "$t")" -eq {bytes}
 printf '%s  %s\n' '{sha256}' "$t" | sha256sum --status -c -
 f="$d/{name}.png"
+printf '%s\n' 'RUWAC_IMAGE_READY:{name}'
+IFS= read -r commit
+test "$commit" = 'RUWAC_IMAGE_COMMIT:{name}'
 ln -- "$t" "$f"
 printf '%s\n' "$f"
 "#
@@ -38,11 +41,38 @@ pub fn upload(
     allowed: &AtomicBool,
     timeout: Duration,
 ) -> Result<String, String> {
+    upload_with_transport(profile, png, allowed, timeout, None)
+}
+
+pub fn upload_original(
+    profile: &Profile,
+    png: &[u8],
+    allowed: &AtomicBool,
+    timeout: Duration,
+    transport: &str,
+    pid: u32,
+) -> Result<String, String> {
+    upload_with_transport(profile, png, allowed, timeout, Some((transport, pid)))
+}
+
+fn upload_with_transport(
+    profile: &Profile,
+    png: &[u8],
+    allowed: &AtomicBool,
+    timeout: Duration,
+    transport: Option<(&str, u32)>,
+) -> Result<String, String> {
     profile.validate()?;
     if profile.protocol != "SSH" || png.is_empty() || png.len() > ruwac_clipboard::MAX_IMAGE_BYTES {
         return Err("Invalid SSH image upload".into());
     }
-    let mut argv = crate::profiles::ssh_argv(profile)?;
+    let mut argv = if let Some((token, pid)) = transport {
+        crate::ssh_transport::client(token, pid).map_err(|_| {
+            "Original SSH connection is unavailable; reopen its bookmark before pasting an image".to_string()
+        })?
+    } else {
+        crate::profiles::ssh_argv(profile)?
+    };
     let at = argv
         .iter()
         .position(|a| a == "--")
@@ -79,8 +109,9 @@ pub fn upload(
     ));
     let mut command = Command::new(&argv[0]);
     command.args(&argv[1..]);
-    if profile.preferences.ssh_auth == "password"
-        || !profile.preferences.identity_secret_reference.is_empty()
+    if transport.is_none()
+        && (profile.preferences.ssh_auth == "password"
+            || !profile.preferences.identity_secret_reference.is_empty())
     {
         command
             .env(
@@ -95,7 +126,16 @@ pub fn upload(
             )
             .env(crate::askpass::ONLY_SAVED, "1");
     }
-    let bytes = bounded_process::exchange(&mut command, png, allowed, timeout)?;
+    let ready = format!("RUWAC_IMAGE_READY:{name}\n");
+    let commit = format!("RUWAC_IMAGE_COMMIT:{name}\n");
+    let bytes = bounded_process::exchange_confirmed(
+        &mut command,
+        png,
+        allowed,
+        timeout,
+        ready.as_bytes(),
+        commit.as_bytes(),
+    )?;
     let out = String::from_utf8(bytes).map_err(|_| "Invalid remote image path")?;
     let path = out
         .strip_suffix('\n')

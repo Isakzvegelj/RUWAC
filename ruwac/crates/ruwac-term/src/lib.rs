@@ -609,6 +609,15 @@ impl Terminal {
         if let Some(a) = &self.archived {
             let mut grid = a.grid.clone();
             expand_grid(&mut grid);
+            // Restored cells are cropped/padded rather than reflowed. Wraps
+            // only describe their original column width.
+            if let Some(wrapped) = grid.get_mut("wrapped").and_then(Value::as_array_mut) {
+                if self.cols as u64 != a.grid["cols"].as_u64().unwrap() {
+                    wrapped.fill(json!(false));
+                }
+                wrapped.truncate(self.rows as usize);
+                wrapped.resize(self.rows as usize, json!(false));
+            }
             let blank = json!([" ", false, 256, 257, false, false]);
             let cells = grid["cells"].as_array_mut().unwrap();
             cells.truncate(self.rows as usize);
@@ -717,6 +726,15 @@ impl Terminal {
             rows.push(cells)
         }
         let mut value = json!({"rows":self.rows,"cols":self.cols,"cells":rows,"cursor":{"row":g.cursor.point.line.0,"col":g.cursor.point.column.0,"visible":self.term.mode().contains(TermMode::SHOW_CURSOR)},"mouse":self.mouse(),"mouse_drag":self.term.mode().contains(TermMode::MOUSE_DRAG),"mouse_motion":self.term.mode().contains(TermMode::MOUSE_MOTION),"mouse_sgr":self.term.mode().contains(TermMode::SGR_MOUSE),"alternate_screen":alternate,"application_cursor":self.term.mode().contains(TermMode::APP_CURSOR),"bracketed_paste":self.paste()});
+        value["wrapped"] = json!(
+            (0..self.rows as i32)
+                .map(
+                    |row| g[Point::new(Line(row), Column(self.cols as usize - 1))]
+                        .flags
+                        .contains(Flags::WRAPLINE)
+                )
+                .collect::<Vec<_>>()
+        );
         if compact {
             let indices = value.as_object_mut().unwrap().remove("cells").unwrap();
             value["cell_encoding"] = json!("palette-v1");
@@ -770,6 +788,14 @@ fn valid_extended_style(style: &Value) -> bool {
 fn validate_grid(grid: &Value, rows: u16, cols: u16) -> std::result::Result<(), String> {
     if grid["rows"] != rows || grid["cols"] != cols {
         return Err("invalid terminal archive grid".into());
+    }
+    if let Some(wrapped) = grid.get("wrapped") {
+        if !wrapped
+            .as_array()
+            .is_some_and(|v| v.len() == rows as usize && v.iter().all(Value::is_boolean))
+        {
+            return Err("invalid terminal wrap metadata".into());
+        }
     }
     if grid.get("cell_encoding").is_some() {
         if grid["cell_encoding"] != "palette-v1" || grid.get("cells").is_some() {
@@ -1258,5 +1284,52 @@ mod tests {
         style.remove("underline_color");
         style.insert("unexpected".into(), json!(null));
         assert!(Terminal::restore(bad).is_err());
+    }
+}
+
+#[cfg(test)]
+mod selection_wrap_tests {
+    use super::*;
+    #[test]
+    fn restored_wraps_follow_visible_rows_and_original_column_width() {
+        let mut t = Terminal::new(4, 8);
+        t.feed(b"abcdefghijkl\r\nnext");
+        let original = t.archive();
+        let mut restored = Terminal::restore(original.clone()).unwrap();
+        restored.resize(2, 8);
+        assert_eq!(restored.snapshot()["wrapped"], json!([true, false]));
+        restored.resize(6, 8);
+        assert_eq!(
+            restored.snapshot()["wrapped"],
+            json!([true, false, false, false, false, false])
+        );
+        restored.resize(6, 12);
+        assert_eq!(restored.snapshot()["wrapped"], json!(vec![false; 6]));
+        assert_eq!(restored.archive().grid, original.grid);
+        assert!(restored.checkpoint_archive().validate().is_ok());
+    }
+    #[test]
+    fn actual_parser_distinguishes_soft_wrap_from_explicit_line_break() {
+        let mut t = Terminal::new(4, 8);
+        t.feed(b"abcdefghijkl\r\nnext");
+        assert_eq!(t.snapshot()["wrapped"], json!([true, false, false, false]));
+        let a = t.archive();
+        assert_eq!(
+            Terminal::restore(a).unwrap().snapshot()["wrapped"],
+            json!([true, false, false, false])
+        );
+    }
+    #[test]
+    fn malformed_wrap_metadata_is_rejected_but_legacy_archives_remain_readable() {
+        let t = Terminal::new(3, 8);
+        let mut a = t.archive();
+        a.grid["wrapped"] = json!([true]);
+        assert!(Terminal::restore(a).is_err());
+        let mut a = t.archive();
+        a.grid["wrapped"] = json!([false, 0, false]);
+        assert!(Terminal::restore(a).is_err());
+        let mut a = t.archive();
+        a.grid.as_object_mut().unwrap().remove("wrapped");
+        assert!(Terminal::restore(a).is_ok());
     }
 }

@@ -1,4 +1,4 @@
-//! Non-secret machine metadata and explicit, read-only Remmina preview.
+//! Non-secret machine metadata and reviewed Remmina imports.
 #[path = "inventory.rs"]
 mod inventory;
 use gtk::prelude::*;
@@ -256,6 +256,9 @@ pub fn ssh_argv(p: &Profile) -> Result<Vec<String>, String> {
 /// logins run ssh with the desktop binary as SSH_ASKPASS, which reads the
 /// endpoint's saved credential; the secret never enters argv or the profile.
 pub fn session_argv(p: &Profile, argv: Vec<String>) -> Vec<String> {
+    // Keep the terminal available if private transport setup is unavailable.
+    // Implicit image paste then explains that an explicit reopen is required.
+    let argv = crate::ssh_transport::prepare(&argv).unwrap_or(argv);
     let askpass = std::env::current_exe()
         .ok()
         .filter(|_| p.preferences.ssh_auth == "password");
@@ -421,6 +424,90 @@ fn discover_remmina(home: &Path, data: &Path) -> Vec<(PathBuf, String)> {
     found.sort_by(|a, b| a.1.cmp(&b.1).then_with(|| a.0.cmp(&b.0)));
     found.dedup_by(|a, b| a.0 == b.0);
     found
+}
+
+/// Import only the selected profiles' saved service passwords, after metadata
+/// was committed. Existing RUWAC credentials and GNOME credentials are retained.
+fn import_passwords(jobs: Vec<(Profile, PathBuf)>, status: &gtk::Label) {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static BUSY: AtomicBool = AtomicBool::new(false);
+    if BUSY.swap(true, Ordering::AcqRel) {
+        status.set_text("Another password import is running; retry after it finishes");
+        return;
+    }
+    let (tx, rx) = std::sync::mpsc::sync_channel(1);
+    std::thread::spawn(move || {
+        struct Finish;
+        impl Drop for Finish {
+            fn drop(&mut self) {
+                BUSY.store(false, Ordering::Release);
+            }
+        }
+        let _finish = Finish;
+        let began = std::time::Instant::now();
+        let (mut copied, mut missing) = (0, 0);
+        for (target, path) in jobs {
+            if began.elapsed() > std::time::Duration::from_secs(60) {
+                missing += 1;
+                continue;
+            }
+            let matching = preview(&path).is_ok_and(|p| {
+                p.server == target.server
+                    && p.username == target.username
+                    && p.protocol == target.protocol
+            });
+            if !matching {
+                missing += 1;
+                continue;
+            }
+            // Unsupported file-password formats fail before touching a keyring.
+            let secret = match crate::credentials::lookup_remmina(&path) {
+                Ok(secret) => secret,
+                Err(_) => {
+                    missing += 1;
+                    continue;
+                }
+            };
+            if crate::credentials::lookup(&target.secret_reference).is_ok() {
+                continue;
+            }
+            // Recheck the source and destination after the asynchronous lookup.
+            let matching = preview(&path).is_ok_and(|p| {
+                p.server == target.server
+                    && p.username == target.username
+                    && p.protocol == target.protocol
+            });
+            let current = Store::load().items.into_iter().any(|p| {
+                p.id == target.id
+                    && p.server == target.server
+                    && p.username == target.username
+                    && p.protocol == target.protocol
+                    && p.secret_reference == target.secret_reference
+            });
+            if !matching || !current {
+                missing += 1;
+                continue;
+            }
+            match crate::credentials::set(&target.secret_reference, secret) {
+                Ok(()) => copied += 1,
+                Err(_) => missing += 1,
+            }
+        }
+        let _ = tx.send((copied, missing));
+    });
+    let status = status.downgrade();
+    gtk::glib::timeout_add_local(std::time::Duration::from_millis(100), move || {
+        match rx.try_recv() {
+            Ok((copied, missing)) => {
+                if let Some(status) = status.upgrade() {
+                    status.set_text(&format!("Remmina import complete · {copied} saved passwords copied · {missing} unavailable; set missing passwords in Edit. Existing credentials retained."));
+                }
+                gtk::glib::ControlFlow::Break
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => gtk::glib::ControlFlow::Continue,
+            Err(_) => gtk::glib::ControlFlow::Break,
+        }
+    });
 }
 
 /// This parser deliberately ignores credentials, certificates and key paths.
@@ -2174,7 +2261,12 @@ pub fn sidebar(
         .placeholder_text("Optional custom Remmina file")
         .build();
     path.set_widget_name("machines-import-path");
+    let password_path = path.clone();
     import_controls.append(&path);
+    let passwords = gtk::CheckButton::with_label("Include saved passwords from Remmina's keyring");
+    passwords.set_widget_name("machines-import-passwords");
+    passwords.set_active(true);
+    import_controls.append(&passwords);
     let preview_button = gtk::Button::with_label("Preview selected Remmina file");
     preview_button.set_widget_name("machines-import-preview");
     import_controls.append(&preview_button);
@@ -2252,6 +2344,7 @@ pub fn sidebar(
         .connect_items_changed(move |model, _, _, _| enabled.set_sensitive(model.n_items() > 1));
     let (paths, state, message, refresh_all) =
         (bulk_paths, store.clone(), status.clone(), refresh.clone());
+    let bulk_passwords = passwords.clone();
     bulk.connect_clicked(move |button| {
         let paths = paths.borrow().clone();
         let mut reviewed = Vec::new();
@@ -2263,10 +2356,11 @@ pub fn sidebar(
         let planned = match bulk_import_plan(&before, &incoming) { Ok(p) => p, Err(e) => { message.set_text(&e); return; } };
         let added = planned.len()-before.len();
         let duplicates = incoming.len()-added;
+        let copy_passwords = bulk_passwords.is_active();
         let dialog = gtk::Dialog::builder().title("Import all Remmina profiles").modal(true).default_width(520).build();
         dialog.set_widget_name("machines-import-all-dialog");
         dialog.set_transient_for(button.root().and_then(|r|r.downcast::<gtk::Window>().ok()).as_ref());
-        let label = gtk::Label::new(Some(&format!("{} new profiles · {} duplicates skipped · {} unreadable/unsupported files skipped\n\nImport metadata only. Existing endpoints and credentials are preserved. Remmina passwords, certificates and key files are excluded.",added,duplicates,unreadable)));
+        let label = gtk::Label::new(Some(&format!("{} new profiles · {} duplicates skipped · {} unreadable/unsupported files skipped\n\n{} Existing passwords are never replaced. Certificates and key files are excluded; review server identity before connecting.",added,duplicates,unreadable,if copy_passwords { "Copy available service passwords from Remmina's keyring, including missing passwords for matching existing profiles." } else { "Import metadata only; passwords excluded." })));
         label.set_wrap(true);dialog.content_area().append(&label);
         dialog.add_button("Cancel",gtk::ResponseType::Cancel);
         dialog.add_button("Import all",gtk::ResponseType::Accept);
@@ -2280,11 +2374,20 @@ pub fn sidebar(
                     message.set_text("Profiles changed after review; review Import all again");dialog.close();return;
                 }
                 state.items=planned.clone();
-                match state.save() {
-                    Ok(())=>message.set_text(&format!("Imported {added} profiles · skipped {duplicates} duplicates and {unreadable} unreadable files")),
-                    Err(error)=>{state.items=before.clone();message.set_text(&error);}
-                }
+                let saved = match state.save() {
+                    Ok(())=>{message.set_text(&format!("Imported {added} profiles · skipped {duplicates} duplicates and {unreadable} unreadable files"));true},
+                    Err(error)=>{state.items=before.clone();message.set_text(&error);false}
+                };
                 drop(state);refresh_all();
+                if saved && copy_passwords {
+                    let jobs = reviewed.iter().filter_map(|(path, imported)| {
+                        let mut matches = planned.iter().filter(|p| p.group==imported.group && p.name==imported.name
+                            && p.server==imported.server && p.protocol==imported.protocol && p.username==imported.username);
+                        let target=matches.next()?.clone();
+                        if matches.next().is_some() {None} else {Some((target,path.clone()))}
+                    }).collect();
+                    import_passwords(jobs, &message);
+                }
             }
             dialog.close();
         });
@@ -2390,7 +2493,7 @@ pub fn sidebar(
     preview_button.connect_clicked(move |_| match preview(Path::new(path.text().as_str())) {
         Ok(p) => {
             st.set_text(&format!(
-                "{} / {} · {} {}\nMetadata only; credentials excluded",
+                "{} / {} · {} {}\nPassword copying follows the keyring checkbox; certificates and keys excluded",
                 p.group, p.name, p.protocol, p.server
             ));
             merge_model.splice(1, merge_model.n_items().saturating_sub(1), &[]);
@@ -2467,14 +2570,39 @@ pub fn sidebar(
                         && x.protocol == p.protocol
                 })
             {
-                s.items.push(p);
+                s.items.push(p.clone());
             }
+            let targets: Vec<_> = s
+                .items
+                .iter()
+                .filter(|target| {
+                    target.group == p.group
+                        && target.name == p.name
+                        && target.server == p.server
+                        && target.protocol == p.protocol
+                        && target.username == p.username
+                })
+                .cloned()
+                .collect();
+            let mut saved = false;
             match s.save() {
-                Ok(()) => st.set_text("Machine metadata saved"),
+                Ok(()) => {
+                    st.set_text("Machine metadata saved");
+                    saved = true;
+                }
                 Err(e) => st.set_text(&e),
             }
             drop(s);
             r();
+            if saved && passwords.is_active() && targets.len() == 1 {
+                import_passwords(
+                    vec![(
+                        targets[0].clone(),
+                        PathBuf::from(password_path.text().as_str()),
+                    )],
+                    &st,
+                );
+            }
         }
     });
     let (s, st) = (store.clone(), status.clone());
@@ -2525,6 +2653,12 @@ pub fn sidebar(
             let fresh = Store::load();
             if fresh.path == path && fresh.error.is_none() {
                 let mut current = store.borrow_mut();
+                // Our own atomic save also changes the file stamp. Preserve
+                // its useful result (including password-import counts) when
+                // the refreshed metadata is identical.
+                let changed = current.error.is_some()
+                    || serde_json::to_value((&current.items, &current.groups)).ok()
+                        != serde_json::to_value((&fresh.items, &fresh.groups)).ok();
                 current.items = fresh.items;
                 current.groups = fresh.groups;
                 current.database_revision.set(fresh.database_revision.get());
@@ -2532,7 +2666,9 @@ pub fn sidebar(
                 current.error = None;
                 drop(current);
                 refresh();
-                reload_status.set_text("Machine library refreshed");
+                if changed {
+                    reload_status.set_text("Machine library refreshed");
+                }
             } else {
                 let error = fresh.error.unwrap_or_else(|| {
                     "Private profile storage unavailable; existing library protected".into()
@@ -4514,6 +4650,13 @@ pub fn fixture_library(
             .and_then(|w| w.downcast::<gtk::Button>().ok())
         {
             button.emit_clicked();
+        }
+    }
+    if let Some(enabled) = q["import_passwords"].as_bool() {
+        if let Some(button) = find(root.upcast_ref(), "machines-import-passwords")
+            .and_then(|w| w.downcast::<gtk::CheckButton>().ok())
+        {
+            button.set_active(enabled);
         }
     }
     if let Some(index) = q["discovered_index"].as_u64() {

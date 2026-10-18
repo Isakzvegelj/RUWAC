@@ -1164,6 +1164,7 @@ pub struct RdpView {
     preferences: RefCell<Option<crate::profiles::PreferenceSink>>,
     trust_sink: RefCell<Option<crate::profiles::TrustSink>>,
     certificate: RefCell<Option<Review>>,
+    certificate_prompt_pending: Cell<bool>,
     review_certificate: gtk::Button,
     transient_pin: RefCell<Option<String>>,
     preferences_due: Cell<Option<std::time::Instant>>,
@@ -1371,6 +1372,7 @@ impl RdpView {
             preferences: RefCell::new(None),
             trust_sink: RefCell::new(None),
             certificate: RefCell::new(None),
+            certificate_prompt_pending: Cell::new(false),
             review_certificate: review_certificate.clone(),
             transient_pin: RefCell::new(None),
             preferences_due: Cell::new(None),
@@ -1963,12 +1965,13 @@ impl RdpView {
             let show = configured && phase != "connected" && !v.auto_gdm.borrow().armed;
             v.disconnect_card.set_visible(show);
             if show {
-                v.disconnect_message.set_text(match phase.as_str() {
-                    "connecting" => "Connecting…",
-                    "reconnecting" => "Connection interrupted · reconnecting…",
-                    "error" => "Connection failed · check the connection settings and retry",
-                    _ => "Disconnected",
-                });
+                let message = match phase.as_str() {
+                    "connecting" => "Connecting…".to_owned(),
+                    "reconnecting" => "Connection interrupted · reconnecting…".to_owned(),
+                    "error" => v.status.text().to_string(),
+                    _ => "Disconnected".to_owned(),
+                };
+                v.disconnect_message.set_text(&message);
                 v.disconnect_message
                     .set_tooltip_text(Some(&v.status.text()));
             }
@@ -2085,6 +2088,14 @@ impl RdpView {
         let Some(connection_id) = self.connection.borrow().as_ref().map(|c| c.id.clone()) else {
             return;
         };
+        self.certificate_prompt_pending.set(false);
+        let dialog_name = format!("rdp-certificate-dialog-{}", self.id);
+        if gtk::Window::list_toplevels()
+            .iter()
+            .any(|w| w.widget_name() == dialog_name)
+        {
+            return;
+        }
         let snapshot: Vec<String> = self.entries.iter().map(|e| e.text().into()).collect();
         let parent = self
             .root
@@ -2347,6 +2358,7 @@ impl RdpView {
         };
         self.close();
         self.certificate.borrow_mut().take();
+        self.certificate_prompt_pending.set(false);
         self.review_certificate.set_visible(false);
         if self.mode.get() == Scale::Dynamic {
             // New tabs and fullscreen transitions have no trustworthy canvas
@@ -3280,11 +3292,15 @@ impl RdpView {
                     .borrow()
                     .as_ref()
                     .is_some_and(|c| c.state.lock().unwrap().authentication_error.is_some());
-            self.auto_gdm_stop(if service_auth_failed {
-                "RDP service authentication failed; verify RDP Service Login, separate from GNOME User Login"
+            let reason = if service_auth_failed {
+                "RDP service authentication failed; verify RDP Service Login, separate from GNOME User Login".to_owned()
+            } else if self.certificate.borrow().is_some() {
+                "Review this server's certificate before automatic sign-in; use Review certificate"
+                    .to_owned()
             } else {
-                "Automatic sign-in stopped: connection failed"
-            });
+                self.status.text().to_string()
+            };
+            self.auto_gdm_stop(&reason);
             return;
         }
         if self.auto_gdm.borrow().began.elapsed() > Duration::from_secs(90) {
@@ -3748,6 +3764,7 @@ impl RdpView {
             let mut s = c.state.lock().unwrap();
             if let Some(review) = s.certificate.take() {
                 *self.certificate.borrow_mut() = Some(review);
+                self.certificate_prompt_pending.set(true);
                 self.review_certificate.set_visible(true);
             }
             if let Some(status) = s.status.take() {
@@ -3755,6 +3772,23 @@ impl RdpView {
             }
             s.frame.take()
         };
+        // Ask on the selected foreground connection, even when its toolbar is
+        // hidden. Background failures wait until their tab is selected.
+        if self.certificate_prompt_pending.get()
+            && self
+                .selected
+                .borrow()
+                .as_ref()
+                .is_none_or(|selected| selected())
+            && self.root.is_mapped()
+            && self
+                .root
+                .root()
+                .and_downcast::<gtk::Window>()
+                .is_some_and(|w| w.is_active())
+        {
+            self.review_peer_certificate();
+        }
         if let Some(f) = frame {
             // GNOME hands the authenticated user to a fresh desktop with its
             // own initial resolution. Reapply the viewport request there;

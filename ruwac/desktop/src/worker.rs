@@ -23,6 +23,7 @@ pub struct Rpc {
     limits: ruwac_protocol::TerminalLimits,
     requested_size: Option<(u16, u16)>,
     pane_pids: std::collections::HashMap<String, Value>,
+    legacy_wrap_history: bool,
 }
 impl Rpc {
     pub fn connect(path: &Path) -> io::Result<Self> {
@@ -68,6 +69,7 @@ impl Rpc {
             limits: ruwac_protocol::TerminalLimits::LEGACY,
             requested_size: None,
             pane_pids: Default::default(),
+            legacy_wrap_history: true,
         })
     }
     /// Linux peer identity binds private launch records to this running engine,
@@ -240,8 +242,100 @@ impl Rpc {
                 );
             }
         }
+        if method == "client.render" && result["unchanged"] != true && self.legacy_wrap_history {
+            let selected = result["active_pane"].as_str().map(str::to_owned);
+            let legacy = selected.as_ref().and_then(|id| {
+                result["panes"]
+                    .as_array()?
+                    .iter()
+                    .find(|p| {
+                        p["id"].as_str() == Some(id.as_str()) && p["grid"].get("wrapped").is_none()
+                    })
+                    .map(|p| p["grid"].clone())
+            });
+            if let Some((pane, grid)) = selected.zip(legacy) {
+                let rows = grid["rows"].as_u64().unwrap_or(0);
+                if (1..=500).contains(&rows) {
+                    // Ask beyond the bounded history for metadata only, then
+                    // read the visible tail. No live daemon restart is needed.
+                    if let Ok(head) = self.request(
+                        "pane.history",
+                        json!({"pane":pane,"offset":1000000,"lines":1}),
+                    ) {
+                        if !head["rows"].is_array() && !head["wrapped"].is_array() {
+                            self.legacy_wrap_history = false;
+                        } else if let (Some(total), Some(epoch)) =
+                            (head["total_lines"].as_u64(), head["epoch"].as_u64())
+                        {
+                            if total >= rows {
+                                if let Ok(page)=self.request("pane.history",json!({"pane":pane,"offset":total-rows,"lines":rows,"epoch":epoch})) {
+                                    if page["epoch"]==epoch && page["total_lines"]==total
+                                        && page["offset"]==total-rows && page["next_offset"]==total {
+                                        if let Some(wrapped)=matching_history_wraps(&grid,&page) {
+                                            if let Some(target)=result["panes"].as_array_mut().and_then(|panes|panes.iter_mut().find(|p|p["id"]==pane)) {
+                                                target["grid"]["wrapped"]=wrapped;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
         Ok(result)
     }
+}
+fn matching_history_wraps(grid: &Value, page: &Value) -> Option<Value> {
+    let cells = grid["cells"].as_array()?;
+    if grid["alternate_screen"] != page["alternate_screen"] {
+        return None;
+    }
+    // Early engines provide logical text plus wrap flags rather than row
+    // objects. Reconstruct their exact encoding from the displayed cells;
+    // accept flags only when the entire page matches, including whitespace.
+    if page.get("rows").is_none() {
+        let flags = page["wrapped"].as_array()?;
+        if flags.len() != cells.len() {
+            return None;
+        }
+        let mut text = String::new();
+        for (cells, flag) in cells.iter().zip(flags) {
+            let wrap = flag.as_bool()?;
+            let mut row = String::new();
+            for cell in cells.as_array()? {
+                if cell[1] != true {
+                    row.push_str(cell[0].as_str()?);
+                }
+            }
+            text.push_str(if wrap { &row } else { row.trim_end() });
+            if !wrap {
+                text.push('\n');
+            }
+        }
+        return (page["text"].as_str()? == text).then(|| json!(flags));
+    }
+    let rows = page["rows"].as_array()?;
+    if cells.len() != rows.len() {
+        return None;
+    }
+    let mut wrapped = Vec::new();
+    for (cells, row) in cells.iter().zip(rows) {
+        let mut text = String::new();
+        for cell in cells.as_array()? {
+            if cell[1] != true {
+                text.push_str(cell[0].as_str()?);
+            }
+        }
+        if text.replace('\t', " ").trim_end_matches(' ')
+            != row["text"].as_str()?.trim_end_matches(' ')
+        {
+            return None;
+        }
+        wrapped.push(row["wrapped"].as_bool()?);
+    }
+    Some(json!(wrapped))
 }
 fn paste(
     rpc: &mut Rpc,
@@ -798,6 +892,7 @@ mod launch_focus_tests {
                 limits: ruwac_protocol::TerminalLimits::CURRENT,
                 requested_size: None,
                 pane_pids: Default::default(),
+                legacy_wrap_history: true,
             };
             let result = rpc.call("client.focusLaunch", target);
             assert_eq!(result.is_ok(), fault == "none");
@@ -809,6 +904,51 @@ mod launch_focus_tests {
             }
             drop(rpc);
             peer.join().unwrap();
+        }
+    }
+}
+
+#[cfg(test)]
+mod legacy_wrap_tests {
+    use super::*;
+    #[test]
+    fn early_engine_logical_text_must_match_cells_and_wrap_flags_exactly() {
+        let grid = json!({"alternate_screen":false,"cells":[[["a",false],[" ",false]],[["界",false],["",true]],[["\t",false],[" ",false]]]});
+        let page = json!({"alternate_screen":false,"wrapped":[true,false,false],"text":"a 界\n\n"});
+        assert_eq!(
+            matching_history_wraps(&grid, &page),
+            Some(json!([true, false, false]))
+        );
+        for (key, value) in [
+            ("text", json!("a界\n\n")),
+            ("wrapped", json!([true, false])),
+            ("wrapped", json!([true, false, 0])),
+            ("alternate_screen", json!(true)),
+        ] {
+            let mut changed = page.clone();
+            changed[key] = value;
+            assert!(matching_history_wraps(&grid, &changed).is_none());
+        }
+    }
+    #[test]
+    fn verified_history_rows_supply_wraps_without_changing_the_screen() {
+        let grid = json!({"alternate_screen":false,"cells":[[["a",false],[" ",false]],[["界",false],["",true]]]});
+        let page = json!({"alternate_screen":false,"rows":[{"text":"a ","wrapped":true},{"text":"界","wrapped":false}]});
+        assert_eq!(
+            matching_history_wraps(&grid, &page),
+            Some(json!([true, false]))
+        );
+    }
+    #[test]
+    fn stale_incomplete_and_other_buffer_history_never_supply_wraps() {
+        let grid = json!({"alternate_screen":false,"cells":[[["a",false]]]});
+        for page in [
+            json!({"alternate_screen":false,"rows":[]}),
+            json!({"alternate_screen":true,"rows":[{"text":"a","wrapped":true}]}),
+            json!({"alternate_screen":false,"rows":[{"text":"b","wrapped":true}]}),
+            json!({"alternate_screen":false,"rows":[{"text":"a","wrapped":0}]}),
+        ] {
+            assert!(matching_history_wraps(&grid, &page).is_none());
         }
     }
 }

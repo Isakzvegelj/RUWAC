@@ -80,6 +80,30 @@ pub fn exchange(
     allowed: &AtomicBool,
     timeout: Duration,
 ) -> Result<Vec<u8>, String> {
+    exchange_inner(command, input, allowed, timeout, None)
+}
+
+pub fn exchange_confirmed(
+    command: &mut Command,
+    input: &[u8],
+    allowed: &AtomicBool,
+    timeout: Duration,
+    ready: &[u8],
+    commit: &[u8],
+) -> Result<Vec<u8>, String> {
+    if ready.is_empty() || commit.is_empty() {
+        return Err("Invalid image publication handshake".into());
+    }
+    exchange_inner(command, input, allowed, timeout, Some((ready, commit)))
+}
+
+fn exchange_inner(
+    command: &mut Command,
+    input: &[u8],
+    allowed: &AtomicBool,
+    timeout: Duration,
+    confirmation: Option<(&[u8], &[u8])>,
+) -> Result<Vec<u8>, String> {
     let end = Instant::now() + timeout;
     if !allowed.load(Ordering::Acquire) {
         return Err("Image upload cancelled".into());
@@ -117,6 +141,7 @@ pub fn exchange(
     nonblocking(stdout.as_ref().unwrap()).map_err(|_| "SSH output setup failed")?;
     nonblocking(stderr.as_ref().unwrap()).map_err(|_| "SSH error setup failed")?;
     let (mut offset, mut out, mut err) = (0, Vec::new(), Vec::new());
+    let (mut ready_received, mut commit_offset) = (false, 0);
     loop {
         if !allowed.load(Ordering::Acquire) {
             return Err("Image upload cancelled".into());
@@ -124,10 +149,18 @@ pub fn exchange(
         if Instant::now() >= end {
             return Err("Image upload timed out".into());
         }
-        if let Some(stream) = stdin.as_mut() {
-            match stream.write(&input[offset..(offset + 65536).min(input.len())]) {
-                Ok(0) if offset < input.len() => return Err("SSH closed image input".into()),
-                Ok(n) => offset += n,
+        let sending_image = offset < input.len();
+        let sending_commit =
+            confirmation.is_some_and(|(_, commit)| ready_received && commit_offset < commit.len());
+        if let Some(stream) = stdin.as_mut().filter(|_| sending_image || sending_commit) {
+            let (payload, written) = if sending_image {
+                (input, &mut offset)
+            } else {
+                (confirmation.unwrap().1, &mut commit_offset)
+            };
+            match stream.write(&payload[*written..(*written + 65536).min(payload.len())]) {
+                Ok(0) => return Err("SSH closed image input".into()),
+                Ok(n) => *written += n,
                 Err(e)
                     if matches!(
                         e.kind(),
@@ -138,12 +171,27 @@ pub fn exchange(
                 }
                 Err(_) => return Err("SSH image input failed".into()),
             }
-            if offset == input.len() {
-                stdin = None;
-            }
+        }
+        if offset == input.len()
+            && confirmation
+                .is_none_or(|(_, commit)| ready_received && commit_offset == commit.len())
+        {
+            stdin = None;
         }
         drain(&mut stdout, &mut out, 4096)?;
         drain(&mut stderr, &mut err, 4096)?;
+        if let Some((ready, _)) = confirmation.filter(|_| !ready_received && offset == input.len())
+        {
+            if !ready.starts_with(&out) {
+                return Err("Invalid SSH image publication readiness".into());
+            }
+            if out == ready {
+                // Commit is written on the next loop, after checking revocation
+                // and the deadline again. EOF/cancel before it cannot publish.
+                ready_received = true;
+                out.clear();
+            }
+        }
         // Observe without reaping: its PID/PGID cannot be reused before group
         // cleanup, even when the main child exits before its descendants.
         let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
@@ -162,7 +210,11 @@ pub fn exchange(
             let status = child
                 .finish()
                 .map_err(|_| "SSH upload status unavailable")?;
-            if !status.success() || offset != input.len() {
+            if !status.success()
+                || offset != input.len()
+                || confirmation
+                    .is_some_and(|(_, commit)| !ready_received || commit_offset != commit.len())
+            {
                 return Err(
                     "SSH image upload failed; verify endpoint authentication and permissions"
                         .into(),
@@ -173,7 +225,11 @@ pub fn exchange(
         // poll wakes for any pipe, not only the upload pipe; bounded reads above
         // prevent a flooding peer from starving cancellation and deadline checks.
         let mut fds = Vec::new();
-        if let Some(p) = &stdin {
+        if let Some(p) = stdin.as_ref().filter(|_| {
+            offset < input.len()
+                || confirmation
+                    .is_some_and(|(_, commit)| ready_received && commit_offset < commit.len())
+        }) {
             fds.push(libc::pollfd {
                 fd: p.as_raw_fd(),
                 events: libc::POLLOUT,
@@ -207,6 +263,44 @@ mod tests {
         let mut c = Command::new("python3");
         c.args(["-c", code]);
         c
+    }
+    #[test]
+    fn publication_commit_waits_for_verified_peer_readiness() {
+        let out = exchange_confirmed(
+            &mut python("import os,sys,select; d=sys.stdin.buffer.read(131072); assert not select.select([sys.stdin],[],[],0.05)[0]; os.write(1,b'READY\\n'); assert sys.stdin.buffer.readline()==b'COMMIT\\n'; os.write(1,b'/generated/path\\n')"),
+            &vec![0; 131072], &AtomicBool::new(true), Duration::from_secs(5), b"READY\n", b"COMMIT\n",
+        ).unwrap();
+        assert_eq!(out, b"/generated/path\n");
+    }
+    #[test]
+    fn cancellation_revokes_commit_while_peer_verifies_payload() {
+        let allowed = AtomicBool::new(true);
+        let started = Instant::now();
+        std::thread::scope(|scope| {
+            scope.spawn(|| {
+                std::thread::sleep(Duration::from_millis(100));
+                allowed.store(false, Ordering::Release);
+            });
+            let error = exchange_confirmed(
+                &mut python("import sys,time; sys.stdin.buffer.read(4096); time.sleep(60)"),
+                &[0; 4096],
+                &allowed,
+                Duration::from_secs(5),
+                b"READY\n",
+                b"COMMIT\n",
+            )
+            .unwrap_err();
+            assert!(error.contains("cancelled"));
+        });
+        assert!(started.elapsed() < Duration::from_secs(2));
+    }
+    #[test]
+    fn unexpected_readiness_never_authorizes_publication() {
+        let error = exchange_confirmed(
+            &mut python("import os,sys; sys.stdin.buffer.read(3); os.write(1,b'WRONG\\n'); sys.stdin.buffer.read()"),
+            b"png", &AtomicBool::new(true), Duration::from_secs(5), b"READY\n", b"COMMIT\n",
+        ).unwrap_err();
+        assert!(error.contains("readiness"));
     }
     #[test]
     fn stalled_input_is_inside_deadline() {

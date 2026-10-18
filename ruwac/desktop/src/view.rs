@@ -13,6 +13,108 @@ use std::{
 thread_local! {
     static HISTORY_STYLE: RefCell<Option<gtk::CssProvider>> = const { RefCell::new(None) };
 }
+fn selection_text(grid: &Value, mut a: (usize, usize), mut z: (usize, usize)) -> String {
+    if a > z {
+        std::mem::swap(&mut a, &mut z);
+    }
+    let Some(rows) = grid["cells"].as_array() else {
+        return String::new();
+    };
+    let mut result = String::new();
+    for r in a.0..=z.0.min(rows.len().saturating_sub(1)) {
+        let Some(cells) = rows.get(r).and_then(Value::as_array) else {
+            break;
+        };
+        let start = if r == a.0 { a.1 } else { 0 };
+        let end = if r == z.0 {
+            z.1.saturating_add(1)
+        } else {
+            cells.len()
+        };
+        let mut line = String::new();
+        for cell in cells.iter().take(end).skip(start) {
+            if cell[1] != true {
+                line.push_str(cell[0].as_str().unwrap_or(""));
+            }
+        }
+        let wrapped = grid["wrapped"][r].as_bool().unwrap_or(false);
+        if r != z.0 && !wrapped {
+            // Grid padding after a shell continuation must not become text.
+            result.push_str(line.trim_end_matches(' '));
+            result.push('\n');
+        } else {
+            result.push_str(&line);
+        }
+    }
+    result
+}
+fn selection_changed(old: &Value, new: &Value, a: (usize, usize), z: (usize, usize)) -> bool {
+    old["rows"] != new["rows"]
+        || old["cols"] != new["cols"]
+        || old["alternate_screen"] != new["alternate_screen"]
+        || selection_text(old, a, z) != selection_text(new, a, z)
+}
+#[cfg(test)]
+mod selection_tests {
+    use super::*;
+    fn grid(lines: &[&str], wrapped: &[bool]) -> Value {
+        json!({"cells":lines.iter().map(|s|s.chars().map(|c|json!([c.to_string(),false])).collect::<Vec<_>>()).collect::<Vec<_>>(),"wrapped":wrapped})
+    }
+    #[test]
+    fn selected_wrapped_install_command_keeps_one_logical_line_in_both_directions() {
+        let g = grid(
+            &["curl -fsSL https:", "//example.test/i", "nstall | sh"],
+            &[true, true, false],
+        );
+        assert_eq!(
+            selection_text(&g, (0, 0), (2, 10)),
+            "curl -fsSL https://example.test/install | sh"
+        );
+        assert_eq!(
+            selection_text(&g, (2, 10), (0, 0)),
+            "curl -fsSL https://example.test/install | sh"
+        );
+    }
+    #[test]
+    fn selected_explicit_continuation_drops_grid_padding_but_keeps_real_newline() {
+        let g = grid(
+            &["sudo dnf install \\    ", "  gh python3"],
+            &[false, false],
+        );
+        assert_eq!(
+            selection_text(&g, (0, 0), (1, 11)),
+            "sudo dnf install \\\n  gh python3"
+        );
+    }
+    #[test]
+    fn legacy_grids_keep_hard_lines_and_partial_selection_boundaries() {
+        let mut g = grid(&["echo first   ", "echo second"], &[false, false]);
+        g.as_object_mut().unwrap().remove("wrapped");
+        assert_eq!(selection_text(&g, (0, 5), (1, 3)), "first\necho");
+        assert_eq!(selection_text(&g, (10, 0), (11, 0)), "");
+    }
+    #[test]
+    fn selection_is_invalidated_when_its_text_or_screen_changes() {
+        let old = grid(&["selected text", "prompt"], &[false, false]);
+        let mut changed = old.clone();
+        changed["cells"][0][0][0] = json!("X");
+        assert!(selection_changed(&old, &changed, (0, 0), (0, 7)));
+        let mut changed = old.clone();
+        changed["alternate_screen"] = json!(true);
+        assert!(selection_changed(&old, &changed, (0, 0), (0, 7)));
+        let mut changed = old.clone();
+        changed["cols"] = json!(120);
+        assert!(selection_changed(&old, &changed, (0, 0), (0, 7)));
+    }
+    #[test]
+    fn cursor_and_unrelated_output_do_not_displace_selected_text() {
+        let old = grid(&["selected text", "prompt"], &[false, false]);
+        let mut changed = old.clone();
+        changed["cells"][1][0][0] = json!("X");
+        changed["cursor"] = json!({"row":1,"col":2});
+        assert!(!selection_changed(&old, &changed, (0, 0), (0, 7)));
+    }
+}
 /// One display-wide stylesheet for every history view, replaced on change.
 fn history_style(css: &str) {
     HISTORY_STYLE.with(|style| {
@@ -63,6 +165,8 @@ pub struct View {
     window_index: Cell<Option<usize>>,
     pub warning: RefCell<Option<String>>,
     selection: RefCell<Option<((usize, usize), (usize, usize))>>,
+    primary_provider: RefCell<Option<gdk::ContentProvider>>,
+    primary_handler: RefCell<Option<glib::SignalHandlerId>>,
     drag_start: Cell<(f64, f64)>,
     pressed: Cell<Option<u32>>,
     mouse_position: Cell<(f64, f64)>,
@@ -207,6 +311,8 @@ impl View {
             window_index: Cell::new(None),
             warning: RefCell::new(None),
             selection: RefCell::new(None),
+            primary_provider: RefCell::new(None),
+            primary_handler: RefCell::new(None),
             drag_start: Cell::new((0.0, 0.0)),
             pressed: Cell::new(None),
             mouse_position: Cell::new((0.0, 0.0)),
@@ -229,6 +335,52 @@ impl View {
                 .unwrap_or_default(),
             stack,
         });
+        let weak = Rc::downgrade(&v);
+        let primary = v.area.display().primary_clipboard();
+        let handler = primary.connect_changed(move |clipboard| {
+            let Some(v) = weak.upgrade() else {
+                return;
+            };
+            let lost = v
+                .primary_provider
+                .borrow()
+                .as_ref()
+                .is_some_and(|ours| clipboard.content().as_ref() != Some(ours));
+            if lost {
+                v.primary_provider.borrow_mut().take();
+                v.selection.borrow_mut().take();
+                let buffer = v.copy.buffer();
+                buffer.place_cursor(&buffer.end_iter());
+                v.area.queue_draw();
+            }
+        });
+        *v.primary_handler.borrow_mut() = Some(handler);
+        // Keyboard copy-mode marks stay internal. A deliberate mouse selection
+        // in the history widget must support ordinary desktop middle-click paste.
+        let release = gtk::EventControllerLegacy::new();
+        release.set_propagation_phase(gtk::PropagationPhase::Capture);
+        let weak = Rc::downgrade(&v);
+        release.connect_event(move |_, event| {
+            if event.event_type() == gdk::EventType::ButtonRelease
+                && event
+                    .downcast_ref::<gdk::ButtonEvent>()
+                    .is_some_and(|e| e.button() == 1)
+            {
+                let weak = weak.clone();
+                glib::idle_add_local_once(move || {
+                    if let Some(v) = weak.upgrade() {
+                        if v.copy.is_mapped()
+                            && v.stack.visible_child_name().as_deref() == Some("copy")
+                            && v.copy.buffer().has_selection()
+                        {
+                            v.copy_clipboard(true);
+                        }
+                    }
+                });
+            }
+            glib::Propagation::Proceed
+        });
+        v.copy.add_controller(release);
         v.apply_appearance(&crate::sidebar_shell::Shell::prefs());
         let weak = Rc::downgrade(&v);
         reconnect.connect_clicked(move |_| {
@@ -1228,6 +1380,20 @@ impl View {
                 }
             }
             let changed = self.frame.borrow().as_ref() != Some(&frame);
+            let selection = *self.selection.borrow();
+            if let Some((a, z)) = selection {
+                let target = self.target.borrow();
+                let incoming = panes
+                    .iter()
+                    .find(|p| p["id"].as_str() == Some(target.as_str()));
+                let stale = self
+                    .grid()
+                    .zip(incoming)
+                    .is_none_or(|(old, new)| selection_changed(&old, &new["grid"], a, z));
+                if stale {
+                    self.selection.borrow_mut().take();
+                }
+            }
             *self.frame.borrow_mut() = Some(frame);
             if !self.navigation.get() && !self.target.borrow().is_empty() {
                 let pending = std::mem::take(&mut *self.early.borrow_mut());
@@ -1491,35 +1657,13 @@ impl View {
                 .map(|(a, z)| b.text(&a, &z, true).to_string())
                 .unwrap_or_default();
         }
-        let Some((mut a, mut z)) = *self.selection.borrow() else {
+        let Some((a, z)) = *self.selection.borrow() else {
             return String::new();
         };
-        if a > z {
-            std::mem::swap(&mut a, &mut z);
-        }
         let Some(g) = self.grid() else {
             return String::new();
         };
-        let Some(rows) = g["cells"].as_array() else {
-            return String::new();
-        };
-        let mut result = String::new();
-        for r in a.0..=z.0 {
-            let Some(cells) = rows.get(r).and_then(Value::as_array) else {
-                break;
-            };
-            let start = if r == a.0 { a.1 } else { 0 };
-            let end = if r == z.0 { z.1 + 1 } else { cells.len() };
-            for cell in cells.iter().take(end).skip(start) {
-                if cell[1] != true {
-                    result.push_str(cell[0].as_str().unwrap_or(""));
-                }
-            }
-            if r != z.0 {
-                result.push('\n');
-            }
-        }
-        result
+        selection_text(&g, a, z)
     }
     pub fn copy_clipboard(&self, primary: bool) {
         if !self.broker.borrow().desktop_enabled() {
@@ -1538,7 +1682,18 @@ impl View {
         self.broker.borrow_mut().local_copy();
         let display = self.area.display();
         if primary {
-            display.primary_clipboard().set_text(&text);
+            let provider = gdk::ContentProvider::for_value(&text.to_value());
+            *self.primary_provider.borrow_mut() = Some(provider.clone());
+            if display
+                .primary_clipboard()
+                .set_content(Some(&provider))
+                .is_err()
+            {
+                self.primary_provider.borrow_mut().take();
+                self.status
+                    .set_text("The desktop could not publish this PRIMARY selection");
+                return;
+            }
         } else {
             display.clipboard().set_text(&text);
         }
@@ -2145,6 +2300,9 @@ mod palette_tests {
 
 impl Drop for View {
     fn drop(&mut self) {
+        if let Some(handler) = self.primary_handler.borrow_mut().take() {
+            self.area.display().primary_clipboard().disconnect(handler);
+        }
         self.cancel_image_paste();
     }
 }

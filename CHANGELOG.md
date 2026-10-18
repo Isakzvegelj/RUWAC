@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## v0.4.24 — 2026-10-18 — Stable source release
+
+- Copy available Remmina service passwords from Secret Service during reviewed import, including missing passwords for matching existing profiles, while retaining saved RUWAC credentials. Prompt for certificate review on the selected foreground connection and show connection failures clearly during Fedora automatic sign-in.
+- Publish mouse selections from history to PRIMARY, clear displaced highlights when terminal contents or selection ownership change, preserve logical command lines when selecting wrapped terminal text, remove hard-line grid padding that breaks shell continuations, and diagnose the missing GitHub verifier before downloading an automatic installation.
+
+- Bind implicit SSH image uploads to the original authenticated connection and pane process across configuration edits and frontend restarts; require an authorized publication commit so a cancelled pending image cannot publish later. Legacy terminals remain open and require explicit reconnect for protected uploads.
+
+- Install source builds from an explicit external Cargo target directory while keeping verified bundle paths fixed; correct public build/install, Map keys and Files instructions and distinguish current behavior from historical notes.
+
 ## v0.4.23 — 2026-10-18 — Stable source release
 
 - Drain final terminal output before reporting process exit, keep ended history immutable against inherited background writers, and preserve output/exit status when programs close and reopen their terminal streams.

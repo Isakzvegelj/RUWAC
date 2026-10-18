@@ -15,6 +15,14 @@ SPEC.loader.exec_module(updates)
 
 
 class Provenance(unittest.TestCase):
+    def test_missing_verifier_fails_before_download_or_install_state(self):
+        with patch.object(updates.shutil, 'which', return_value=None), \
+                patch.object(updates, 'download_bundle') as download:
+            with self.assertRaisesRegex(ValueError, 'sudo dnf install gh'):
+                updates.install_testing_bundle(self.release, self.asset, self.root / 'prefix', self.root / 'cache', False)
+            download.assert_not_called()
+            self.assertFalse((self.root / 'prefix').exists())
+            self.assertFalse((self.root / 'cache').exists())
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)

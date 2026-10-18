@@ -238,9 +238,7 @@ SHA256 = re.compile(r'[0-9a-f]{64}\Z')
 
 def verify_release_provenance(release, asset, archive, root, component=None):
     """Verify the downloaded bytes against their hosted release-build identity."""
-    verifier = shutil.which('gh')
-    if verifier is None:
-        raise ValueError('Testing bundle updates require GitHub CLI attestation verification; install gh with DNF')
+    verifier = bundle_verifier()
     version(release['latest'])
     if release['tag'] != 'v' + release['latest'] or not SHA.fullmatch(release['commit']):
         raise ValueError('Invalid testing bundle source identity')
@@ -291,6 +289,15 @@ def verify_bundle_provenance(release, asset, archive, root):
     return verify_release_provenance(release, asset, archive, root)
 
 
+def bundle_verifier():
+    verifier = shutil.which('gh')
+    if verifier is None:
+        raise ValueError('Verified RUWAC downloads require GitHub CLI (gh). '
+                         'On this Fedora host run: sudo dnf install gh; then retry. '
+                         'A prebuilt installation does not require Cargo. No installation was changed.')
+    return verifier
+
+
 def rpm_operation(operation):
     helper = Path('/usr/bin/ruwac-rpm-update')
     if not helper.exists() or helper.resolve() != Path('/usr/share/ruwac/rpm-update.py'):
@@ -319,6 +326,8 @@ def rpm_operation(operation):
 
 
 def install_testing_bundle(release, asset, prefix, cache, automatic, desktop=True, prebuilt=False):
+    # Diagnose prerequisites before downloading an archive or taking an install lock.
+    bundle_verifier()
     lock = locked_file(cache / '.update.lock')
     root = Path(tempfile.mkdtemp(prefix='testing-', dir=cache))
     try:

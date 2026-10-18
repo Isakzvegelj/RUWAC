@@ -23,7 +23,7 @@ python3 scripts/dependency-check.py --output "$EVIDENCE_DIR/dependencies.json"
 python3 scripts/public-files.py --check
 ```
 
-The quality workflow also validates GitHub syntax/contexts with checksum-pinned actionlint; plain YAML parsing does not prove hosted validity. The desktop requires GTK4, libadwaita, OpenSSL and libssh2 development libraries. Fedora CI installs its declared tool packages and checks both workspaces. Existing lint warnings are reported; compiler and Clippy errors fail the job. Format checks are enforced. A separate pinned cargo-audit job checks both lockfiles without advisory exceptions; the known desktop RSA finding currently makes that check fail. Source publication is separate from stable security qualification. Full native, RDP, SSH and package/hardware acceptance remains part of the qualified project workflow.
+The quality workflow also validates GitHub syntax/contexts with checksum-pinned actionlint; plain YAML parsing does not prove hosted validity. The desktop requires GTK4, libadwaita, OpenSSL, libssh2 and SQLite development libraries. Fedora CI installs its declared tool packages and checks both workspaces. Existing lint warnings are reported; compiler and Clippy errors fail the job. Format checks are enforced. A separate pinned cargo-audit job checks both lockfiles without advisory exceptions; the known desktop RSA finding currently makes that check fail. Source publication is separate from stable security qualification. Full native, RDP, SSH and package/hardware acceptance remains part of the qualified project workflow.
 
 ## Review boundaries
 

@@ -2,12 +2,13 @@
 """Reversible per-user installation of built RUWAC artifacts; never allocates a version."""
 import argparse, fcntl, hashlib, json, os, platform, re, shutil, stat, subprocess, tempfile, tomllib
 from pathlib import Path
-p=argparse.ArgumentParser();p.add_argument('--build-root',type=Path,required=True);p.add_argument('--desktop',action='store_true');p.add_argument('--prefix',type=Path);a=p.parse_args()
+p=argparse.ArgumentParser();p.add_argument('--build-root',type=Path,required=True);p.add_argument('--desktop',action='store_true');p.add_argument('--prefix',type=Path);p.add_argument('--target-dir',type=Path,help='Cargo target directory for source builds (default: BUILD_ROOT/target)');a=p.parse_args()
 root=a.build_root.resolve();prefix=(a.prefix or Path.home()/'.local').absolute()
 version=tomllib.loads((root/'ruwac/Cargo.toml').read_text())['workspace']['package']['version']
 if not re.fullmatch(r'(0|[1-9][0-9]*)\.[0-9]\.([0-9]|[1-9][0-9])',version):raise SystemExit('Invalid controller-assigned numeric version')
 bundle=None
 if (root/'bundle.json').exists() or (root/'bundle.json').is_symlink():
+ if a.target_dir is not None:raise SystemExit('Bundle installations cannot override attested artifact paths')
  path=root/'bundle.json'
  if path.is_symlink() or not path.is_file() or path.stat().st_size>1024*1024:raise SystemExit('Unsafe bundle receipt')
  bundle=json.loads(path.read_text())
@@ -26,7 +27,8 @@ if (root/'bundle.json').exists() or (root/'bundle.json').is_symlink():
  print('Installing a Fedora testing candidate. Checksums verify archive integrity, not a signature. Known desktop advisory RUSTSEC-2023-0071 remains unresolved.',file=__import__('sys').stderr)
 if any(c=='='or ord(c)<32 for c in str(prefix)):raise SystemExit('Unsupported desktop executable path')
 files=['ruwac']+(['ruwac-desktop'] if a.desktop else [])
-artifacts={name:root/'target/release'/name for name in files}
+target=(a.target_dir.resolve() if a.target_dir is not None else root/'target')
+artifacts={name:target/'release'/name for name in files}
 for name,path in artifacts.items():
  if not path.is_file()or path.is_symlink():raise SystemExit(f'Expected built artifact: {name}')
  output=subprocess.check_output([str(path),'--version'],text=True).strip()

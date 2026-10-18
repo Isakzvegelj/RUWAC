@@ -165,6 +165,8 @@ pub struct Entry {
     pub endpoint: String,
     pub binding: String,
     pub recipe: Recipe,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transport: Option<String>,
 }
 fn digest(s: &str) -> bool {
     s.len() == 64
@@ -191,6 +193,7 @@ impl Entry {
             endpoint: profile.id.clone(),
             binding: binding(profile),
             recipe,
+            transport: None,
         };
         entry.validate()?;
         Ok(entry)
@@ -203,6 +206,10 @@ impl Entry {
             || !ruwac_protocol::valid_id(&self.pane, "pane")
             || !ruwac_protocol::valid_id(&self.window, "window")
             || !ruwac_protocol::valid_id(&self.endpoint, "endpoint")
+            || self
+                .transport
+                .as_ref()
+                .is_some_and(|t| !crate::ssh_transport::valid(t))
             || self.pid == 0
         {
             return Err(io::Error::other("Invalid launch identity"));
@@ -412,6 +419,23 @@ mod tests {
         fs::remove_dir_all(root).unwrap();
     }
     #[test]
+    fn transport_identity_roundtrips_and_old_entries_stay_unbound() {
+        let (root, _, mut e) = fixture();
+        let old = serde_json::to_vec(&e).unwrap();
+        assert_eq!(
+            serde_json::from_slice::<Entry>(&old).unwrap().transport,
+            None
+        );
+        e.transport = Some(ruwac_protocol::id("transport"));
+        let c = Catalog::new(&root, &e.daemon).unwrap();
+        c.write(&e).unwrap();
+        assert_eq!(c.list().unwrap(), vec![e.clone()]);
+        let mut invalid = e;
+        invalid.transport = Some("../../other-socket".into());
+        assert!(invalid.validate().is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
     fn profile_binding_allows_cosmetic_edits_and_refuses_route_identity_changes() {
         let (root, mut p, e) = fixture();
         p.name = "Other".into();
@@ -484,19 +508,29 @@ mod tests {
                         _ => "kimi",
                     })
                 );
-                assert_eq!(
-                    saved.argv(&p).unwrap(),
-                    crate::profiles::session_argv(
+                let actual = saved.argv(&p).unwrap();
+                let expected = crate::profiles::session_argv(
+                    &p,
+                    crate::agent_launch::argv(
                         &p,
-                        crate::agent_launch::argv(
-                            &p,
-                            kind,
-                            "generated ruwac",
-                            "/generated/private.sock"
-                        )
-                        .unwrap()
+                        kind,
+                        "generated ruwac",
+                        "/generated/private.sock",
                     )
+                    .unwrap(),
                 );
+                // Recreating a recipe preserves its command, but each launch
+                // needs an independent transport instead of attaching to the
+                // previous SSH process through a reused control socket.
+                let route = crate::ssh_transport::identity(&actual).unwrap();
+                let other = crate::ssh_transport::identity(&expected).unwrap();
+                assert_ne!(route, other);
+                let without_identity = |argv: Vec<String>| {
+                    argv.into_iter()
+                        .filter(|a| !a.starts_with("ControlPath="))
+                        .collect::<Vec<_>>()
+                };
+                assert_eq!(without_identity(actual), without_identity(expected));
             }
         }
         assert!(Recipe::agent(&p, 2, "ruwac", "").is_err());

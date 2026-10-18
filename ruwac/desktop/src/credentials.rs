@@ -77,6 +77,50 @@ pub fn lookup(reference: &str) -> Result<String, String> {
         .map(|s| s.trim_end_matches('\n').to_owned())
         .map_err(|_| "Credential is not UTF-8".into())
 }
+/// Read the selected Remmina profile's Secret Service item. Never interpret
+/// an encrypted value from a .remmina file as a plaintext password.
+pub fn lookup_remmina(path: &std::path::Path) -> Result<String, String> {
+    let bytes = bounded_file(path, 65536)?;
+    let text = std::str::from_utf8(&bytes).map_err(|_| "Invalid Remmina text")?;
+    let (mut section, mut keyring) = (false, false);
+    for line in text.lines().map(str::trim) {
+        if line.starts_with('[') {
+            section = line == "[remmina]";
+        } else if section {
+            if let Some((key, value)) = line.split_once('=') {
+                if key.trim() == "password" {
+                    keyring = value.trim() == ".";
+                }
+            }
+        }
+    }
+    if !keyring {
+        return Err("Remmina password is not saved in Secret Service; set it in Edit".into());
+    }
+    let path = path
+        .canonicalize()
+        .map_err(|_| "Remmina file unavailable")?;
+    let filename = path.to_str().ok_or("Invalid Remmina filename")?;
+    valid(filename)?;
+    let b = helper(
+        &[
+            "lookup",
+            "xdg:schema",
+            "org.remmina.Password",
+            "filename",
+            filename,
+            "key",
+            "password",
+        ],
+        None,
+    )?;
+    if b.is_empty() {
+        return Err("Remmina password missing or keyring locked".into());
+    }
+    String::from_utf8(b)
+        .map(|s| s.trim_end_matches('\n').to_owned())
+        .map_err(|_| "Remmina password is not UTF-8".into())
+}
 pub fn set(reference: &str, secret: String) -> Result<(), String> {
     valid(reference)?;
     helper(

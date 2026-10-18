@@ -23,6 +23,8 @@ mod ssh_jump;
 mod ssh_keys;
 #[path = "../src/ssh_probe.rs"]
 mod ssh_probe;
+#[path = "../src/ssh_transport.rs"]
+mod ssh_transport;
 use std::{
     path::Path,
     sync::{
@@ -37,6 +39,18 @@ fn main() {
     }
     let args: Vec<_> = std::env::args().collect();
     let result = (|| -> Result<serde_json::Value, String> {
+        if args.get(1).map(String::as_str) == Some("remmina-credentials") {
+            let path = std::path::Path::new(args.get(2).ok_or("Remmina fixture required")?);
+            let reference = ruwac_protocol::id("fixture-remmina");
+            let secret = credentials::lookup_remmina(path)?;
+            let matched = secret == "generated-remmina-password";
+            credentials::set(&reference, secret)?;
+            let copied = credentials::lookup(&reference)? == "generated-remmina-password";
+            credentials::forget(&reference)?;
+            return Ok(
+                serde_json::json!({"matched":matched,"copied":copied,"forgotten":credentials::lookup(&reference).is_err()}),
+            );
+        }
         if args.get(1).map(String::as_str) == Some("credentials") {
             let reference = ruwac_protocol::id("fixture-secret");
             credentials::set(&reference, "synthetic-keyring-fixture-only".into())?;
@@ -55,19 +69,54 @@ fn main() {
         )
         .map_err(|_| "invalid fixture profile")?;
         p.validate()?;
-        if args[1] == "ssh-image-paste" {
+        if args[1] == "ssh-image-paste" || args[1] == "ssh-image-paste-original" {
             let bytes = std::fs::read(args.get(3).ok_or("PNG input required")?)
                 .map_err(|_| "PNG input unavailable")?;
             let allowed = Arc::new(AtomicBool::new(true));
-            if let Some(ms) = args.get(4).and_then(|v| v.parse::<u64>().ok()) {
+            let original = args[1] == "ssh-image-paste-original";
+            if let Some(ms) = args
+                .get(if original { 6 } else { 4 })
+                .and_then(|v| v.parse::<u64>().ok())
+            {
                 let ticket = allowed.clone();
                 std::thread::spawn(move || {
                     std::thread::sleep(Duration::from_millis(ms));
                     ticket.store(false, std::sync::atomic::Ordering::Release);
                 });
             }
-            return remote_paste_upload::upload(&p, &bytes, &allowed, Duration::from_secs(10))
-                .map(|path| serde_json::json!({"path":path}));
+            let result = if original {
+                let transport = args.get(4).ok_or("Transport identity required")?;
+                let pid = args
+                    .get(5)
+                    .ok_or("Original SSH process required")?
+                    .parse::<u32>()
+                    .map_err(|_| "Invalid original SSH process")?;
+                remote_paste_upload::upload_original(
+                    &p,
+                    &bytes,
+                    &allowed,
+                    Duration::from_secs(10),
+                    transport,
+                    pid,
+                )
+            } else {
+                remote_paste_upload::upload(&p, &bytes, &allowed, Duration::from_secs(10))
+            };
+            return result.map(|path| serde_json::json!({"path":path}));
+        }
+        if args[1] == "ssh-protected-channel-argv" {
+            let token = args.get(3).ok_or("Transport identity required")?;
+            let pid = args
+                .get(4)
+                .ok_or("Original SSH process required")?
+                .parse::<u32>()
+                .map_err(|_| "Invalid original SSH process")?;
+            let argv = ssh_transport::client(token, pid).map_err(|e| e.to_string())?;
+            return Ok(serde_json::json!({"argv":argv}));
+        }
+        if args[1] == "ssh-protected-argv" {
+            let argv = profiles::session_argv(&p, profiles::ssh_argv(&p)?);
+            return Ok(serde_json::json!({"transport":ssh_transport::identity(&argv),"argv":argv}));
         }
         if args[1] == "ssh-argv" {
             return Ok(serde_json::json!({"argv": profiles::ssh_argv(&p)?}));

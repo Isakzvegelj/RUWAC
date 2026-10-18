@@ -17,6 +17,21 @@ def case(name,fn):
  try:details=fn();results.append({'id':name,'status':'PASS','seconds':time.monotonic()-started,'details':details});print(name,'PASS',flush=True)
  except Exception as e:results.append({'id':name,'status':'FAIL','error':str(e),'traceback':traceback.format_exc()});print(name,'FAIL',str(e),flush=True);raise
 
+def cleanup():
+ for ui in reversed(tuis):
+  try:ui.finish('term')
+  except Exception:
+   if ui.p.poll()is None:ui.p.kill();ui.p.wait()
+ for proc,sock in reversed(servers):
+  if proc.poll()is None:
+   try:rpc(sock,'daemon.stop');proc.wait(timeout=5)
+   except Exception:proc.kill();proc.wait()
+ for pid in children:
+  try:
+   if os.getsid(pid)==pid:os.killpg(pid,signal.SIGKILL)
+  except ProcessLookupError:pass
+ tuis.clear();servers.clear();children.clear()
+
 def create(sock,name,directory,script=None):
  output=directory/(name+'.bin');argv=[sys.executable,str(script or receiver),str(output)]
  row=rpc(sock,'session.create',{'name':name,'argv':argv});children.append(row['pid'])
@@ -78,6 +93,7 @@ try:
    invalid.finish('kill');tuis.remove(invalid)
    return {'ControlB_prefix_and_remap':True,'literal_exact':True,'paste_is_literal':True,'invalid_configuration_before_raw_mode':True}
   case('TUI-PREFIX-CONFIGURATION',configured)
+ cleanup()
  for depth in range(2,6):
   def nested(depth=depth):
    nodes=[server(f'nested-{depth}-{i}')for i in range(depth)];sessions=[None]*depth
@@ -97,20 +113,10 @@ try:
    ui=Tui(binary,nodes[0][0],sessions[0]['session'],nodes[0][1]/'reattach.pty');tuis.append(ui);eventually(lambda:b'RUWAC'in ui.data)
    ui.send(b'REATTACH');eventually(lambda:out.read_bytes().endswith(b'REATTACH'),10);ui.finish();tuis.remove(ui)
    return {'real_RUWAC_layers':depth,'literal_meta_prefix':True,'double_prefix_deep_navigation':True,'deep_window_selection':True,'single_bracketed_paste_pair':True,'same_receiver_pid_after_detach_reattach':pid,'termios_restored':True}
-  case(f'TUI-NESTED-{depth}',nested)
+  try:case(f'TUI-NESTED-{depth}',nested)
+  finally:cleanup()
 finally:
- for ui in reversed(tuis):
-  try:ui.finish('term')
-  except Exception:
-   if ui.p.poll()is None:ui.p.kill();ui.p.wait()
- for proc,sock in reversed(servers):
-  if proc.poll()is None:
-   try:rpc(sock,'daemon.stop');proc.wait(timeout=5)
-   except Exception:proc.kill();proc.wait()
- for pid in children:
-  try:
-   if os.getsid(pid)==pid:os.killpg(pid,signal.SIGKILL)
-  except ProcessLookupError:pass
+ cleanup()
  receipt={'results':results,'binary_sha256':hashlib.sha256(binary.read_bytes()).hexdigest(),'evidence':str(root)}
  (root/'receipt.json').write_text(json.dumps(receipt,indent=2)+'\n');print(json.dumps(receipt,indent=2))
 assert len(results)==(4 if a.nested_only else 9)

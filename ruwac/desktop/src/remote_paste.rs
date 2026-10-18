@@ -94,6 +94,16 @@ pub fn try_paste(view: &Rc<View>) -> bool {
     if !image_only(&clipboard) {
         return false;
     }
+    let original_pid = pane_pid(view, &pane).unwrap_or(0);
+    let transport = crate::launches::image_transport(&view.session, &pane, original_pid);
+    let explicit_fixture = TARGETS.with(|t| {
+        t.borrow()
+            .contains_key(&(view.session.clone(), pane.clone()))
+    });
+    if transport.is_none() && !explicit_fixture {
+        view.warn("This SSH terminal has no protected upload connection. Reopen its bookmark before pasting an image; the running terminal is preserved.");
+        return true;
+    }
     let Some(configuration) = CONFIGURATION.with(|c| c.borrow().clone()) else {
         view.warn("Image paste configuration unavailable");
         return true;
@@ -191,12 +201,23 @@ pub fn try_paste(view: &Rc<View>) -> bool {
                 let result = std::fs::read(&image.path)
                     .map_err(|_| "Staged PNG unavailable".to_string())
                     .and_then(|bytes| {
-                        crate::remote_paste_upload::upload(
-                            &profile,
-                            &bytes,
-                            &ticket,
-                            Duration::from_secs(60),
-                        )
+                        if let Some(token) = transport.as_deref() {
+                            crate::remote_paste_upload::upload_original(
+                                &profile,
+                                &bytes,
+                                &ticket,
+                                Duration::from_secs(60),
+                                token,
+                                original_pid,
+                            )
+                        } else {
+                            crate::remote_paste_upload::upload(
+                                &profile,
+                                &bytes,
+                                &ticket,
+                                Duration::from_secs(60),
+                            )
+                        }
                     });
                 let _ = std::fs::remove_file(&image.path);
                 let _ = tx.send(result);

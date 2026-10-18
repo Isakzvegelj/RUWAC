@@ -218,13 +218,14 @@ pub fn remember_remote(
         )
         .ok()
     })();
-    let Some(entry) = result else {
+    let Some(mut entry) = result else {
         status(
             reply["session"].as_str().unwrap_or(""),
             "Launch identity unavailable; no persistent endpoint association was inferred",
         );
         return;
     };
+    entry.transport = crate::ssh_transport::identity(argv);
     remember(&entry.session, name, argv);
     ENTRIES.with(|e| {
         e.borrow_mut().insert(entry.pane.clone(), entry.clone());
@@ -255,6 +256,15 @@ pub fn image_profile(session: &str, pane: &str, pid: u32) -> Option<Profile> {
         return None;
     }
     profile(&e)
+}
+/// A restored identity retains the original transport, independent of current
+/// OpenSSH alias/jump configuration. Missing old metadata never invents one.
+pub fn image_transport(session: &str, pane: &str, pid: u32) -> Option<String> {
+    let e = entry(session, pane)?;
+    if e.pid != pid || profile(&e).is_none() {
+        return None;
+    }
+    e.transport
 }
 pub fn is_remote(session: &str, pane: &str) -> bool {
     if entry(session, pane).is_some() {

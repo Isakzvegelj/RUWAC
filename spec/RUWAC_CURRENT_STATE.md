@@ -1,3 +1,52 @@
+# RUWAC delivered behavior and remaining acceptance
+
+Use [the README](../README.md) for current build, installation and interaction
+instructions. [The functionality audit](RUWAC_FUNCTIONALITY_AUDIT.md) tracks
+requirements and distinguishes implementation from full acceptance. Versioned
+receipts are summarized in [acceptance status](RUWAC_ACCEPTANCE_STATUS.md).
+
+The Linux daemon owns terminal processes independently of the optional GTK
+frontend. Closing a frontend detaches; new engines drain final output before
+reporting exit. After engine loss, saved history/layout are recovered as ended
+resources. Existing processes cannot survive a reboot, and running older engines
+retain their implementation until deliberately replaced.
+
+The native desktop provides machine bookmarks, independent tabs/windows, mixed
+terminal/RDP/Files splits, separate credentials and guarded local/SSH agent image
+paste. New saved SSH/agent launches retain explicit pane/process/endpoint/provider
+associations across frontend replacement. Legacy sessions are not associated by
+name guessing. New launches also bind implicit uploads to the original authenticated
+SSH connection and process, so edited OpenSSH configuration cannot redirect those
+uploads. Older entries without that protected transport require explicit reopen;
+server-side publication waits for a still-authorized local commit.
+
+Alt+digits select workspace tabs by default. AltGr tap enables Map keys and sends
+those shortcuts to the focused application or remote; the next tap returns to
+local shortcuts. The SSH Terminal and Files actions are separate.
+
+Files provides regular-file SFTP transfers with retained resume journals, and
+staged rsync file/folder copies with explicit replacement and interrupted-copy
+recovery. Rsync partial data restarts. ACLs, ownership, extended attributes and
+remote power-loss/concurrent-writer durability retain the limits in
+[file transfer documentation](RUWAC_FILES.md).
+
+GNOME Remote Login has separate service and Linux-user credentials and optional
+automatic sign-in for the supported recognized English greeter. Actual targeted
+Fedora journeys and generated loopback RDP tests exist; they do not establish all
+Windows display/clipboard, mixed-external-host or physical-input acceptance.
+RDP transports still belong to the GUI process, so seamless frontend replacement
+with a retained RDP transport remains unfinished.
+
+Public source builds use Cargo and the source installer. External target paths
+are explicit; archive installs keep their verified artifact paths. Source releases,
+testing bundles/RPMs and signature/provenance checks do not establish full Fedora
+distribution or security qualification. The unsuppressed RSA finding and other
+remaining gates are described in [dependency security](RUWAC_DEPENDENCY_SECURITY.md)
+and the [completion audit](RUWAC_PRODUCT_COMPLETION.md).
+
+<details>
+<summary>Historical implementation and acceptance notes (earlier releases; not current limitations)</summary>
+
 # RUWAC current state — machine workspaces, display and files
 
 ## GNOME graphics and same-endpoint handover — latest implementation
@@ -403,3 +452,5 @@ Real authorized Fedora tests verify twelve explicit remote resolution changes, t
 Owner requires Connect to finish both GNOME authentication stages, select the saved Linux account and open its desktop. This remains unfinished; assisted field delivery is not a substitute for that requirement. Installed packages report GNOME Remote Desktop50.2 and GDM50.3; the live GDM Manager reports50.1. The package/source review is distinguished from that still-running daemon, which was not restarted. The inspected upstream50.2 source (60423c896a54e3eacb65bd93167e91c1ce5e648c) creates GDM displays using remote ID/hostname and performs RDP handover with server-generated credentials. No supported client-controlled second-stage autologon has been verified. [GNOME's configuration guide](https://github.com/GNOME/gnome-remote-desktop/blob/50.2/docs/configuration.md) describes system-wide authentication followed by user-specific graphical login. The upstream source is evaluation-only; no GPL implementation was copied into RUWAC. Read-only introspection on the authorized host also finds GDM CreateUserDisplay. The inspected GDM50.3 source (bb0f6ad980419def9fc6fb817d32ee22a65b0820) requires administrator Polkit authorization, creates a separate autologin display with no current remote ID and refuses an existing graphical session for that user. It is not completion of the current RDP greeter login. Neither this method nor any GDM settings/session mutation was invoked. No system-wide GDM autologin is enabled.
 
 Full-product gates remain: verified automatic Linux sign-in and external clipboard, physical desktop/input, broader terminal/transport/workspace/agent scope, unsuppressed RSA advisory and qualified Fedora binary/RPM distribution. This is an operational source release, not whole-product qualification.
+
+</details>
