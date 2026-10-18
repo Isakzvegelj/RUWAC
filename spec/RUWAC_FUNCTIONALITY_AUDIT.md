@@ -95,13 +95,13 @@ are tied to code and observable behavior.
 | SSH image upload completion calls `view.paste()` without a captured pane/focus generation | A pane switch during transfer may paste the path into an unintended pane. Saved in-memory target maps also do not survive a new GUI process. | Fixed pane/focus and new-launch persistence: explicit private records survive frontend replacement, bind the original pane/PID and refuse changed endpoints. No association is inferred for legacy sessions. |
 | Agent-session menu identifies agents by substrings in the name | Can misclassify an unrelated name or miss a custom shared name. | Fixed for saved launches: persist explicit SSH/Codex/Claude/Kimi kind; ordinary names do not classify an agent. |
 | Agent selection changes daemon focus but leaves the GUI target on a local split | The new real-PTY gate fails against the published source increment. | Correct with acknowledged GUI navigation, queued typing and intent epochs so a later manual pane selection wins; retain the failed source reference and require the corrected native gate. |
-| PTY reaper emits end after a fixed 300 ms delay and reader may still emit later data | Child exit now handles inherited PTY descriptors, but output-drain ordering is heuristic. | Open reliability test: delayed buffered output/background descriptors under pressure. |
+| PTY reaper emits end after a fixed 300 ms delay and reader may still emit later data | Late background output could change already-ended history; closed streams could report exit before the process finished. | Fixed: one reader drains ready output and emits end once, bounds continuous inherited output and supports closed/reopened streams. Owned real PTY/daemon cases and 128-pane descriptor-limited acceptance pass. |
 | Color CSS targeted private tab nodes | Could fail silently across libadwaita versions. | Status now uses cached full-color icons with distinct shapes, not private CSS selectors. |
 
 Font spacing review found that the previous “Compact” label selected 1.15× spacing, which increased rather than reduced spacing. The label is corrected, a 0.95× Tight choice is available and glyph cell widths retain fractional Pango precision. Existing saved font choices are preserved.
 
 This batch intentionally keeps the immediate UI scope small. The SSH image focus and transport corrections follow the navigation batch; the
-new-launch persistent association and provider classification are implemented; the PTY drain finding remains open.
+new-launch persistent association and provider classification are implemented; the PTY drain finding is now covered by the ordered-reader implementation and real PTY/daemon regressions.
 
 ## Remaining acceptance priorities
 

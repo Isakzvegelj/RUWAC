@@ -3,6 +3,7 @@ pub mod shell;
 use portable_pty::{Child, CommandBuilder, MasterPty, PtySize};
 use std::{
     io::{Read, Write},
+    os::fd::{AsRawFd, FromRawFd, OwnedFd},
     sync::{Arc, Mutex, mpsc},
     thread,
 };
@@ -30,6 +31,19 @@ impl Pty {
                 pixel_height: 0,
             })
             .map_err(|e| e.to_string())?;
+        let mut reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
+        // Keep a separately owned descriptor for readiness checks. The master's
+        // original descriptor may close/reuse when a pane is dropped.
+        let descriptor = pair
+            .master
+            .as_raw_fd()
+            .ok_or("PTY descriptor unavailable")?;
+        let descriptor = unsafe { libc::fcntl(descriptor, libc::F_DUPFD_CLOEXEC, 0) };
+        if descriptor < 0 {
+            return Err(std::io::Error::last_os_error().to_string());
+        }
+        let readiness = unsafe { OwnedFd::from_raw_fd(descriptor) };
+        let mut writer = pair.master.take_writer().map_err(|e| e.to_string())?;
         let mut cmd = CommandBuilder::new(&argv[0]);
         cmd.args(&argv[1..]);
         cmd.env("TERM", "xterm-256color");
@@ -39,8 +53,6 @@ impl Pty {
         let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
         let pid = child.process_id().ok_or("child PID unavailable")?;
         drop(pair.slave);
-        let mut reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
-        let mut writer = pair.master.take_writer().map_err(|e| e.to_string())?;
         let (tx, rx) = mpsc::sync_channel::<Vec<u8>>(64);
         thread::spawn(move || {
             while let Ok(b) = rx.recv() {
@@ -49,39 +61,70 @@ impl Pty {
                 }
             }
         });
-        // The pane ends when its own process exits, like a desktop terminal,
-        // even if something it started in the background still holds the
-        // terminal open (e.g. an SSH ControlPersist master). An empty chunk
-        // reports the end exactly once.
-        let output = Arc::new(Mutex::new(output));
-        let ended = Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let (reader_output, reader_ended) = (output.clone(), ended.clone());
-        thread::spawn(move || {
-            let mut b = [0; 8192];
-            loop {
-                match reader.read(&mut b) {
-                    Ok(0) | Err(_) => break,
-                    Ok(n) => (reader_output.lock().unwrap())(b[..n].to_vec()),
-                }
-            }
-            if !reader_ended.swap(true, std::sync::atomic::Ordering::AcqRel) {
-                (reader_output.lock().unwrap())(Vec::new());
-            }
-        });
         let child = Arc::new(Mutex::new(child));
-        let reaper = child.clone();
+        let reader_child = child.clone();
         thread::spawn(move || {
+            let mut output = output;
+            let mut b = [0; 8192];
+            let mut drained = 0usize;
             loop {
-                if reaper.lock().unwrap().try_wait().ok().flatten().is_some() {
-                    // Let the final output (e.g. "logout") arrive first.
-                    thread::sleep(std::time::Duration::from_millis(300));
-                    if !ended.swap(true, std::sync::atomic::Ordering::AcqRel) {
-                        (output.lock().unwrap())(Vec::new());
+                let exited = reader_child
+                    .lock()
+                    .unwrap()
+                    .try_wait()
+                    .ok()
+                    .flatten()
+                    .is_some();
+                let mut poll = libc::pollfd {
+                    fd: readiness.as_raw_fd(),
+                    events: libc::POLLIN,
+                    revents: 0,
+                };
+                let ready = unsafe { libc::poll(&mut poll, 1, if exited { 0 } else { 100 }) };
+                if ready < 0 {
+                    if std::io::Error::last_os_error().kind() == std::io::ErrorKind::Interrupted {
+                        continue;
                     }
-                    break;
+                    if exited {
+                        break;
+                    }
+                    thread::sleep(std::time::Duration::from_millis(100));
+                    continue;
                 }
-                thread::sleep(std::time::Duration::from_millis(100));
+                if ready == 0 {
+                    if exited {
+                        break;
+                    }
+                    continue;
+                }
+                let n = match reader.read(&mut b) {
+                    Ok(n) => n,
+                    Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => continue,
+                    Err(_) => 0,
+                };
+                if n == 0 {
+                    if exited {
+                        break;
+                    }
+                    // A live process can close and later reopen its terminal.
+                    // Retry without spinning on POLLHUP or declaring it ended.
+                    thread::sleep(std::time::Duration::from_millis(100));
+                    continue;
+                }
+                output(b[..n].to_vec());
+                if exited {
+                    drained += n;
+                    // An inherited writer must not keep a pane alive forever
+                    // by continuously producing new output.
+                    if drained >= 8 * 1024 * 1024 {
+                        break;
+                    }
+                }
             }
+            // One reader serializes all output and reports end only after its
+            // final drain. No callback can publish data after this event.
+            output(Vec::new());
         });
         Ok(Self {
             pid,
@@ -179,5 +222,194 @@ impl Drop for Pty {
             }
             let _ = c.wait();
         });
+    }
+}
+
+#[cfg(test)]
+mod output_drain_tests {
+    use super::*;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn drains_final_bytes_before_one_end_and_ignores_inherited_writer() {
+        let (events, received) = mpsc::channel();
+        let mut first = true;
+        let pty = Pty::spawn(
+            &[
+                "/usr/bin/python3".into(),
+                "-c".into(),
+                "import os,signal,time; signal.signal(signal.SIGHUP,signal.SIG_IGN); os.write(1,b'A'*4096); child=os.fork(); (time.sleep(3),os.write(1,b'LATE_BACKGROUND'),os._exit(0)) if child==0 else None; os.write(1,b'B'*4096+b'FINAL'); os._exit(0)".into(),
+            ],
+            24,
+            80,
+            move |data| {
+                if first && !data.is_empty() {
+                    first = false;
+                    // Model backpressure from the bounded daemon actor queue.
+                    thread::sleep(Duration::from_millis(700));
+                }
+                let _ = events.send(data);
+            },
+        ).unwrap();
+        let start = Instant::now();
+        let mut chunks = Vec::new();
+        let mut end_time = None;
+        while start.elapsed() < Duration::from_secs(4) {
+            match received.recv_timeout(Duration::from_millis(100)) {
+                Ok(data) => {
+                    if data.is_empty() && end_time.is_none() {
+                        end_time = Some(start.elapsed());
+                    }
+                    chunks.push(data);
+                }
+                Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                Err(mpsc::RecvTimeoutError::Timeout) => (),
+            }
+        }
+        assert!(pty.exited());
+        assert!(
+            end_time.is_some_and(|t| t < Duration::from_secs(2)),
+            "The pane must end while its descendant still holds the slave PTY"
+        );
+        let ends: Vec<_> = chunks
+            .iter()
+            .enumerate()
+            .filter_map(|(i, b)| b.is_empty().then_some(i))
+            .collect();
+        assert_eq!(ends.len(), 1, "Exactly one terminal-end event is required");
+        assert_eq!(
+            ends[0] + 1,
+            chunks.len(),
+            "Output arrived after the terminal-end event"
+        );
+        let data = chunks[..ends[0]].concat();
+        let mut expected = vec![b'A'; 4096];
+        expected.extend(vec![b'B'; 4096]);
+        expected.extend_from_slice(b"FINAL");
+        assert_eq!(
+            data, expected,
+            "The complete child's final bytes must precede end"
+        );
+    }
+    #[test]
+    fn closing_standard_streams_waits_for_the_own_process_status() {
+        let (events, received) = mpsc::channel();
+        let pty = Pty::spawn(&[
+            "/usr/bin/python3".into(), "-c".into(),
+            "import os,time; os.close(0); os.close(1); os.close(2); time.sleep(.5); os._exit(7)".into(),
+        ],24,80,move |data| {let _=events.send(data);}).unwrap();
+        assert!(
+            matches!(
+                received.recv_timeout(Duration::from_millis(200)),
+                Err(mpsc::RecvTimeoutError::Timeout)
+            ),
+            "Closed stdio must not be reported as process exit"
+        );
+        assert!(
+            received
+                .recv_timeout(Duration::from_secs(2))
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(pty.exit_code(), Some(7));
+        assert!(matches!(
+            received.recv_timeout(Duration::from_millis(200)),
+            Err(mpsc::RecvTimeoutError::Disconnected)
+        ));
+    }
+
+    #[test]
+    fn final_bursts_of_different_sizes_are_complete_before_end() {
+        for size in [1usize, 8191, 8192, 65537, 1024 * 1024] {
+            let (events, received) = mpsc::channel();
+            let pty=Pty::spawn(&[
+                "/usr/bin/python3".into(),"-c".into(),
+                format!("import sys; sys.stdout.buffer.write(b'X'*{size}+b'FINAL'); sys.stdout.buffer.flush()"),
+            ],24,80,move |data|{let _=events.send(data);}).unwrap();
+            let mut data = Vec::new();
+            loop {
+                let chunk = received
+                    .recv_timeout(Duration::from_secs(2))
+                    .expect("Child output/end deadline");
+                if chunk.is_empty() {
+                    break;
+                }
+                data.extend(chunk);
+            }
+            assert_eq!(data.len(), size + 5);
+            assert!(data[..size].iter().all(|b| *b == b'X'));
+            assert_eq!(&data[size..], b"FINAL");
+            assert_eq!(pty.exit_code(), Some(0));
+            assert!(matches!(
+                received.recv_timeout(Duration::from_millis(200)),
+                Err(mpsc::RecvTimeoutError::Disconnected)
+            ));
+        }
+    }
+
+    #[test]
+    fn a_continuous_inherited_writer_cannot_keep_the_pane_alive() {
+        let (events, received) = mpsc::channel();
+        let pty = Pty::spawn(
+            &[
+                "/usr/bin/python3".into(),
+                "-c".into(),
+                r#"import os,signal
+signal.signal(signal.SIGHUP,signal.SIG_IGN)
+if os.fork()!=0:
+    os._exit(0)
+try:
+    while True:
+        os.write(1,b'Z'*8192)
+except OSError:
+    os._exit(0)
+"#
+                .into(),
+            ],
+            24,
+            80,
+            move |data| {
+                let _ = events.send(data);
+            },
+        )
+        .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(3);
+        loop {
+            let left = deadline.saturating_duration_since(Instant::now());
+            let data = received
+                .recv_timeout(left)
+                .expect("Continuous orphan writer did not end the pane");
+            if data.is_empty() {
+                break;
+            }
+        }
+        assert_eq!(pty.exit_code(), Some(0));
+        assert!(matches!(
+            received.recv_timeout(Duration::from_millis(200)),
+            Err(mpsc::RecvTimeoutError::Disconnected)
+        ));
+        drop(pty);
+    }
+    #[test]
+    fn temporarily_closed_standard_streams_can_resume_output() {
+        let (events, received) = mpsc::channel();
+        let pty=Pty::spawn(&[
+            "/usr/bin/python3".into(),"-c".into(),
+            "import os,time; os.close(0); os.close(1); os.close(2); time.sleep(.2); fd=os.open('/dev/tty',os.O_WRONLY); os.write(fd,b'REOPENED'); os.close(fd); os._exit(9)".into(),
+        ],24,80,move |data|{let _=events.send(data);}).unwrap();
+        let mut output = Vec::new();
+        loop {
+            let chunk = received.recv_timeout(Duration::from_secs(2)).unwrap();
+            if chunk.is_empty() {
+                break;
+            }
+            output.extend(chunk);
+        }
+        assert_eq!(pty.exit_code(), Some(9));
+        assert_eq!(output, b"REOPENED");
+        assert!(matches!(
+            received.recv_timeout(Duration::from_millis(200)),
+            Err(mpsc::RecvTimeoutError::Disconnected)
+        ));
     }
 }

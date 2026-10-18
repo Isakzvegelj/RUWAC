@@ -108,3 +108,21 @@ behavior, not physical mouse or touchpad operation.
 One combined RDP stress run timed out during reconnect and resize. Isolated and
 repeated combined tests passed. The cause of that intermittent failure has not
 been established; it remains recorded in private qualification evidence.
+
+
+## Ordered terminal output and process exit
+
+One reader owns all output publication and the end event. After observing the
+owned process exit it drains ready bytes before publishing end; a continuous
+inherited writer is bounded by an 8 MiB post-exit drain. Later background output
+does not alter ended history. Temporary closure/reopening of standard streams
+retains output and the actual exit code. Readiness uses a separately owned
+close-on-exec descriptor, prepared before child creation.
+
+Owned Linux PTY cases include delayed callbacks, final bursts through 1 MiB,
+closed/reopened streams and continuous inherited writers. The real daemon/CLI
+fixtures retain exit, live-sibling selection, ended-history reattachment,
+independent focus and crash recovery. The actual 128-pane metadata fixture also
+passes with a 1,024-descriptor limit. These are generated local processes, not
+external-provider or physical-input acceptance. Existing engines are preserved
+and require deliberate replacement before using this backend implementation.

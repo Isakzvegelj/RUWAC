@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v0.4.23 — 2026-10-18 — Stable source release
+
+- Drain final terminal output before reporting process exit, keep ended history immutable against inherited background writers, and preserve output/exit status when programs close and reopen their terminal streams.
+
 ## v0.4.22 — 2026-10-18 — Stable source release
 
 - Fix agent-menu navigation to update the GUI input target from the authenticated pane acknowledgement, queue typing while selection is pending and ignore stale acknowledgements after a later local pane selection. Deliver that acknowledgement through the worker reply queue.

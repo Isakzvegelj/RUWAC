@@ -1,31 +1,18 @@
-# RUWAC persistent launch context and corrected agent input targeting
+# RUWAC terminal output and exit reliability
 
-Fix agent selection so the GUI input target follows its acknowledged pane.
-Typing waits for that acknowledgement, and a later manual selection supersedes
-an earlier pending agent request. The earlier source release could change daemon
-focus while retaining the GUI target on a local split.
+A terminal now reports its own process exit after draining ready final output.
+One reader publishes both data and the single end event, preventing background
+processes that retain the terminal from changing ended history afterward.
+Continuous inherited output cannot keep the pane alive indefinitely: the final
+drain is capped at 8 MiB. Closing standard streams alone does not end a running
+program, and output resumes if it reopens its terminal.
 
-New saved SSH and agent launches retain explicit endpoint, pane/process and
-provider associations across frontend replacement and independent windows.
-Restore reads private metadata without starting a connection or an agent.
-Agents uses recorded provider kind instead of matching words in session names,
-and selects the recorded pane/window after checking current daemon membership.
+Owned PTY and daemon regressions exercise delayed output delivery, final bursts,
+closed/reopened streams, background writers, exit codes, live sibling windows,
+ended-history reattachment and the full 128-pane capacity with a 1,024-descriptor
+limit. These are automated Linux checks; broader physical/external acceptance
+and the existing distribution/security gates remain separate.
 
-Image paste retains the working local/remote workflow and the previous bounded
-upload/focus guards. It is now scoped to the original SSH pane and process; a
-new local split in the same session does not acquire its destination. Changed
-or deleted endpoint identities refuse delivery rather than selecting another
-host. Credentials remain in Secret Service, and metadata does not duplicate
-credential references or generated SSH command lines.
-
-Explicit reconnect reconstructs the launch recipe using the installed client.
-Private atomic catalog records are daemon-bound, bounded and checked for unsafe
-file types/permissions. Storage failures are shown while volatile context and
-the live connection remain usable. Older sessions without metadata are not
-retroactively associated by guessing their names or terminal output.
-
-Qualification distinguishes actual loopback SSH and native GDK/GTK with synthetic
-input from real external-provider and physical-desktop acceptance. Seamless RDP
-frontend handoff, heuristic PTY drain ordering, broad external interoperability,
-full distribution qualification and the unsuppressed RSA advisory remain open.
-Existing build/release scripts and their controller own publication/versioning.
+The change applies to newly started daemons. Existing daemons and their live
+programs retain their running implementation until deliberately replaced; this
+update does not restart or migrate those processes.
