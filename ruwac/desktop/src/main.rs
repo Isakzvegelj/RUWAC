@@ -24,6 +24,7 @@ mod ipc;
 mod jobs;
 mod launch_context;
 mod launches;
+mod primary;
 mod profiles;
 mod rdp;
 mod rdp_trust;
@@ -86,6 +87,23 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut show_machines = false;
     let mut theme = adw::ColorScheme::PreferDark;
     let args: Vec<_> = std::env::args().skip(1).collect();
+    if args.first().is_some_and(|a| a == "--receive-primary") {
+        if args.len() != 5 {
+            return Err("Usage: ruwac-desktop --receive-primary ENDPOINT_ID LINUX_SSH_USER WAYLAND_SESSION SSH_PORT (0 uses SSH config)".into());
+        }
+        profiles::configure_primary(&args[1], &args[2], &args[3], args[4].parse::<u16>()?, true)?;
+        println!("Mouse selection reception configured; reopen this RDP tab to apply it");
+        return Ok(());
+    }
+    if args.first().is_some_and(|a| a == "--disable-primary") {
+        if args.len() != 2 {
+            return Err("Usage: ruwac-desktop --disable-primary ENDPOINT_ID".into());
+        }
+        profiles::configure_primary(&args[1], "", "", 0, false)?;
+        println!("Mouse selection reception disabled");
+        return Ok(());
+    }
+
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {

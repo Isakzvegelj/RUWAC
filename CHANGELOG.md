@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v0.4.26 — 2026-10-18 — Stable source release
+
+- Add opt-in Linux RDP mouse-selection sharing over the endpoint’s trusted SSH route, preserving the separate Ctrl+C clipboard and stopping helpers on disconnect.
+
 ## v0.4.25 — 2026-10-18 — Stable source release
 
 - Prepare the isolated hosted test container's private user runtime before desktop unit tests, so agent launch reconstruction exercises its protected SSH transport instead of the terminal-only fallback.

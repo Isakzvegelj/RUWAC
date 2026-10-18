@@ -9,6 +9,8 @@ mod files;
 mod files_resume;
 #[path = "../src/files_rsync.rs"]
 mod files_rsync;
+#[path = "../src/primary.rs"]
+mod primary;
 #[path = "../src/profiles.rs"]
 mod profiles;
 #[path = "../src/rdp_trust.rs"]
@@ -69,6 +71,36 @@ fn main() {
         )
         .map_err(|_| "invalid fixture profile")?;
         p.validate()?;
+        if args[1] == "primary-receive" {
+            use gtk::prelude::*;
+            let root =
+                std::path::PathBuf::from(args.get(3).ok_or("Private receiver fixture required")?);
+            let app = gtk::Application::builder()
+                .application_id("si.z4.ruwac.PrimaryFixture")
+                .flags(gtk::gio::ApplicationFlags::NON_UNIQUE)
+                .build();
+            app.connect_activate(move|app| {
+                let entry=gtk::Entry::new();entry.set_placeholder_text(Some("Focused receiver fixture"));
+                let window=gtk::ApplicationWindow::builder().application(app).title("RUWAC PRIMARY receiver fixture").default_width(650).default_height(260).child(&entry).build();
+                window.maximize();window.present();entry.grab_focus();
+                let bridge=std::rc::Rc::new(std::cell::RefCell::new(primary::Bridge::start(&p).unwrap()));
+                let root=root.clone();let app=app.clone();let mut received=0u64;let mut received_bytes=0usize;
+                gtk::glib::timeout_add_local(Duration::from_millis(25),move|| {
+                    let command=std::fs::read(root.join("receiver-command.json")).ok().and_then(|b|serde_json::from_slice::<serde_json::Value>(&b).ok()).unwrap_or_default();
+                    if command["close"]==true {app.quit();return gtk::glib::ControlFlow::Break;}
+                    if command["present"]==true {window.present();entry.grab_focus();}
+                    let active=window.is_active()&&command["enabled"]!=false;
+                    let mut b=bridge.borrow_mut();b.tick(false,active);
+                    if active {if let Ok(Some(bytes))=b.publish_primary(&entry.display().primary_clipboard()) {received+=1;received_bytes=bytes;}}
+                    let value=serde_json::json!({"ready":b.ready,"failed":b.failed,"active":active,"received":received,"received_bytes":received_bytes});
+                    let temp=root.join("receiver-state.tmp");std::fs::write(&temp,serde_json::to_vec(&value).unwrap()).unwrap();std::fs::rename(temp,root.join("receiver-state.json")).unwrap();
+                    gtk::glib::ControlFlow::Continue
+                });
+            });
+            app.run_with_args::<&str>(&[]);
+            return Ok(serde_json::json!({"closed":true}));
+        }
+
         if args[1] == "ssh-image-paste" || args[1] == "ssh-image-paste-original" {
             let bytes = std::fs::read(args.get(3).ok_or("PNG input required")?)
                 .map_err(|_| "PNG input unavailable")?;

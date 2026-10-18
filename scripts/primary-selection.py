@@ -1,0 +1,437 @@
+#!/usr/bin/env python3
+"""Ephemeral PRIMARY-only relay. No clipboard contents, files or passwords logged.
+
+The GUI starts an authenticated --peer using a reviewed SSH route and an exact
+remote Wayland session. The peer reads that session's Xwayland PRIMARY bridge;
+CLIPBOARD is never read or changed. Both peers exit on EOF/heartbeat expiry.
+"""
+import json
+import hashlib
+import os
+import re
+import signal
+import subprocess
+import sys
+import time
+
+LIMIT = 1024 * 1024
+FRAME = LIMIT * 6 + 1024
+
+def trace(event, **fields):
+    if os.environ.get("RUWAC_PRIMARY_TRACE") == "1":
+        print(json.dumps({"primary_trace":event, **fields}), file=sys.stderr, flush=True)
+
+
+def session_environment(wayland):
+    if not re.fullmatch(r"wayland-[0-9]{1,3}", wayland):
+        raise ValueError("Choose an exact remote Wayland session")
+    # Read only this SSH account's desktop manager environment. Never choose
+    # the first socket or borrow another user's display/authentication file.
+    result = subprocess.run(["systemctl", "--user", "show-environment"],
+                            capture_output=True, text=True, timeout=5, check=True)
+    env = dict(line.split("=", 1) for line in result.stdout.splitlines() if "=" in line)
+    if env.get("WAYLAND_DISPLAY") != wayland:
+        raise ValueError("Remote desktop session does not match the configured session")
+    display = env.get("DISPLAY", "")
+    auth = env.get("XAUTHORITY", "")
+    if not re.fullmatch(r":[0-9]{1,5}(?:\.[0-9]+)?", display):
+        raise ValueError("The selected desktop has no local Xwayland display")
+    import stat
+    st = os.lstat(auth)
+    if not stat.S_ISREG(st.st_mode) or st.st_uid != os.getuid() or st.st_mode & 0o077:
+        raise ValueError("Desktop authentication must be an owned private regular file")
+    os.environ.update(DISPLAY=display, XAUTHORITY=auth,
+                      XDG_RUNTIME_DIR="/run/user/" + str(os.getuid()))
+
+
+class Pipe:
+    def __init__(self, source, target, receive, stopped):
+        self.source, self.target = source, target
+        self.receive, self.stopped = receive, stopped
+        self.buffer = bytearray()
+        self.queue = bytearray()
+        self.writer = None
+        os.set_blocking(source, False)
+        os.set_blocking(target, False)
+        self.reader = GLib.io_add_watch(source, GLib.IO_IN | GLib.IO_HUP | GLib.IO_ERR,
+                                        self.read)
+
+    def send(self, value):
+        data = (json.dumps(value, ensure_ascii=True, separators=(",", ":")) + "\n").encode()
+        if len(data) > FRAME or len(self.queue) + len(data) > FRAME * 2:
+            self.stopped()
+            return
+        self.queue.extend(data)
+        if self.writer is None:
+            self.writer = GLib.io_add_watch(self.target, GLib.IO_OUT | GLib.IO_ERR | GLib.IO_HUP,
+                                            self.write)
+
+    def write(self, fd, condition):
+        try:
+            if condition & (GLib.IO_ERR | GLib.IO_HUP):
+                raise BrokenPipeError()
+            n = os.write(fd, self.queue)
+            del self.queue[:n]
+        except BlockingIOError:
+            return True
+        except OSError:
+            self.stopped()
+            self.writer = None
+            return False
+        if self.queue:
+            return True
+        self.writer = None
+        return False
+
+    def read(self, fd, condition):
+        try:
+            data = os.read(fd, 65536)
+            if not data:
+                self.stopped()
+                return False
+            self.buffer.extend(data)
+            while b"\n" in self.buffer:
+                line, _, rest = self.buffer.partition(b"\n")
+                self.buffer = bytearray(rest)
+                if len(line) > FRAME:
+                    raise ValueError("Frame too large")
+                self.receive(json.loads(line))
+            if len(self.buffer) > FRAME:
+                raise ValueError("Frame too large")
+            return True
+        except BlockingIOError:
+            return True
+        except (OSError, ValueError, TypeError, KeyError):
+            self.stopped()
+            return False
+
+
+# X11 selections use a terminating zero-length INCR property, not a short pipe
+# read, to mark completion. Xlib/ICCCM use native unsigned longs for Atom/Window.
+XLIB = None
+
+def xlib():
+    global XLIB
+    if XLIB is not None:
+        return XLIB
+    import ctypes as c
+    lib = c.CDLL("libX11.so.6")
+    d, u, i = c.c_void_p, c.c_ulong, c.c_int
+    lib.XInitThreads.argtypes = []; lib.XInitThreads.restype = i
+    if not lib.XInitThreads():
+        raise ValueError("X11 thread initialization failed")
+    prototypes = {
+        "XOpenDisplay": ([c.c_char_p], d),
+        "XDefaultRootWindow": ([d], u),
+        "XCreateSimpleWindow": ([d,u,i,i,c.c_uint,c.c_uint,c.c_uint,u,u],u),
+        "XInternAtom": ([d,c.c_char_p,i],u),
+        "XSelectInput": ([d,u,c.c_long],i),
+        "XConvertSelection": ([d,u,u,u,u,u],i),
+        "XDeleteProperty": ([d,u,u],i),
+        "XGetSelectionOwner": ([d,u],u),
+        "XFlush": ([d],i),
+        "XPending": ([d],i),
+        "XNextEvent": ([d,c.c_void_p],i),
+        "XConnectionNumber": ([d],i),
+        "XGetWindowProperty": ([d,u,u,c.c_long,c.c_long,i,u,c.POINTER(u),c.POINTER(i),c.POINTER(u),c.POINTER(u),c.POINTER(c.POINTER(c.c_ubyte))],i),
+        "XFree": ([c.c_void_p],i),
+        "XDestroyWindow": ([d,u],i),
+        "XCloseDisplay": ([d],i),
+    }
+    for name,(args,result) in prototypes.items():
+        getattr(lib,name).argtypes=args;getattr(lib,name).restype=result
+    XLIB=lib
+    return lib
+
+
+def read_primary_bytes():
+    """A bounded, complete ICCCM transfer over a private unmapped X11 window."""
+    import ctypes as c
+    import select
+    class Selection(c.Structure):
+        _fields_=[("type",c.c_int),("serial",c.c_ulong),("send_event",c.c_int),("display",c.c_void_p),("requestor",c.c_ulong),("selection",c.c_ulong),("target",c.c_ulong),("property",c.c_ulong),("time",c.c_ulong)]
+    class Property(c.Structure):
+        _fields_=[("type",c.c_int),("serial",c.c_ulong),("send_event",c.c_int),("display",c.c_void_p),("window",c.c_ulong),("atom",c.c_ulong),("time",c.c_ulong),("state",c.c_int)]
+    class Event(c.Union):
+        _fields_=[("type",c.c_int),("selection",Selection),("property",Property),("pad",c.c_long*24)]
+    lib=xlib();display=lib.XOpenDisplay(os.environ["DISPLAY"].encode())
+    if not display:return None
+    window=0;deadline=time.monotonic()+2;data=bytearray();total=0;rejected=False
+    try:
+        window=lib.XCreateSimpleWindow(display,lib.XDefaultRootWindow(display),-1,-1,1,1,0,0,0)
+        prop=lib.XInternAtom(display,b"_RUWAC_PRIMARY_TRANSFER",0)
+        primary=lib.XInternAtom(display,b"PRIMARY",0);incr=lib.XInternAtom(display,b"INCR",0)
+        target=lib.XInternAtom(display,b"UTF8_STRING",0)
+        owner=lib.XGetSelectionOwner(display,primary)
+        if not owner:return None
+        lib.XSelectInput(display,window,1<<22)
+        lib.XConvertSelection(display,primary,target,prop,window,0);lib.XFlush(display)
+        fd=lib.XConnectionNumber(display)
+        def event():
+            while time.monotonic()<deadline:
+                if lib.XPending(display):
+                    e=Event();lib.XNextEvent(display,c.byref(e));return e
+                if not select.select([fd],[],[],max(0,deadline-time.monotonic()))[0]:break
+            raise TimeoutError()
+        def property_value():
+            nonlocal total,rejected
+            offset=0;first=True;kind=0;hint=None;property_bytes=0
+            while True:
+                if time.monotonic()>=deadline:raise TimeoutError()
+                actual=c.c_ulong();fmt=c.c_int();items=c.c_ulong();after=c.c_ulong();raw=c.POINTER(c.c_ubyte)()
+                status=lib.XGetWindowProperty(display,window,prop,offset,16384,1,0,c.byref(actual),c.byref(fmt),c.byref(items),c.byref(after),c.byref(raw))
+                try:
+                    if status!=0:raise ValueError("Selection property unavailable")
+                    if first:kind=actual.value
+                    if actual.value!=kind:raise ValueError("Selection property changed type")
+                    if kind==incr:
+                        if fmt.value!=32 or items.value!=1 or after.value:raise ValueError("Invalid INCR header")
+                        hint=c.cast(raw,c.POINTER(c.c_ulong))[0]&0xffffffff
+                        return kind,hint,0
+                    if fmt.value!=8:raise ValueError("Selection is not UTF8 text")
+                    n=items.value;total+=n;property_bytes+=n
+                    if total>LIMIT or after.value>LIMIT-total:
+                        rejected=True;data.clear()
+                    if not rejected and n:data.extend(c.string_at(raw,n))
+                    if not after.value:return kind,None,property_bytes
+                    if n==0:raise ValueError("Selection transfer made no progress")
+                    offset+=(n+3)//4;first=False
+                finally:
+                    if raw:lib.XFree(raw)
+        while True:
+            e=event()
+            if e.type==31 and e.selection.requestor==window and e.selection.selection==primary and e.selection.target==target:
+                if e.selection.property!=prop:return None
+                kind,hint,size=property_value();break
+        if kind==incr:
+            minimum=hint
+            trace("INCR",minimum=minimum)
+            if minimum>LIMIT:rejected=True
+            # Reading/deleting each whole property acknowledges precisely one
+            # chunk. Do not publish until the zero-length terminator is read.
+            while True:
+                lib.XFlush(display);e=event()
+                if e.type!=28 or e.property.window!=window or e.property.atom!=prop or e.property.state!=0:continue
+                kind,_,size=property_value()
+                if kind==incr:raise ValueError("Nested INCR transfer")
+                if size==0:break
+            if total<minimum:raise ValueError("Incomplete INCR selection")
+        if rejected or lib.XGetSelectionOwner(display,primary)!=owner:return None
+        trace("complete",size=len(data))
+        return bytes(data)
+    except (OSError,ValueError,TimeoutError):
+        trace("read-refused")
+        return None
+    finally:
+        if window:lib.XDestroyWindow(display,window)
+        lib.XCloseDisplay(display)
+
+class Primary:
+    def __init__(self, changed):
+        xlib()
+        os.environ["GDK_BACKEND"] = "x11"
+        Gdk.set_allowed_backends("x11")
+        if not Gtk.init_check():
+            raise ValueError("Desktop display is unavailable")
+        self.display = Gdk.Display.get_default()
+        if self.display is None or "X11" not in self.display.__class__.__name__:
+            raise ValueError("Mouse selection sharing requires this desktop's Xwayland bridge")
+        self.clip = self.display.get_primary_clipboard()
+        self.provider = None
+        self.generation = 0
+        self.cancellable = None
+        self.last_digest = None
+        self.read_serial = 0
+        self.reading = False
+        self.queued = None
+        self.changed = changed
+        self.clip.connect("changed", self.on_change)
+
+    def on_change(self, clip):
+        trace("changed", generation=self.generation)
+        if self.provider is not None and clip.get_content() == self.provider:
+            return
+        self.provider = None
+        self.generation += 1
+        self.cancel()
+        self.changed()
+
+    def cancel(self):
+        # Invalidate delivery immediately, but drain an already negotiated X11
+        # INCR transfer. Aborting during TARGETS negotiation can stall the owner.
+        self.read_serial += 1
+        self.queued = None
+
+    def set(self, text):
+        if not isinstance(text, str) or not text or len(text.encode("utf-8")) > LIMIT or "\0" in text:
+            return
+        self.cancel()
+        self.generation += 1
+        digest = hashlib.sha256(text.encode("utf-8")).digest()
+        if self.last_digest == digest and self.provider is not None and self.clip.get_content() == self.provider:
+            return
+        self.last_digest = digest
+        self.provider = Gdk.ContentProvider.new_for_value(text)
+        self.clip.set_content(self.provider)
+        self.display.flush()
+
+    def read(self, ready):
+        if self.reading:
+            self.queued = ready
+            return
+        import threading
+        self.reading = True
+        serial, generation = self.read_serial, self.generation
+        def fetch():
+            data = read_primary_bytes()
+            def complete():
+                self.reading = False
+                queued, self.queued = self.queued, None
+                if queued:
+                    GLib.idle_add(lambda: self.read(queued) or False)
+                if data and serial == self.read_serial and generation == self.generation:
+                    try:
+                        text = data.decode("utf-8")
+                    except UnicodeError:
+                        return False
+                    digest = hashlib.sha256(data).digest()
+                    if "\0" not in text and digest != self.last_digest:
+                        self.last_digest = digest
+                        ready(text)
+                return False
+            GLib.idle_add(complete)
+        threading.Thread(target=fetch, daemon=True).start()
+
+
+class Peer:
+    def __init__(self, source, target, local=False):
+        self.epoch = 0
+        self.enabled = False
+        self.receive_enabled = False
+        self.last_heartbeat = time.monotonic()
+        self.local = local
+        self.primary = Primary(self.changed)
+        self.pipe = Pipe(source, target, self.message, loop.quit)
+        self.timer = None
+        self.dirty = False
+        GLib.timeout_add(1000, self.expiry)
+
+    def expiry(self):
+        if time.monotonic() - self.last_heartbeat > 10:
+            loop.quit()
+            return False
+        return True
+
+    def changed(self):
+        self.dirty = True
+        if self.timer:
+            GLib.source_remove(self.timer)
+        def settled():
+            self.timer = None
+            self.publish()
+            return False
+        self.timer = GLib.timeout_add(75, settled)
+
+    def publish(self):
+        if not self.enabled:
+            return
+        epoch = self.epoch
+        self.dirty = False
+        self.primary.read(lambda text: self.pipe.send({"type": "text", "epoch": epoch,
+                                                      "text": text})
+                          if self.enabled and self.epoch == epoch else None)
+
+    def message(self, value):
+        if not isinstance(value, dict):
+            raise ValueError("Invalid message")
+        kind = value.get("type")
+        if kind == "hello" and self.local:
+            print('{"status":"ready"}', flush=True)
+        elif kind == "mode":
+            epoch = value["epoch"]
+            if type(epoch) is not int or epoch < self.epoch:
+                raise ValueError("Invalid epoch")
+            self.last_heartbeat = time.monotonic()
+            if epoch != self.epoch:
+                self.primary.cancel()
+                # A local selection may have replaced our last delivery while
+                # this remote canvas was inactive. Equal text is a new copy.
+                self.primary.last_digest = None
+            self.epoch = epoch
+            self.enabled = value["send"] is True
+            self.receive_enabled = value["receive"] is True
+        elif kind == "text":
+            if self.receive_enabled and value.get("epoch") == self.epoch:
+                self.primary.set(value["text"])
+        else:
+            raise ValueError("Unknown message")
+
+
+def run():
+    global Gdk, Gio, GLib, Gtk, loop
+    if len(sys.argv) < 3 or sys.argv[1] not in ["--peer", "--bridge"]:
+        raise ValueError("Expected a private peer or reviewed SSH bridge")
+    if sys.argv[1] == "--peer":
+        session_environment(sys.argv[2])
+    os.environ["GDK_BACKEND"] = "x11"
+    import gi
+    gi.require_version("Gdk", "4.0")
+    gi.require_version("Gtk", "4.0")
+    from gi.repository import Gdk, Gio, GLib, Gtk
+    loop = GLib.MainLoop()
+    signal.signal(signal.SIGTERM, lambda *_: loop.quit())
+    signal.signal(signal.SIGINT, lambda *_: loop.quit())
+    if sys.argv[1] == "--peer":
+        peer = Peer(0, 1)
+        peer.pipe.send({"type":"hello"})
+        loop.run()
+        return
+    argv = json.loads(sys.argv[2])
+    if not isinstance(argv, list) or not argv or argv[0] != "ssh" or not all(isinstance(x, str) for x in argv):
+        raise ValueError("Expected a reviewed SSH command")
+    child = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                             stderr=sys.stderr if os.environ.get("RUWAC_PRIMARY_TRACE") == "1" else subprocess.DEVNULL)
+    try:
+        local = Peer(child.stdout.fileno(), child.stdin.fileno(), local=True)
+        # Peer.send addresses the opposite desktop; local messages require the
+        # opposite direction. The same epoch invalidates both pending reads.
+        remote_message = local.message
+        def remote(value):
+            remote_message(value)
+        local.pipe.receive = remote
+        def control(value):
+            if not isinstance(value, dict) or type(value.get("send")) is not bool or type(value.get("receive")) is not bool:
+                raise ValueError("Invalid GUI selection policy")
+            changed = (local.enabled, local.receive_enabled) != (value["send"], value["receive"])
+            if changed:
+                local.epoch += 1
+                local.primary.cancel()
+                local.primary.last_digest = None
+            local.enabled = value["send"]
+            local.receive_enabled = value["receive"]
+            local.last_heartbeat = time.monotonic()
+            local.pipe.send({"type":"mode", "epoch":local.epoch,
+                             "send":local.receive_enabled, "receive":local.enabled})
+            if changed and local.enabled and local.dirty:
+                local.publish()
+        Pipe(0, 1, control, loop.quit)
+        loop.run()
+    finally:
+        child.stdin.close()
+        child.terminate()
+        try:
+            child.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            child.kill()
+            child.wait()
+
+
+if __name__ == "__main__":
+    try:
+        run()
+    except Exception as error:
+        trace("unavailable", error_type=type(error).__name__)
+        # Remote failures can contain desktop paths/SSH details. The GUI reports
+        # a fixed actionable status; never print arbitrary exception contents.
+        print('{"status":"unavailable"}', file=sys.stderr, flush=True)
+        raise SystemExit(1)

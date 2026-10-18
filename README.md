@@ -373,3 +373,38 @@ Repeated `Terminal` names are independent persistent sessions created by GUI ter
 Product purpose, requested capabilities, realized scope and recent code-review findings: [functionality audit](spec/RUWAC_FUNCTIONALITY_AUDIT.md).
 
 After installation, `man ruwac` documents session commands, keyboard controls and updates. Machines: Alt+M; Agents: Alt+A. Preferences → Tight line spacing reduces vertical spacing; existing saved appearance settings are preserved.
+
+### Mouse selection across Linux RDP desktops
+
+For selecting text on one Linux desktop and middle-clicking on the other, edit
+the RDP machine and enable **Receive mouse selections from this Linux desktop**
+under Advanced. Enter its Linux SSH account, SSH port (0 keeps SSH configuration),
+and the exact remote Wayland session, such as `wayland-0`. The SSH account must
+be the account owning that desktop, with an existing trusted host key and key
+authentication. The configured SSH identity, known-hosts file and jump route apply;
+the RDP service password is never reused. The remote desktop needs Python3, GTK4
+PyGObject and Xwayland (Fedora: `python3-gobject gtk4 xorg-x11-server-Xwayland`).
+
+This optional helper receives remote text into local PRIMARY separately from the
+Ctrl+C clipboard. It follows the RDP tab’s receive clipboard policy and operates
+while its canvas has focus. Inactive remote selections are ignored. The focused
+native GUI publishes the selection, including on Wayland; a background Xwayland
+client cannot reliably do this. Sending local PRIMARY back to a remote native
+Wayland app is not implemented. Ctrl+C/V continues to work in both directions.
+CLIPBOARD, images and saved credentials are unchanged. It stops on tab disconnect
+or GUI exit; no remote service or clipboard-history file is installed. A missing
+SSH key, unavailable Xwayland, mismatched desktop or missing dependency leaves
+normal RDP/Ctrl+C usable and shows a selection-sharing error. Reconnect after
+correcting the settings. This helper supports Linux desktops with a working
+Xwayland PRIMARY bridge; it does not add PRIMARY support to Windows.
+
+Headless setup for an existing RDP endpoint is also available (no graphical
+display or passwords required):
+
+```sh
+ruwac-desktop --receive-primary ENDPOINT_ID LINUX_SSH_USER wayland-0 0
+ruwac-desktop --disable-primary ENDPOINT_ID
+```
+
+Reopen the RDP tab after enabling it. Disabling or changing the saved route stops
+its existing selection helper; running terminal processes remain independent.

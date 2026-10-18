@@ -1200,6 +1200,11 @@ pub struct RdpView {
     auto_gdm: RefCell<AutoGdm>,
     selected: RefCell<Option<Rc<dyn Fn() -> bool>>>,
     profile_metadata: RefCell<Option<crate::profiles::Profile>>,
+    primary: RefCell<Option<crate::primary::Bridge>>,
+    primary_attempted: Cell<bool>,
+    primary_transport: RefCell<Option<String>>,
+    primary_checked: Cell<Option<std::time::Instant>>,
+    primary_status: gtk::Label,
 }
 fn quick_action(toolbar: &gtk::Box, name: &str, icon: &str, label: &str, target: &gtk::Button) {
     let button = gtk::Button::from_icon_name(icon);
@@ -1350,6 +1355,10 @@ impl RdpView {
             "Assisted GNOME Sign-in",
             &assist,
         );
+        let primary_status = gtk::Label::new(None);
+        primary_status.set_wrap(true);
+        primary_status.set_visible(false);
+        root.append(&primary_status);
         let v = Rc::new(Self {
             root: root.clone(),
             area,
@@ -1408,6 +1417,11 @@ impl RdpView {
             auto_gdm: RefCell::new(AutoGdm::default()),
             selected: RefCell::new(None),
             profile_metadata: RefCell::new(None),
+            primary: RefCell::new(None),
+            primary_attempted: Cell::new(false),
+            primary_transport: RefCell::new(None),
+            primary_checked: Cell::new(None),
+            primary_status,
         });
         let weak = Rc::downgrade(&v);
         let assist_popup = popup.clone();
@@ -1836,6 +1850,7 @@ impl RdpView {
             v.pending_connect_tick();
             v.update();
             v.auto_gdm_tick();
+            v.primary_tick();
             cancel_auto.set_visible(v.auto_gdm.borrow().armed);
             v.canvas();
             if v.preferences_due
@@ -2299,6 +2314,9 @@ impl RdpView {
         Some(p)
     }
     pub fn configure(&self, p: &crate::profiles::Profile) {
+        self.primary_checked.set(None);
+        self.primary.borrow_mut().take();
+        self.primary_attempted.set(false);
         self.cancel_pending_connect("Connection cancelled: profile changed");
         self.assist_epoch.fetch_add(1, Ordering::AcqRel);
         self.assist_button
@@ -2515,7 +2533,7 @@ impl RdpView {
                     "disconnected".into()
                 }
             });
-        serde_json::json!({"id":self.root.widget_name().as_str(),"phase":phase,"connection_stage":connection.as_ref().map(|c|c.state.lock().unwrap().connection_stage.clone()),"size":self.size.get(),"transport_id":connection.as_ref().map(|c|c.id.as_str()),"decoded_updates":connection.as_ref().map(|c|c.state.lock().unwrap().frames).unwrap_or(0),"clipboard_owner":self.broker.borrow().active()==Some(self.id.as_str()),"display_control":connection.as_ref().map(|c|{let s=c.state.lock().unwrap();serde_json::json!({"channel_opened":s.display_channel_opened,"capability_messages":s.display_capability_messages,"negotiated":s.display_cap.is_some()})}),"clipboard_channel_negotiated":connection.as_ref().is_some_and(|c|c.state.lock().unwrap().clipboard_channel_negotiated),"verified_tls_sha256":connection.as_ref().and_then(|c|c.state.lock().unwrap().verified_tls_sha256.clone()),"protocol_error":connection.as_ref().and_then(|c|c.state.lock().unwrap().protocol_error.clone()),"authentication_error":connection.as_ref().and_then(|c|c.state.lock().unwrap().authentication_error.clone()),"certificate_review":self.certificate.borrow().as_ref().map(|r|serde_json::json!({"sha256":r.fingerprint(),"changed":r.changed,"valid_now":r.valid_now})),"profile":self.profile_metadata.borrow().as_ref().map(|p|p.id.clone())})
+        serde_json::json!({"id":self.root.widget_name().as_str(),"phase":phase,"mouse_selection":self.primary_status.text().as_str(),"connection_stage":connection.as_ref().map(|c|c.state.lock().unwrap().connection_stage.clone()),"size":self.size.get(),"transport_id":connection.as_ref().map(|c|c.id.as_str()),"decoded_updates":connection.as_ref().map(|c|c.state.lock().unwrap().frames).unwrap_or(0),"clipboard_owner":self.broker.borrow().active()==Some(self.id.as_str()),"display_control":connection.as_ref().map(|c|{let s=c.state.lock().unwrap();serde_json::json!({"channel_opened":s.display_channel_opened,"capability_messages":s.display_capability_messages,"negotiated":s.display_cap.is_some()})}),"clipboard_channel_negotiated":connection.as_ref().is_some_and(|c|c.state.lock().unwrap().clipboard_channel_negotiated),"verified_tls_sha256":connection.as_ref().and_then(|c|c.state.lock().unwrap().verified_tls_sha256.clone()),"protocol_error":connection.as_ref().and_then(|c|c.state.lock().unwrap().protocol_error.clone()),"authentication_error":connection.as_ref().and_then(|c|c.state.lock().unwrap().authentication_error.clone()),"certificate_review":self.certificate.borrow().as_ref().map(|r|serde_json::json!({"sha256":r.fingerprint(),"changed":r.changed,"valid_now":r.valid_now})),"profile":self.profile_metadata.borrow().as_ref().map(|p|p.id.clone())})
     }
     pub fn connect_profile(&self) {
         fn find(w: &gtk::Widget) -> Option<gtk::Button> {
@@ -2618,6 +2636,92 @@ impl RdpView {
                     .set_text("CLIPRDR queue full; transfer not sent");
                 conn.close();
             }
+        }
+    }
+    fn primary_tick(&self) {
+        let enabled = self
+            .profile_metadata
+            .borrow()
+            .as_ref()
+            .is_some_and(|p| p.preferences.primary_sync);
+        self.primary_status.set_visible(enabled);
+        if !enabled {
+            self.primary.borrow_mut().take();
+            return;
+        }
+        let transport = self.connection.borrow().as_ref().map(|c| c.id.clone());
+        if *self.primary_transport.borrow() != transport {
+            self.primary.borrow_mut().take();
+            self.primary_attempted.set(false);
+            *self.primary_transport.borrow_mut() = transport;
+        }
+        let login = self
+            .profile_metadata
+            .borrow()
+            .as_ref()
+            .is_some_and(|p| p.preferences.rdp_mode == "gnome-remote-login");
+        let connected = self.connection.borrow().as_ref().is_some_and(|c| {
+            let s = c.state.lock().unwrap();
+            matches!(s.phase.as_str(), "connected" | "display_change")
+                && s.frames > 0
+                && (!login || s.handovers >= 2)
+        });
+        if !connected {
+            if self.primary.borrow_mut().take().is_some() {
+                self.primary_attempted.set(false);
+            }
+            self.primary_status
+                .set_text("Mouse selection sharing waits for the remote desktop");
+            return;
+        }
+        if self
+            .primary_checked
+            .get()
+            .is_none_or(|at| at.elapsed() > Duration::from_secs(1))
+        {
+            self.primary_checked.set(Some(std::time::Instant::now()));
+            let current = self
+                .profile_metadata
+                .borrow()
+                .as_ref()
+                .is_some_and(crate::profiles::primary_profile_current);
+            if !current {
+                self.primary.borrow_mut().take();
+                self.primary_attempted.set(true);
+                self.primary_status.set_text(
+                    "Mouse selection settings changed; reconnect this desktop to apply them",
+                );
+                return;
+            }
+        }
+        let active = self.area.has_focus()
+            && self
+                .root
+                .root()
+                .and_then(|r| r.downcast::<gtk::Window>().ok())
+                .is_some_and(|w| w.is_active());
+        if self.primary.borrow().is_none() && !self.primary_attempted.get() && active {
+            self.primary_attempted.set(true);
+            if let Some(p) = self.profile_metadata.borrow().as_ref() {
+                match crate::primary::Bridge::start(p) {
+                    Ok(b) => *self.primary.borrow_mut() = Some(b),
+                    Err(e) => self.primary_status.set_text(&e),
+                }
+            }
+        }
+        if let Some(bridge) = self.primary.borrow_mut().as_mut() {
+            bridge.tick(
+                active && self.allowed(false, false),
+                active && self.allowed(true, false),
+            );
+            if active && self.allowed(true, false) {
+                if let Err(error) = bridge.publish_primary(&self.area.display().primary_clipboard())
+                {
+                    self.primary_status.set_text(&error);
+                }
+            }
+
+            self.primary_status.set_text(if bridge.failed {"Mouse selection sharing unavailable: check SSH key/trusted host, Python3 GTK4, Xwayland and the configured desktop session; reconnect to retry"} else if bridge.ready {"Mouse selection sharing ready · Ctrl+C clipboard remains separate"} else {"Connecting mouse selection sharing over SSH…"});
         }
     }
     fn allowed(&self, receive: bool, manual: bool) -> bool {
@@ -3688,6 +3792,10 @@ impl RdpView {
         }
     }
     pub fn close(&self) {
+        self.primary.borrow_mut().take();
+        self.primary_attempted.set(false);
+        self.primary_status.set_visible(false);
+        self.primary_checked.set(None);
         self.pending_connect.borrow_mut().take();
         *self.auto_gdm.borrow_mut() = AutoGdm::default();
         self.rendered_generation.set(0);
