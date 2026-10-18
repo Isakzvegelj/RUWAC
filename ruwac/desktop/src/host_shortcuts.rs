@@ -125,7 +125,7 @@ pub fn fixture(window: &adw::ApplicationWindow, q: &serde_json::Value) -> serde_
                     "Recent SSH connections",
                     "Saved SSH hosts",
                     "Saved agent hosts",
-                    "Running agent sessions",
+                    "Agent sessions",
                 ]
                 .contains(&label.text().as_str())
                 {

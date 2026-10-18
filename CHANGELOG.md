@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## v0.4.21 — 2026-10-18 — Stable source release
+
+- Persist explicit SSH/agent endpoint, pane and provider associations across frontend restarts and windows; reconstruct reconnect actions without storing generated SSH commands or credentials.
+- Keep image paste bound to the original SSH process and pane, excluding newly split local shells; list saved agent sessions by explicit provider metadata instead of name substrings and focus their recorded pane/window.
+
 ## v0.4.20 — 2026-10-18 — Stable source release
 
 - Preserve working SSH image paste while binding asynchronous completion to the original endpoint and pane, with cancellable guarded delivery, private hash-verified upload and bounded full-duplex SSH transport.

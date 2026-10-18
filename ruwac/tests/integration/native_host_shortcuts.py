@@ -64,7 +64,7 @@ try:
  assert ssh['username']=='' and rdp['username']=='generated-service'
  assert ssh['id']!=rdp['id']and ssh['secret_reference']!=rdp['secret_reference'];assert not ssh.get('preferences',{}).get('identity_file')
  checks.append('connect-icon-adds-ssh-endpoint-from-config-and-opens-terminal-without-setup-form')
- time.sleep(.4);header=command('host-shortcuts',operation='header');assert 'Saved agent hosts'in header['sections'];assert 'Running agent sessions'in header['sections'];assert sum(x['name']=='saved-host-codex'for x in header['widgets'])>=3;assert sum(x['name']=='saved-host-claude'for x in header['widgets'])>=3
+ time.sleep(.4);header=command('host-shortcuts',operation='header');assert 'Saved agent hosts'in header['sections'];assert 'Agent sessions'in header['sections'];assert sum(x['name']=='saved-host-codex'for x in header['widgets'])>=3;assert sum(x['name']=='saved-host-claude'for x in header['widgets'])>=3
  assert sum(x['name']=='saved-host-kimi'for x in header['widgets'])>=3
  command('host-shortcuts',close=True)
  menu=command('host-shortcuts',operation='context');assert 'Recent SSH connections'in menu['sections']and'Saved SSH hosts'in menu['sections'];assert menu['sections'].index('Recent SSH connections')<menu['sections'].index('Saved SSH hosts');command('host-shortcuts',close=True)

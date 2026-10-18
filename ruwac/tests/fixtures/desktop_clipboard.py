@@ -6,6 +6,14 @@ from gi.repository import Gtk,Gdk,GLib
 from pathlib import Path
 import hashlib,json,sys
 root=Path(sys.argv[1]);Gtk.init();display=Gdk.Display.get_default();window=Gtk.Window(title='RUWAC clipboard fixture');window.set_default_size(300,100);window.set_child(Gtk.Label(label='Generated clipboard fixtures only'));window.present();loop=GLib.MainLoop();sequence=0
+focus_probes=0
+probe=Gtk.EventControllerKey.new();probe.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+def probe_key(controller,key,keycode,state):
+ global focus_probes
+ if key==Gdk.KEY_F24:focus_probes+=1;return True
+ return False
+probe.connect('key-pressed',probe_key);window.add_controller(probe)
+
 (root/'peer-ready.json').write_text(json.dumps({'display':type(display).__name__}))
 def tick():
  global sequence
@@ -15,7 +23,8 @@ def tick():
  sequence=q['seq'];clip=display.get_primary_clipboard() if q.get('primary') else display.get_clipboard()
  def reply(data):
   temp=root/'peer-response.tmp';temp.write_text(json.dumps({'seq':q['seq'],'result':data}));temp.replace(root/'peer-response.json')
- if q['action']=='inspect':reply({'window_active':window.is_active(),'formats':list(clip.get_formats().get_mime_types())})
+ if q['action']=='input-probe':reply({'events':focus_probes,'active':window.is_active()})
+ elif q['action']=='inspect':reply({'window_active':window.is_active(),'formats':list(clip.get_formats().get_mime_types())})
  elif q['action'] in ('set-text','set-png'):
   payload=(root/q['file']).read_bytes();mime='image/png' if q['action']=='set-png' else 'text/plain;charset=utf-8'
   provider=Gdk.ContentProvider.new_for_bytes(mime,GLib.Bytes.new(payload));clip.set_content(provider);reply({'offered_bytes':len(payload),'sha256':hashlib.sha256(payload).hexdigest(),'mime':mime})

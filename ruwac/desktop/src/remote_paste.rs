@@ -12,24 +12,28 @@ use std::{
 };
 
 thread_local! {
-    static TARGETS: RefCell<HashMap<String, Profile>> = RefCell::new(HashMap::new());
+    // Explicitly configured fixtures only. Product launches use the private catalog.
+    static TARGETS: RefCell<HashMap<(String,String),(u32,Profile)>> = RefCell::new(HashMap::new());
 }
-
-/// Record the SSH endpoint a terminal session was opened for.
-pub fn remember(session: &str, profile: &Profile) {
-    if profile.protocol == "SSH" {
-        TARGETS.with(|t| t.borrow_mut().insert(session.into(), profile.clone()));
-    }
+fn pane_pid(view: &View, pane: &str) -> Option<u32> {
+    let frame = view.frame.borrow();
+    let frame = frame.as_ref()?;
+    let row = frame["panes"]
+        .as_array()?
+        .iter()
+        .find(|p| p["id"] == pane && p["ended"] != true && p["restored"] != true)?;
+    u32::try_from(row["pid"].as_u64()?).ok()
 }
-
-/// A reopened session keeps its endpoint.
-pub fn alias(old: &str, new: &str) {
-    TARGETS.with(|t| {
-        let profile = t.borrow().get(old).cloned();
-        if let Some(profile) = profile {
-            t.borrow_mut().insert(new.into(), profile);
-        }
-    });
+fn target_profile(view: &View, pane: &str) -> Option<Profile> {
+    let pid = pane_pid(view, pane)?;
+    crate::launches::image_profile(&view.session, pane, pid).or_else(|| {
+        TARGETS.with(|t| {
+            t.borrow()
+                .get(&(view.session.clone(), pane.into()))
+                .filter(|(p, _)| *p == pid)
+                .map(|(_, p)| p.clone())
+        })
+    })
 }
 
 #[derive(Clone)]
@@ -67,14 +71,7 @@ fn image_only(clipboard: &gdk::Clipboard) -> bool {
         && !f.contain_mime_type("text/plain;charset=utf-8")
 }
 fn same_endpoint(a: &Profile, b: &Profile) -> bool {
-    // Recency, display name and favorites do not change a running SSH route.
-    a.id == b.id
-        && a.machine_id == b.machine_id
-        && a.protocol == b.protocol
-        && a.server == b.server
-        && a.username == b.username
-        && a.secret_reference == b.secret_reference
-        && serde_json::to_value(&a.preferences).ok() == serde_json::to_value(&b.preferences).ok()
+    crate::launch_context::binding(a) == crate::launch_context::binding(b)
 }
 fn quote(path: &str) -> String {
     if path
@@ -89,7 +86,8 @@ fn quote(path: &str) -> String {
 /// focused terminal. Never infer a different destination from terminal text.
 pub fn try_paste(view: &Rc<View>) -> bool {
     use std::sync::atomic::Ordering;
-    let Some(profile) = TARGETS.with(|t| t.borrow().get(&view.session).cloned()) else {
+    let pane = view.target.borrow().clone();
+    let Some(profile) = target_profile(view, &pane) else {
         return false;
     };
     let clipboard = view.area.display().clipboard();
@@ -111,7 +109,6 @@ pub fn try_paste(view: &Rc<View>) -> bool {
             return true;
         }
     };
-    let pane = view.target.borrow().clone();
     let epoch = view.broker.borrow().epoch();
     let allowed = view.begin_image_paste();
     let weak = Rc::downgrade(view);
@@ -134,6 +131,7 @@ pub fn try_paste(view: &Rc<View>) -> bool {
                     && v.area.is_mapped()
                     && *v.target.borrow() == pane
                     && v.image_paste_destination_alive(&pane)
+                    && target_profile(&v, &pane).is_some_and(|p| same_endpoint(&profile, &p))
                     && v.broker.borrow().epoch() == epoch
                     && read_generation.get().is_none_or(|generation| {
                         v.broker
@@ -306,7 +304,17 @@ mod tests {
 pub fn fixture(view: &Rc<View>, q: &serde_json::Value) -> serde_json::Value {
     if let Some(p) = q.get("profile") {
         match serde_json::from_value::<Profile>(p.clone()) {
-            Ok(p) if p.protocol == "SSH" && p.validate().is_ok() => remember(&view.session, &p),
+            Ok(p) if p.protocol == "SSH" && p.validate().is_ok() => {
+                let pane = view.target.borrow().clone();
+                if let Some(pid) = pane_pid(view, &pane) {
+                    TARGETS.with(|t| {
+                        t.borrow_mut()
+                            .insert((view.session.clone(), pane), (pid, p));
+                    });
+                } else {
+                    return serde_json::json!({"error":"Fixture pane identity unavailable"});
+                }
+            }
             _ => return serde_json::json!({"error":"Invalid fixture SSH profile"}),
         }
     }
@@ -314,5 +322,6 @@ pub fn fixture(view: &Rc<View>, q: &serde_json::Value) -> serde_json::Value {
         view.reconnect();
     }
     let handled = q["paste"] == true && try_paste(view);
-    serde_json::json!({"handled":handled,"pending":view.image_paste_pending(),"status":view.status.text().as_str(),"warning":*view.warning.borrow()})
+    let pane = view.target.borrow().clone();
+    serde_json::json!({"handled":handled,"pending":view.image_paste_pending(),"status":view.status.text().as_str(),"warning":*view.warning.borrow(),"pane":pane,"pid":pane_pid(view,&pane),"target_bound":target_profile(view,&pane).is_some(),"image_offer":image_only(&view.area.display().clipboard())})
 }

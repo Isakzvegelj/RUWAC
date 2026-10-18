@@ -86,8 +86,24 @@ SHA-256 must match before an owned 0600 PNG is published in the remote owned
 
 The current receiver expects a Linux shell and standard coreutils on the remote
 host. It bounds stdin, both output pipes and process exit with one deadline.
-SSH associations for restored sessions still need persistent launch metadata;
-opening a saved SSH bookmark supplies the association today.
+New saved SSH and agent launches retain their endpoint, provider and original
+pane association across frontend restarts and independent windows. The private
+catalog is bound to the running daemon and its pane/process identities. A new
+local split does not inherit that SSH image destination. The Agents menu selects
+the recorded agent pane/window rather than whichever local split was last active. Changed or deleted
+connection identities refuse image delivery and require opening the current
+bookmark. Restoring launch metadata never starts a session or an agent. Older sessions without
+launch metadata remain available through Sessions; their endpoint is not guessed.
+
+Reconnect rebuilds the explicit launch recipe with the current installed client.
+Agent commands and backend choices are retained as nonsecret launch settings;
+passwords and key passphrases remain in Secret Service. The catalog contains no
+generated SSH argv or duplicate credential references. Private storage is bounded;
+a failure to save is shown while the live connection remains usable. Changes to
+external OpenSSH configuration or aliases are not tracked by the saved-profile
+fingerprint; reopen the bookmark after changing that configuration. A replaced
+daemon gets a separate catalog; recovered ended histories are not treated as
+verified live SSH connections.
 
 ## Machine workspaces and Files
 

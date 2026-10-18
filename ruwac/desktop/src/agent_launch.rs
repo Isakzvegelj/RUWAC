@@ -34,7 +34,7 @@ fn ssh_command(profile: &profiles::Profile, command: String) -> Result<Vec<Strin
     argv.push(command);
     Ok(argv)
 }
-fn argv(
+pub(crate) fn argv(
     profile: &profiles::Profile,
     agent: u32,
     binary: &str,
@@ -278,8 +278,12 @@ fn open_terminal(
     gtk::glib::timeout_add_local(Duration::from_millis(20), move || match rx.try_recv() {
         Ok(Ok(r)) => {
             if let Some(id) = r["session"].as_str() {
-                crate::remote_paste::remember(id, &target);
-                crate::launches::remember(id, &title, &launch_argv);
+                if let Ok(recipe) = crate::launch_context::Recipe::agent(&target, kind, "ruwac", "")
+                {
+                    crate::launches::remember_remote(&r, &target, recipe, &title, &launch_argv);
+                } else {
+                    crate::launches::remember(id, &title, &launch_argv);
+                }
                 sessions::append(&t, &v, &s, &b, id, &title);
             }
             gtk::glib::ControlFlow::Break
@@ -336,14 +340,15 @@ pub fn button(
         let (tabs,views,local_socket,broker,reader)=(tabs.clone(),views.clone(),local_socket.clone(),broker.clone(),reader.clone());
         dialog.connect_response(move |d,response| {
             if response!=gtk::ResponseType::Accept { d.close();return; }
-            let plan=rows.get(endpoint.selected() as usize).and_then(|r|r["id"].as_str()).ok_or("Choose an SSH endpoint".to_string()).and_then(|id|reader(id)).and_then(|mut p|{p.preferences.agent_backend=["ruwac","screen","tmux","direct"][backend.selected()as usize].into();if agent.selected()==0{p.preferences.codex_command=command.text().into();}else if agent.selected()==1{p.preferences.claude_command=command.text().into();}else{p.preferences.kimi_command=command.text().into();}argv(&p,[0,1,5][agent.selected()as usize],&binary.text(),&socket.text()).map(|a|profiles::session_argv(&p,a))});
-            let argv=match plan {Ok(a)=>a,Err(e)=>{status.set_text(&e);return;}};
+            let plan=rows.get(endpoint.selected() as usize).and_then(|r|r["id"].as_str()).ok_or("Choose an SSH endpoint".to_string()).and_then(|id|reader(id)).and_then(|mut p|{p.preferences.agent_backend=["ruwac","screen","tmux","direct"][backend.selected()as usize].into();if agent.selected()==0{p.preferences.codex_command=command.text().into();}else if agent.selected()==1{p.preferences.claude_command=command.text().into();}else{p.preferences.kimi_command=command.text().into();}{let kind=[0,1,5][agent.selected()as usize];let recipe=crate::launch_context::Recipe::agent(&p,kind,&binary.text(),&socket.text()).map_err(|e|e.to_string())?;let argv=argv(&p,kind,&binary.text(),&socket.text())?;Ok((p.clone(),profiles::session_argv(&p,argv),recipe))}});
+            let (profile,argv,recipe)=match plan {Ok(a)=>a,Err(e)=>{status.set_text(&e);return;}};
             open.set_sensitive(false);status.set_text("Opening remote agent terminal…");
             let (tx,rx)=std::sync::mpsc::sync_channel(1);let socket=local_socket.clone();
+            let launch_argv=argv.clone();
             std::thread::spawn(move || {let result=(||{let mut rpc=Rpc::connect(&socket)?;rpc.call("session.create",json!({"name":"Remote agent","argv":argv}))})();let _=tx.send(result);});
             let (tabs,views,socket,broker,dialog,status,open)=(tabs.clone(),views.clone(),local_socket.clone(),broker.clone(),d.downgrade(),status.clone(),open.clone());
             gtk::glib::timeout_add_local(Duration::from_millis(20),move ||match rx.try_recv(){
-                Ok(Ok(r))=>{if let Some(id)=r["session"].as_str(){sessions::append(&tabs,&views,&socket,&broker,id,"Remote agent");}if let Some(d)=dialog.upgrade(){d.close();}gtk::glib::ControlFlow::Break},
+                Ok(Ok(r))=>{if let Some(id)=r["session"].as_str(){crate::launches::remember_remote(&r,&profile,recipe.clone(),"Remote agent",&launch_argv);sessions::append(&tabs,&views,&socket,&broker,id,"Remote agent");}if let Some(d)=dialog.upgrade(){d.close();}gtk::glib::ControlFlow::Break},
                 Ok(Err(_))|Err(std::sync::mpsc::TryRecvError::Disconnected)=>{status.set_text("Could not create the local SSH terminal");open.set_sensitive(true);gtk::glib::ControlFlow::Break},
                 Err(std::sync::mpsc::TryRecvError::Empty)=>gtk::glib::ControlFlow::Continue,
             });

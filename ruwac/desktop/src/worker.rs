@@ -22,6 +22,7 @@ pub struct Rpc {
     stream: UnixStream,
     limits: ruwac_protocol::TerminalLimits,
     requested_size: Option<(u16, u16)>,
+    pane_pids: std::collections::HashMap<String, Value>,
 }
 impl Rpc {
     pub fn connect(path: &Path) -> io::Result<Self> {
@@ -66,7 +67,39 @@ impl Rpc {
             stream: s,
             limits: ruwac_protocol::TerminalLimits::LEGACY,
             requested_size: None,
+            pane_pids: Default::default(),
         })
+    }
+    /// Linux peer identity binds private launch records to this running engine,
+    /// including older engines without a daemon-instance protocol field.
+    pub fn daemon_identity(&self) -> io::Result<String> {
+        use sha2::{Digest, Sha256};
+        let mut cred: libc::ucred = unsafe { std::mem::zeroed() };
+        let mut size = std::mem::size_of_val(&cred) as libc::socklen_t;
+        if unsafe {
+            libc::getsockopt(
+                self.stream.as_raw_fd(),
+                libc::SOL_SOCKET,
+                libc::SO_PEERCRED,
+                &mut cred as *mut _ as *mut _,
+                &mut size,
+            )
+        } != 0
+            || cred.uid != unsafe { libc::geteuid() }
+            || cred.pid <= 0
+        {
+            return Err(io::Error::other("Daemon peer identity unavailable"));
+        }
+        let stat = fs::read_to_string(format!("/proc/{}/stat", cred.pid))?;
+        let start = stat
+            .rsplit_once(')')
+            .and_then(|(_, s)| s.split_whitespace().nth(19))
+            .ok_or_else(|| io::Error::other("Daemon start identity unavailable"))?;
+        let boot = fs::read_to_string("/proc/sys/kernel/random/boot_id")?;
+        Ok(format!(
+            "{:x}",
+            Sha256::digest(format!("{}:{start}:{}", cred.pid, boot.trim()).as_bytes())
+        ))
     }
     fn request(&mut self, method: &str, params: Value) -> io::Result<Value> {
         let r = request(method, params);
@@ -94,6 +127,25 @@ impl Rpc {
         Ok(v["result"].take())
     }
     pub fn call(&mut self, method: &str, mut params: Value) -> io::Result<Value> {
+        if method == "client.focusLaunch" {
+            let panes = self.request("pane.list", json!({"session":params["session"]}))?;
+            let valid = panes.as_array().is_some_and(|rows| {
+                rows.iter().any(|p| {
+                    p["id"] == params["pane"]
+                        && p["window"] == params["window"]
+                        && p["pid"] == params["pid"]
+                        && p["restored"] != true
+                })
+            });
+            if !valid {
+                return Err(io::Error::other(
+                    "Saved agent pane no longer belongs to this live engine/session",
+                ));
+            }
+            self.request("window.select", json!({"window":params["window"]}))?;
+            return self.request("pane.select", json!({"pane":params["pane"]}));
+        }
+
         if matches!(method, "session.attach" | "client.resize") {
             let raw = (
                 params["rows"].as_u64().unwrap_or(23).min(u16::MAX as u64) as u16,
@@ -105,6 +157,15 @@ impl Rpc {
             params["cols"] = json!(cols);
         }
         let mut result = ruwac_protocol::client_call(method, params, |m, v| self.request(m, v))?;
+        if method == "session.create" {
+            let identity = self
+                .daemon_identity()
+                .map(Value::String)
+                .unwrap_or(Value::Null);
+            if let Some(result) = result.as_object_mut() {
+                result.insert("_launch_daemon".into(), identity);
+            }
+        }
         if method == "client.render"
             && result["unchanged"] != true
             && result.get("session_name").is_none()
@@ -124,6 +185,36 @@ impl Rpc {
                     result["window_index"] =
                         json!(rows.iter().position(|row| row["id"] == result["window"]));
                     result["windows"]=json!(rows.iter().enumerate().map(|(index,row)|json!({"id":row["id"],"index":index,"name":row["name"]})).collect::<Vec<_>>());
+                }
+            }
+        }
+        if method == "client.render" && result["unchanged"] != true {
+            let missing = result["panes"].as_array().is_some_and(|panes| {
+                panes.iter().any(|p| {
+                    p["id"]
+                        .as_str()
+                        .is_some_and(|id| !self.pane_pids.contains_key(id))
+                })
+            });
+            if missing {
+                if let Ok(Value::Array(panes)) =
+                    self.request("pane.list", json!({"session":result["session"]}))
+                {
+                    if self.pane_pids.len() > 1024 {
+                        self.pane_pids.clear();
+                    }
+                    for pane in panes.into_iter().take(1024) {
+                        if let Some(id) = pane["id"].as_str() {
+                            self.pane_pids.insert(id.into(), pane["pid"].clone());
+                        }
+                    }
+                }
+            }
+            if let Some(panes) = result["panes"].as_array_mut() {
+                for pane in panes {
+                    if let Some(pid) = pane["id"].as_str().and_then(|id| self.pane_pids.get(id)) {
+                        pane["pid"] = pid.clone();
+                    }
                 }
             }
         }
@@ -640,5 +731,69 @@ impl Worker {
 impl Drop for Worker {
     fn drop(&mut self) {
         self.close();
+    }
+}
+
+#[cfg(test)]
+mod launch_focus_tests {
+    use super::*;
+    #[test]
+    fn launch_focus_checks_membership_before_any_selection() {
+        for fault in ["none", "pid", "pane", "window", "restored"] {
+            let (client, mut server) = UnixStream::pair().unwrap();
+            client
+                .set_read_timeout(Some(Duration::from_secs(2)))
+                .unwrap();
+            let target = json!({"session":"generated-session","window":"generated-window","pane":"generated-pane","pid":42});
+            let mut row = json!({"id":"generated-pane","window":"generated-window","pid":42,"restored":false});
+            match fault {
+                "pid" => row["pid"] = json!(43),
+                "pane" => row["id"] = json!("different-pane"),
+                "window" => row["window"] = json!("different-window"),
+                "restored" => row["restored"] = json!(true),
+                _ => (),
+            }
+            let expected = target.clone();
+            let peer = thread::spawn(move || {
+                let request =
+                    ruwac_protocol::read_frame_with_limit(&mut server, ruwac_protocol::MAX_FRAME)
+                        .unwrap();
+                assert_eq!(request["method"], "pane.list");
+                assert_eq!(request["params"]["session"], expected["session"]);
+                write_frame(
+                    &mut server,
+                    &json!({"version":0,"id":request["id"],"result":[row]}),
+                )
+                .unwrap();
+                if fault == "none" {
+                    for (method, key) in [("window.select", "window"), ("pane.select", "pane")] {
+                        let request = ruwac_protocol::read_frame_with_limit(
+                            &mut server,
+                            ruwac_protocol::MAX_FRAME,
+                        )
+                        .unwrap();
+                        assert_eq!(request["method"], method);
+                        assert_eq!(request["params"][key], expected[key]);
+                        write_frame(&mut server,&json!({"version":0,"id":request["id"],"result":{"selected":expected[key]}})).unwrap();
+                    }
+                }
+                // Closing the client must reveal no unreviewed mutation request.
+                let mut byte = [0u8; 1];
+                server
+                    .set_read_timeout(Some(Duration::from_secs(2)))
+                    .unwrap();
+                assert_eq!(std::io::Read::read(&mut server, &mut byte).unwrap(), 0);
+            });
+            let mut rpc = Rpc {
+                stream: client,
+                limits: ruwac_protocol::TerminalLimits::CURRENT,
+                requested_size: None,
+                pane_pids: Default::default(),
+            };
+            let result = rpc.call("client.focusLaunch", target);
+            assert_eq!(result.is_ok(), fault == "none");
+            drop(rpc);
+            peer.join().unwrap();
+        }
     }
 }

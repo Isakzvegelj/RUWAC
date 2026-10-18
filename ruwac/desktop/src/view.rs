@@ -232,7 +232,7 @@ impl View {
         reconnect.connect_clicked(move |_| {
             if let Some(v) = weak.upgrade() {
                 if v.ended.get() {
-                    if !crate::launches::reopen(&v.session) {
+                    if !crate::launches::reopen(&v.session, &v.target.borrow()) {
                         v.status
                             .set_text("This session cannot be reopened; use New term");
                     }
@@ -939,6 +939,14 @@ impl View {
         }
         *self.target.borrow_mut() = target;
     }
+    pub fn focus_launch_pane(&self, window: &str, pane: &str, pid: u32) {
+        self.cancel_image_paste();
+        self.command(
+            "client.focusLaunch",
+            json!({"session":self.session,"window":window,"pane":pane,"pid":pid}),
+        );
+        self.focus();
+    }
     pub fn image_paste_destination_alive(&self, pane: &str) -> bool {
         let worker = self.worker.borrow();
         let state = worker.state.lock().unwrap();
@@ -1146,12 +1154,14 @@ impl View {
                 // A local shell the person exited closes. Remote sessions (a
                 // dropped SSH connection looks the same) and programs that
                 // ended by themselves stay readable with Reconnect / Close.
-                if self.typed.get() && !crate::launches::is_remote(&self.session) {
+                if self.typed.get()
+                    && !crate::launches::is_remote(&self.session, &self.target.borrow())
+                {
                     self.finished.set(true);
                 } else if !self.dead.is_visible() {
                     self.ended.set(true);
                     self.dead_title.set_text("Session ended");
-                    self.dead_reason.set_text(if crate::launches::is_remote(&self.session) {
+                    self.dead_reason.set_text(if crate::launches::is_remote(&self.session,&self.target.borrow()) {
                         "The remote program or SSH connection ended. Reconnect opens it again in a new tab."
                     } else {
                         "The program ended. Its output stays readable above this card."

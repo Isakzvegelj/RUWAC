@@ -163,22 +163,17 @@ pub fn controls(
     root
 }
 
-/// Agent launches name their sessions "HOST · Codex|Claude|Kimi".
-fn agent_session(name: &str) -> bool {
-    let name = name.to_lowercase();
-    name == "remote agent" || ["codex", "claude", "kimi"].iter().any(|a| name.contains(a))
-}
-
-/// Running agent sessions for the agent menu, filled asynchronously.
+/// Agent sessions for the agent menu, filled asynchronously.
 pub fn agent_sessions(
     tabs: adw::TabView,
     views: Rc<RefCell<Vec<Rc<View>>>>,
     socket: PathBuf,
     broker: Broker,
 ) -> gtk::Box {
+    crate::launches::refresh();
     let body = gtk::Box::new(gtk::Orientation::Vertical, 4);
     body.set_widget_name("agent-sessions");
-    let heading = gtk::Label::new(Some("Running agent sessions"));
+    let heading = gtk::Label::new(Some("Agent sessions"));
     heading.set_xalign(0.0);
     heading.add_css_class("heading");
     body.append(&heading);
@@ -197,6 +192,9 @@ pub fn agent_sessions(
         let Some(body) = weak.upgrade() else {
             return glib::ControlFlow::Break;
         };
+        if crate::launches::loading() {
+            return glib::ControlFlow::Continue;
+        }
         let rows = match rx.try_recv() {
             Err(std::sync::mpsc::TryRecvError::Empty) => return glib::ControlFlow::Continue,
             Ok(Ok(Value::Array(rows))) => rows,
@@ -208,12 +206,12 @@ pub fn agent_sessions(
         let rows: Vec<_> = rows
             .iter()
             .filter_map(|r| Some((r["id"].as_str()?.to_owned(), r["name"].as_str()?.to_owned())))
-            .filter(|(_, name)| agent_session(name))
+            .filter(|(id, _)| crate::launches::is_agent(id))
             .collect();
         status.set_text(if rows.is_empty() {
             "None yet — start one from a host below"
         } else {
-            "Open or switch to a session; its agent keeps running"
+            "Open a saved agent session; ended connections offer Reconnect"
         });
         for (id, name) in rows {
             let open = views
@@ -235,6 +233,11 @@ pub fn agent_sessions(
             let (t, v, s, b) = (tabs.clone(), views.clone(), socket.clone(), broker.clone());
             button.connect_clicked(move |button| {
                 append(&t, &v, &s, &b, &id, &name);
+                if let Some((window, pane, pid)) = crate::launches::agent_target(&id) {
+                    if let Some(view) = v.borrow().iter().find(|v| v.session == id) {
+                        view.focus_launch_pane(&window, &pane, pid);
+                    }
+                }
                 if let Some(pop) = button
                     .ancestor(gtk::Popover::static_type())
                     .and_downcast::<gtk::Popover>()
