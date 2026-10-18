@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v0.4.22 — 2026-10-18 — Stable source release
+
+- Fix agent-menu navigation to update the GUI input target from the authenticated pane acknowledgement, queue typing while selection is pending and ignore stale acknowledgements after a later local pane selection. Deliver that acknowledgement through the worker reply queue.
+
 ## v0.4.21 — 2026-10-18 — Stable source release
 
 - Persist explicit SSH/agent endpoint, pane and provider associations across frontend restarts and windows; reconstruct reconnect actions without storing generated SSH commands or credentials.

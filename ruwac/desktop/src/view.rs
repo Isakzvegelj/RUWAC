@@ -71,6 +71,7 @@ pub struct View {
     pub search: gtk::SearchEntry,
     early: RefCell<Vec<String>>,
     navigation: Cell<bool>,
+    focus_epoch: Cell<u64>,
     expected_window: RefCell<Option<String>>,
     divider: RefCell<Option<(String, bool, f64, f64, f64)>>,
     remaps: std::collections::HashMap<String, String>,
@@ -214,6 +215,7 @@ impl View {
             copy_anchor: Cell::new(None),
             early: RefCell::new(Vec::new()),
             navigation: Cell::new(false),
+            focus_epoch: Cell::new(0),
             expected_window: RefCell::new(None),
             divider: RefCell::new(None),
             shortcuts: std::env::var("RUWAC_SHORTCUTS")
@@ -501,13 +503,18 @@ impl View {
             "Loading bounded canonical scrollback…"
         });
     }
-    fn navigate(&self, method: &str, params: Value) {
+    fn navigate(&self, method: &str, mut params: Value) {
+        self.focus_epoch.set(self.focus_epoch.get().wrapping_add(1));
+        if method == "client.focusLaunch" {
+            params["focus_epoch"] = json!(self.focus_epoch.get());
+        }
         self.release_mouse();
         self.navigation.set(true);
         *self.selection.borrow_mut() = None;
         self.command(method, params);
     }
     fn split(&self, vertical: bool) {
+        self.focus_epoch.set(self.focus_epoch.get().wrapping_add(1));
         self.release_mouse();
         if let Some(f) = self.frame.borrow().as_ref() {
             self.navigation.set(true);
@@ -941,7 +948,7 @@ impl View {
     }
     pub fn focus_launch_pane(&self, window: &str, pane: &str, pid: u32) {
         self.cancel_image_paste();
-        self.command(
+        self.navigate(
             "client.focusLaunch",
             json!({"session":self.session,"window":window,"pane":pane,"pid":pid}),
         );
@@ -1233,6 +1240,20 @@ impl View {
             }
         }
         if let Some((method, v)) = s.reply.pop_front() {
+            if method == "client.focusLaunch"
+                && v["focus_epoch"].as_u64() == Some(self.focus_epoch.get())
+            {
+                if let Some(pane) = v["pane"].as_str() {
+                    self.set_target(pane.into());
+                    self.navigation.set(false);
+                    *self.expected_window.borrow_mut() = None;
+                    let pending = std::mem::take(&mut *self.early.borrow_mut());
+                    for text in pending {
+                        self.input(&text);
+                    }
+                }
+            }
+
             if method == "pane.create" {
                 if let Some(pane) = v["pane"].as_str() {
                     self.set_target(pane.into());
@@ -1338,6 +1359,13 @@ impl View {
     }
     pub fn focus_at(&self, x: f64, y: f64) {
         if let Some((p, _, _)) = self.point(x, y) {
+            if p != *self.target.borrow() || self.navigation.get() {
+                self.focus_epoch.set(self.focus_epoch.get().wrapping_add(1));
+                self.navigation.set(false);
+                *self.expected_window.borrow_mut() = None;
+                self.early.borrow_mut().clear();
+            }
+
             if p != *self.target.borrow() {
                 self.release_mouse();
                 *self.selection.borrow_mut() = None;
@@ -1811,6 +1839,36 @@ impl View {
         self.area.queue_draw();
     }
     /// Test hook: press this view's Reconnect button; reports the card state.
+    pub fn fixture_focus_launch_race(&self, q: &Value) -> Value {
+        let local = q["local_pane"].as_str().unwrap_or("");
+        let position = self
+            .frame
+            .borrow()
+            .as_ref()
+            .and_then(|f| f["panes"].as_array())
+            .and_then(|rows| rows.iter().find(|p| p["id"] == local))
+            .map(|p| {
+                (
+                    (p["rect"]["x"].as_f64().unwrap_or(0.0)
+                        + p["rect"]["cols"].as_f64().unwrap_or(1.0) / 2.0)
+                        * self.cell_width.get(),
+                    (p["rect"]["y"].as_f64().unwrap_or(0.0)
+                        + p["rect"]["rows"].as_f64().unwrap_or(1.0) / 2.0)
+                        * self.cell_height.get(),
+                )
+            });
+        if let Some((x, y)) = position {
+            self.focus_launch_pane(
+                q["window"].as_str().unwrap_or(""),
+                q["pane"].as_str().unwrap_or(""),
+                q["pid"].as_u64().unwrap_or(0) as u32,
+            );
+            self.focus_at(x, y);
+            json!({"queued":true})
+        } else {
+            json!({"queued":false})
+        }
+    }
     pub fn fixture_reconnect(&self) -> Value {
         let visible = self.dead.is_visible();
         let ended = self.ended.get();

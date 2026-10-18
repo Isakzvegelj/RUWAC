@@ -143,7 +143,15 @@ impl Rpc {
                 ));
             }
             self.request("window.select", json!({"window":params["window"]}))?;
-            return self.request("pane.select", json!({"pane":params["pane"]}));
+            let reply = self.request("pane.select", json!({"pane":params["pane"]}))?;
+            if reply["selected"] != params["pane"] {
+                return Err(io::Error::other(
+                    "Agent pane selection was not acknowledged",
+                ));
+            }
+            return Ok(
+                json!({"window":params["window"],"pane":params["pane"],"focus_epoch":params["focus_epoch"]}),
+            );
         }
 
         if matches!(method, "session.attach" | "client.resize") {
@@ -600,6 +608,7 @@ impl Worker {
                             Ok(reply) => {
                                 s.acknowledgements += 1;
                                 if reply.0 == "pane.history"
+                                    || reply.0 == "client.focusLaunch"
                                     || reply.0.starts_with("window.")
                                     || reply.0 == "pane.create"
                                     || reply.0 == "pane.capture"
@@ -744,7 +753,7 @@ mod launch_focus_tests {
             client
                 .set_read_timeout(Some(Duration::from_secs(2)))
                 .unwrap();
-            let target = json!({"session":"generated-session","window":"generated-window","pane":"generated-pane","pid":42});
+            let target = json!({"session":"generated-session","window":"generated-window","pane":"generated-pane","pid":42,"focus_epoch":7});
             let mut row = json!({"id":"generated-pane","window":"generated-window","pid":42,"restored":false});
             match fault {
                 "pid" => row["pid"] = json!(43),
@@ -792,6 +801,12 @@ mod launch_focus_tests {
             };
             let result = rpc.call("client.focusLaunch", target);
             assert_eq!(result.is_ok(), fault == "none");
+            if fault == "none" {
+                let reply = result.unwrap();
+                assert_eq!(reply["pane"], "generated-pane");
+                assert_eq!(reply["window"], "generated-window");
+                assert_eq!(reply["focus_epoch"], 7);
+            }
             drop(rpc);
             peer.join().unwrap();
         }

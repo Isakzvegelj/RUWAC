@@ -553,6 +553,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     "remote-image-dialog"=>reply(remote_image::fixture(&window,&q)),
     "ssh-image-paste"=>reply(remote_paste::fixture(&v,&q)),
     "launch-contexts"=>reply(launches::inspect()),
+    "launch-focus-race"=>reply(v.fixture_focus_launch_race(&q)),
     "input-probe"=>reply(json!({"events":input_probe.get(),"active":window.is_active()})),
     "workspace-picker"=>{if q["operation"]=="show"{reply(json!({"clicked":sessions::fixture(&window,"Workspaces…")}));}else{reply(workspace_picker::fixture(q["operation"].as_str().unwrap_or("inspect"),q["value"].as_str()));}},
     "workspace-permission"=>{consent.set_active(q["enabled"]==true);reply(json!({"focus_control":control_policy.get(),"native_checkbutton":true}));},

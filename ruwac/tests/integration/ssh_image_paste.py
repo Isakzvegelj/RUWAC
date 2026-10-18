@@ -181,6 +181,14 @@ try:
   eventually(lambda:command('gui','inspect')['target']==sessions[0]['pane'])
   assert received(2)==b''
   record('saved-agent-entry-selects-original-pane-rather-than-current-local-split')
+  original_bytes=received(0)
+  assert command('gui','launch-focus-race',window=sessions[0]['window'],pane=sessions[0]['pane'],pid=sessions[0]['pid'],local_pane=extra['pane'])['queued']
+  command('gui','key',key='z');eventually(lambda:received(2)==b'z')
+  assert received(0)==original_bytes
+  for _ in range(8):assert command('gui','inspect')['target']==extra['pane']
+  record('later-local-pane-selection-wins-over-older-agent-ack-with-input-to-correct-PTY')
+  command('gui','switch',pane=sessions[0]['pane'])
+
 
  baseline=received(0);begin_paste(True);command('gui','cancel');eventually(lambda:not command('gui','ssh-image-paste')['pending']);hold.unlink(missing_ok=True);time.sleep(3.2);assert received(0)==baseline
  record('clipboard-epoch-change-revokes-pending-image-delivery')

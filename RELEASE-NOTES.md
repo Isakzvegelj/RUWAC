@@ -1,4 +1,9 @@
-# RUWAC persistent SSH and agent launch context
+# RUWAC persistent launch context and corrected agent input targeting
+
+Fix agent selection so the GUI input target follows its acknowledged pane.
+Typing waits for that acknowledgement, and a later manual selection supersedes
+an earlier pending agent request. The earlier source release could change daemon
+focus while retaining the GUI target on a local split.
 
 New saved SSH and agent launches retain explicit endpoint, pane/process and
 provider associations across frontend replacement and independent windows.
