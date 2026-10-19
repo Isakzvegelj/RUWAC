@@ -5,11 +5,11 @@ from pathlib import Path
 from spike import Client,eventually
 p=argparse.ArgumentParser();p.add_argument('--binary',required=True);p.add_argument('--gui',required=True);p.add_argument('--legacy',required=True);p.add_argument('--evidence',type=Path,required=True);a=p.parse_args()
 runtime=Path(os.environ['XDG_RUNTIME_DIR']);assert os.environ.get('WAYLAND_DISPLAY','').startswith('ruwac-') and runtime.resolve()!=Path('/run/user')/str(os.getuid())
-root=Path(tempfile.mkdtemp(prefix='user-shell-',dir=a.evidence));root.chmod(0o700);env={**os.environ,'GTK_A11Y':'none','GSETTINGS_BACKEND':'memory'}
+root=Path(tempfile.mkdtemp(prefix='user-shell-',dir=a.evidence));root.chmod(0o700);env={**os.environ,'GTK_A11Y':'none','GSETTINGS_BACKEND':'memory','NO_COLOR':'1'}
 for key,name in [('HOME','home'),('XDG_CONFIG_HOME','config'),('XDG_DATA_HOME','data'),('XDG_CACHE_HOME','cache')]:env[key]=str(root/name);Path(env[key]).mkdir(mode=0o700)
 # Generated shell sources only a fixture-owned profile. No owner shell files are read.
 profile=Path(env['HOME'])/'.bash_profile';profile.write_text("printf 'RUWAC_USER_LOGIN_PROFILE_LOADED\\n'\n")
-shell=root/'selected-user-shell';shell.write_text('#!/bin/sh\n[ "$1" = "-l" ] || exit 13\n. "$HOME/.bash_profile"\nexec /bin/cat\n');shell.chmod(0o700);env['SHELL']=str(shell);children=[];seq=0;results=[]
+shell=root/'selected-user-shell';shell.write_text('#!/bin/sh\n[ "$1" = "-l" ] || exit 13\n[ -z "${NO_COLOR+x}" ] && [ "$TERM" = xterm-256color ] && [ "$COLORTERM" = truecolor ] || exit 14\n. "$HOME/.bash_profile"\nexec /bin/cat\n');shell.chmod(0o700);env['SHELL']=str(shell);children=[];seq=0;results=[]
 def start(argv,name):
  log=(root/(name+'.log')).open('wb');process=subprocess.Popen(argv,env=env,stdout=log,stderr=log);children.append((process,log));return process
 

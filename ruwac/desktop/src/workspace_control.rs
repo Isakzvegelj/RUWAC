@@ -312,6 +312,15 @@ impl Control {
         }
         let original_selected = self.tabs.selected_page();
         let current = (self.record)().map_err(|e| error("WORKSPACE_UNAVAILABLE", e))?;
+        if current.tabs.iter().any(|tab| {
+            !(0..self.tabs.n_pages())
+                .any(|i| self.tabs.nth_page(i).child().widget_name().as_str() == tab.id)
+        }) {
+            return Err(error(
+                "WORKSPACE_CONFLICT",
+                "Return detached tabs to this window before opening or restoring a layout",
+            ));
+        }
         let roots = tiles::views(&self.tabs);
         let mut live: HashMap<String, gtk::Widget> = roots
             .iter()

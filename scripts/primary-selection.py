@@ -40,8 +40,11 @@ def session_environment(wayland):
     st = os.lstat(auth)
     if not stat.S_ISREG(st.st_mode) or st.st_uid != os.getuid() or st.st_mode & 0o077:
         raise ValueError("Desktop authentication must be an owned private regular file")
-    os.environ.update(DISPLAY=display, XAUTHORITY=auth,
-                      XDG_RUNTIME_DIR="/run/user/" + str(os.getuid()))
+    runtime = env.get("XDG_RUNTIME_DIR", "/run/user/" + str(os.getuid()))
+    st = os.lstat(runtime)
+    if not os.path.isabs(runtime) or not stat.S_ISDIR(st.st_mode) or st.st_uid != os.getuid() or st.st_mode & 0o077:
+        raise ValueError("Desktop runtime must be an owned private directory")
+    os.environ.update(DISPLAY=display, XAUTHORITY=auth, XDG_RUNTIME_DIR=runtime)
 
 
 class Pipe:
@@ -253,6 +256,7 @@ class Primary:
             return
         self.provider = None
         self.generation += 1
+        self.last_digest = None
         self.cancel()
         self.changed()
 
@@ -303,6 +307,64 @@ class Primary:
         threading.Thread(target=fetch, daemon=True).start()
 
 
+def offer_to_gui(text, session):
+    # Publish through the already focused native GUI. A background Xwayland
+    # helper cannot claim native Wayland PRIMARY on its own. Never read CLIPBOARD.
+    import socket, stat, struct
+    data = text.encode("utf-8")
+    if not data or len(data) > 128 * 1024 or "\0" in text:
+        return False
+    path = os.path.join(os.environ["XDG_RUNTIME_DIR"], "ruwac", "control.gui.sock")
+    stage = "socket"
+    try:
+        st = os.lstat(path)
+        if not stat.S_ISSOCK(st.st_mode) or st.st_uid != os.getuid() or st.st_mode & 0o077:
+            return False
+        with socket.socket(socket.AF_UNIX) as client:
+            client.settimeout(1.5)
+            client.connect(path)
+            pid, uid, _ = struct.unpack("3i", client.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
+            if uid != os.getuid():
+                return False
+            stage = "session"
+            env = dict(item.split(b"=", 1) for item in open("/proc/" + str(pid) + "/environ", "rb").read().split(b"\0") if b"=" in item)
+            if env.get(b"WAYLAND_DISPLAY", b"").decode() != session:
+                trace("offer-refused", stage=stage)
+                return False
+            stage = "request"
+            request = json.dumps({"version":0, "id":"primary-offer", "method":"clipboard.primary.offer", "params":{"text":text}}, ensure_ascii=True, separators=(",", ":")).encode()
+            if len(request) > 1024 * 1024:
+                return False
+            client.sendall(struct.pack("!I", len(request)) + request)
+            def read(n):
+                result = bytearray()
+                while len(result) < n:
+                    chunk = client.recv(n - len(result))
+                    if not chunk:
+                        raise ValueError("GUI closed")
+                    result.extend(chunk)
+                return bytes(result)
+            size = struct.unpack("!I", read(4))[0]
+            if size > 4096:
+                return False
+            response = json.loads(read(size))
+            if response.get("result") != {"offered":True}:
+                trace("offer-refused", stage="receiver", code=response.get("error", {}).get("code"))
+                return False
+        # Success from GDK alone is insufficient: wait for this exact complete
+        # selection to cross the compositor's native/Xwayland boundary.
+        stage = "compositor"
+        deadline = time.monotonic() + 1.5
+        while time.monotonic() < deadline:
+            if read_primary_bytes() == data:
+                return True
+            time.sleep(0.02)
+    except (OSError, ValueError, UnicodeError, KeyError) as error:
+        trace("offer-refused", stage=stage, error_type=type(error).__name__)
+    trace("offer-unconfirmed", stage=stage)
+    return False
+
+
 class Peer:
     def __init__(self, source, target, local=False):
         self.epoch = 0
@@ -311,6 +373,9 @@ class Peer:
         self.last_heartbeat = time.monotonic()
         self.local = local
         self.primary = Primary(self.changed)
+        self.initial = True
+        self.allow_offer = False
+        self.offering = False
         self.pipe = Pipe(source, target, self.message, loop.quit)
         self.timer = None
         self.dirty = False
@@ -337,9 +402,11 @@ class Peer:
             return
         epoch = self.epoch
         self.dirty = False
-        self.primary.read(lambda text: self.pipe.send({"type": "text", "epoch": epoch,
-                                                      "text": text})
-                          if self.enabled and self.epoch == epoch else None)
+        def ready(text):
+            if self.enabled and self.epoch == epoch:
+                initial, self.initial = self.initial, False
+                self.pipe.send({"type":"text", "epoch":epoch, "initial":initial, "text":text})
+        self.primary.read(ready)
 
     def message(self, value):
         if not isinstance(value, dict):
@@ -357,9 +424,33 @@ class Peer:
                 # A local selection may have replaced our last delivery while
                 # this remote canvas was inactive. Equal text is a new copy.
                 self.primary.last_digest = None
+                self.initial = True
             self.epoch = epoch
             self.enabled = value["send"] is True
             self.receive_enabled = value["receive"] is True
+            self.allow_offer = value.get("paste") is True
+        elif kind == "offer":
+            text, request_id, epoch = value.get("text"), value.get("id"), value.get("epoch")
+            if self.local or not self.allow_offer or epoch != self.epoch or type(request_id) is not int or request_id <= 0 or not isinstance(text, str) or not text or len(text.encode("utf-8")) > 128 * 1024 or "\0" in text:
+                raise ValueError("Invalid PRIMARY offer")
+            if self.offering:
+                self.pipe.send({"type":"offer-result", "epoch":epoch, "id":request_id, "ok":False})
+                return
+            self.offering = True
+            import threading
+            def work():
+                ok = offer_to_gui(text, sys.argv[2])
+                def complete():
+                    self.offering = False
+                    self.pipe.send({"type":"offer-result", "epoch":epoch, "id":request_id, "ok":ok and self.allow_offer and self.epoch == epoch})
+                    return False
+                GLib.idle_add(complete)
+            try:
+                threading.Thread(target=work, daemon=True).start()
+            except RuntimeError:
+                self.offering = False
+                trace("offer-refused", stage="worker")
+                self.pipe.send({"type":"offer-result", "epoch":epoch, "id":request_id, "ok":False})
         elif kind == "text":
             if self.receive_enabled and value.get("epoch") == self.epoch:
                 self.primary.set(value["text"])

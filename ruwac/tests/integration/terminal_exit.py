@@ -66,7 +66,7 @@ try:
     view = attach(other['session'], 'other-window')
     survivor = rpc('window.create', {'session': other['session'], 'name': 'survivor', 'argv': ['/bin/cat']})
     view.send(b'exit\r')
-    eventually(lambda: rpc('job.query', {'pane': other['pane']})['pane_ended'])
+    eventually(lambda: all(p['id'] != other['pane'] for p in rpc('pane.list', {'session': other['session']})))
     time.sleep(.2)
     assert view.p.poll() is None
     view.send(b'SURVIVOR_INPUT\r')

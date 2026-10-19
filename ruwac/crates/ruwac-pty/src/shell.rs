@@ -1,5 +1,20 @@
 //! User shell selection shared by the daemon and graphical client.
 use std::{ffi::CStr, path::Path};
+/// Apply terminal defaults even when an older daemon supplies the PTY.
+/// Keep login-shell discovery literal; this wrapper executes on its endpoint.
+pub fn terminal_argv(argv: Vec<String>) -> Vec<String> {
+    let mut command = vec![
+        "/usr/bin/env".into(),
+        "-u".into(),
+        "NO_COLOR".into(),
+        "--".into(),
+    ];
+    command.extend(argv);
+    command
+}
+pub fn default_terminal_argv() -> Result<Vec<String>, String> {
+    default_argv().map(terminal_argv)
+}
 pub fn default_argv() -> Result<Vec<String>, String> {
     let configured = std::env::var("SHELL").ok().filter(|s| !s.is_empty());
     let shell = if let Some(shell) = configured {

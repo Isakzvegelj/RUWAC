@@ -1186,7 +1186,7 @@ impl View {
             self.cancel_image_paste();
         }
         if matches!(m, "window.create" | "pane.create") && p.get("argv").is_none() {
-            match crate::shell::default_argv() {
+            match crate::shell::default_terminal_argv() {
                 Ok(argv) => p["argv"] = json!(argv),
                 Err(e) => {
                     self.navigation.set(false);
@@ -1644,10 +1644,59 @@ impl View {
                 mods,
             );
         } else if button == 3 && !release {
-            crate::host_shortcuts::popup(&self.area, x, y);
+            crate::host_shortcuts::popup(self, x, y);
         } else if button == 2 && !release {
             self.paste_clipboard(true);
         }
+    }
+    pub fn paste_desktop(self: &Rc<Self>) {
+        if !crate::remote_paste::try_paste(self) {
+            self.paste_clipboard(false);
+        }
+    }
+    pub fn clipboard_action_enabled(&self, name: &str) -> bool {
+        if name == "select-text" {
+            return !self.detached.get() && !self.target.borrow().is_empty();
+        }
+        self.broker.borrow().desktop_enabled()
+            && match name {
+                "copy" => !self.selected().is_empty(),
+                _ => !self.detached.get() && !self.ended.get() && !self.target.borrow().is_empty(),
+            }
+    }
+    pub fn clipboard_menu(self: &Rc<Self>) -> gtk::Box {
+        let body = gtk::Box::new(gtk::Orientation::Vertical, 2);
+        for (name, label) in [
+            ("copy", "Copy"),
+            ("paste", "Paste"),
+            ("paste-selection", "Paste selection"),
+            ("select-text", "Select text…"),
+        ] {
+            let button = gtk::Button::with_label(label);
+            button.add_css_class("flat");
+            button.set_widget_name(&format!("terminal-{name}"));
+            button.set_sensitive(self.clipboard_action_enabled(name));
+            let weak = Rc::downgrade(self);
+            button.connect_clicked(move |button| {
+                if let Some(popover) = button
+                    .ancestor(gtk::Popover::static_type())
+                    .and_downcast::<gtk::Popover>()
+                {
+                    popover.popdown();
+                }
+                if let Some(view) = weak.upgrade() {
+                    view.focus();
+                    match name {
+                        "copy" => view.copy_clipboard(false),
+                        "paste" => view.paste_desktop(),
+                        "paste-selection" => view.paste_clipboard(true),
+                        _ => view.open_history(),
+                    }
+                }
+            });
+            body.append(&button);
+        }
+        body
     }
     pub fn selected(&self) -> String {
         if self.stack.visible_child_name().as_deref() == Some("copy") {
@@ -1694,6 +1743,7 @@ impl View {
                     .set_text("The desktop could not publish this PRIMARY selection");
                 return;
             }
+            crate::terminal_primary::remember(&provider, &text);
         } else {
             display.clipboard().set_text(&text);
         }

@@ -10,8 +10,12 @@ pub fn install_tab_menu(
     window: &adw::ApplicationWindow,
     tabs: &adw::TabView,
     views: Rc<RefCell<Vec<Rc<RdpView>>>>,
-) {
+    terminals: Rc<RefCell<Vec<Rc<crate::view::View>>>>,
+) -> gtk::gio::SimpleActionGroup {
     let target: Rc<RefCell<Option<std::rc::Weak<RdpView>>>> = Rc::new(RefCell::new(None));
+    let terminal: Rc<RefCell<Option<std::rc::Weak<crate::view::View>>>> =
+        Rc::new(RefCell::new(None));
+    let page_target: Rc<RefCell<Option<adw::TabPage>>> = Rc::new(RefCell::new(None));
     let menu = gtk::gio::Menu::new();
     let group = gtk::gio::SimpleActionGroup::new();
     let mut actions = Vec::new();
@@ -26,8 +30,7 @@ pub fn install_tab_menu(
         action.set_enabled(false);
         let selected = target.clone();
         action.connect_activate(move |_, _| {
-            let view = selected.borrow().as_ref().and_then(std::rc::Weak::upgrade);
-            if let Some(view) = view {
+            if let Some(view) = selected.borrow().as_ref().and_then(std::rc::Weak::upgrade) {
                 match name {
                     "reconnect" => {
                         if let Err(error) = view.automation_reconnect() {
@@ -43,9 +46,75 @@ pub fn install_tab_menu(
         menu.append(Some(label), Some(&format!("connection.{name}")));
         actions.push(action);
     }
+    let terminal_menu = gtk::gio::Menu::new();
+    let mut terminal_actions = Vec::new();
+    for (name, label) in [
+        ("copy", "Copy"),
+        ("paste", "Paste"),
+        ("paste-selection", "Paste selection"),
+        ("select-text", "Select text…"),
+    ] {
+        let action = gtk::gio::SimpleAction::new(name, None);
+        action.set_enabled(false);
+        let selected = terminal.clone();
+        let weak_tabs = tabs.downgrade();
+        let selected_page = page_target.clone();
+        action.connect_activate(move |_, _| {
+            let Some(view) = selected.borrow().as_ref().and_then(std::rc::Weak::upgrade) else {
+                return;
+            };
+            if let (Some(tabs), Some(page)) = (weak_tabs.upgrade(), selected_page.borrow().as_ref())
+            {
+                tabs.set_selected_page(page);
+            }
+            view.focus();
+            match name {
+                "copy" => view.copy_clipboard(false),
+                "paste" => view.paste_desktop(),
+                "paste-selection" => view.paste_clipboard(true),
+                _ => view.open_history(),
+            }
+        });
+        group.add_action(&action);
+        terminal_menu.append(Some(label), Some(&format!("connection.{name}")));
+        terminal_actions.push((name, action));
+    }
+    let close = gtk::gio::SimpleAction::new("close-tab", None);
+    let weak_tabs = tabs.downgrade();
+    let selected_page = page_target.clone();
+    close.connect_activate(move |_, _| {
+        // Clone before closing: closing the menu may clear its selected page.
+        let page = selected_page.borrow().clone();
+        if let (Some(tabs), Some(page)) = (weak_tabs.upgrade(), page) {
+            tabs.close_page(&page);
+        }
+    });
+    group.add_action(&close);
+    let detach = gtk::gio::SimpleAction::new("detach-tab", None);
+    let weak_tabs = tabs.downgrade();
+    let selected_page = page_target.clone();
+    detach.connect_activate(move |_, _| {
+        let page = selected_page.borrow().clone();
+        if let (Some(tabs), Some(page)) = (weak_tabs.upgrade(), page) {
+            if let Some(destination) =
+                tabs.emit_by_name::<Option<adw::TabView>>("create-window", &[])
+            {
+                tabs.transfer_page(&page, &destination, 0);
+            }
+        }
+    });
+    group.add_action(&detach);
+    let general = gtk::gio::Menu::new();
+    general.append(
+        Some("Move tab to new window"),
+        Some("connection.detach-tab"),
+    );
+    general.append(Some("Close tab"), Some("connection.close-tab"));
+    menu.append_section(None, &general);
+    terminal_menu.append_section(None, &general);
     window.insert_action_group("connection", Some(&group));
-    tabs.set_menu_model(Some(&menu));
-    tabs.connect_setup_menu(move |_, page| {
+    tabs.set_menu_model(Some(&general));
+    tabs.connect_setup_menu(move |tabs, page| {
         let selected = page.and_then(|page| {
             views
                 .borrow()
@@ -53,12 +122,103 @@ pub fn install_tab_menu(
                 .find(|view| crate::tiles::contains(&page.child(), &view.root))
                 .cloned()
         });
+        let selected_terminal = page.and_then(|page| {
+            let matches = terminals
+                .borrow()
+                .iter()
+                .filter(|view| crate::tiles::contains(&page.child(), &view.root))
+                .cloned()
+                .collect::<Vec<_>>();
+            // A split tab can contain multiple terminals: use its actual input focus.
+            matches
+                .iter()
+                .find(|view| view.area.has_focus() || view.copy.has_focus())
+                .cloned()
+                .or_else(|| {
+                    if matches.len() == 1 {
+                        matches.first().cloned()
+                    } else {
+                        None
+                    }
+                })
+        });
         for action in &actions {
             action.set_enabled(selected.is_some());
         }
+        for (name, action) in &terminal_actions {
+            action.set_enabled(
+                selected_terminal
+                    .as_ref()
+                    .is_some_and(|view| view.clipboard_action_enabled(name)),
+            );
+        }
+        close.set_enabled(page.is_some());
+        detach.set_enabled(page.is_some());
+        *page_target.borrow_mut() = page.cloned();
         *target.borrow_mut() = selected.as_ref().map(Rc::downgrade);
+        *terminal.borrow_mut() = selected_terminal.as_ref().map(Rc::downgrade);
+        tabs.set_menu_model(Some(if selected_terminal.is_some() {
+            &terminal_menu
+        } else if selected.is_some() {
+            &menu
+        } else {
+            &general
+        }));
     });
+    group
 }
+
+pub fn menu_fixture(
+    window: &adw::ApplicationWindow,
+    tabs: &adw::TabView,
+    actions: &gtk::gio::SimpleActionGroup,
+    q: &serde_json::Value,
+) -> serde_json::Value {
+    let index = q["tab"].as_i64().unwrap_or(0) as i32;
+    if index < 0 || index >= tabs.n_pages() {
+        return serde_json::json!({"error":"Unknown fixture tab"});
+    }
+    let page = tabs.nth_page(index);
+    tabs.emit_by_name::<()>("setup-menu", &[&Some(page.clone())]);
+    fn labels(model: &gtk::gio::MenuModel) -> Vec<String> {
+        let mut result = Vec::new();
+        for i in 0..model.n_items() {
+            if let Some(label) = model
+                .item_attribute_value(i, "label", None)
+                .and_then(|v| v.get::<String>())
+            {
+                result.push(label);
+            }
+            if let Some(section) = model.item_link(i, "section") {
+                result.extend(labels(&section));
+            }
+        }
+        result
+    }
+    let menu = tabs.menu_model().map(|m| labels(&m)).unwrap_or_default();
+    let states = actions
+        .list_actions()
+        .iter()
+        .map(|a| {
+            (
+                a.to_string(),
+                serde_json::json!(actions.is_action_enabled(a)),
+            )
+        })
+        .collect::<serde_json::Map<_, _>>();
+    let control = q["control"].as_str().unwrap_or("fit");
+    if states.contains_key(control) {
+        let _ = gtk::prelude::WidgetExt::activate_action(
+            window,
+            &format!("connection.{control}"),
+            None,
+        );
+    }
+    let value = serde_json::json!({"title":page.title().to_string(),"status_icon":page.indicator_icon().is_some(),"icon":page.icon().is_some(),"menu":menu,"enabled":states});
+    tabs.emit_by_name::<()>("setup-menu", &[&None::<adw::TabPage>]);
+    value
+}
+
 use ironrdp::{
     connector,
     pdu::{
@@ -1142,6 +1302,19 @@ impl AutoGdm {
             && handovers > self.submitted_handovers
     }
 }
+#[derive(Clone)]
+struct PrimaryClick {
+    id: u64,
+    x: f64,
+    y: f64,
+    released: bool,
+    started: std::time::Instant,
+    transport: String,
+    generation: u64,
+    epoch: u64,
+    geometry: (f64, f64, f64, f64),
+    source: gdk::ContentProvider,
+}
 pub struct RdpView {
     pub root: gtk::Box,
     area: gtk::DrawingArea,
@@ -1205,6 +1378,10 @@ pub struct RdpView {
     primary_transport: RefCell<Option<String>>,
     primary_checked: Cell<Option<std::time::Instant>>,
     primary_status: gtk::Label,
+    primary_click: RefCell<Option<PrimaryClick>>,
+    primary_error: RefCell<Option<String>>,
+    suppress_middle_release: Cell<bool>,
+    selection_anchor: Cell<Option<(f64, f64)>>,
 }
 fn quick_action(toolbar: &gtk::Box, name: &str, icon: &str, label: &str, target: &gtk::Button) {
     let button = gtk::Button::from_icon_name(icon);
@@ -1422,6 +1599,10 @@ impl RdpView {
             primary_transport: RefCell::new(None),
             primary_checked: Cell::new(None),
             primary_status,
+            primary_click: RefCell::new(None),
+            primary_error: RefCell::new(None),
+            suppress_middle_release: Cell::new(false),
+            selection_anchor: Cell::new(None),
         });
         let weak = Rc::downgrade(&v);
         let assist_popup = popup.clone();
@@ -2046,7 +2227,7 @@ impl RdpView {
                 .collect();
             serde_json::json!({"decoded_updates":s.frames,"decoded_sizes":s.decoded_sizes,"update_intervals_ms":times})
         });
-        serde_json::json!({"connection_pending":self.pending_connect.borrow().is_some(),"transport_id":self.connection.borrow().as_ref().map(|c|c.id.as_str()),"requested_size":self.requested.get(),"display_mode":format!("{:?}",self.mode.get()),"reconnect_visible":self.disconnect_card.is_visible(),"metrics":metrics,"gnome_auto":{"armed":self.auto_gdm.borrow().armed,"step":format!("{:?}",self.auto_gdm.borrow().sequence.step),"input_epoch":self.assist_epoch.load(Ordering::Acquire),"guards":{"canvas_focus":self.area.has_focus(),"window_active":self.root.root().and_downcast::<gtk::Window>().is_some_and(|w|w.is_active()),"selected":self.selected.borrow().as_ref().is_some_and(|f|f()),"profile_current":self.profile_metadata.borrow().as_ref().is_some_and(crate::profiles::assist_profile_current),"rendered_generation":self.rendered_generation.get(),"surface_generation":self.surface_generation.get()},"generation":self.connection.borrow().as_ref().map(|c|c.state.lock().unwrap().generation),"handovers":self.connection.borrow().as_ref().map(|c|c.state.lock().unwrap().handovers)},"last_pixel":self.last_pixel.get(),"status":self.status.text().as_str(),"size":self.size.get(),"zoom":self.zoom.get(),"pan":[self.scroll.hadjustment().value(),self.scroll.vadjustment().value()],"viewport":[self.area.width(),self.area.height()],"window_width":self.root.root().and_then(|r|r.downcast::<gtk::Window>().ok()).map(|w|w.width()),"active":self.broker.borrow().active()==Some(self.id.as_str()),"epoch":self.broker.borrow().epoch(),"pending":self.pending.borrow().is_some(),"received_generation":self.received_generation.get(),"offers":self.offers_seen.get(),"policy":format!("{:?}",self.policy.get())})
+        serde_json::json!({"mouse_selection":self.primary_status.text().as_str(),"selection_paste_pending":self.primary_click.borrow().is_some(),"selection_sharing_ready":self.primary.borrow().as_ref().is_some_and(|b|b.ready),"connection_pending":self.pending_connect.borrow().is_some(),"transport_id":self.connection.borrow().as_ref().map(|c|c.id.as_str()),"requested_size":self.requested.get(),"display_mode":format!("{:?}",self.mode.get()),"reconnect_visible":self.disconnect_card.is_visible(),"metrics":metrics,"gnome_auto":{"armed":self.auto_gdm.borrow().armed,"step":format!("{:?}",self.auto_gdm.borrow().sequence.step),"input_epoch":self.assist_epoch.load(Ordering::Acquire),"guards":{"canvas_focus":self.area.has_focus(),"window_active":self.root.root().and_downcast::<gtk::Window>().is_some_and(|w|w.is_active()),"selected":self.selected.borrow().as_ref().is_some_and(|f|f()),"profile_current":self.profile_metadata.borrow().as_ref().is_some_and(crate::profiles::assist_profile_current),"rendered_generation":self.rendered_generation.get(),"surface_generation":self.surface_generation.get()},"generation":self.connection.borrow().as_ref().map(|c|c.state.lock().unwrap().generation),"handovers":self.connection.borrow().as_ref().map(|c|c.state.lock().unwrap().handovers)},"last_pixel":self.last_pixel.get(),"status":self.status.text().as_str(),"size":self.size.get(),"zoom":self.zoom.get(),"pan":[self.scroll.hadjustment().value(),self.scroll.vadjustment().value()],"viewport":[self.area.width(),self.area.height()],"window_width":self.root.root().and_then(|r|r.downcast::<gtk::Window>().ok()).map(|w|w.width()),"active":self.broker.borrow().active()==Some(self.id.as_str()),"epoch":self.broker.borrow().epoch(),"pending":self.pending.borrow().is_some(),"received_generation":self.received_generation.get(),"offers":self.offers_seen.get(),"policy":format!("{:?}",self.policy.get())})
     }
     pub fn fixture_policy(&self, index: u32) {
         fn find(w: &gtk::Widget) -> Option<gtk::DropDown> {
@@ -2533,7 +2714,7 @@ impl RdpView {
                     "disconnected".into()
                 }
             });
-        serde_json::json!({"id":self.root.widget_name().as_str(),"phase":phase,"mouse_selection":self.primary_status.text().as_str(),"connection_stage":connection.as_ref().map(|c|c.state.lock().unwrap().connection_stage.clone()),"size":self.size.get(),"transport_id":connection.as_ref().map(|c|c.id.as_str()),"decoded_updates":connection.as_ref().map(|c|c.state.lock().unwrap().frames).unwrap_or(0),"clipboard_owner":self.broker.borrow().active()==Some(self.id.as_str()),"display_control":connection.as_ref().map(|c|{let s=c.state.lock().unwrap();serde_json::json!({"channel_opened":s.display_channel_opened,"capability_messages":s.display_capability_messages,"negotiated":s.display_cap.is_some()})}),"clipboard_channel_negotiated":connection.as_ref().is_some_and(|c|c.state.lock().unwrap().clipboard_channel_negotiated),"verified_tls_sha256":connection.as_ref().and_then(|c|c.state.lock().unwrap().verified_tls_sha256.clone()),"protocol_error":connection.as_ref().and_then(|c|c.state.lock().unwrap().protocol_error.clone()),"authentication_error":connection.as_ref().and_then(|c|c.state.lock().unwrap().authentication_error.clone()),"certificate_review":self.certificate.borrow().as_ref().map(|r|serde_json::json!({"sha256":r.fingerprint(),"changed":r.changed,"valid_now":r.valid_now})),"profile":self.profile_metadata.borrow().as_ref().map(|p|p.id.clone())})
+        serde_json::json!({"id":self.root.widget_name().as_str(),"phase":phase,"display_mode":format!("{:?}",self.mode.get()),"viewport":[self.scroll.width(),self.scroll.height()],"zoom":self.zoom.get(),"input_paused_for_login":self.auto_gdm.borrow().armed,"reactivating":connection.as_ref().is_some_and(|c|c.state.lock().unwrap().reactivating),"mouse_selection":self.primary_status.text().as_str(),"connection_stage":connection.as_ref().map(|c|c.state.lock().unwrap().connection_stage.clone()),"size":self.size.get(),"transport_id":connection.as_ref().map(|c|c.id.as_str()),"decoded_updates":connection.as_ref().map(|c|c.state.lock().unwrap().frames).unwrap_or(0),"clipboard_owner":self.broker.borrow().active()==Some(self.id.as_str()),"display_control":connection.as_ref().map(|c|{let s=c.state.lock().unwrap();serde_json::json!({"channel_opened":s.display_channel_opened,"capability_messages":s.display_capability_messages,"negotiated":s.display_cap.is_some()})}),"clipboard_channel_negotiated":connection.as_ref().is_some_and(|c|c.state.lock().unwrap().clipboard_channel_negotiated),"verified_tls_sha256":connection.as_ref().and_then(|c|c.state.lock().unwrap().verified_tls_sha256.clone()),"protocol_error":connection.as_ref().and_then(|c|c.state.lock().unwrap().protocol_error.clone()),"authentication_error":connection.as_ref().and_then(|c|c.state.lock().unwrap().authentication_error.clone()),"certificate_review":self.certificate.borrow().as_ref().map(|r|serde_json::json!({"sha256":r.fingerprint(),"changed":r.changed,"valid_now":r.valid_now})),"profile":self.profile_metadata.borrow().as_ref().map(|p|p.id.clone())})
     }
     pub fn connect_profile(&self) {
         fn find(w: &gtk::Widget) -> Option<gtk::Button> {
@@ -2625,6 +2806,7 @@ impl RdpView {
         }
     }
     pub fn inactive(&self) {
+        self.primary_click.borrow_mut().take();
         self.assist_epoch.fetch_add(1, Ordering::AcqRel);
         self.bridge.borrow().epoch.store(0, Ordering::Release);
         self.release_keys();
@@ -2652,6 +2834,8 @@ impl RdpView {
         let transport = self.connection.borrow().as_ref().map(|c| c.id.clone());
         if *self.primary_transport.borrow() != transport {
             self.primary.borrow_mut().take();
+            self.primary_click.borrow_mut().take();
+            self.primary_error.borrow_mut().take();
             self.primary_attempted.set(false);
             *self.primary_transport.borrow_mut() = transport;
         }
@@ -2667,6 +2851,7 @@ impl RdpView {
                 && (!login || s.handovers >= 2)
         });
         if !connected {
+            self.primary_click.borrow_mut().take();
             if self.primary.borrow_mut().take().is_some() {
                 self.primary_attempted.set(false);
             }
@@ -2686,6 +2871,7 @@ impl RdpView {
                 .as_ref()
                 .is_some_and(crate::profiles::primary_profile_current);
             if !current {
+                self.primary_click.borrow_mut().take();
                 self.primary.borrow_mut().take();
                 self.primary_attempted.set(true);
                 self.primary_status.set_text(
@@ -2711,17 +2897,74 @@ impl RdpView {
         }
         if let Some(bridge) = self.primary.borrow_mut().as_mut() {
             bridge.tick(
-                active && self.allowed(false, false),
+                active && self.allowed(false, true),
                 active && self.allowed(true, false),
             );
-            if active && self.allowed(true, false) {
+            if active && self.allowed(true, false) && self.primary_click.borrow().is_none() {
                 if let Err(error) = bridge.publish_primary(&self.area.display().primary_clipboard())
                 {
                     self.primary_status.set_text(&error);
                 }
             }
 
-            self.primary_status.set_text(if bridge.failed {"Mouse selection sharing unavailable: check SSH key/trusted host, Python3 GTK4, Xwayland and the configured desktop session; reconnect to retry"} else if bridge.ready {"Mouse selection sharing ready · Ctrl+C clipboard remains separate"} else {"Connecting mouse selection sharing over SSH…"});
+            if let Some(error) = self.primary_error.borrow().as_ref() {
+                self.primary_status.set_text(error);
+            } else {
+                self.primary_status.set_text(if bridge.failed {"Mouse selection sharing unavailable: check SSH key/trusted host, Python3 GTK4, Xwayland and the configured desktop session; reconnect to retry"} else if bridge.ready {"Mouse selection sharing ready · Ctrl+C clipboard remains separate"} else {"Connecting mouse selection sharing over SSH…"});
+            }
+        }
+        self.finish_primary_click();
+    }
+    fn finish_primary_click(&self) {
+        let Some(pending) = self.primary_click.borrow().clone() else {
+            return;
+        };
+        let active = self.area.has_focus()
+            && self
+                .root
+                .root()
+                .and_then(|r| r.downcast::<gtk::Window>().ok())
+                .is_some_and(|w| w.is_active());
+        let mut valid = active
+            && self.allowed(false, true)
+            && self.broker.borrow().epoch() == pending.epoch
+            && self.connection.borrow().as_ref().is_some_and(|c| {
+                let state = c.state.lock().unwrap();
+                c.id == pending.transport
+                    && state.generation == pending.generation
+                    && !state.reactivating
+                    && matches!(state.phase.as_str(), "connected" | "display_change")
+            })
+            && self.geometry(self.area.width() as f64, self.area.height() as f64)
+                == pending.geometry
+            && self.area.display().primary_clipboard().content().as_ref() == Some(&pending.source);
+        let answer = self
+            .primary
+            .borrow()
+            .as_ref()
+            .and_then(|b| b.take_offer_result(pending.id));
+        if answer == Some(true) {
+            valid &= self.profile_metadata.borrow().as_ref().is_some_and(|p| {
+                p.preferences.primary_paste && crate::profiles::primary_profile_current(p)
+            });
+        }
+        let failed = self.primary.borrow().as_ref().is_none_or(|b| b.failed);
+        if !valid
+            || failed
+            || pending.started.elapsed() > Duration::from_secs(4)
+            || answer.is_some()
+        {
+            self.primary_click.borrow_mut().take();
+            if valid && !failed && answer == Some(true) {
+                self.suppress_middle_release.set(false);
+                self.pointer_native(pending.x, pending.y, 2, false);
+                if pending.released {
+                    self.pointer_native(pending.x, pending.y, 2, true);
+                }
+                self.primary_error.borrow_mut().take();
+            } else {
+                *self.primary_error.borrow_mut()=Some(if !valid {"Selection paste cancelled: source, focus, endpoint or display changed"} else {"Selection paste was not confirmed. Focus the remote RUWAC window, enable its mouse-selection reception, and check that both GUIs are updated"}.into());
+            }
         }
     }
     fn allowed(&self, receive: bool, manual: bool) -> bool {
@@ -3056,6 +3299,26 @@ impl RdpView {
         }
     }
     fn key(&self, key: gdk::Key, code: u32, release: bool) {
+        if !release {
+            let held = self.held.borrow();
+            let selecting = (held.contains(&(0x2a, false)) || held.contains(&(0x36, false)))
+                && matches!(
+                    key,
+                    gdk::Key::Left
+                        | gdk::Key::Right
+                        | gdk::Key::Up
+                        | gdk::Key::Down
+                        | gdk::Key::Home
+                        | gdk::Key::End
+                        | gdk::Key::Page_Up
+                        | gdk::Key::Page_Down
+                );
+            let all = (held.contains(&(0x1d, false)) || held.contains(&(0x1d, true)))
+                && matches!(key, gdk::Key::a | gdk::Key::A);
+            if selecting || all {
+                crate::terminal_primary::forget();
+            }
+        }
         let meta = match key {
             gdk::Key::Super_L => Some(0x5b),
             gdk::Key::Super_R => Some(0x5c),
@@ -3157,6 +3420,109 @@ impl RdpView {
     }
 
     fn pointer(&self, x: f64, y: f64, button: u32, release: bool) {
+        if button == 1 {
+            self.selection_anchor
+                .set(if release { None } else { Some((x, y)) });
+        }
+        if button == 0
+            && self.buttons.borrow().contains(&1)
+            && self
+                .selection_anchor
+                .get()
+                .is_some_and(|(a, b)| (x - a).abs() + (y - b).abs() > 4.0)
+        {
+            crate::terminal_primary::forget();
+        }
+        if button == 2 && release && self.suppress_middle_release.replace(false) {
+            if let Some(pending) = self.primary_click.borrow_mut().as_mut() {
+                pending.released = true;
+            }
+            return;
+        }
+        if button == 2
+            && !release
+            && !self.auto_gdm.borrow().armed
+            && self
+                .profile_metadata
+                .borrow()
+                .as_ref()
+                .is_some_and(|p| p.preferences.primary_paste)
+        {
+            let clipboard = self.area.display().primary_clipboard();
+            if let Some(text) = crate::terminal_primary::selected(&clipboard) {
+                self.suppress_middle_release.set(true);
+                if self.primary_click.borrow().is_some() {
+                    return;
+                }
+                let geometry = self.geometry(self.area.width() as f64, self.area.height() as f64);
+                let (px, py) = ((x - geometry.2) / geometry.0, (y - geometry.3) / geometry.1);
+                let (rw, rh) = self.size.get();
+                if !px.is_finite()
+                    || !py.is_finite()
+                    || px < 0.0
+                    || py < 0.0
+                    || px >= rw as f64
+                    || py >= rh as f64
+                {
+                    return;
+                }
+                let active = self.area.has_focus()
+                    && self
+                        .root
+                        .root()
+                        .and_then(|r| r.downcast::<gtk::Window>().ok())
+                        .is_some_and(|w| w.is_active());
+                let route = self
+                    .profile_metadata
+                    .borrow()
+                    .as_ref()
+                    .is_some_and(crate::profiles::primary_profile_current);
+                let transport = self
+                    .connection
+                    .borrow()
+                    .as_ref()
+                    .map(|c| (c.id.clone(), c.state.lock().unwrap().generation));
+                if !active || !self.allowed(false, true) || !route || transport.is_none() {
+                    *self.primary_error.borrow_mut()=Some("Selection paste requires the focused connected desktop and its send policy".into());
+                    return;
+                }
+                self.pointer_native(x, y, 0, false);
+                let offer = self
+                    .primary
+                    .borrow_mut()
+                    .as_mut()
+                    .ok_or_else(|| "Mouse selection sharing is not connected".into())
+                    .and_then(|bridge| {
+                        bridge.tick(
+                            active && self.allowed(false, true),
+                            active && self.allowed(true, false),
+                        );
+                        bridge.offer_primary(text)
+                    });
+                match offer {
+                    Ok(id) => {
+                        *self.primary_click.borrow_mut() = Some(PrimaryClick {
+                            id,
+                            x,
+                            y,
+                            released: false,
+                            started: std::time::Instant::now(),
+                            transport: transport.as_ref().unwrap().0.clone(),
+                            generation: transport.as_ref().unwrap().1,
+                            epoch: self.broker.borrow().epoch(),
+                            geometry,
+                            source: clipboard.content().unwrap(),
+                        });
+                        self.primary_error.borrow_mut().take();
+                    }
+                    Err(error) => *self.primary_error.borrow_mut() = Some(error),
+                }
+                return;
+            }
+        }
+        self.pointer_native(x, y, button, release);
+    }
+    fn pointer_native(&self, x: f64, y: f64, button: u32, release: bool) {
         if self.auto_gdm.borrow().armed {
             return;
         }
@@ -3307,8 +3673,18 @@ impl RdpView {
         }
         serde_json::json!({"dialog_shown":shown,"status":self.status.text().as_str(),"action_visible":self.assist_button.property::<bool>("visible"),"action_grid_row":self.assist_button.parent().and_downcast::<gtk::Grid>().map(|g|g.query_child(&self.assist_button).1)})
     }
-    pub fn bind_selection(&self, selected: Rc<dyn Fn() -> bool>) {
-        *self.selected.borrow_mut() = Some(selected);
+    pub fn bind_selection(&self, _selected: Rc<dyn Fn() -> bool>) {
+        let root = self.root.downgrade();
+        *self.selected.borrow_mut() = Some(Rc::new(move || {
+            root.upgrade().is_some_and(|root| {
+                root.ancestor(adw::TabView::static_type())
+                    .and_downcast::<adw::TabView>()
+                    .is_some_and(|tabs| {
+                        tabs.selected_page()
+                            .is_some_and(|page| crate::tiles::contains(&page.child(), &root))
+                    })
+            })
+        }));
     }
     fn assist_ready(
         &self,

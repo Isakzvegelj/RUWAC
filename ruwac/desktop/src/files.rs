@@ -698,7 +698,11 @@ pub fn panel(profile: Profile) -> gtk::Box {
     root.connect_unrealize(move |w| {
         let (weak, b) = (w.downgrade(), b.clone());
         gtk::glib::idle_add_local_once(move || {
-            if weak.upgrade().is_none_or(|w| w.root().is_none()) {
+            if weak.upgrade().is_none_or(|w| {
+                w.root()
+                    .and_downcast::<gtk::Window>()
+                    .is_none_or(|window| !window.is_visible())
+            }) {
                 if let Some(token) = b.borrow().as_ref() {
                     token.store(true, Ordering::Relaxed);
                 }

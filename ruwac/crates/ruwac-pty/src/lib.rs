@@ -48,6 +48,10 @@ impl Pty {
         cmd.args(&argv[1..]);
         cmd.env("TERM", "xterm-256color");
         cmd.env("COLORTERM", "truecolor");
+        // The daemon may have been started by a noninteractive, colourless
+        // launcher. A new interactive terminal has its own colour capability.
+        // Explicit child commands can still opt out with `env NO_COLOR=1 ...`.
+        cmd.env_remove("NO_COLOR");
         cmd.env_remove("BASH_ENV");
         cmd.env_remove("ENV");
         let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;

@@ -58,7 +58,7 @@ try:
     view = Tui(binary, sock, inner['session'], root / 'direct.pty', env=env)
     views.append(view)
     eventually(lambda: '│'.encode() in view.data and '─'.encode() in view.data)
-    eventually(lambda: b'\x1b[0;38;2;16;32;48;48;2;122;167;245m' in view.data)
+    eventually(lambda: b'\x1b[0;38;2;16;32;48;48;2;152;198;232m' in view.data)
     for item in rpc('pane.list', {'session': inner['session']}):
         def corners():
             cells = next(p for p in render(inner['session'])['panes'] if p['id']==item['id'])['grid']['cells'][0]
@@ -75,7 +75,7 @@ try:
         text = ''.join(cell[0] for row in grid['cells'] for cell in row)
         return grid if '│' in text and '─' in text and 'generated-inner' in text else None
     grid = eventually(nested)
-    assert any(cell[3] == [122, 167, 245] for row in grid['cells'] for cell in row), 'nested accent-blue background missing'
+    assert any(cell[3] == [152, 198, 232] for row in grid['cells'] for cell in row), 'nested accent-blue background missing'
     checks.append('nested-RUWAC-canonical-grid-retains-divider-glyphs-and-light-blue-status-colour')
     (root / 'acceptance.json').write_text(json.dumps({'status': 'PASS', 'checks': checks, 'scope': 'Actual generated daemon, kernel PTYs and nested CLI; no physical desktop claim'}, indent=2) + '\n')
     print('Split dividers PASS', len(checks), 'groups')

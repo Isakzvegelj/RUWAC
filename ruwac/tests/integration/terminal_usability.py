@@ -23,7 +23,7 @@ try:
  # Assert the actual emitted bottom row, including spaces that make its
  # inverse background visible across the complete terminal width.
  def bar(rows,cols,offset=0):
-  pattern=rb'\x1b\['+str(rows).encode()+rb';1H\x1b\[0;38;2;16;32;48;48;2;122;167;245m([^\x1b]*)\x1b\[0m'
+  pattern=rb'\x1b\['+str(rows).encode()+rb';1H\x1b\[0;38;2;16;32;48;48;2;152;198;232m([^\x1b]*)\x1b\[0m'
   found=re.findall(pattern,one.data[offset:])
   return found[-1].decode() if found and len(found[-1].decode())==cols else None
  assert eventually(lambda:bar(24,80)).startswith('RUWAC d')
@@ -72,7 +72,7 @@ try:
  checks.append('two-real-pty-reattachments-have-independent-window-titles')
  # Actual SGR bottom-row click selects a stable window without reaching a child.
  time.sleep(.15)
- pattern=rb'\x1b\[24;1H\x1b\[0;38;2;16;32;48;48;2;122;167;245m([^\x1b]*)\x1b\[0m'
+ pattern=rb'\x1b\[24;1H\x1b\[0;38;2;16;32;48;48;2;152;198;232m([^\x1b]*)\x1b\[0m'
  line=re.findall(pattern,one.data)[-1].decode()
  column=line.index('0:d')+1
  offset=len(one.data);one.send(f'\x1b[<0;{column};24M\x1b[<0;{column};24m'.encode())

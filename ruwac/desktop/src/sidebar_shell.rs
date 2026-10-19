@@ -26,6 +26,8 @@ pub struct Settings {
     pub actions_collapsed: bool,
     #[serde(default)]
     pub controls_docked: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub primary_receive: bool,
 
     pinned: bool,
     width: u16,
@@ -86,6 +88,7 @@ impl Default for Settings {
             bar_labels: true,
             actions_collapsed: false,
             controls_docked: false,
+            primary_receive: false,
             pinned: false,
             width: 260,
             collapsed_groups: Default::default(),
@@ -140,6 +143,15 @@ pub fn load() -> Result<Settings, String> {
     }
     value.schema = 3;
     Ok(value)
+}
+
+pub fn primary_receive_allowed() -> bool {
+    load().is_ok_and(|p| p.primary_receive)
+}
+pub fn set_primary_receive(enabled: bool) -> Result<(), String> {
+    let mut settings = load()?;
+    settings.primary_receive = enabled;
+    save(&settings)
 }
 
 pub fn collapsed_groups() -> std::collections::BTreeSet<String> {

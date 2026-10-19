@@ -2,7 +2,7 @@
 use crate::profiles::{self, Profile};
 use std::{
     io::{BufRead, BufReader, Read, Write},
-    process::{Child, ChildStdin, Command, Stdio},
+    process::{Child, Command, Stdio},
     time::{Duration, Instant},
 };
 const HELPER: &str = include_str!("../../../scripts/primary-selection.py");
@@ -10,6 +10,12 @@ fn quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
 }
 pub fn validate(p: &profiles::Preferences) -> Result<(), String> {
+    if p.primary_paste && !p.primary_sync {
+        return Err(
+            "Configure the Linux desktop selection-sharing route before enabling terminal paste"
+                .into(),
+        );
+    }
     if !p.primary_sync {
         return Ok(());
     }
@@ -87,14 +93,16 @@ pub fn ssh_argv(p: &Profile) -> Result<Vec<String>, String> {
 struct Incoming {
     ready: bool,
     failed: bool,
-    text: Option<(u64, String)>,
+    text: Option<(u64, String, bool)>,
+    offer: Option<(u64, u64, bool)>,
 }
 pub struct Bridge {
     child: Option<Child>,
-    input: Option<ChildStdin>,
+    input: Option<std::sync::mpsc::SyncSender<Vec<u8>>>,
     incoming: std::sync::Arc<std::sync::Mutex<Incoming>>,
     last: Instant,
-    modes: Option<bool>,
+    modes: Option<(bool, bool)>,
+    next_offer: u64,
     epoch: u64,
     pub ready: bool,
     pub failed: bool,
@@ -109,9 +117,19 @@ impl Bridge {
             .stderr(Stdio::null())
             .spawn()
             .map_err(|_| "SSH is unavailable for mouse selection sharing")?;
-        let input = child.stdin.take();
+        let mut input = child.stdin.take().unwrap();
         let output = child.stdout.take().unwrap();
         let incoming = std::sync::Arc::new(std::sync::Mutex::new(Incoming::default()));
+        let writer_state = incoming.clone();
+        let (sender, output_frames) = std::sync::mpsc::sync_channel::<Vec<u8>>(2);
+        std::thread::spawn(move || {
+            for frame in output_frames {
+                if input.write_all(&frame).and_then(|_| input.flush()).is_err() {
+                    writer_state.lock().unwrap().failed = true;
+                    break;
+                }
+            }
+        });
         let state = incoming.clone();
         std::thread::spawn(move || {
             let mut reader = BufReader::new(output);
@@ -140,7 +158,21 @@ impl Bridge {
                         if text.is_empty() || text.len() > 1024 * 1024 || text.contains('\0') {
                             break;
                         }
-                        state.lock().unwrap().text = Some((epoch, text.to_owned()));
+                        state.lock().unwrap().text = Some((
+                            epoch,
+                            text.to_owned(),
+                            value["initial"].as_bool().unwrap_or(false),
+                        ));
+                    }
+                    Some("offer-result") => {
+                        let (Some(epoch), Some(id), Some(ok)) = (
+                            value["epoch"].as_u64(),
+                            value["id"].as_u64(),
+                            value["ok"].as_bool(),
+                        ) else {
+                            break;
+                        };
+                        state.lock().unwrap().offer = Some((epoch, id, ok));
                     }
                     _ => break,
                 }
@@ -149,16 +181,17 @@ impl Bridge {
         });
         Ok(Self {
             child: Some(child),
-            input,
+            input: Some(sender),
             incoming,
             last: Instant::now() - Duration::from_secs(2),
             modes: None,
+            next_offer: 0,
             epoch: 0,
             ready: false,
             failed: false,
         })
     }
-    pub fn tick(&mut self, _send: bool, receive: bool) {
+    pub fn tick(&mut self, send: bool, receive: bool) {
         {
             let state = self.incoming.lock().unwrap();
             self.ready = state.ready && !state.failed;
@@ -176,37 +209,71 @@ impl Bridge {
             self.input.take();
             return;
         }
-        let changed = self.modes != Some(receive);
+        let changed = self.modes != Some((send, receive));
         if !changed && self.last.elapsed() < Duration::from_secs(1) {
             return;
         }
         if changed {
             self.epoch = self.epoch.saturating_add(1);
             self.incoming.lock().unwrap().text.take();
+            self.incoming.lock().unwrap().offer.take();
         }
-        self.modes = Some(receive);
+        self.modes = Some((send, receive));
         self.last = Instant::now();
-        if let Some(input) = self.input.as_mut() {
-            if writeln!(
-                input,
-                "{{\"type\":\"mode\",\"epoch\":{},\"send\":{receive},\"receive\":false}}",
-                self.epoch
-            )
-            .is_err()
-            {
-                self.failed = true;
-                self.ready = false;
-                self.input.take();
-            }
+        if self.queue(serde_json::json!({"type":"mode", "epoch":self.epoch, "send":receive, "receive":false, "paste":send})).is_err() {
+            self.failed = true;
+            self.ready = false;
+            self.input.take();
         }
+    }
+    fn queue(&self, value: serde_json::Value) -> Result<(), String> {
+        let mut frame = serde_json::to_vec(&value).map_err(|_| "Invalid selection message")?;
+        frame.push(b'\n');
+        self.input
+            .as_ref()
+            .ok_or("Selection connection closed")?
+            .try_send(frame)
+            .map_err(|_| "Selection connection is busy or unavailable".into())
+    }
+    pub fn offer_primary(&mut self, text: String) -> Result<u64, String> {
+        if !self.ready || self.failed || !self.modes.is_some_and(|(send, _)| send) {
+            return Err("Selection sharing is not ready for sending".into());
+        }
+        if text.is_empty() || text.len() > crate::terminal_primary::MAX_OFFER || text.contains('\0')
+        {
+            return Err(
+                "Terminal selection exceeds the 128 KiB paste limit or contains NUL".into(),
+            );
+        }
+        self.next_offer = self
+            .next_offer
+            .checked_add(1)
+            .ok_or("Selection sequence exhausted")?;
+        let id = self.next_offer;
+        self.queue(serde_json::json!({"type":"offer", "epoch":self.epoch, "id":id, "text":text}))?;
+        Ok(id)
+    }
+    pub fn take_offer_result(&self, wanted: u64) -> Option<bool> {
+        self.incoming
+            .lock()
+            .unwrap()
+            .offer
+            .take()
+            .filter(|(epoch, id, _)| {
+                *epoch == self.epoch && *id == wanted && self.modes.is_some_and(|(send, _)| send)
+            })
+            .map(|(_, _, ok)| ok)
     }
     pub fn publish_primary(
         &self,
         clipboard: &gtk::gdk::Clipboard,
     ) -> Result<Option<usize>, String> {
-        let Some(text) = self.take_text() else {
+        let Some((text, initial)) = self.take_incoming() else {
             return Ok(None);
         };
+        if initial && crate::terminal_primary::selected(clipboard).is_some() {
+            return Ok(None);
+        }
         let size = text.len();
         let provider = gtk::gdk::ContentProvider::for_bytes(
             "text/plain;charset=utf-8",
@@ -217,14 +284,19 @@ impl Bridge {
             .map_err(|_| "The desktop refused the remote mouse selection".to_string())?;
         Ok(Some(size))
     }
-    pub fn take_text(&self) -> Option<String> {
+    fn take_incoming(&self) -> Option<(String, bool)> {
         self.incoming
             .lock()
             .unwrap()
             .text
             .take()
-            .filter(|(epoch, _)| self.modes == Some(true) && *epoch == self.epoch)
-            .map(|(_, text)| text)
+            .filter(|(epoch, _, _)| {
+                self.modes.is_some_and(|(_, receive)| receive) && *epoch == self.epoch
+            })
+            .map(|(_, text, initial)| (text, initial))
+    }
+    pub fn take_text(&self) -> Option<String> {
+        self.take_incoming().map(|(text, _)| text)
     }
 }
 impl Drop for Bridge {

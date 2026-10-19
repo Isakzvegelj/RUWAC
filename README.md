@@ -153,6 +153,10 @@ The full headless suite and three genuine SSH remote-PTY detach/reattach cycles 
 
 Use **Split tabs…** to place existing terminal, RDP or Files views side by side or above/below each other. **Separate views** returns them to tabs while preserving connections. RDP reconnect/disconnect, fit, dynamic resolution, zoom and fullscreen are visible in the native toolbar. Additional connection, remote-key and clipboard actions are under **RDP controls**. Clipboard ownership follows the focused canvas; local controls and Files cannot let inactive RDP sessions take over CLIPBOARD.
 
+Drag a tab outside the window, or right-click its title and choose **Move tab to new window**. Its terminal, RDP or mixed split tree moves with its existing connections. Drag it back to a tab bar to combine the windows again. Closing the original window leaves detached windows running. Saved workspaces retain their tabs. Return detached tabs to the original window before opening or restoring a layout there; reopening a saved workspace gathers its tabs into one window.
+
+New RDP connections and imported profiles default to **Dynamic resolution**. To update an existing library, run `ruwac-desktop --dynamic-rdp`; this updates saved RDP display modes and inherited group display defaults while retaining credentials and other preferences. Reopen the GUI and reconnect existing tabs to load the updated library. Servers without Display Control support use local scaling.
+
 **Views…** lets you move one mixed view to its own tab or close it. Closing a terminal view detaches it; use Sessions to reopen its still-running programs. Closing RDP disconnects just that view. Closing Files pauses its transfer; reopen the same endpoint’s Files tab to resume or discard the retained job. Neighboring views and connections remain open. Empty workspaces can create a new terminal from the toolbar.
 
 ## Control another host
@@ -377,7 +381,7 @@ After installation, `man ruwac` documents session commands, keyboard controls an
 ### Mouse selection across Linux RDP desktops
 
 For selecting text on one Linux desktop and middle-clicking on the other, edit
-the RDP machine and enable **Receive mouse selections from this Linux desktop**
+the RDP machine and enable **Share mouse selections with this Linux desktop**
 under Advanced. Enter its Linux SSH account, SSH port (0 keeps SSH configuration),
 and the exact remote Wayland session, such as `wayland-0`. The SSH account must
 be the account owning that desktop, with an existing trusted host key and key
@@ -389,8 +393,9 @@ This optional helper receives remote text into local PRIMARY separately from the
 Ctrl+C clipboard. It follows the RDP tab’s receive clipboard policy and operates
 while its canvas has focus. Inactive remote selections are ignored. The focused
 native GUI publishes the selection, including on Wayland; a background Xwayland
-client cannot reliably do this. Sending local PRIMARY back to a remote native
-Wayland app is not implemented. Ctrl+C/V continues to work in both directions.
+client cannot reliably do this. General local PRIMARY sharing into arbitrary remote native Wayland apps is not
+implemented; the confirmed remote RUWAC terminal path below is available.
+Ctrl+C/V continues to work in both directions.
 CLIPBOARD, images and saved credentials are unchanged. It stops on tab disconnect
 or GUI exit; no remote service or clipboard-history file is installed. A missing
 SSH key, unavailable Xwayland, mismatched desktop or missing dependency leaves
@@ -408,3 +413,52 @@ ruwac-desktop --disable-primary ENDPOINT_ID
 
 Reopen the RDP tab after enabling it. Disabling or changing the saved route stops
 its existing selection helper; running terminal processes remain independent.
+
+### Terminal menus and selection paste into remote RUWAC
+
+Terminal tabs have **Copy**, **Paste**, **Paste selection**, **Select text…** and
+**Close tab** actions. RDP tabs retain their connection/display actions. Copying
+retained text is also available after a terminal session ends; pasting into an
+ended session is disabled. The terminal's own context menu includes these actions
+above the saved hosts. Applications using mouse input keep their right-click;
+use the tab menu or Shift+right-click for RUWAC's menu. **Select text…** opens
+native scrollback, where ordinary mouse selection works without holding Shift.
+SSH terminal output is selected in exactly the same way as local output.
+
+To middle-click a local RUWAC terminal selection into a remote RUWAC terminal,
+configure the Linux selection-sharing route above and enable **Middle-click
+pastes local terminal selections into remote RUWAC** on its RDP endpoint. In the
+receiving GUI's Controls menu enable **Receive mouse selections from another
+RUWAC desktop**. Both GUIs must support this feature, and the receiving RUWAC
+window must already have focus on its desktop. Select the source text, switch
+to the RDP tab and middle-click the remote terminal. Programs handling the mouse
+can use **Select text…** or Shift+drag for the source selection.
+
+The existing trusted SSH peer asks the foreground native GUI to publish PRIMARY,
+confirms the complete selection through the compositor, and only then forwards
+the original middle-button events. It neither types text nor changes Ctrl+C/V
+CLIPBOARD. Pending clicks are cancelled on source, focus, endpoint, transport,
+policy or display changes; refusal/timeout does not paste the old remote
+selection. This return path accepts up to128 KiB of UTF-8 text and requires the
+remote RUWAC window as its native publisher. For other foreground applications,
+use their ordinary Ctrl+C/V clipboard. The opt-in receiver exposes a same-UID,
+write-only `clipboard.primary.offer` GUI API; it adds no clipboard-read or remote
+keyboard-input permission. Its checkbox disables reception immediately.
+
+Explicit headless setup is also available:
+
+```sh
+ruwac-desktop --paste-primary ENDPOINT_ID
+ruwac-desktop --enable-primary-receive
+ruwac-desktop --disable-primary-receive
+```
+
+The first command applies to the sending RDP endpoint; the latter two apply to
+the receiving Linux account. Reconnect the configured RDP tab after changing
+its endpoint. Existing terminal children remain running during GUI upgrades.
+The lighter blue CLI status bar appears in newly started/reattached clients;
+older running clients keep their existing rendering until reattached.
+
+New terminals advertise `xterm-256color` and true colour, and clear a launcher-inherited `NO_COLOR` setting. New GUI and CLI login shells also do this when reusing an older engine. Existing shells retain their environment: run `unset NO_COLOR` and restart the affected application to restore its colours. To deliberately disable colours for one application, run `env NO_COLOR=1 application` or configure that application directly.
+
+Terminal status labels and window titles show the foreground command, refreshing quiet commands twice per second when the engine provides job metadata. Custom window names remain visible alongside the command; arguments are excluded. Exiting a shell removes its completed window when another live window remains. Exiting the last live window detaches the client and retains final history for explicit reattachment.

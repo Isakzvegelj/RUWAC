@@ -1,7 +1,9 @@
 mod copy;
+mod status_commands;
 use ruwac_protocol::{MAX_TEXT, request, write_frame};
 use serde_json::{Value, json};
 use std::{
+    collections::HashSet,
     io::{self, Read, Write},
     os::unix::net::UnixStream,
     path::Path,
@@ -267,7 +269,7 @@ fn raw_call(s: &mut UnixStream, m: &str, v: Value) -> io::Result<Value> {
 }
 fn call(s: &mut UnixStream, m: &str, mut v: Value) -> io::Result<Value> {
     if matches!(m, "session.create" | "window.create" | "pane.create") && v.get("argv").is_none() {
-        v["argv"] = json!(ruwac_pty::shell::default_argv().map_err(io::Error::other)?);
+        v["argv"] = json!(ruwac_pty::shell::default_terminal_argv().map_err(io::Error::other)?);
     }
     let mut result = ruwac_protocol::client_call(m, v, |m, v| raw_call(s, m, v))?;
     if m == "client.render" && result["unchanged"] != true && result.get("session_name").is_none() {
@@ -325,7 +327,10 @@ fn window_identity(v: &Value) -> String {
         "{} · {}:{}",
         elide(&safe(v["session_name"].as_str().unwrap_or("session")), 48),
         v["window_index"].as_u64().unwrap_or(0),
-        elide(&safe(v["name"].as_str().unwrap_or("shell")), 96)
+        elide(
+            &safe(&status_commands::name(v, &v["window"], &v["name"])),
+            96
+        )
     )
 }
 struct StatusLayout {
@@ -395,7 +400,7 @@ fn status_layout(v: &Value, size: (u16, u16), status: &str) -> StatusLayout {
             let raw = format!(
                 "{}:{}",
                 r["index"].as_u64().unwrap_or(0),
-                safe(r["name"].as_str().unwrap_or("shell"))
+                safe(&status_commands::name(v, &r["id"], &r["name"]))
             );
             format!(
                 "{}{}",
@@ -563,13 +568,35 @@ fn same_frame(a: &Value, b: &Value) -> bool {
 }
 /// Acknowledge a new daemon revision even when another session caused it.
 /// Otherwise every later poll asks for the same full, unchanged view again.
-fn accept_render_frame(snapshot: &mut Value, fresh: Value) -> bool {
+fn accept_render_frame(snapshot: &mut Value, mut fresh: Value) -> bool {
     if fresh["unchanged"] == true {
         return false;
+    }
+    // Client-only status metadata must not turn every daemon poll into a full
+    // redraw, especially when RUWAC clients are nested inside one another.
+    if let (Some(commands), Some(object)) = (snapshot.get("_commands"), fresh.as_object_mut()) {
+        object.insert("_commands".into(), commands.clone());
     }
     let changed = !same_frame(&fresh, snapshot);
     *snapshot = fresh;
     changed
+}
+fn observe_running_window(frame: &Value, observed: &mut HashSet<String>) {
+    if let Some(windows) = frame["windows"].as_array() {
+        observed.retain(|id| {
+            windows
+                .iter()
+                .any(|w| w["id"].as_str() == Some(id.as_str()))
+        });
+    }
+    if frame["panes"]
+        .as_array()
+        .is_some_and(|panes| panes.iter().any(|p| p["ended"] != true))
+    {
+        if let Some(window) = frame["window"].as_str() {
+            observed.insert(window.into());
+        }
+    }
 }
 /// Window index for Alt+0…9 (ESC followed by a digit).
 fn alt_digit(key: &copy::Key) -> Option<usize> {
@@ -639,7 +666,7 @@ fn route_mouse(v: &Value, bytes: &[u8]) -> Option<(String, Value, bool)> {
         })
     })
 }
-const STATUS_STYLE: &str = "\x1b[0;38;2;16;32;48;48;2;122;167;245m";
+const STATUS_STYLE: &str = "\x1b[0;38;2;16;32;48;48;2;152;198;232m";
 
 fn draw(v: &Value, status: &str) -> io::Result<()> {
     let mut out = format!(
@@ -1376,12 +1403,13 @@ pub fn attach_with_window(socket: &Path, session: &str, window: Option<&str>) ->
     let mut prefix = false;
     let mut mode = Mode::Live;
     let mut snapshot = call(&mut s, "client.render", json!({}))?;
-    let mut seen_running = snapshot["panes"]
-        .as_array()
-        .is_some_and(|p| p.iter().any(|p| p["ended"] != true));
+    status_commands::refresh(&mut snapshot, |m, p| call(&mut s, m, p));
+    let mut running_windows = HashSet::new();
+    observe_running_window(&snapshot, &mut running_windows);
     let mut status = String::new();
     draw_mode(&mut mode, &snapshot, size, &status, &config)?;
     let mut rendered = Instant::now();
+    let mut commands_refreshed = Instant::now();
     let mut input_at = Instant::now();
     while !STOP.load(Ordering::Relaxed) {
         let events = match rx.recv_timeout(Duration::from_millis(10)) {
@@ -1985,6 +2013,9 @@ pub fn attach_with_window(socket: &Path, session: &str, window: Option<&str>) ->
         }
         if rendered.elapsed() > Duration::from_millis(25) {
             if matches!(mode, Mode::Live) {
+                // Navigation can already have replaced the frame with an idle
+                // live shell. Observe it before a revision-only poll skips it.
+                observe_running_window(&snapshot, &mut running_windows);
                 let fresh = call(
                     &mut s,
                     "client.render",
@@ -1997,7 +2028,11 @@ pub fn attach_with_window(socket: &Path, session: &str, window: Option<&str>) ->
                     let ended = snapshot["panes"]
                         .as_array()
                         .is_some_and(|p| !p.is_empty() && p.iter().all(|p| p["ended"] == true));
-                    if seen_running && ended {
+                    let completed = ended
+                        && snapshot["window"]
+                            .as_str()
+                            .is_some_and(|id| running_windows.remove(id));
+                    if completed {
                         // An explicitly launched agent view must never silently
                         // send its next input to a different agent's window.
                         if window.is_some_and(|window| snapshot["window"].as_str() == Some(window))
@@ -2012,18 +2047,40 @@ pub fn attach_with_window(socket: &Path, session: &str, window: Option<&str>) ->
                             .as_array()
                             .and_then(|p| p.iter().find(|p| p["ended"] != true))
                         {
+                            let retired: Vec<_> = snapshot["panes"]
+                                .as_array()
+                                .into_iter()
+                                .flatten()
+                                .filter(|p| p["ended"] == true && p["restored"] != true)
+                                .filter_map(|p| p["id"].as_str().map(str::to_owned))
+                                .collect();
                             call(&mut s, "window.select", json!({"window":live["window"]}))?;
                             call(&mut s, "pane.select", json!({"pane":live["id"]}))?;
+                            for pane in retired {
+                                if let Err(error) = call(&mut s, "pane.close", json!({"pane":pane}))
+                                {
+                                    let stale = serde_json::from_str::<Value>(&error.to_string())
+                                        .is_ok_and(|e| e["code"] == "STALE_ID");
+                                    if !stale {
+                                        return Err(error);
+                                    }
+                                }
+                            }
                             snapshot = call(&mut s, "client.render", json!({}))?;
                         } else {
                             break;
                         }
                     }
-                    seen_running |= !ended;
+                    observe_running_window(&snapshot, &mut running_windows);
                     dirty = true;
                 }
             }
             rendered = Instant::now();
+        }
+        if matches!(mode, Mode::Live) && commands_refreshed.elapsed() >= Duration::from_millis(500)
+        {
+            dirty |= status_commands::refresh(&mut snapshot, |m, p| call(&mut s, m, p));
+            commands_refreshed = Instant::now();
         }
         if dirty {
             draw_mode(&mut mode, &snapshot, size, &status, &config)?;
@@ -2041,6 +2098,7 @@ mod tests {
         let mut snapshot = json!({"revision":1,"panes":[{"id":"p","grid":{"cells":[["x"]]}}]});
         let mut server = snapshot.clone();
         server["revision"] = json!(2);
+        snapshot["_commands"] = json!({"window_generated":"sleep"});
         let mut full_frames = 0;
         let mut redraws = 0;
         for _ in 0..120 {
@@ -2058,6 +2116,7 @@ mod tests {
         );
         assert_eq!(redraws, 0, "an identical visible screen must not repaint");
         assert_eq!(snapshot["revision"], 2);
+        assert_eq!(snapshot["_commands"]["window_generated"], "sleep");
         assert_eq!(snapshot["panes"][0]["grid"]["cells"][0][0], "x");
 
         server["revision"] = json!(3);

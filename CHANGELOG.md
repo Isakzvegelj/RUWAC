@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## v0.4.27 — 2026-10-19 — Stable source release
+
+- Show foreground commands in terminal status labels and window titles, retain custom names, and refresh quiet commands without reading command arguments.
+- Track running windows across navigation and remove completed windows when a live sibling remains, preserving final-session history for deliberate reattachment.
+- Prevent launcher-inherited `NO_COLOR` from disabling terminal application colours, including new GUI/CLI shells on older running engines. Explicit application-level colour preferences remain available.
+- Move live tabs and mixed splits into new windows by dragging or through the tab menu, retaining terminal processes and RDP transports when the original window closes.
+- Default new group display settings to dynamic resolution and add `--dynamic-rdp` to update existing RDP endpoint and group display settings without changing credentials.
+- Give terminal tabs and terminal context menus working Copy/Paste/Select text actions, including copying retained output after a session ends. Keep connection and display actions on RDP tabs.
+- Add opt-in, confirmed middle-click selection paste from local/SSH terminal tabs into a focused remote RUWAC terminal over the existing trusted Linux route, preserving the separate Ctrl+C/V clipboard and cancelling stale clicks.
+- Soften the CLI status bar to a pleasant light blue with dark, readable text.
+
 ## v0.4.26 — 2026-10-18 — Stable source release
 
 - Add opt-in Linux RDP mouse-selection sharing over the endpoint’s trusted SSH route, preserving the separate Ctrl+C clipboard and stopping helpers on disconnect.

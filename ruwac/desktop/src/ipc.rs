@@ -1,4 +1,4 @@
-//! Same-UID, bounded GUI IPC. Socket workers never touch GTK or clipboard data.
+//! Same-UID, bounded GUI IPC. Socket workers never access GTK or the compositor’s clipboards.
 use ruwac_protocol::{Error, Request, read_frame, response, write_frame};
 use serde_json::Value;
 use std::{

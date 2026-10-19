@@ -43,6 +43,8 @@ pub struct Preferences {
     pub rdp_mode: String,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub primary_sync: bool,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub primary_paste: bool,
     #[serde(skip_serializing_if = "String::is_empty")]
     pub primary_user: String,
     #[serde(skip_serializing_if = "String::is_empty")]
@@ -100,6 +102,7 @@ impl Default for Preferences {
         Self {
             rdp_mode: String::new(),
             primary_sync: false,
+            primary_paste: false,
             primary_user: String::new(),
             primary_display: String::new(),
             primary_port: 0,
@@ -3488,9 +3491,14 @@ fn editor_seed(
     form_row(&advanced, "RDP display mode", &display);
     form_row(&advanced, "Clipboard policy", &clipboard);
     let primary_sync =
-        gtk::CheckButton::with_label("Receive mouse selections from this Linux desktop");
+        gtk::CheckButton::with_label("Share mouse selections with this Linux desktop");
     primary_sync.set_widget_name("primary-sync");
     primary_sync.set_active(original.preferences.primary_sync);
+    let primary_paste = gtk::CheckButton::with_label(
+        "Middle-click pastes local terminal selections into remote RUWAC",
+    );
+    primary_paste.set_widget_name("primary-paste");
+    primary_paste.set_active(original.preferences.primary_paste);
     let primary_user = gtk::Entry::new();
     primary_user.set_widget_name("primary-user");
     primary_user.set_placeholder_text(Some(
@@ -3527,6 +3535,7 @@ fn editor_seed(
     let primary_port = gtk::SpinButton::with_range(0.0, 65535.0, 1.0);
     primary_port.set_value(original.preferences.primary_port as f64);
     form_row(&advanced, "Mouse selection sharing", &primary_sync);
+    form_row(&advanced, "Terminal selection paste", &primary_paste);
     form_row(&advanced, "Selection SSH account", &primary_user);
     form_row(&advanced, "Remote Wayland session", &primary_display);
     form_row(
@@ -3907,7 +3916,7 @@ fn editor_seed(
             let(s,id,machine_id,st,parent)=(store.clone(),original.id.clone(),original.machine_id.clone(),status.clone(),d.clone());confirm.connect_response(move|c,r|{if r==gtk::ResponseType::Accept {let mut s=s.borrow_mut();let old=s.items.clone();s.items.retain(|p|p.id!=id&&(!machine||p.machine_id!=machine_id));if let Err(e)=s.save(){s.items=old;st.set_text(&e);}else{drop(s);st.set_text("Metadata deleted; previous library retained for Undo");refresh_widgets(parent.transient_for().as_ref());parent.close();}}c.close();});confirm.present();return;
         }
         if response!=gtk::ResponseType::Accept && response!=gtk::ResponseType::Other(1) && response!=gtk::ResponseType::Other(3) && response!=gtk::ResponseType::Other(5){d.close();return;}
-        let mut p=original.clone();p.preferences.primary_sync=primary_sync.is_active();p.preferences.primary_user=primary_user.text().into();p.preferences.primary_display=primary_display.text().into();p.preferences.primary_port=primary_port.value() as u16;p.preferences.ssh_auth=if p.protocol=="SSH"&&login.selected()==1{"password".into()}else{String::new()};p.preferences.kimi_command=kimi_command.text().into();p.preferences.agent_install_missing=auto_install.is_active();p.preferences.ruwac_install_missing=ruwac_install.is_active();p.preferences.agent_session=agent_session.text().into();p.preferences.codex_command=codex_command.text().into();p.preferences.claude_command=claude_command.text().into();p.preferences.agent_backend=["ruwac","screen","tmux","direct"][backend.selected()as usize].into();p.name=fields[0].text().into();p.group=fields[1].text().into();p.machine_id=fields[2].text().into();p.server=fields[3].text().into();p.username=fields[4].text().into();p.preferences.label=fields[5].text().into();p.preferences.network=fields[6].text().into();p.preferences.gateway=fields[7].text().into();p.preferences.ssh_jump_alias=ssh_jump.text().into();p.tags=fields[8].text().split(',').map(str::trim).filter(|s|!s.is_empty()).map(str::to_owned).collect();p.secret_reference=fields[9].text().into();p.preferences.trust=fields[10].text().into();p.preferences.identity_file=fields[11].text().into();p.preferences.identity_secret_reference=identity_reference.text().into();p.preferences.known_hosts=fields[12].text().into();p.protocol=if protocol.selected()==1{"SSH"}else{"RDP"}.into();p.preferences.display=["fit","native","stretch","dynamic"][display.selected() as usize].into();p.preferences.clipboard=clipboard.selected();p.preferences.zoom=zoom.value();p.preferences.fullscreen=full.is_active();p.preferences.reconnect=retry.is_active();p.inherit=inherit.is_active();p.inherit_connection=inherit_connection.is_active();p.inherit_credential=inherit_credential.is_active();p.preferences.rdp_mode=["","gnome-remote-login","gnome-desktop-sharing"][rdp_mode.selected() as usize].into();p.preferences.gnome_auto_login=gnome_auto.is_active();p.preferences.gnome_username=gnome_user.text().into();p.preferences.gnome_secret_reference=if p.preferences.rdp_mode=="gnome-remote-login"||!original.preferences.gnome_secret_reference.is_empty(){gnome_ref.text().into()}else{String::new()};
+        let mut p=original.clone();p.preferences.primary_sync=primary_sync.is_active();p.preferences.primary_paste=primary_paste.is_active();p.preferences.primary_user=primary_user.text().into();p.preferences.primary_display=primary_display.text().into();p.preferences.primary_port=primary_port.value() as u16;p.preferences.ssh_auth=if p.protocol=="SSH"&&login.selected()==1{"password".into()}else{String::new()};p.preferences.kimi_command=kimi_command.text().into();p.preferences.agent_install_missing=auto_install.is_active();p.preferences.ruwac_install_missing=ruwac_install.is_active();p.preferences.agent_session=agent_session.text().into();p.preferences.codex_command=codex_command.text().into();p.preferences.claude_command=claude_command.text().into();p.preferences.agent_backend=["ruwac","screen","tmux","direct"][backend.selected()as usize].into();p.name=fields[0].text().into();p.group=fields[1].text().into();p.machine_id=fields[2].text().into();p.server=fields[3].text().into();p.username=fields[4].text().into();p.preferences.label=fields[5].text().into();p.preferences.network=fields[6].text().into();p.preferences.gateway=fields[7].text().into();p.preferences.ssh_jump_alias=ssh_jump.text().into();p.tags=fields[8].text().split(',').map(str::trim).filter(|s|!s.is_empty()).map(str::to_owned).collect();p.secret_reference=fields[9].text().into();p.preferences.trust=fields[10].text().into();p.preferences.identity_file=fields[11].text().into();p.preferences.identity_secret_reference=identity_reference.text().into();p.preferences.known_hosts=fields[12].text().into();p.protocol=if protocol.selected()==1{"SSH"}else{"RDP"}.into();p.preferences.display=["fit","native","stretch","dynamic"][display.selected() as usize].into();p.preferences.clipboard=clipboard.selected();p.preferences.zoom=zoom.value();p.preferences.fullscreen=full.is_active();p.preferences.reconnect=retry.is_active();p.inherit=inherit.is_active();p.inherit_connection=inherit_connection.is_active();p.inherit_credential=inherit_credential.is_active();p.preferences.rdp_mode=["","gnome-remote-login","gnome-desktop-sharing"][rdp_mode.selected() as usize].into();p.preferences.gnome_auto_login=gnome_auto.is_active();p.preferences.gnome_username=gnome_user.text().into();p.preferences.gnome_secret_reference=if p.preferences.rdp_mode=="gnome-remote-login"||!original.preferences.gnome_secret_reference.is_empty(){gnome_ref.text().into()}else{String::new()};
         if response==gtk::ResponseType::Other(1){p.id=ruwac_protocol::id("endpoint");p.machine_id=ruwac_protocol::id("machine");p.secret_reference=p.id.clone();if !p.preferences.gnome_secret_reference.is_empty(){p.preferences.gnome_secret_reference=format!("{}.gnome",p.id);}p.name.push_str(" (copy)");}
         if response==gtk::ResponseType::Other(3){p.name=original.name.clone();p.group=original.group.clone();p.id=ruwac_protocol::id("endpoint");p.secret_reference=p.id.clone();if !p.preferences.gnome_secret_reference.is_empty(){p.preferences.gnome_secret_reference=format!("{}.gnome",p.id);}}
         if let Err(e)=p.validate(){info.set_text(&e);return;}
@@ -3991,6 +4000,7 @@ fn group_editor(button: &gtk::Button, store: Rc<RefCell<Store>>, status: gtk::La
     content.append(&path);
     let mode = gtk::DropDown::from_strings(&["fit", "native", "stretch", "dynamic"]);
     mode.set_widget_name("group-display");
+    mode.set_selected(3);
     content.append(&gtk::Label::new(Some("Inherited RDP display mode")));
     content.append(&mode);
     let clip = gtk::DropDown::from_strings(&[
@@ -5076,6 +5086,31 @@ mod inherited_tests {
 }
 
 /// Explicit headless setup for an existing RDP profile; never reads credentials.
+pub(crate) fn configure_dynamic_rdp() -> Result<usize, String> {
+    let mut store = Store::load();
+    if let Some(error) = &store.error {
+        return Err(error.clone());
+    }
+    let mut changed = 0;
+    for profile in store.items.iter_mut().filter(|p| p.protocol == "RDP") {
+        if profile.preferences.display != "dynamic" {
+            profile.preferences.display = "dynamic".into();
+            changed += 1;
+        }
+    }
+    // A profile may inherit its display setting from its group.
+    for group in &mut store.groups {
+        if group.defaults.display != "dynamic" {
+            group.defaults.display = "dynamic".into();
+            changed += 1;
+        }
+    }
+    if changed > 0 {
+        store.save()?;
+    }
+    Ok(changed)
+}
+
 pub(crate) fn configure_primary(
     id: &str,
     user: &str,
@@ -5093,6 +5128,9 @@ pub(crate) fn configure_primary(
         .find(|p| p.id == id && p.protocol == "RDP")
         .ok_or("Choose an existing RDP endpoint ID")?;
     profile.preferences.primary_sync = enabled;
+    if !enabled {
+        profile.preferences.primary_paste = false;
+    }
     if enabled {
         profile.preferences.primary_user = user.into();
         profile.preferences.primary_display = display.into();
@@ -5116,6 +5154,7 @@ pub(crate) fn primary_profile_current(expected: &Profile) -> bool {
             p.protocol == expected.protocol
                 && p.server == expected.server
                 && a.primary_sync
+                && a.primary_paste == b.primary_paste
                 && a.primary_user == b.primary_user
                 && a.primary_port == b.primary_port
                 && a.primary_display == b.primary_display
@@ -5312,4 +5351,23 @@ mod host_shortcut_tests {
         source.server = "[::1]:3389".into();
         assert_eq!(ssh_seed(&source).server, "[::1]");
     }
+}
+
+/// Explicit send opt-in; the existing reviewed receiver supplies the same SSH route.
+pub(crate) fn configure_primary_paste(id: &str) -> Result<(), String> {
+    let mut store = Store::load();
+    if let Some(error) = &store.error {
+        return Err(error.clone());
+    }
+    let profile = store
+        .items
+        .iter_mut()
+        .find(|p| p.id == id && p.protocol == "RDP")
+        .ok_or("Choose an existing RDP endpoint ID")?;
+    if !profile.preferences.primary_sync {
+        return Err("Configure this desktop's Linux selection-sharing SSH route first".into());
+    }
+    profile.preferences.primary_paste = true;
+    profile.validate()?;
+    store.save()
 }

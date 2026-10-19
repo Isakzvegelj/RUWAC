@@ -27,6 +27,8 @@ mod ssh_keys;
 mod ssh_probe;
 #[path = "../src/ssh_transport.rs"]
 mod ssh_transport;
+#[path = "../src/terminal_primary.rs"]
+mod terminal_primary;
 use std::{
     path::Path,
     sync::{

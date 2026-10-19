@@ -43,7 +43,8 @@ pub fn install(
     button
 }
 
-pub fn popup(area: &gtk::DrawingArea, x: f64, y: f64) {
+pub fn popup(view: &std::rc::Rc<crate::view::View>, x: f64, y: f64) {
+    let area = &view.area;
     MENUS.with(|state| {
         let state = state.borrow();
         let Some((window, menus)) = state.as_ref() else {
@@ -59,7 +60,10 @@ pub fn popup(area: &gtk::DrawingArea, x: f64, y: f64) {
         pop.set_widget_name("terminal-host-menu");
         pop.set_parent(area);
         pop.set_pointing_to(Some(&gtk::gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
-        pop.set_child(Some(&scroll(&menus(false))));
+        let body = view.clipboard_menu();
+        body.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
+        body.append(&menus(false));
+        pop.set_child(Some(&scroll(&body)));
         pop.connect_closed(|pop| pop.unparent());
         pop.popup();
     });

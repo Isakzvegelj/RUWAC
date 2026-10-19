@@ -34,7 +34,7 @@ if args[-1]=='shell-argv':
 else:
  q=json.load(sys.stdin)
  assert q['method']=='window.create'
- assert q['params']['argv']==['/remote-only/selected $(literal) shell','-l']
+ assert q['params']['argv']==['/usr/bin/env','-u','NO_COLOR','--','/remote-only/selected $(literal) shell','-l']
  print(json.dumps({'version':0,'id':q['id'],'result':{'generated':True}}))
 ''')
 peer.chmod(0o700)

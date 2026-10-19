@@ -46,7 +46,7 @@ pub fn controls(
         std::thread::spawn(move || {
             let r = (|| {
                 let mut rpc = Rpc::connect(&worker_socket)?;
-                rpc.call("session.create", json!({"name":"Terminal","argv":crate::shell::default_argv().map_err(|e| std::io::Error::other(e))?}))
+                rpc.call("session.create", json!({"name":"Terminal","argv":crate::shell::default_terminal_argv().map_err(|e| std::io::Error::other(e))?}))
             })();
             let _ = tx.send(r);
         });

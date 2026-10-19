@@ -43,10 +43,10 @@ def main():
     (home / '.bash_profile').write_text("printf 'GENERATED_LOGIN_PROFILE_READY\\n'\nPS1='generated-login> '\n")
     selected = root / 'selected login shell'
     selected.write_text('#!/bin/sh\n[ "$1" = "-l" ] && [ "$#" = 1 ] || exit 13\n'
-                        '. "$HOME/.bash_profile"\nexec /bin/cat\n')
+                        '[ -z "${NO_COLOR+x}" ] && [ "$TERM" = xterm-256color ] && [ "$COLORTERM" = truecolor ] || exit 14\n. "$HOME/.bash_profile"\nexec /bin/cat\n')
     selected.chmod(0o700)
     env = {**os.environ, 'HOME': str(home), 'SHELL': str(selected), 'TERM': 'xterm-256color',
-           'RUWAC_STATE_FILE': str(root / 'state.json')}
+           'RUWAC_STATE_FILE': str(root / 'state.json'), 'NO_COLOR': '1'}
     for key in ('XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_CACHE_HOME'):
         path = root / key.lower()
         path.mkdir(mode=0o700)
@@ -98,6 +98,12 @@ def main():
     try:
         daemon = start([str(daemon_binary), '--socket', str(sock), 'serve'], 'daemon')
         eventually(lambda: sock.exists() and rpc('health')['ok'])
+        explicit = rpc('session.create', {'name': 'Explicit application colour preference',
+            'argv': ['/usr/bin/env', 'NO_COLOR=1', '/bin/sh', '-c',
+                     'printf "EXPLICIT_NO_COLOR=%s\\n" "$NO_COLOR"; exec /bin/cat']})
+        eventually(lambda: 'EXPLICIT_NO_COLOR=1' in
+                   rpc('pane.capture', {'pane': explicit['pane']})['text'])
+        case('TERMINAL-EXPLICIT-APPLICATION-NO-COLOR-PRESERVED')
         cli(['-dmS', 'detached'])
         sid = named('detached')['id']
         pane = panes(sid)[0]
