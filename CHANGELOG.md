@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v0.4.29 — 2026-10-20 — Stable source release
+
+- Install Fedora CI SSH transport dependencies in the initial transaction so OpenSSH selects full systemd before desktop dependencies can select conflicting standalone tmpfiles.
+
 ## v0.4.28 — 2026-10-20 — Stable source release
 
 - Remove the final completed window/session after normal attached shell exit; let independent clients finish cleanly when another client removes it.

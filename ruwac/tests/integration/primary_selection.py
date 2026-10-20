@@ -75,7 +75,15 @@ try:
   q=root/name;q.mkdir()
   read,write=os.pipe();log=(q/'xvfb.log').open('wb')
   child=subprocess.Popen(['Xvfb','-displayfd',str(write),'-screen','0','1000x700x24','-nolisten','tcp','-ac'],pass_fds=[write],stdout=log,stderr=log);children.append(child);os.close(write)
-  assert select.select([read],[],[],5)[0];display=':'+os.read(read,32).decode().strip();os.close(read)
+  # Xvfb may write the digits and newline separately. Closing after the
+  # first read can give its second write EPIPE and kill a ready server.
+  number=b'';deadline=time.monotonic()+5
+  try:
+   while not number.endswith(b'\n'):
+    remaining=deadline-time.monotonic();assert remaining>0 and select.select([read],[],[],remaining)[0],'Xvfb display handshake timed out'
+    chunk=os.read(read,32-len(number));assert chunk and len(number)+len(chunk)<=32,'Invalid Xvfb display handshake';number+=chunk
+   assert re.fullmatch(rb'[0-9]+\n',number),'Invalid Xvfb display number';display=':'+number.decode().strip()
+  finally:os.close(read)
   displays.append(display)
   program=q/'peer.py';program.write_text(peer_source);env={**os.environ,'GDK_BACKEND':'x11','DISPLAY':display,'PYTHONDONTWRITEBYTECODE':'1','NO_AT_BRIDGE':'1','GTK_A11Y':'none'}
   child=subprocess.Popen([sys.executable,str(program),str(q),display],env=env,stdout=(q/'peer.log').open('wb'),stderr=subprocess.STDOUT);children.append(child);(q/'pid').write_text(str(child.pid));wait(lambda:(q/'ready').exists())
