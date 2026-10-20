@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v0.4.31 — 2026-10-20 — Stable source release
+
+- Assemble Fedora RPMs with the source commit timestamp and verify complete package bytes match across separate assembly directories before publication.
+
 ## v0.4.30 — 2026-10-20 — Stable source release
 
 - Verify pending SFTP and rsync recovery jobs' original server key before authentication, including when an SSH alias redirects to another trusted server.

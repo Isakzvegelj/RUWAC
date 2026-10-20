@@ -104,6 +104,8 @@ def packages(root, output, desktop=True, require_private=False, require_tag=Fals
         shutil.copy2(Path(__file__).parents[1] / 'ruwac/packaging/ruwac.spec', spec)
         command = ['rpmbuild', '-bb', str(spec), '--define', '_topdir ' + str(top),
                    '--define', '_buildhost build.invalid', '--define', '_build_id_links none',
+                   '--define', 'use_source_date_epoch_as_buildtime 1',
+                   '--define', 'build_mtime_policy clamp_to_source_date_epoch',
                    '--define', 'dist .fc44', '--define', 'ruwac_version ' + version,
                    '--define', 'ruwac_core_license ' + licenses['core']]
         if desktop:
@@ -124,6 +126,9 @@ def packages(root, output, desktop=True, require_private=False, require_tag=Fals
             metadata = query.decode().splitlines()
             if metadata[1:5] != [version, '1.fc44', 'x86_64', 'build.invalid']:
                 raise ValueError('RPM metadata differs from controller/platform')
+            buildtime = subprocess.check_output(['rpm', '-qp', '--qf', '%{BUILDTIME}', str(rpm)], stderr=subprocess.DEVNULL, text=True)
+            if int(buildtime) != epoch:
+                raise ValueError('RPM build time differs from the source commit')
             requires = subprocess.check_output(['rpm', '-qp', '--requires', str(rpm)], stderr=subprocess.DEVNULL, text=True).splitlines()
             if metadata[0] == 'ruwac' and any(re.search(r'gtk|adwaita|gdk|rdp|pango|cairo', x, re.I) for x in requires):
                 raise ValueError('Headless RPM gained a graphical dependency')

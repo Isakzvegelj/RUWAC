@@ -136,6 +136,7 @@ jobs:
           desktop-file-validate ruwac/packaging/ruwac.desktop
           RUWAC_GITLEAKS="$RUNNER_TEMP/privacy-tools/gitleaks" python3 scripts/rpm-user.py --build-root "$GITHUB_WORKSPACE" --output "$RUNNER_TEMP/rpms" --require-tag > "$RUNNER_TEMP/rpm-receipt.json"
           python3 ruwac/tests/integration/rpm_packages.py --rpms "$RUNNER_TEMP/rpms" --evidence "$RUNNER_TEMP/rpm-evidence" --query-only
+          RUWAC_GITLEAKS="$RUNNER_TEMP/privacy-tools/gitleaks" python3 ruwac/tests/integration/rpm_reproducible.py --build-root "$GITHUB_WORKSPACE" --rpms "$RUNNER_TEMP/rpms" --evidence "$RUNNER_TEMP/rpm-reproducibility" --require-tag
       - name: Wait for quality and privacy on the exact source commit
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

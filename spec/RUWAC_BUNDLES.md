@@ -1,5 +1,12 @@
 # Fedora testing bundles
 
+Fedora RPM assembly fixes the build time to the source commit timestamp and
+clamps packaged file timestamps to that time. Before publication, the release
+workflow assembles the same compiled inputs again in a different directory and
+requires byte-identical complete core and desktop RPMs. This checks deterministic
+packaging; it does not prove reproducible compilation from source or qualification
+for a signed Fedora repository.
+
 The product-owned bundle assembler packages the existing native desktop and
 headless CLI without assigning versions. The existing tagged GitHub workflow attaches checked
 archives and SHA256 sidecars to its controller-created release; the assembler itself
