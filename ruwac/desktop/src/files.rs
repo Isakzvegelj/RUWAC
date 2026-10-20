@@ -20,6 +20,14 @@ pub(super) fn error(_: impl std::fmt::Display) -> String {
     "SFTP operation failed (connection, permissions or server error)".into()
 }
 pub(super) fn connect(p: &Profile) -> Result<Session, String> {
+    connect_checked(p, None)
+}
+/// Recovery must verify the original server before offering any credentials,
+/// even when a changed alias resolves to another independently trusted host.
+pub(super) fn connect_original(p: &Profile, original: &str) -> Result<Session, String> {
+    connect_checked(p, Some(original))
+}
+fn connect_checked(p: &Profile, original: Option<&str>) -> Result<Session, String> {
     let (host, port) = crate::profiles::ssh_endpoint(&p.server)?;
     let mut session = Session::new().map_err(error)?;
     if p.preferences.ssh_jump_alias.is_empty() {
@@ -50,6 +58,12 @@ pub(super) fn connect(p: &Profile) -> Result<Session, String> {
     })?;
     session.set_timeout(5000);
     let (key, _) = session.host_key().ok_or("SSH host key unavailable")?;
+    if original.is_some_and(|expected| format!("{:x}", Sha256::digest(key)) != expected) {
+        return Err(
+            "Original SSH host key changed; pending work cannot authenticate to a different server"
+                .into(),
+        );
+    }
     let path = if p.preferences.known_hosts.is_empty() {
         PathBuf::from(std::env::var_os("HOME").ok_or("Home unavailable")?).join(".ssh/known_hosts")
     } else {

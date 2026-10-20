@@ -1,7 +1,8 @@
 # RUWAC purpose, functionality and implementation audit
 
-Review started: 2026-10-17; continued 2026-10-18. Baseline reviewed: v0.4.18, including changes since
-v0.4.8. This is a product requirements ledger and source review, not a claim
+Review started: 2026-10-17; historical change review below covers v0.4.18.
+Current behavior was reconciled on 2026-10-20 after v0.4.29 and the file recovery
+identity preflight. This is a product requirements ledger and source review, not a claim
 that all supported environments have passed acceptance.
 
 ## Purpose
@@ -36,11 +37,11 @@ results are distinguished from tests re-executed for the current batch in the
 | Persistence across reboot/daemon loss | Partial | Saved history/layout can recover; terminated operating-system processes cannot be resurrected. Restored panes can start a new shell. |
 | Screen-compatible navigation and aliases | Partial | Common create/attach/detach, previous/next/window chooser, splits, zoom, selection/search and paste; not the entire GNU Screen command/configuration language. |
 | Nesting RUWAC, Screen and tmux | Implemented | Prefix forwarding, independent focus and mouse routing have fixtures. A known upstream Screen paste interaction is separately documented. |
-| TUI status bar and window titles | Implemented | Clickable window bar, split commands, clipped/Unicode labels, concise titles; current change strengthens blue to the default tab accent. |
+| TUI status bar and window titles | Implemented | Clickable window bar, split commands, clipped/Unicode labels, foreground command names and a light-blue bar; custom names remain available. |
 | Native GTK/libadwaita desktop | Implemented | Tabs, multiple windows, split views, compact actions, theme/font choices and optional dock. |
 | Saved window geometry and workspaces | Implemented | Normal size, maximized/fullscreen state and saved mixed layouts; reopening a workspace can reconnect RDP rather than preserve its transport. |
 | Soft frontend replacement preserving RDP | Deferred | Terminal daemon survives; RDP lives in the GUI process. No verified seamless RDP process handoff. |
-| Shell startup, exit and reconnect | Implemented | Login-shell selection, ended-history handling and reconnect controls. Exit and daemon-loss regressions remain important. |
+| Shell startup, exit and reconnect | Implemented | Normal attached exit removes its completed window, including the final session. Explicit retained/restored history can be removed with `-wipe`; live processes are preserved. Saved SSH reconnect controls also cover children that ended before the frontend opened. |
 | Host identification in terminal tabs | Partial | Generic terminal tabs show the local daemon computer; saved remote/agent titles retain their host labels. Arbitrary manually typed or nested SSH is not reliably inferred. |
 | Keyboard tab shortcuts and fullscreen | Implemented | Alt+1–0 selects desktop tabs by default; AltGr toggles Map keys; Ctrl+Shift+T/R creates terminal/chooses RDP; Ctrl+Alt+Enter toggles fullscreen. |
 | Installed command manual and app discovery | Implemented | `man ruwac`, dedicated app icon and launcher keywords in per-user and RPM installs; the manual describes current limitations. |
@@ -58,7 +59,7 @@ results are distinguished from tests re-executed for the current batch in the
 | Collapsible, scrollable groups | Implemented | Unpaginated desktop list, persisted group expansion and search reveal; list virtualization/very large inventory profiling is not established. |
 | Remmina import | Implemented | Default native/legacy/Flatpak discovery, bulk import, duplicate review and optional file chooser; reviewed Secret Service password copying preserves existing credentials. Source files remain read-only; certificate bypasses and private keys are excluded. |
 | Separate SSH identity and authentication | Implemented | Automatic existing-key checks create separate SSH bookmarks only after successful authenticated login; unknown trust and missing keys remain explicit setup. Current-user/config defaults, explicit username/key selection, saved password/passphrase references, host-key review and confirmed public-key authorization. |
-| SSH routing | Partial | Jump aliases use OpenSSH configuration; general RDP gateways and arbitrary gateway management are not implemented. |
+| SSH routing | Partial | Jump aliases use OpenSSH configuration. Implicit image channels reuse the original authenticated connection; file recovery verifies the original server before authentication, and additional rsync channels require that same key. General RDP gateways and arbitrary gateway management are not implemented. |
 | Integrated SFTP file panel | Partial | Upload/download, integrity, progress, cancel and resumable transfer work; recursive/rsync and clean-environment qualification retain separate limits. Share enumeration does not constitute an integrated SMB file client. |
 | Codex/Claude/Kimi host actions | Implemented | Saved commands, compact shortcuts, header/context menus, recent SSH, RUWAC/Screen/tmux/direct backends; generated launch tests are not proof of every provider account. Other providers, including Grok, remain future work. |
 | Agent installation and shared sessions | Implemented | Explicit opt-in provider/bootstrap installation, remote RUWAC action and named agent windows sharing a session. No automatic provider authentication. |
@@ -105,9 +106,11 @@ new-launch persistent association and provider classification are implemented; t
 
 ## Remaining acceptance priorities
 
-1. Complete broader saved-bookmark and active-session acceptance, including
-   clear handling of legacy sessions that predate explicit launch metadata and
-   effective OpenSSH configuration changes outside saved profile settings.
+1. Retain broader saved-bookmark and active-session acceptance, including clear
+   handling of legacy sessions that predate explicit launch metadata. Regress
+   external OpenSSH configuration and trust changes: implicit image channels
+   must stay on their original transport and pending file work must refuse a
+   different server before authentication.
 2. Exercise saved-bookmark navigation and active-session choice with realistic
    inventories; add explicit launch metadata rather than infer provider type.
 3. Validate Windows dynamic resizing/clipboard and mixed external hosts, followed

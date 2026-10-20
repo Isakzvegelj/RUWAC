@@ -33,6 +33,13 @@ installation or external agent acceptance result.
 
 Existing direct-transfer recovery hashes are unchanged. Routed jobs bind the jump
 alias; editing that alias refuses resume instead of silently changing routes.
+External configuration edits can also redirect an unchanged alias. Pending
+file operations verify their recorded server key before authentication, and
+rsync's additional channels require the key already verified by SFTP. Implicit
+terminal image delivery continues to use the original authenticated SSH socket.
+These checks bind the server identity without copying private SSH configuration
+or proxy commands into recovery records. A deliberate new connection uses the
+current OpenSSH settings and normal host trust.
 Existing JSON and SQLite profile migration paths preserve an empty default and
 omit the new field when unused. Older readers with strict preference decoding
 cannot load profiles that use the new field; retain a private backup before a

@@ -6,7 +6,7 @@ use std::{
     collections::BTreeMap,
     fs,
     io::{Read, Write},
-    os::fd::AsRawFd,
+    os::fd::{AsRawFd, FromRawFd},
     os::unix::{
         ffi::OsStrExt,
         fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt},
@@ -456,7 +456,7 @@ pub fn recover(p: &Profile, id: &str, cancel: &AtomicBool) -> Result<String, Str
         }
     }
     let session = if job.upload {
-        Some(crate::files::connect(p)?)
+        Some(crate::files::connect_original(p, &job.host_sha256)?)
     } else {
         None
     };
@@ -818,6 +818,51 @@ fn ssh_args(p: &Profile) -> Result<(Vec<String>, String), String> {
     }
     Ok((args, host))
 }
+/// Secondary SSH channels must authenticate the peer already verified by
+/// SFTP, rather than reread a possibly changed trust file. A sealed anonymous
+/// file needs no persistent cleanup, including after a client crash.
+fn bind_original_host(args: &mut [String], session: &ssh2::Session) -> Result<fs::File, String> {
+    let (key, kind) = session
+        .host_key()
+        .ok_or("Original SSH host key unavailable")?;
+    let mut known = session.known_hosts().map_err(error)?;
+    known
+        .add("*", key, "RUWAC original peer", kind.into())
+        .map_err(error)?;
+    let entries = known.hosts().map_err(error)?;
+    let line = known
+        .write_string(
+            entries.first().ok_or("Original SSH host key unavailable")?,
+            ssh2::KnownHostFileKind::OpenSSH,
+        )
+        .map_err(error)?;
+    let fd = unsafe {
+        libc::memfd_create(
+            c"ruwac-original-host".as_ptr(),
+            libc::MFD_CLOEXEC | libc::MFD_ALLOW_SEALING,
+        )
+    };
+    if fd < 0 {
+        return Err("Original SSH host pin unavailable".into());
+    }
+    let mut file = unsafe { fs::File::from_raw_fd(fd) };
+    file.set_permissions(fs::Permissions::from_mode(0o600))
+        .map_err(error)?;
+    file.write_all(line.as_bytes()).map_err(error)?;
+    let seals = libc::F_SEAL_WRITE | libc::F_SEAL_SHRINK | libc::F_SEAL_GROW | libc::F_SEAL_SEAL;
+    if unsafe { libc::fcntl(fd, libc::F_ADD_SEALS, seals) } < 0 {
+        return Err("Original SSH host pin could not be sealed".into());
+    }
+    let option = args
+        .iter_mut()
+        .find(|s| s.starts_with("UserKnownHostsFile="))
+        .ok_or("SSH host verification option unavailable")?;
+    *option = format!(
+        "UserKnownHostsFile=\"/proc/{}/fd/{fd}\"",
+        std::process::id()
+    );
+    Ok(file)
+}
 fn version(text: &[u8]) -> Result<(), String> {
     let text = std::str::from_utf8(text).map_err(error)?;
     let line = text
@@ -1092,16 +1137,17 @@ pub fn transfer_observed(
     check(cancel)?;
     valid(local)?;
     valid(remote)?;
-    let (args, host) = ssh_args(p)?;
+    let (mut args, host) = ssh_args(p)?;
     let mut local_probe = Command::new("rsync");
     local_probe.arg("--version");
     version(&run(local_probe, cancel, progress.clone(), true)?)?;
+    let session = crate::files::connect(p)?;
+    let _original_host = bind_original_host(&mut args, &session)?;
     let mut remote_probe = Command::new("ssh");
     remote_probe
         .args(&args)
         .args(["--", &host, "rsync", "--version"]);
     version(&run(remote_probe, cancel, progress.clone(), true)?)?;
-    let session = crate::files::connect(p)?;
     let sftp = session.sftp().map_err(error)?;
     let remote = crate::files::remote_path(&sftp, remote, upload)?;
     let local = if upload {

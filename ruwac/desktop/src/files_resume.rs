@@ -655,7 +655,7 @@ fn execute(
     let stage = std::cell::Cell::new("connection");
     let result = (|| {
         stopped(cancel)?;
-        let session = files::connect(p)?;
+        let session = files::connect_original(p, &job.host_key_sha256)?;
         original_host(&session, &job)?;
         let sftp = session.sftp().map_err(files::error)?;
         files::remote_path(&sftp, &job.remote, job.upload)?;
@@ -801,7 +801,7 @@ pub fn discard(p: &Profile, id: &str, cancel: &AtomicBool) -> Result<(), String>
     let job = journal.load(p)?;
     stopped(cancel)?;
     if job.upload {
-        let session = files::connect(p)?;
+        let session = files::connect_original(p, &job.host_key_sha256)?;
         original_host(&session, &job)?;
         let sftp = session.sftp().map_err(files::error)?;
         files::remote_path(

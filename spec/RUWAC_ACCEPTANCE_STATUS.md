@@ -19,8 +19,8 @@ receipts and original reports are archived privately outside Git.
 | Natural terminal grid bounds | PASS | Real kernel PTYs up to the 262144-cell boundary; large coloured replies, nonmutating invalid-size refusals, TUI resizing and shared-client sizing; larger checkpoint recovery and previous-reader refusal without file changes. Existing older daemons keep their limits. |
 | Native large terminal canvas | PASS | Actual GTK/Wayland on an owned 4K virtual compositor: exact requested window geometry, allocation-to-grid-to-kernel agreement, all four rendered corners at 400×103 cells, repeated resizing and same child process. No physical desktop claim. |
 | Clipped CLI status controls | PASS | Shared width-aware drawing and hit targets; actual PTY clicks on clipped Unicode labels and hidden-window arrows with current/older daemons; mouse-reporting application receipts distinguish local bar clicks from forwarded application events. |
-| Split-pane exit collapse | PASS | Twelve real PTY/native GTK groups against current and isolated older daemons: two concurrent TUIs, GTK-only cases, full viewport, repaired focus, exact input bytes, nested survivors and attachment after exit. Completed split history follows ordinary pane-close semantics; final-session and restored history remain inspectable. |
-| Terminal shell startup and exit | PASS | Real PTYs, native GTK and an isolated older daemon: explicit login-shell argv in new tabs/windows/splits, real Bash profile/rc, live-window fallback, last-view closure and retained ended history |
+| Split-pane exit collapse | PASS | Twelve real PTY/native GTK groups against current and isolated older daemons: two concurrent TUIs, GTK-only cases, full viewport, repaired focus, exact input bytes, nested survivors and attachment after exit. Completed split history follows ordinary pane-close semantics. Normal attached final exit now removes its completed session; explicit restored or previously ended history remains available until `-wipe`. |
+| Terminal shell startup and exit | PASS | Real PTYs, native GTK and an isolated older daemon: explicit login-shell argv in new tabs/windows/splits, real Bash profile/rc, live-window fallback, acknowledged final-window/session removal, safe dead-window cleanup and explicit retained history |
 | GTK Ctrl+A routing | PASS | Real tmux configured with Ctrl+A receives a single prefix; local RUWAC GTK prefix is Ctrl+Alt+A; CLI prefix remains Ctrl+A |
 | CLI status controls | PASS | Actual bottom-row SGR clicks select windows; lowercase horizontal and vertical split shortcuts create persistent panes; nine CLI regression groups |
 | Initial Dynamic RDP framebuffer | PASS | Native Save & Connect at three window sizes, actual Secret Service and loopback CredSSP, decoded-size traces exclude fallback frames; queued cancellation before worker startup and background connection preserve selection, clipboard and neighboring transports. External desktop placement remains separate. |
@@ -37,10 +37,10 @@ receipts and original reports are archived privately outside Git.
 | Desktop appearance and font metrics | PASS | Six actual rendered background pixel checks, saved schema-3 preferences and PTY dimensions changed by font size; unavailable fonts fall back to Monospace |
 | Remote agent launch configuration | PASS | Native SSH profile saves commands/backend; generated command/quoting tests; no real agent account or external remote installation claimed |
 | Persistent remote agent session reuse | PASS | Thirteen actual loopback SSH/PTY groups: concurrent creation, detach, same-process reattach, independent sessions, three named agent windows in one shared session, exact input isolation, ended-history retention, exit without input fallback, adding an agent to an existing session and duplicate/unsafe-lock refusals; generated agents only |
-| Remote CLI installation and external agent launch | BLOCKED | Explicit installer/launcher implemented; external host prerequisites and agent login remain separate acceptance |
+| Remote CLI installation and external agent launch | PARTIAL | Verified prebuilt installation and prerequisite repair are recorded on authorized Linux hosts. Authenticated external native provider journeys remain separate from generated receivers and installer version checks. |
 | Weston popup-after-resize compatibility | BLOCKED | Weston 15.0.1 exited in popup positioning on two owned displays; Mutter qualification is recorded separately; no physical desktop pass inferred |
-| Strict warnings-as-errors desktop lint | BLOCKED | Local Clippy component unavailable; existing GTK deprecation/dead-code warnings remain; ordinary hosted lint is a separate quality gate |
-| Current automatic GDM sign-in | BLOCKED | Owner reports failure in older running GUI; current recognition regressions pass, but no new real-host login claimed in this batch |
+| Strict warnings-as-errors desktop lint | NOT QUALIFIED | Existing GTK deprecation/dead-code warnings remain. Ordinary hosted Clippy passes; it does not establish warnings-as-errors qualification. |
+| Automatic GDM sign-in | PASS (selected Fedora journeys) | Recorded authorized login/handover journeys and owner confirmation cover selected hosts. General GDM variants and physical mouse/resize acceptance remain separate; no new real login is implied by a synthetic regression. |
 | Named CLI creation/reattachment, window titles and concurrent clients | PASS | Actual generated local PTYs; exact-name and recursion safeguards; two simultaneous clients |
 | Nested prefix routing | PASS | Two through five real RUWAC layers and native GTK with actual tmux; synthetic GTK callbacks |
 | Remmina default discovery | PASS | Generated native/legacy/Flatpak profiles; read-only source and explicit metadata import; credentials excluded |
@@ -59,7 +59,7 @@ receipts and original reports are archived privately outside Git.
 | Explicit SSH jump routing and separate gateway/target trust | PASS | Two disposable OpenSSH servers; eight actual transport groups and four native editor groups |
 | Remote agent image transport/consumption | PASS | External CLI route and native loopback route; complete external native launcher remains unqualified |
 | PRIMARY and native middle-click dispatch | PASS | Real GDK/Mutter protocol, generated text, synthetic click dispatch, SGR routing and Shift bypass; physical input remains separate |
-| Physical GTK/Wayland mouse, keyboard and touchpad acceptance | BLOCKED | Owner confirms Alt+1–0 on 0.2.23; owner also reports local desktop selection/Shift+drag copying (version unspecified); middle-click, touchpad and complete newer-version physical checks remain unqualified |
+| Physical GTK/Wayland mouse, keyboard and touchpad acceptance | PARTIAL | Owner confirms tab shortcuts and selected copy/paste workflows, including selection sharing. The complete current-version mouse, resize and touchpad matrix remains unqualified; automated input does not substitute for it. |
 | Upstream Fedora testing RPM payloads and private transactions | PASS | Actual separate core/desktop packages, executable versions, launcher/notices and prior-release upgrade/removal; private RPM database uses host libraries and --nodeps |
 | Clean Fedora desktop DNF install/upgrade/rollback/remove | PASS | Fresh pinned Fedora 44 RAM filesystem, actual published RPMs, real dependency resolution without --nodeps; daemon, PTY child and generated private configuration survive |
 | RPM signing/repository and complete binary security qualification | BLOCKED | Workflow provenance is distinct from a signed Fedora repository; desktop RSA advisory remains open |
@@ -126,3 +126,22 @@ independent focus and crash recovery. The actual 128-pane metadata fixture also
 passes with a 1,024-descriptor limit. These are generated local processes, not
 external-provider or physical-input acceptance. Existing engines are preserved
 and require deliberate replacement before using this backend implementation.
+
+
+## Server identity before file authentication — 2026-10-20 preflight
+
+Two independently trusted generated OpenSSH servers reproduce alias redirection
+between transfer preparation and recovery. The previous adapter authenticated
+to the replacement before refusing its different key. Current preflight checks
+require zero replacement-server authentications for SFTP Resume, remote Discard
+and rsync Recovery, while restoring the original endpoint still succeeds.
+A server/trust rotation during a prepared rsync copy also yields zero replacement
+authentications, preserves the destination and cleans its owned staging. A fresh
+copy to the restored original server succeeds.
+
+Seven real protocol groups pass with current journals and with journals created
+by the earlier qualified adapter. Existing SFTP resume/encrypted-key, rsync file
+and recovery suites also pass. These are owned loopback servers, generated keys
+and files, with bounded process cleanup. They do not claim external server or
+physical input acceptance. The normal frozen source/binary gates and actual
+published artifact checks remain required for distribution.

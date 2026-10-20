@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## v0.4.30 — 2026-10-20 — Stable source release
+
+- Verify pending SFTP and rsync recovery jobs' original server key before authentication, including when an SSH alias redirects to another trusted server.
+- Bind rsync's additional SSH channels to the server already verified by SFTP using a sealed, anonymous host-key file; changed trust cannot silently redirect an active transfer, and no temporary trust files remain after exit or a crash.
+
 ## v0.4.29 — 2026-10-20 — Stable source release
 
 - Install Fedora CI SSH transport dependencies in the initial transaction so OpenSSH selects full systemd before desktop dependencies can select conflicting standalone tmpfiles.
