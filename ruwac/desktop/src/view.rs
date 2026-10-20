@@ -158,6 +158,7 @@ pub struct View {
     pub detached: Cell<bool>,
     pub finished: Cell<bool>,
     seen_running: Cell<bool>,
+    retiring: Cell<bool>,
     /// Set once the person types or pastes here.
     typed: Cell<bool>,
     pub broker: Broker,
@@ -305,6 +306,7 @@ impl View {
             detached: Cell::new(false),
             finished: Cell::new(false),
             seen_running: Cell::new(false),
+            retiring: Cell::new(false),
             typed: Cell::new(false),
             broker,
             image_paste: RefCell::new(None),
@@ -1309,14 +1311,30 @@ impl View {
             {
                 self.seen_running.set(true);
             }
-            if self.seen_running.get() && s.session_ended && !self.finished.get() {
+            if s.session_ended && !self.finished.get() && !self.retiring.get() {
                 // A local shell the person exited closes. Remote sessions (a
                 // dropped SSH connection looks the same) and programs that
                 // ended by themselves stay readable with Reconnect / Close.
-                if self.typed.get()
+                if self.seen_running.get()
+                    && self.typed.get()
                     && !crate::launches::is_remote(&self.session, &self.target.borrow())
                 {
-                    self.finished.set(true);
+                    let ids: Vec<_> = panes
+                        .iter()
+                        .filter(|p| p["ended"] == true && p["restored"] != true)
+                        .filter_map(|p| p["id"].as_str())
+                        .collect();
+                    if ids.is_empty() {
+                        self.finished.set(true);
+                    } else {
+                        match worker.send(Command::Rpc(
+                            "client.retireEnded".into(),
+                            json!({"panes":ids}),
+                        )) {
+                            Ok(()) => self.retiring.set(true),
+                            Err(error) => self.warn(&error),
+                        }
+                    }
                 } else if !self.dead.is_visible() {
                     self.ended.set(true);
                     self.dead_title.set_text("Session ended");
@@ -1406,6 +1424,9 @@ impl View {
             }
         }
         if let Some((method, v)) = s.reply.pop_front() {
+            if method == "client.retireEnded" && v["closed"] == true && self.retiring.get() {
+                self.finished.set(true);
+            }
             if method == "client.focusLaunch"
                 && v["focus_epoch"].as_u64() == Some(self.focus_epoch.get())
             {

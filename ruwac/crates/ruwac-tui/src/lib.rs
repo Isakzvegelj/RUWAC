@@ -2016,11 +2016,27 @@ pub fn attach_with_window(socket: &Path, session: &str, window: Option<&str>) ->
                 // Navigation can already have replaced the frame with an idle
                 // live shell. Observe it before a revision-only poll skips it.
                 observe_running_window(&snapshot, &mut running_windows);
-                let fresh = call(
+                let fresh = match call(
                     &mut s,
                     "client.render",
                     json!({"revision":snapshot["revision"]}),
-                )?;
+                ) {
+                    Ok(frame) => frame,
+                    Err(error) => {
+                        // Another attached client may have retired the final
+                        // ended pane. Confirm session removal before treating a
+                        // missing attachment as a clean exit.
+                        let removed = serde_json::from_str::<Value>(&error.to_string())
+                            .is_ok_and(|e| e["code"] == "NOT_ATTACHED" || e["code"] == "STALE_ID")
+                            && call(&mut s, "session.list", json!({}))?
+                                .as_array()
+                                .is_some_and(|rows| !rows.iter().any(|row| row["id"] == session));
+                        if removed {
+                            break;
+                        }
+                        return Err(error);
+                    }
+                };
                 // The revision counts changes in every session of the daemon;
                 // redraw only when this view's content changed, or a client
                 // nested in a RUWAC terminal redraws itself in a loop.
@@ -2033,43 +2049,60 @@ pub fn attach_with_window(socket: &Path, session: &str, window: Option<&str>) ->
                             .as_str()
                             .is_some_and(|id| running_windows.remove(id));
                     if completed {
-                        // An explicitly launched agent view must never silently
-                        // send its next input to a different agent's window.
-                        if window.is_some_and(|window| snapshot["window"].as_str() == Some(window))
-                        {
-                            break;
-                        }
-                        // Exit the view or select a live sibling. Removing the
-                        // last ended pane here deletes the session before the
-                        // query below and loses explicitly reattachable history.
-                        let panes = call(&mut s, "pane.list", json!({"session":session}))?;
-                        if let Some(live) = panes
+                        let pinned = window
+                            .is_some_and(|window| snapshot["window"].as_str() == Some(window));
+                        let panes = match call(&mut s, "pane.list", json!({"session":session})) {
+                            Ok(panes) => panes,
+                            Err(error) => {
+                                // A second view can remove the same completed
+                                // session between rendering and reading panes.
+                                let removed = serde_json::from_str::<Value>(&error.to_string())
+                                    .is_ok_and(|e| e["code"] == "STALE_ID")
+                                    && call(&mut s, "session.list", json!({}))?
+                                        .as_array()
+                                        .is_some_and(|rows| {
+                                            !rows.iter().any(|row| row["id"] == session)
+                                        });
+                                if removed {
+                                    break;
+                                }
+                                return Err(error);
+                            }
+                        };
+                        let live = panes
                             .as_array()
                             .and_then(|p| p.iter().find(|p| p["ended"] != true))
+                            .cloned();
+                        if !pinned {
+                            if let Some(live) = &live {
+                                call(&mut s, "window.select", json!({"window":live["window"]}))?;
+                                call(&mut s, "pane.select", json!({"pane":live["id"]}))?;
+                            }
+                        }
+                        // Normal shell exit removes this completed window, even
+                        // when it is the last one. History that was already ended
+                        // when attached remains explicit history until -wipe.
+                        for pane in snapshot["panes"]
+                            .as_array()
+                            .into_iter()
+                            .flatten()
+                            .filter(|p| p["ended"] == true && p["restored"] != true)
+                            .filter_map(|p| p["id"].as_str())
                         {
-                            let retired: Vec<_> = snapshot["panes"]
-                                .as_array()
-                                .into_iter()
-                                .flatten()
-                                .filter(|p| p["ended"] == true && p["restored"] != true)
-                                .filter_map(|p| p["id"].as_str().map(str::to_owned))
-                                .collect();
-                            call(&mut s, "window.select", json!({"window":live["window"]}))?;
-                            call(&mut s, "pane.select", json!({"pane":live["id"]}))?;
-                            for pane in retired {
-                                if let Err(error) = call(&mut s, "pane.close", json!({"pane":pane}))
-                                {
-                                    let stale = serde_json::from_str::<Value>(&error.to_string())
-                                        .is_ok_and(|e| e["code"] == "STALE_ID");
-                                    if !stale {
-                                        return Err(error);
-                                    }
+                            if let Err(error) =
+                                call(&mut s, "pane.close", json!({"pane":pane,"if_ended":true}))
+                            {
+                                let stale = serde_json::from_str::<Value>(&error.to_string())
+                                    .is_ok_and(|e| e["code"] == "STALE_ID");
+                                if !stale {
+                                    return Err(error);
                                 }
                             }
-                            snapshot = call(&mut s, "client.render", json!({}))?;
-                        } else {
+                        }
+                        if pinned || live.is_none() {
                             break;
                         }
+                        snapshot = call(&mut s, "client.render", json!({}))?;
                     }
                     observe_running_window(&snapshot, &mut running_windows);
                     dirty = true;

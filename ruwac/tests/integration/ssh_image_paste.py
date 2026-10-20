@@ -205,12 +205,12 @@ try:
   # rebuilt recipe. The SSH process is a generated fixture child, never an owner session.
   rpc('pane.close',{'pane':extra['pane']})
   (root/'gui-request.json').unlink(missing_ok=True);(root/'gui-response.json').unlink(missing_ok=True)
-  gui=start([a.gui,'--new-instance','--socket',sock,'--session',sessions[0]['session'],'--fixture-dir',root],'gui-reconnect-from-context')
-  eventually(lambda:command('gui','inspect').get('target')==sessions[0]['pane'],15)
-  eventually(lambda:any(e['pane']==sessions[0]['pane']for e in command('gui','launch-contexts')['entries']))
   import signal
   handle=os.pidfd_open(sessions[0]['pid']);signal.pidfd_send_signal(handle,signal.SIGHUP);os.close(handle)
   eventually(lambda:rpc('pane.list',{'session':sessions[0]['session']})[0]['ended'],8);time.sleep(.4)
+  gui=start([a.gui,'--new-instance','--socket',sock,'--session',sessions[0]['session'],'--fixture-dir',root],'gui-reconnect-from-context')
+  eventually(lambda:command('gui','inspect').get('target')==sessions[0]['pane'],15)
+  eventually(lambda:any(e['pane']==sessions[0]['pane']for e in command('gui','launch-contexts')['entries']))
   previous={e['pane']for e in command('gui','launch-contexts')['entries']}
   button=command('gui','reconnect');assert button['card_visible']and button['ended']and button['clicked'],button
   def new_context():return next((e for e in command('gui','launch-contexts')['entries']if e['pane']not in previous),None)
@@ -219,7 +219,7 @@ try:
   rpc('pane.wait',{'pane':created['id'],'contains':'GENERATED_RECEIVER_READY','timeout_ms':5000})
   assert created['pid']!=sessions[0]['pid']and replacement['provider']==context['provider']
   assert rpc('pane.list',{'session':sessions[0]['session']})[0]['ended']
-  record('restored-ended-SSH-reconnect-button-rebuilds-exact-agent-or-terminal-recipe-with-history-preserved')
+  record('already-ended-before-frontend-start-reconnect-rebuilds-exact-saved-recipe')
   # A new explicit launch after engine replacement gets the kernel peer identity
   # of that engine; an old asynchronous catalog result cannot populate it.
   old_entries={e['pane']for e in command('gui','launch-contexts')['entries']}

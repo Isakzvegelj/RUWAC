@@ -53,10 +53,11 @@ try:
     eventually(lambda: view.p.poll() is not None, 4)
     views.remove(view)
     assert view.finish() == 0
-    assert rpc('pane.list', {'session': session['session']})[0]['ended']
-    assert rpc('pane.capture', {'pane': session['pane']})['text']
-    results.append('shell-exit-returns-client-and-restores-terminal-with-history-retained')
-    history = attach(session['session'], 'history')
+    assert all(row['id'] != session['session'] for row in rpc('session.list'))
+    results.append('shell-exit-removes-final-window-and-session-and-restores-terminal')
+    retained = rpc('session.create', {'name': 'Unattached history', 'argv': ['/bin/sh', '-c', 'printf RETAINED_HISTORY']})
+    eventually(lambda: rpc('pane.list', {'session': retained['session']})[0]['ended'])
+    history = attach(retained['session'], 'history')
     time.sleep(.2)
     assert history.p.poll() is None
     views.remove(history)

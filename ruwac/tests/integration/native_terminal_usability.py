@@ -195,8 +195,8 @@ try:
  last=gui('--session',final['session']);eventually(lambda:command('inspect').get('target')==final['pane'],20)
  for letter in ['e','x','i','t','Return']:command('key',view=0,key=letter)
  eventually(lambda:last.poll() is not None,8)
- assert daemon.poll() is None and any(p['id']==final['pane'] and p['ended'] for p in rpc('pane.list',{'session':final['session']}))
- checks.append('native-last-shell-exit-closes-GTK-window-and-retains-daemon-history')
+ assert daemon.poll() is None and all(s['id']!=final['session'] for s in rpc('session.list'))
+ checks.append('native-last-shell-exit-closes-GTK-window-and-removes-completed-session')
  receipt={'status':'PASS','checks':checks,'scope':'Actual GTK on owned Wayland, actual daemon/PTys/tmux and generated Remmina files; GTK callbacks are synthetic, not physical input or external SSH acceptance'}
  (root/'acceptance.json').write_text(json.dumps(receipt,indent=2)+'\n');print('Native terminal usability PASS',len(checks),'groups')
 finally:

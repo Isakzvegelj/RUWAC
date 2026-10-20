@@ -24,6 +24,8 @@ R="$CARGO_TARGET_DIR/release/ruwac"
 
 Use Ctrl-A then `d` to detach, `ruwac -r development` to reattach, and `ruwac -ls` to list sessions. `ruwac -dmS development` creates a detached session. Multiple connections can attach to the same session with independent window and pane focus.
 
+Exiting an attached shell removes its completed window, including the final window and session. `ruwac -wipe` clears older dead windows and sessions; `ruwac -wipe NAME` limits cleanup to an exact session name or ID. Windows containing live processes remain intact. `-S` and `-R` start a fresh shell when the matching old session has ended; `-r` explains when a session is dead instead of opening an unusable terminal. Explicit `attach --session ID` can still inspect retained, unattached history before cleanup.
+
 New CLI sessions and TUI windows/splits explicitly load your selected login shell, including with a preserved older daemon. Existing shells retain their startup flags. For `--host` named creation, update the endpoint RUWAC CLI too: it resolves the remote shell over verified SSH, rather than using your local shell path. Raw `rpc` and JSON `request` parameters remain literal for custom commands and automation.
 
 The default socket is beneath your private runtime directory. `RUWAC_SOCKET` or `--socket PATH` selects an explicit socket; its parent must be owned by you with mode 0700. Use the same socket in each terminal.

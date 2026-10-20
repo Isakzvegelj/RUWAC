@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## v0.4.28 — 2026-10-20 — Stable source release
+
+- Remove the final completed window/session after normal attached shell exit; let independent clients finish cleanly when another client removes it.
+- Add `ruwac -wipe [NAME_OR_SESSION_ID] [--json]` for dead sessions/windows while preserving live processes, and label dead sessions in human-readable listings.
+- Start a fresh shell for `-S`/`-R` when an old named session ended, and explain ended sessions before `-r` enters a dead terminal.
+- Show reconnect controls when an SSH session ended before the frontend opened; retire completed local GUI shells after acknowledgement while keeping remote output available for reconnect.
+- Explain machine settings written by a newer frontend and verify machine editing preserves selection-sharing options and credential references.
+
 ## v0.4.27 — 2026-10-19 — Stable source release
 
 - Show foreground commands in terminal status labels and window titles, retain custom names, and refresh quiet commands without reading command arguments.

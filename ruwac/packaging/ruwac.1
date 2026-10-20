@@ -46,6 +46,10 @@ Create a detached session.
 .B \-ls
 List persistent sessions, window counts, state and exact IDs.
 .TP
+.BI "\-wipe " "[NAME_OR_SESSION_ID] [\-\-json]"
+Remove dead windows and sessions. With a name or ID, restrict cleanup to that
+exact session. Preserve every window containing a live process.
+.TP
 .BI "kill-session " NAME_OR_SESSION_ID
 End all programs in only the selected session. This is destructive.
 .TP

@@ -824,7 +824,13 @@ fn parse_library(b: &[u8]) -> Result<Vec<Profile>, String> {
     let mut items = if legacy {
         serde_json::from_value::<Vec<Profile>>(value).map_err(|_| "Invalid legacy metadata")?
     } else {
-        let lib: Library = serde_json::from_value(value).map_err(|_| "Invalid metadata schema")?;
+        let lib: Library = serde_json::from_value(value).map_err(|error| {
+            if error.to_string().contains("unknown field") {
+                "These machine settings need a newer RUWAC window. Reopen the installed application; saved connections were preserved."
+            } else {
+                "Invalid machine settings; saved connections were preserved"
+            }
+        })?;
         if lib.groups.len() > 1000
             || lib.groups.iter().any(|g| {
                 g.id.is_empty()

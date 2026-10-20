@@ -880,6 +880,12 @@ impl State {
             }
             "pane.close" => {
                 let p = self.pane(v)?;
+                if v.get("if_ended").is_some_and(|value| !value.is_boolean()) {
+                    return Err(Error::new("INVALID_REQUEST", "if_ended must be a boolean"));
+                }
+                if v["if_ended"] == true && !p.ended && p.pty.is_some() {
+                    return Err(Error::new("PROCESS_RUNNING", "Live terminal was preserved"));
+                }
                 let pid = p.id.clone();
                 let w = p.window.clone();
                 let session = self.windows[&w].session.clone();

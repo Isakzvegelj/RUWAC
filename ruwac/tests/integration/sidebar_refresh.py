@@ -23,6 +23,10 @@ folder.mkdir(mode=0o700)
 store = folder / 'machines.json'
 store.write_text(json.dumps({'schema': 1, 'items': [], 'groups': []}))
 store.chmod(0o600)
+selected_shell = root / 'selected-shell'
+selected_shell.write_text("#!/bin/sh\nprintf '%s\\n' GENERATED_LOCAL_READY\nexec /bin/sh\n")
+selected_shell.chmod(0o700)
+env['SHELL'] = str(selected_shell)
 sock = root / 'control.sock'
 seq = 0
 children = []
@@ -47,6 +51,14 @@ def command(action, **kwargs):
         except (OSError, ValueError):
             return None
     return eventually(read, 10)
+
+def editor(operation='new', response='save', **kwargs):
+    # A person cannot press Save until the dialog is mapped. Let GTK/Wayland
+    # establish its text-input context before exercising the response callback.
+    command('profile-editor', operation=operation, response='keep', **kwargs)
+    eventually(lambda: any(d['fields'] and d['width'] > 0 and d['height'] > 0
+                          for d in command('profile-editor', operation='layout')['dialogs']), 10)
+    return command('profile-editor', operation='update', response=response, **kwargs)
 
 def inspect():
     value = command('profiles-control')
@@ -81,22 +93,52 @@ try:
     replace_library({'schema': 1, 'items': [], 'groups': []})
     eventually(lambda: inspect()['rows'] == 0, 10)
     results.append({'id': 'SIDEBAR-RELOAD-RECOVERS-WITHOUT-SEARCH', 'status': 'PASS'})
-    saved = command('profile-editor', operation='new', fields={'0': 'Saved without searching', '1': 'Disposable fixture', '3': 'localhost'})
+    saved = editor(operation='new', fields={'0': 'Saved without searching', '1': 'Disposable fixture', '3': 'localhost'})
     assert not saved['error'], saved
     rows = inspect()
     assert rows['rows'] == 1 and any('Saved without searching' in label for label in rows['labels']), rows
     assert len(json.loads(store.read_text())['items']) == 1
     results.append({'id': 'SIDEBAR-SAVE-WITHOUT-SEARCH', 'status': 'PASS'})
-    edited = command('profile-editor', operation='edit', fields={'0': 'Edited without searching'})
+    # Settings saved by the newer selection-sharing controls must still allow
+    # creating/editing machines, retaining the opt-ins and credential identity.
+    shared = json.loads(store.read_text())
+    shared['items'][0]['preferences'].update(primary_sync=True, primary_paste=True,
+        primary_user='fixture', primary_display='wayland-0', primary_port=0)
+    retained_reference = shared['items'][0]['secret_reference']
+    replace_library(shared)
+    time.sleep(1.2)
+    edited = editor(operation='edit', fields={'0': 'Edited without searching'})
     assert not edited['error'], edited
     rows = inspect()
     assert rows['rows'] == 1 and any('Edited without searching' in label for label in rows['labels']), rows
     results.append({'id': 'SIDEBAR-EDIT-WITHOUT-SEARCH', 'status': 'PASS'})
-    deleted = command('profile-editor', operation='edit', response='delete', confirm=True)
+    edited_metadata = json.loads(store.read_text())['items'][0]
+    assert edited_metadata['preferences']['primary_sync'] and edited_metadata['preferences']['primary_paste']
+    assert edited_metadata['secret_reference'] == retained_reference
+    results.append({'id': 'SIDEBAR-EDIT-PRESERVES-SELECTION-PREFERENCES-AND-CREDENTIAL-REFERENCE', 'status': 'PASS'})
+    deleted = editor(operation='edit', response='delete', confirm=True)
     assert not deleted['error'], deleted
     assert inspect()['rows'] == 0
     assert json.loads(store.read_text())['items'] == []
     results.append({'id': 'SIDEBAR-DELETE-WITHOUT-SEARCH', 'status': 'PASS'})
+    # Use the real New terminal and key handlers, then verify both the tab and
+    # daemon-owned final window/session disappear after typing exit.
+    def rpc(method, params=None):
+        with Client(sock) as c:
+            return c.call(method, params)
+    before_sessions = {s['id'] for s in rpc('session.list')}
+    assert command('new-terminal')['clicked']
+    created = eventually(lambda: next((s for s in rpc('session.list') if s['id'] not in before_sessions), None), 10)
+    pane = rpc('pane.list', {'session': created['id']})[0]
+    eventually(lambda: command('inspect', view=1).get('target') == pane['id'], 10)
+    eventually(lambda: 'GENERATED_LOCAL_READY' in rpc('pane.capture', {'pane': pane['id']})['text'], 10)
+    for key in ['e', 'x', 'i', 't', 'Return']:
+        command('key', key=key, view=1)
+    eventually(lambda: all(s['id'] != created['id'] for s in rpc('session.list')), 10)
+    eventually(lambda: command('inspect')['tabs'] == 1 and command('inspect').get('target') == session['pane'], 10)
+    assert rpc('pane.list', {'session': session['session']})[0]['pid'] == session['pid']
+    results.append({'id': 'GUI-LOCAL-EXIT-RETIRES-FINAL-SESSION-AND-PRESERVES-OTHER-PTY', 'status': 'PASS'})
+
 finally:
     for process, log in reversed(children):
         if process.poll() is None:
@@ -110,4 +152,4 @@ finally:
     receipt = {'results': results, 'sha256': {name: hashlib.sha256(Path(path).read_bytes()).hexdigest() for name, path in [('ruwac', a.binary), ('ruwac-desktop', a.gui)]}, 'scope': 'Real native GTK callbacks, synthetic actions on an owned display; no owner configuration, credentials, clipboard or physical-input claim'}
     (root / 'receipt.json').write_text(json.dumps(receipt, indent=2) + '\n')
     print(json.dumps(receipt, indent=2))
-assert len(results) == 6
+assert len(results) == 8

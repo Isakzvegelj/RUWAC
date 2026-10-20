@@ -568,6 +568,35 @@ impl Worker {
                         };
                         let size = cmd.bytes();
                         let result = match cmd {
+                            Command::Rpc(m, p) if m == "client.retireEnded" => {
+                                (|| -> io::Result<_> {
+                                    let ids = p["panes"]
+                                        .as_array()
+                                        .filter(|ids| ids.len() <= 128)
+                                        .ok_or_else(|| {
+                                            io::Error::other("Invalid completed window")
+                                        })?;
+                                    for id in ids {
+                                        let id = id
+                                            .as_str()
+                                            .filter(|id| ruwac_protocol::valid_id(id, "pane"))
+                                            .ok_or_else(|| {
+                                                io::Error::other("Invalid completed pane")
+                                            })?;
+                                        if let Err(error) = rpc
+                                            .call("pane.close", json!({"pane":id,"if_ended":true}))
+                                        {
+                                            let stale =
+                                                serde_json::from_str::<Value>(&error.to_string())
+                                                    .is_ok_and(|value| value["code"] == "STALE_ID");
+                                            if !stale {
+                                                return Err(error);
+                                            }
+                                        }
+                                    }
+                                    Ok((m, json!({"closed":true})))
+                                })()
+                            }
                             Command::Rpc(m, p) => rpc.call(&m, p).map(|v| (m, v)),
                             Command::Close => {
                                 halt.store(true, Ordering::Relaxed);
@@ -702,6 +731,7 @@ impl Worker {
                             Ok(reply) => {
                                 s.acknowledgements += 1;
                                 if reply.0 == "pane.history"
+                                    || reply.0 == "client.retireEnded"
                                     || reply.0 == "client.focusLaunch"
                                     || reply.0.starts_with("window.")
                                     || reply.0 == "pane.create"
