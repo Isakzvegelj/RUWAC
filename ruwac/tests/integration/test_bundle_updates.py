@@ -23,6 +23,8 @@ URL = 'https://github.com/w3fans/RUWAC/releases/download/v0.2.1/' + NAME + '.tar
 
 class BundleUpdates(unittest.TestCase):
     def setUp(self):
+        readiness = patch.object(updates, 'release_readiness', return_value=None)
+        readiness.start(); self.addCleanup(readiness.stop)
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
         self.environment = patch.dict(os.environ, {'XDG_CONFIG_HOME': str(self.root / 'config')})

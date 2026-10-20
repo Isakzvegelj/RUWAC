@@ -53,7 +53,7 @@ jobs:
         run: |
           printf 'CARGO_HOME=%s/cargo\nCARGO_TARGET_DIR=%s/target\n' "$RUNNER_TEMP" "$RUNNER_TEMP" >> "$GITHUB_ENV"
       - name: Install Fedora test tools
-        run: dnf install -y git cargo rust rustfmt clippy gcc gcc-c++ pkgconf-pkg-config gtk4-devel libadwaita-devel openssl openssl-devel libssh2-devel sqlite-devel python3 python3-pyyaml python3-pillow tesseract tesseract-langpack-eng screen tmux fzf openssh-server openssh-clients rsync util-linux
+        run: dnf install -y acl git cargo rust rustfmt clippy gcc gcc-c++ pkgconf-pkg-config gtk4-devel libadwaita-devel openssl openssl-devel libssh2-devel sqlite-devel python3 python3-pyyaml python3-pillow tesseract tesseract-langpack-eng screen tmux fzf openssh-server openssh-clients shadow-utils rsync util-linux
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           persist-credentials: false
@@ -72,6 +72,10 @@ jobs:
         run: python3 .github/scripts/test-label-pr.py
       - name: GitHub updater and reversible installation guards
         run: python3 ruwac/tests/integration/test_updates.py
+      - name: Publication readiness and incomplete-release refusal
+        run: |
+          python3 ruwac/tests/integration/test_release_readiness.py
+          python3 ruwac/tests/integration/test_acceptance_gate.py
       - name: Fedora candidate bundle and installation integrity guards
         run: python3 ruwac/tests/integration/test_bundles.py
       - name: Validate workflow test command execution
@@ -115,6 +119,7 @@ jobs:
       - name: Real isolated SSH gateway and file transports
         run: |
           cargo build --locked --manifest-path ruwac/desktop/Cargo.toml --example files-fixture
+          RUWAC_DISPOSABLE_SSH_USERS=1 python3 ruwac/tests/integration/ssh_access.py --driver "$CARGO_TARGET_DIR/debug/examples/files-fixture" --evidence "$RUNNER_TEMP/ssh-access-evidence" --disposable-users
           useradd -m -p '*' generated-ssh-test
           fixture_uid="$(id -u generated-ssh-test)"
           install -d -m 700 -o generated-ssh-test -g generated-ssh-test "/run/user/$fixture_uid" "$RUNNER_TEMP/ssh-jump-evidence"

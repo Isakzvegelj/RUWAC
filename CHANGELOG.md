@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## v0.4.32 — 2026-10-20 — Stable source release
+
+- Replace startup/periodic SSH discovery with explicit public-key checks. Require selection, separate confirmation and fresh source/key/trust inputs before adding endpoints; preserve existing credentials and manual identities. Bound output, cancellation, jump helpers and batch lifetime.
+- Show published, eligible, installed and running versions separately, including mixed RPM/per-user installations and precise skip reasons. Hold source, bundle and RPM updates for failed exact-commit checks or incomplete assets; verify the installed receipt, command links and binary hashes before reporting success.
+- Require frozen technical acceptance, current source/binary/evidence hashes and staged-source agreement before publication. Wait for hosted quality/privacy before creating a source release; dependency advisories remain separate.
+- Set RPM directory permissions explicitly, and vary inherited default ACLs in repeat-assembly checks so the build directory cannot alter package bytes.
+- Reconcile historical preflight evidence and the accepted RDP reconnect-after-reopening boundary; measure idle redraw/CPU/memory and recovery with several terminal and RDP views.
+
 ## v0.4.31 — 2026-10-20 — Stable source release
 
 - Assemble Fedora RPMs with the source commit timestamp and verify complete package bytes match across separate assembly directories before publication.

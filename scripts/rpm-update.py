@@ -156,8 +156,9 @@ class Updater:
         quality and privacy checks and which has every component package."""
         pending = []
         for release in self.helper.newer_releases(current):
-            if not self.helper.automatic_release_verified(release):
-                pending.append({'tag': release['tag'], 'reason': 'quality/privacy checks not passed yet'})
+            reason = self.helper.release_readiness(release, 'testing-rpm')
+            if reason:
+                pending.append({'tag': release['tag'], 'reason': reason})
                 continue
             data = self.helper.api('/releases/tags/' + release['tag'])
             if data.get('tag_name') != release['tag'] or data.get('draft') is not False or data.get('prerelease') is not False:

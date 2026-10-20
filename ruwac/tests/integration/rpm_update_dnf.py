@@ -21,7 +21,8 @@ release={'latest':latest,'tag':tag,'commit':commit}
 helper.latest=lambda current:dict(release,current=current,available=helper.version(latest)>helper.version(current))
 # Metadata and quality responses are replayed; official cryptographic verification,
 # RPM queries, DNF transactions, installed versions and persistent PTYs are real.
-helper.automatic_release_verified=lambda value:True
+helper.quality_failure=lambda value:None
+helper.newer_releases=lambda current:[helper.latest(current)] if helper.version(latest)>helper.version(current) else []
 def api(path):
  assert path=='/releases/tags/'+tag
  return data

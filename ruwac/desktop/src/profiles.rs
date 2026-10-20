@@ -1188,176 +1188,88 @@ fn ssh_seed(source: &Profile) -> Profile {
         identity_file: source.preferences.identity_file.clone(),
         identity_secret_reference: source.preferences.identity_secret_reference.clone(),
         known_hosts: source.preferences.known_hosts.clone(),
+        ssh_jump_alias: source.preferences.ssh_jump_alias.clone(),
         ..Preferences::default()
     };
     p
 }
 
-/// Discover existing key access for RDP bookmarks, with no password prompts,
-/// host-trust changes or remote key installation. Only successful, still-current
-/// results become separate SSH endpoints. Work is bounded to two SSH processes.
-fn auto_ssh_endpoints(store: &Rc<RefCell<Store>>, refresh: Rc<dyn Fn()>) {
-    thread_local! {
-        static RUNNING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-        static CHECKED: RefCell<std::collections::HashSet<String>> = RefCell::new(std::collections::HashSet::new());
-    }
-    if RUNNING.with(|v| v.get()) || store.borrow().error.is_some() {
-        return;
-    }
-    let sources: Vec<_> = {
-        let s = store.borrow();
-        s.items
-            .iter()
-            .filter(|p| {
-                p.protocol == "RDP"
-                    && !s
-                        .items
-                        .iter()
-                        .any(|x| x.machine_id == p.machine_id && x.protocol == "SSH")
-            })
-            .filter(|p| {
-                CHECKED.with(|c| {
-                    !c.borrow().contains(&format!(
-                        "{}:{}:{}:{}",
-                        p.id, p.server, p.preferences.identity_file, p.preferences.known_hosts
-                    ))
-                })
-            })
-            .take(32)
-            .cloned()
-            .collect()
-    };
-    if sources.is_empty() {
-        return;
-    }
-    for p in &sources {
-        CHECKED.with(|c| {
-            c.borrow_mut().insert(format!(
-                "{}:{}:{}:{}",
-                p.id, p.server, p.preferences.identity_file, p.preferences.known_hosts
-            ));
-        });
-    }
-    RUNNING.with(|v| v.set(true));
-    let (tx, rx) = std::sync::mpsc::channel();
-    let queue = std::sync::Arc::new(std::sync::Mutex::new(sources));
-    for _ in 0..2 {
-        let (tx, queue) = (tx.clone(), queue.clone());
-        std::thread::spawn(move || {
-            let keys = crate::ssh_probe::identities();
-            loop {
-                let Some(source) = queue.lock().unwrap().pop() else {
-                    return;
-                };
-                let mut probe = ssh_seed(&source);
-                // Leave account and identity choice to the existing OpenSSH config.
-                probe.username.clear();
-                let outcome = crate::ssh_probe::probe(&probe, &keys);
-                if tx.send((source, probe, outcome)).is_err() {
-                    return;
-                }
-            }
-        });
-    }
-    drop(tx);
-    let weak = Rc::downgrade(store);
-    gtk::glib::timeout_add_local(std::time::Duration::from_millis(250), move || {
-        let Some(store) = weak.upgrade() else {
-            RUNNING.with(|v| v.set(false));
-            return gtk::glib::ControlFlow::Break;
-        };
-        let mut added = false;
-        loop {
-            match rx.try_recv() {
-                Ok((source, probe, outcome)) => {
-                    let mut s = store.borrow_mut();
-                    if outcome.access != crate::ssh_probe::Access::Verified
-                        || s.error.is_some()
-                        || !s.items.iter().any(|p| {
-                            p.id == source.id
-                                && p.machine_id == source.machine_id
-                                && p.server == source.server
-                                && p.preferences.identity_file == source.preferences.identity_file
-                                && p.preferences.known_hosts == source.preferences.known_hosts
-                        })
-                        || s.items
-                            .iter()
-                            .any(|p| p.machine_id == probe.machine_id && p.protocol == "SSH")
-                    {
-                        continue;
-                    }
-                    let old = s.items.clone();
-                    s.items.push(probe);
-                    if s.save().is_ok() {
-                        added = true;
-                    } else {
-                        s.items = old;
-                    }
-                }
-                Err(std::sync::mpsc::TryRecvError::Empty) => {
-                    if added {
-                        refresh();
-                    }
-                    return gtk::glib::ControlFlow::Continue;
-                }
-                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                    if added {
-                        refresh();
-                    }
-                    RUNNING.with(|v| v.set(false));
-                    return gtk::glib::ControlFlow::Break;
-                }
-            }
-        }
-    });
+/// A reviewed source and its effective connection. Never edit the source when
+/// checking access or when adding a separate endpoint.
+#[derive(Clone)]
+struct SshReviewTarget {
+    source_id: String,
+    probe: Profile,
+    new: bool,
 }
 
-/// Which machines already accept this user's existing SSH public keys.
-/// Nothing is contacted before the person confirms, and SSH endpoints are
-/// added only for rows they select after reviewing the results.
+fn ssh_review_snapshot(s: &Store) -> Vec<u8> {
+    serde_json::to_vec(&(&s.items, &s.groups)).unwrap_or_default()
+}
+
+/// No OpenSSH command runs while constructing this list.
+fn ssh_review_targets(s: &Store) -> Vec<SshReviewTarget> {
+    let mut targets = Vec::new();
+    for source in &s.items {
+        let new = source.protocol != "SSH";
+        if new
+            && (source.protocol != "RDP"
+                || s.items
+                    .iter()
+                    .any(|p| p.machine_id == source.machine_id && p.protocol == "SSH")
+                || targets
+                    .iter()
+                    .any(|t: &SshReviewTarget| t.new && t.probe.machine_id == source.machine_id))
+        {
+            continue;
+        }
+        let Ok(effective) = resolve(source, &s.groups, &s.items) else {
+            continue;
+        };
+        let probe = if new {
+            let mut seed = ssh_seed(&effective);
+            // RDP service credentials are not Linux SSH credentials.
+            seed.username.clear();
+            seed
+        } else {
+            effective
+        };
+        if !probe.server.is_empty() {
+            targets.push(SshReviewTarget {
+                source_id: source.id.clone(),
+                probe,
+                new,
+            });
+        }
+    }
+    targets
+}
+
 fn ssh_access_review(
     button: &gtk::Button,
     store: &Rc<RefCell<Store>>,
     status: &gtk::Label,
     refresh: Rc<dyn Fn()>,
 ) {
-    let items = store.borrow().items.clone();
-    let mut machines: Vec<String> = items.iter().map(|p| p.machine_id.clone()).collect();
-    machines.sort();
-    machines.dedup();
-    // (machine name, probe profile, needs a new SSH endpoint)
-    let mut targets = Vec::new();
-    for machine in machines {
-        let endpoints: Vec<&Profile> = items.iter().filter(|p| p.machine_id == machine).collect();
-        let existing = endpoints.iter().find(|p| p.protocol == "SSH");
-        let probe = match existing {
-            Some(p) => (*p).clone(),
-            None => match endpoints.iter().find(|p| p.protocol == "RDP") {
-                Some(rdp) => {
-                    let mut seed = ssh_seed(rdp);
-                    // Leave account, port and route to ~/.ssh/config.
-                    seed.username.clear();
-                    seed
-                }
-                None => continue,
-            },
-        };
-        if probe.server.is_empty()
-            || (!probe.preferences.gateway.is_empty()
-                && probe.preferences.ssh_jump_alias.is_empty())
-        {
-            continue;
-        }
-        targets.push((probe.name.clone(), probe, existing.is_none()));
-    }
-    let parent = button.root().and_downcast::<gtk::Window>();
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    };
+    use std::time::{Duration, Instant};
+    let targets = Rc::new(ssh_review_targets(&store.borrow()));
+    let snapshot = Rc::new(ssh_review_snapshot(&store.borrow()));
+    let allowed = Arc::new(AtomicBool::new(true));
     let dialog = gtk::Window::builder()
         .title("SSH key access")
         .modal(true)
-        .default_width(720)
+        .default_width(760)
         .default_height(520)
         .build();
-    dialog.set_transient_for(parent.as_ref());
+    dialog.set_transient_for(button.root().and_downcast::<gtk::Window>().as_ref());
+    let cancel = allowed.clone();
+    dialog.connect_unrealize(move |_| {
+        cancel.store(false, Ordering::Release);
+    });
     let body = gtk::Box::builder()
         .orientation(gtk::Orientation::Vertical)
         .spacing(10)
@@ -1367,9 +1279,9 @@ fn ssh_access_review(
         .margin_end(16)
         .build();
     let intro = gtk::Label::new(Some(&format!(
-        "Check {} machines for login with your existing SSH public keys (ssh-agent and ~/.ssh). \
-         Each check runs OpenSSH in batch mode with your ~/.ssh/config: no password, no new or changed host keys, \
-         no agent forwarding; at most 4 at a time with a 6 s connect timeout. Nothing is installed or changed on the hosts.",
+        "{} eligible saved endpoints. Check explicitly using existing SSH configuration and keys. \
+         Public-key authentication only; strict existing host trust, no password, no agent forwarding or shared connection. \
+         Checks do not change remote hosts or saved machines. Select verified additions, then review and confirm.",
         targets.len()
     )));
     intro.set_wrap(true);
@@ -1380,29 +1292,44 @@ fn ssh_access_review(
         .row_spacing(6)
         .build();
     grid.set_widget_name("ssh-access-table");
-    for (col, heading) in ["Add SSH", "Machine", "Result"].iter().enumerate() {
+    for (col, heading) in ["Add SSH", "Machine / saved account", "Result"]
+        .iter()
+        .enumerate()
+    {
         let l = gtk::Label::new(Some(heading));
         l.add_css_class("heading");
         l.set_xalign(0.0);
         grid.attach(&l, col as i32, 0, 1, 1);
     }
     let mut rows = Vec::new();
-    for (i, (name, probe, add)) in targets.iter().enumerate() {
+    for (i, target) in targets.iter().enumerate() {
         let pick = gtk::CheckButton::new();
+        pick.set_widget_name(&format!("ssh-access-pick-{i}"));
         pick.set_sensitive(false);
-        pick.set_visible(*add);
-        let label = gtk::Label::new(Some(name));
+        pick.set_visible(target.new);
+        let p = &target.probe;
+        let label = gtk::Label::new(Some(&format!(
+            "{} · {}{}",
+            p.name,
+            if p.username.is_empty() {
+                String::new()
+            } else {
+                format!("{}@", p.username)
+            },
+            p.server
+        )));
         label.set_xalign(0.0);
         let result = gtk::Label::new(Some("Not checked"));
+        result.set_widget_name(&format!("ssh-access-result-{i}"));
         result.set_xalign(0.0);
         result.set_wrap(true);
         result.set_hexpand(true);
-        result.set_tooltip_text(Some(&probe.server));
         grid.attach(&pick, 0, i as i32 + 1, 1, 1);
         grid.attach(&label, 1, i as i32 + 1, 1, 1);
         grid.attach(&result, 2, i as i32 + 1, 1, 1);
         rows.push((pick, result));
     }
+    let rows = Rc::new(rows);
     body.append(
         &gtk::ScrolledWindow::builder()
             .child(&grid)
@@ -1416,7 +1343,7 @@ fn ssh_access_review(
     let check = gtk::Button::with_label("Check now");
     check.set_widget_name("ssh-access-check");
     check.add_css_class("suggested-action");
-    let add = gtk::Button::with_label("Add selected SSH endpoints");
+    let add = gtk::Button::with_label("Review selected SSH endpoints…");
     add.set_widget_name("ssh-access-add");
     add.set_sensitive(false);
     actions.append(&close);
@@ -1430,97 +1357,220 @@ fn ssh_access_review(
             d.close();
         }
     });
-    let targets = Rc::new(targets);
-    let rows = Rc::new(rows);
+    let results = Rc::new(RefCell::new(std::collections::HashMap::<
+        usize,
+        crate::ssh_probe::Checked,
+    >::new()));
+    for (pick, _) in rows.iter() {
+        let add = add.downgrade();
+        let rows = Rc::downgrade(&rows);
+        pick.connect_toggled(move |_| {
+            if let (Some(add), Some(rows)) = (add.upgrade(), rows.upgrade()) {
+                add.set_sensitive(
+                    rows.iter()
+                        .any(|(p, _)| p.is_active() && p.is_sensitive() && p.is_visible()),
+                );
+            }
+        });
+    }
     {
-        let (targets, rows, add) = (targets.clone(), rows.clone(), add.clone());
+        let (targets, rows, add, allowed, results) = (
+            targets.clone(),
+            rows.clone(),
+            add.clone(),
+            allowed.clone(),
+            results.clone(),
+        );
+        let weak = dialog.downgrade();
         check.connect_clicked(move |check| {
             check.set_sensitive(false);
-            for (_, result) in rows.iter() {
-                result.set_text("Checking…");
+            add.set_sensitive(false);
+            results.borrow_mut().clear();
+            for (pick, label) in rows.iter() {
+                pick.set_active(false);
+                pick.set_sensitive(false);
+                label.set_text("Waiting…");
             }
-            let work: Vec<_> = targets
-                .iter()
-                .enumerate()
-                .map(|(i, (_, p, _))| (i, p.clone()))
-                .collect();
-            let queue = std::sync::Arc::new(std::sync::Mutex::new(work));
-            let (tx, rx) = std::sync::mpsc::channel();
-            let keys = std::sync::Arc::new(crate::ssh_probe::identities());
-            for _ in 0..4.min(targets.len()) {
-                let (queue, tx, keys) = (queue.clone(), tx.clone(), keys.clone());
-                std::thread::spawn(move || {
-                    loop {
-                        let Some((i, probe)) = queue.lock().unwrap().pop() else {
-                            return;
-                        };
-                        let inputs = crate::ssh_probe::inputs(&probe, &keys);
-                        let outcome = crate::ssh_probe::probe(&probe, &keys);
-                        if tx.send((i, probe.id.clone(), inputs, outcome)).is_err() {
-                            return;
-                        }
+            let mut cache = crate::ssh_probe::load();
+            let now = crate::ssh_probe::now();
+            let mut work: Vec<_> = targets.iter().cloned().enumerate().collect();
+            // A bounded batch may not reach every endpoint. Prioritize never
+            // checked/oldest rows on the next explicit Check, including after
+            // reopening, rather than repeatedly checking the same tail.
+            work.sort_by_key(|(_, target)| {
+                cache
+                    .get(&target.source_id)
+                    .filter(|c| c.checked <= now)
+                    .map_or(0, |c| c.checked)
+            });
+            let queue = Arc::new(std::sync::Mutex::new(std::collections::VecDeque::from(
+                work,
+            )));
+            let (tx, rx) = std::sync::mpsc::sync_channel(16);
+            let cancel = allowed.clone();
+            std::thread::spawn(move || {
+                let deadline = Instant::now() + Duration::from_secs(120);
+                let keys = Arc::new(crate::ssh_probe::identities_cancel(&cancel));
+                std::thread::scope(|scope| {
+                    for _ in 0..4 {
+                        let (queue, tx, keys, cancel) =
+                            (queue.clone(), tx.clone(), keys.clone(), cancel.clone());
+                        scope.spawn(move || {
+                            loop {
+                                if !cancel.load(Ordering::Acquire) || Instant::now() >= deadline {
+                                    break;
+                                }
+                                let Some((i, target)) = queue.lock().unwrap().pop_front() else {
+                                    break;
+                                };
+                                let before =
+                                    crate::ssh_probe::inspect(&target.probe, &keys, &cancel);
+                                let mut outcome =
+                                    crate::ssh_probe::probe_cancel(&target.probe, &keys, &cancel);
+                                let after =
+                                    crate::ssh_probe::inspect(&target.probe, &keys, &cancel);
+                                if before.is_none() || before != after {
+                                    outcome.access = crate::ssh_probe::Access::NeedsInteraction;
+                                    outcome.accepted_key = None;
+                                    outcome.reason = Some(
+                                        "Connection, key or trust inputs changed; check again"
+                                            .into(),
+                                    );
+                                }
+                                let (inputs, resolved) =
+                                    after.map_or((String::new(), None), |(h, t)| (h, Some(t)));
+                                let checked = crate::ssh_probe::Checked {
+                                    access: outcome.access,
+                                    accepted_key: outcome.accepted_key.clone(),
+                                    checked: crate::ssh_probe::now(),
+                                    inputs,
+                                    source_id: target.source_id,
+                                    target: resolved,
+                                    reason: outcome.reason.clone(),
+                                };
+                                if tx.send((i, outcome.describe(), checked)).is_err() {
+                                    break;
+                                }
+                            }
+                        });
                     }
                 });
-            }
-            let (rows, add, total) = (rows.clone(), add.clone(), targets.len());
-            let mut cache = crate::ssh_probe::load();
-            let mut done = 0;
-            gtk::glib::timeout_add_local(std::time::Duration::from_millis(200), move || {
-                while let Ok((i, id, inputs, outcome)) = rx.try_recv() {
-                    done += 1;
-                    let (pick, result) = &rows[i];
-                    result.set_text(&outcome.describe());
-                    let verified = outcome.access == crate::ssh_probe::Access::Verified;
-                    pick.set_sensitive(verified);
-                    pick.set_active(verified && pick.is_visible());
-                    add.set_sensitive(true);
-                    cache.insert(
-                        id,
-                        crate::ssh_probe::Checked {
-                            access: outcome.access,
-                            accepted_key: outcome.accepted_key,
-                            checked: crate::ssh_probe::now(),
-                            inputs,
-                        },
-                    );
+            });
+            let (rows, results, cancel, weak, check) = (
+                rows.clone(),
+                results.clone(),
+                allowed.clone(),
+                weak.clone(),
+                check.downgrade(),
+            );
+            gtk::glib::timeout_add_local(Duration::from_millis(100), move || {
+                if !cancel.load(Ordering::Acquire) || weak.upgrade().is_none() {
+                    return gtk::glib::ControlFlow::Break;
                 }
-                if done < total {
-                    return gtk::glib::ControlFlow::Continue;
+                loop {
+                    match rx.try_recv() {
+                        Ok((i, description, checked)) => {
+                            let (pick, result) = &rows[i];
+                            result.set_text(&description);
+                            pick.set_sensitive(
+                                pick.is_visible()
+                                    && checked.access == crate::ssh_probe::Access::Verified,
+                            );
+                            // Successful checks never preselect an addition.
+                            cache.insert(checked.source_id.clone(), checked.clone());
+                            results.borrow_mut().insert(i, checked);
+                        }
+                        Err(std::sync::mpsc::TryRecvError::Empty) => {
+                            return gtk::glib::ControlFlow::Continue;
+                        }
+                        Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                            for (_, label) in rows.iter() {
+                                if label.text() == "Waiting…" {
+                                    label.set_text("Not run — batch time limit");
+                                }
+                            }
+                            if let Some(check) = check.upgrade() {
+                                check.set_sensitive(true);
+                            }
+                            if let Err(e) = crate::ssh_probe::save(&cache) {
+                                if let Some(d) = weak.upgrade() {
+                                    d.set_title(Some(&format!(
+                                        "SSH key access · result cache unavailable: {e}"
+                                    )));
+                                }
+                            }
+                            return gtk::glib::ControlFlow::Break;
+                        }
+                    }
                 }
-                let _ = crate::ssh_probe::save(&cache);
-                gtk::glib::ControlFlow::Break
             });
         });
     }
     let (store, status, d) = (store.clone(), status.clone(), dialog.downgrade());
-    add.connect_clicked(move |_| {
-        let mut added = 0;
-        {
-            let mut s = store.borrow_mut();
-            let old = s.items.clone();
-            for ((_, probe, new), (pick, _)) in targets.iter().zip(rows.iter()) {
-                let missing = !s
-                    .items
-                    .iter()
-                    .any(|p| p.machine_id == probe.machine_id && p.protocol == "SSH");
-                if *new && pick.is_active() && pick.is_sensitive() && missing {
-                    s.items.push(probe.clone());
-                    added += 1;
+    add.connect_clicked(move |add| {
+        let selected: Vec<_> = targets.iter().zip(rows.iter()).enumerate()
+            .filter(|(_, (t, (p, _)))| t.new && p.is_active() && p.is_sensitive())
+            .filter_map(|(i, (t, _))| results.borrow().get(&i).cloned().map(|c| (t.clone(), c))).collect();
+        if selected.is_empty() { return; }
+        let Some(parent) = d.upgrade() else { return; };
+        let confirm = gtk::Window::builder().title("Confirm SSH endpoint additions").modal(true)
+            .transient_for(&parent).default_width(600).build();
+        let content = gtk::Box::builder().orientation(gtk::Orientation::Vertical).spacing(12)
+            .margin_top(16).margin_bottom(16).margin_start(16).margin_end(16).build();
+        let description = selected.iter().map(|(t,c)| {
+            let dest = c.target.as_ref().map(|v| format!("{}@{}:{} via {:?}",v.account,v.host,v.port,v.route)).unwrap_or_default();
+            format!("{} · {dest}\n{}", t.probe.name, c.accepted_key.as_deref().unwrap_or("Exact key unknown"))
+        }).collect::<Vec<_>>().join("\n\n");
+        let label = gtk::Label::new(Some(&format!("Add only these {} SSH endpoints? Existing endpoints and credentials are preserved.\n\n{description}",selected.len())));
+        label.set_wrap(true); label.set_xalign(0.0); content.append(&label);
+        let controls = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        let no = gtk::Button::with_label("Cancel");
+        let yes = gtk::Button::with_label("Confirm additions"); yes.set_widget_name("ssh-access-confirm");
+        controls.append(&no); controls.append(&yes); content.append(&controls); confirm.set_child(Some(&content));
+        let pending = Arc::new(AtomicBool::new(true));
+        let revoke = pending.clone(); confirm.connect_unrealize(move |_| { revoke.store(false, Ordering::Release); });
+        let c = confirm.downgrade(); no.connect_clicked(move |_| { if let Some(c) = c.upgrade() { c.close(); } });
+        let (s, st, original, refresh, parent, c, allowed, add) = (store.clone(), status.clone(), snapshot.clone(), refresh.clone(), d.clone(), confirm.downgrade(), allowed.clone(), add.downgrade());
+        yes.connect_clicked(move |yes| {
+            yes.set_sensitive(false);
+            let (tx, rx) = std::sync::mpsc::sync_channel(1);
+            let (selected, cancel, owner) = (selected.clone(), pending.clone(), allowed.clone());
+            std::thread::spawn(move || {
+                let keys = crate::ssh_probe::identities_cancel(&cancel);
+                let valid = selected.iter().all(|(t,c)| owner.load(Ordering::Acquire) && cancel.load(Ordering::Acquire)
+                    && c.access == crate::ssh_probe::Access::Verified
+                    && crate::ssh_probe::now().checked_sub(c.checked).is_some_and(|age| age <= 300)
+                    && crate::ssh_probe::inspect(&t.probe, &keys, &cancel).is_some_and(|(hash,target)|
+                        hash == c.inputs && Some(&target) == c.target.as_ref()));
+                let _ = tx.send((valid, selected));
+            });
+            let (s, st, original, refresh, parent, c, allowed, pending, add) = (s.clone(), st.clone(), original.clone(), refresh.clone(), parent.clone(), c.clone(), allowed.clone(), pending.clone(), add.clone());
+            gtk::glib::timeout_add_local(Duration::from_millis(100), move || {
+                if !allowed.load(Ordering::Acquire) || !pending.load(Ordering::Acquire) { return gtk::glib::ControlFlow::Break; }
+                let (valid, selected) = match rx.try_recv() {
+                    Ok(v) => v,
+                    Err(std::sync::mpsc::TryRecvError::Empty) => return gtk::glib::ControlFlow::Continue,
+                    Err(_) => { st.set_text("SSH validation stopped; nothing added"); return gtk::glib::ControlFlow::Break; }
+                };
+                let mut s = s.borrow_mut();
+                if !valid || ssh_review_snapshot(&s) != *original || s.error.is_some()
+                    || s.items.len() + selected.len() > 1000 || selected.iter().any(|(t,_)|
+                        s.items.iter().any(|p| p.machine_id == t.probe.machine_id && p.protocol == "SSH")) {
+                    st.set_text("SSH check is stale or inventory changed; nothing added. Close and check again.");
+                    if let Some(add) = add.upgrade() { add.set_sensitive(false); }
+                } else {
+                    let old = s.items.clone();
+                    s.items.extend(selected.iter().map(|(t,_)| t.probe.clone()));
+                    match s.save() {
+                        Ok(()) => { st.set_text(&format!("Added {} reviewed SSH endpoints",selected.len())); drop(s); refresh(); if let Some(p)=parent.upgrade(){p.close();} }
+                        Err(e) => { s.items=old; st.set_text(&e); }
+                    }
                 }
-            }
-            if added > 0 {
-                if let Err(e) = s.save() {
-                    s.items = old;
-                    status.set_text(&e);
-                    return;
-                }
-            }
-        }
-        status.set_text(&format!("Added SSH endpoints for {added} machines"));
-        refresh();
-        if let Some(d) = d.upgrade() {
-            d.close();
-        }
+                if let Some(c)=c.upgrade(){c.close();}
+                gtk::glib::ControlFlow::Break
+            });
+        });
+        confirm.present();
     });
     dialog.present();
 }
@@ -1606,23 +1656,17 @@ fn shortcut_action(
             .iter()
             .find(|p| p.id == id)
             .map(ssh_seed);
-        // A connect icon connects: add an SSH endpoint from the machine's
-        // address (account, port and route from ~/.ssh/config) and open it.
-        // The pen edits it if the defaults do not fit.
         if let Some(mut seed) = seed {
             seed.username.clear();
-            let id = seed.id.clone();
-            {
-                let mut s = store.borrow_mut();
-                s.items.push(seed);
-                if let Err(e) = s.save() {
-                    s.items.pop();
-                    status.set_text(&e);
-                    return;
-                }
-            }
-            status.set_text("Added an SSH endpoint from this machine's address; the pen edits it");
-            shortcut_action(button, store, status, open, launch, &id, kind);
+            editor_seed(
+                button,
+                store.clone(),
+                None,
+                status.clone(),
+                open.clone(),
+                launch.clone(),
+                Some(seed),
+            );
         }
     }
 }
@@ -2706,21 +2750,6 @@ pub fn sidebar(
         gtk::glib::ControlFlow::Continue
     });
     refresh();
-    let (auto_store, auto_refresh) = (Rc::downgrade(&store), Rc::downgrade(&refresh));
-    let auto_root = root.downgrade();
-    gtk::glib::timeout_add_local(std::time::Duration::from_secs(30), move || {
-        let (Some(_root), Some(s), Some(r)) = (
-            auto_root.upgrade(),
-            auto_store.upgrade(),
-            auto_refresh.upgrade(),
-        ) else {
-            return gtk::glib::ControlFlow::Break;
-        };
-        auto_ssh_endpoints(&s, r);
-        gtk::glib::ControlFlow::Continue
-    });
-    let (s, r) = (store.clone(), refresh.clone());
-    gtk::glib::idle_add_local_once(move || auto_ssh_endpoints(&s, r));
     let image_store = store.clone();
     let image_profile: ImageProfileReader = Rc::new(move |id| {
         let s = image_store.borrow();
@@ -3686,13 +3715,41 @@ fn editor_seed(
         check_row.append(&check);
         check_row.append(&access);
         agents.append(&check_row);
-        let (fields_check, original_check) = (fields.clone(), original.clone());
+        let (fields_check, original_check, jump_check) =
+            (fields.clone(), original.clone(), ssh_jump.clone());
+        let (connection_check, credential_check, store_check) = (
+            inherit_connection.clone(),
+            inherit_credential.clone(),
+            store.clone(),
+        );
+        let allowed = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let cancel = allowed.clone();
+        check.connect_unrealize(move |_| {
+            cancel.store(false, std::sync::atomic::Ordering::Release);
+        });
         let access_weak = access.downgrade();
         check.connect_clicked(move |check| {
             let mut probe = original_check.clone();
             probe.server = fields_check[3].text().into();
             probe.username = fields_check[4].text().into();
             probe.preferences.identity_file = fields_check[11].text().into();
+            probe.preferences.known_hosts = fields_check[12].text().into();
+            probe.preferences.ssh_jump_alias = jump_check.text().into();
+            probe.group = fields_check[1].text().into();
+            probe.inherit_connection = connection_check.is_active();
+            probe.inherit_credential = credential_check.is_active();
+            let probe = {
+                let metadata = store_check.borrow();
+                match resolve(&probe, &metadata.groups, &metadata.items) {
+                    Ok(probe) => probe,
+                    Err(error) => {
+                        if let Some(label) = access_weak.upgrade() {
+                            label.set_text(&error);
+                        }
+                        return;
+                    }
+                }
+            };
             if probe.server.is_empty() {
                 if let Some(a) = access_weak.upgrade() {
                     a.set_text("Enter the host first");
@@ -3704,12 +3761,16 @@ fn editor_seed(
                 a.set_text("Checking…");
             }
             let (tx, rx) = std::sync::mpsc::sync_channel(1);
+            let cancel = allowed.clone();
             std::thread::spawn(move || {
-                let keys = crate::ssh_probe::identities();
-                let _ = tx.send(crate::ssh_probe::probe(&probe, &keys));
+                let keys = crate::ssh_probe::identities_cancel(&cancel);
+                let _ = tx.send(crate::ssh_probe::probe_cancel(&probe, &keys, &cancel));
             });
-            let (access, check) = (access_weak.clone(), check.downgrade());
+            let (access, check, cancel) = (access_weak.clone(), check.downgrade(), allowed.clone());
             gtk::glib::timeout_add_local(std::time::Duration::from_millis(100), move || {
+                if !cancel.load(std::sync::atomic::Ordering::Acquire) {
+                    return gtk::glib::ControlFlow::Break;
+                }
                 match rx.try_recv() {
                     Ok(outcome) => {
                         if let Some(a) = access.upgrade() {
@@ -4919,6 +4980,59 @@ mod inherited_tests {
             username: String::new(),
             credential_profile: String::new(),
         }
+    }
+    #[test]
+    fn ssh_review_lists_distinct_saved_accounts_without_mutating_sources() {
+        let first = profile();
+        let mut second = first.clone();
+        second.id = "endpoint_second".into();
+        second.username = "second-account".into();
+        second.preferences.identity_file = "/generated/manual-key".into();
+        let mut rdp = first.clone();
+        rdp.id = "endpoint_rdp".into();
+        rdp.protocol = "RDP".into();
+        let store = Store {
+            items: vec![first, second, rdp],
+            ..Store::default()
+        };
+        let before = ssh_review_snapshot(&store);
+        let review = ssh_review_targets(&store);
+        assert_eq!(review.len(), 2);
+        assert!(review.iter().all(|t| !t.new));
+        assert_eq!(review[1].probe.username, "second-account");
+        assert_eq!(
+            review[1].probe.preferences.identity_file,
+            "/generated/manual-key"
+        );
+        assert_eq!(before, ssh_review_snapshot(&store));
+    }
+    #[test]
+    fn ssh_review_seed_preserves_manual_route_without_reusing_rdp_credentials() {
+        let mut rdp = profile();
+        rdp.protocol = "RDP".into();
+        rdp.server = "generated-alias:3389".into();
+        rdp.username = "rdp-service-only".into();
+        rdp.preferences.ssh_jump_alias = "generated-jump".into();
+        rdp.preferences.identity_file = "/generated/manual-key".into();
+        let store = Store {
+            items: vec![rdp.clone()],
+            ..Store::default()
+        };
+        let before = ssh_review_snapshot(&store);
+        let review = ssh_review_targets(&store);
+        assert_eq!(review.len(), 1);
+        let target = &review[0];
+        assert!(target.new);
+        assert!(target.probe.username.is_empty());
+        assert_eq!(target.source_id, rdp.id);
+        assert_ne!(target.probe.secret_reference, rdp.secret_reference);
+        assert_eq!(target.probe.preferences.ssh_jump_alias, "generated-jump");
+        assert_eq!(
+            target.probe.preferences.identity_file,
+            "/generated/manual-key"
+        );
+        assert_eq!(target.probe.server, "generated-alias");
+        assert_eq!(before, ssh_review_snapshot(&store));
     }
     #[test]
     fn explicit_jump_inherits_only_for_ssh_and_endpoint_override_wins() {

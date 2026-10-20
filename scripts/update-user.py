@@ -91,22 +91,111 @@ def describe(release, current):
             'available': newer, 'url': url, 'delivery': 'source-build'}
 
 
-def automatic_release_verified(release):
-    """Unattended installs wait for source/privacy checks on the exact commit.
-
-    Dependency advisories are a separate, unsuppressed qualification gate; this
-    is an opt-in testing-source updater, not a qualified binary distribution.
-    """
+def quality_failure(release):
+    """Exact-commit, newest-run policy. Advisories remain separately reported."""
     commit = release.get('commit', '')
-    if not SHA.fullmatch(commit):
-        raise ValueError('Automatic update lacks an immutable release commit')
+    if not isinstance(commit, str) or not SHA.fullmatch(commit):
+        raise ValueError('Update lacks an immutable release commit')
     runs = api('/actions/runs?head_sha=' + commit + '&event=push&per_page=100').get('workflow_runs', [])
     matching = [run for run in runs if run.get('head_sha') == commit and run.get('head_branch') == 'main' and run.get('path') == '.github/workflows/quality.yml']
     if not matching:
-        return False
+        return 'No main-branch quality/privacy workflow for the release commit'
     newest = max(matching, key=lambda run: run['id'])
     jobs = api('/actions/runs/' + str(newest['id']) + '/jobs?per_page=100').get('jobs', [])
-    return all(any(job.get('name') == name and job.get('conclusion') == 'success' for job in jobs) for name in ['quality', 'privacy'])
+    pending = []
+    for name in ['quality', 'privacy']:
+        matching_jobs = [job for job in jobs if job.get('name') == name]
+        if len(matching_jobs) != 1 or matching_jobs[0].get('conclusion') != 'success':
+            conclusion = matching_jobs[0].get('conclusion') or matching_jobs[0].get('status') or 'pending' if matching_jobs else 'missing'
+            pending.append(name + ': ' + conclusion)
+    return ('Exact-commit run ' + str(newest['id']) + ' — ' + ', '.join(pending)) if pending else None
+
+
+def automatic_release_verified(release):
+    return quality_failure(release) is None
+
+
+def release_readiness(release, delivery):
+    """Publication eligibility; download hashes/provenance are checked at install."""
+    reason = quality_failure(release)
+    if reason:
+        return reason
+    data = api('/releases/tags/' + release['tag'])
+    if data.get('tag_name') != release['tag'] or data.get('draft') is not False or data.get('prerelease') is not False:
+        return 'Unexpected release metadata'
+    # Supported Fedora releases are complete only once both delivery paths
+    # exist. Source installation must not bypass a failed/incomplete release.
+    names = ['ruwac-' + release['latest'] + '-fedora44-x86_64-testing.tar.gz',
+             'ruwac-' + release['latest'] + '-1.fc44.x86_64.rpm',
+             'ruwac-desktop-' + release['latest'] + '-1.fc44.x86_64.rpm']
+    names += [name + '.sigstore.json' for name in names]
+    for name in names:
+        assets = [a for a in data.get('assets', []) if a.get('name') == name]
+        if not assets:
+            return 'Missing published asset: ' + name
+        if len(assets) != 1:
+            return 'Ambiguous published asset: ' + name
+        asset = assets[0]
+        expected = 'https://github.com/w3fans/RUWAC/releases/download/' + release['tag'] + '/' + name
+        if (asset.get('state') != 'uploaded' or type(asset.get('size')) is not int
+                or not 0 < asset['size'] <= (1024 * 1024 if name.endswith('.sigstore.json') else MAX_BUNDLE_BYTES)
+                or asset.get('browser_download_url') != expected
+                or not re.fullmatch(r'sha256:[0-9a-f]{64}', asset.get('digest', ''))):
+            return 'Invalid published asset metadata: ' + name
+    return None
+
+
+def verified_status(current, delivery):
+    """Keep publication, eligibility and installation separate, without downgrade."""
+    published = latest(current)
+    pending = []
+    reason = release_readiness(published, delivery)
+    chosen = published if reason is None else None
+    if reason:
+        pending.append({'tag': published['tag'], 'reason': reason})
+        # Avoid resolving ten historical tags for the usual current-release
+        # check. Fetch fallback identities only when the newest is ineligible.
+        for candidate in newer_releases('0.0.0'):
+            if candidate['tag'] == published['tag']:
+                continue
+            reason = release_readiness(candidate, delivery)
+            if reason:
+                pending.append({'tag': candidate['tag'], 'reason': reason})
+            else:
+                chosen = candidate
+                break
+    result = dict(chosen or published, current=current, installed_version=current,
+                  latest_published=published['latest'], latest_verified=chosen['latest'] if chosen else None,
+                  available=chosen is not None and version(chosen['latest']) > version(current),
+                  delivery=delivery, skipped_releases=pending,
+                  verification_scope='Exact-commit quality/privacy and complete published asset metadata; downloaded hashes and provenance are verified before installation')
+    if chosen is None:
+        result['skipped'] = 'No verified installable release: ' + (pending[0]['reason'] if pending else 'no candidates')
+    return result
+
+
+def installation_identity(prefix, running, executable=None):
+    """Read-only: distinguish the running frontend from both installed routes."""
+    user = installed_version(prefix, '0.0.0')
+    rpm = subprocess.run(['/usr/bin/rpm', '-q', '--qf', '%{VERSION}', 'ruwac-desktop'],
+                         capture_output=True, text=True, timeout=15) if Path('/usr/bin/rpm').exists() else None
+    system = rpm.stdout.strip() if rpm and rpm.returncode == 0 else None
+    if system:
+        version(system)
+    return {'running': running, 'running_executable': executable,
+            'user_installed': user if user != '0.0.0' else None, 'system_installed': system,
+            'mixed_installation': user != '0.0.0' and system is not None}
+
+
+def installation_status(result, identity, managed_rpm=False):
+    """An uninstalled running build must not masquerade as an installation."""
+    installed = identity['system_installed' if managed_rpm else 'user_installed']
+    result = dict(result, **identity, installed_version=installed)
+    if installed is not None:
+        result['current'] = installed
+        eligible = result.get('latest_verified')
+        result['available'] = isinstance(eligible, str) and version(eligible) > version(installed)
+    return result
 
 
 MAX_BUNDLE_BYTES = 128 * 1024 * 1024
@@ -341,11 +430,13 @@ def install_testing_bundle(release, asset, prefix, cache, automatic, desktop=Tru
         try:
             if not (prebuilt or testing_bundle_setting()) or (automatic and not automatic_install_setting()):
                 return dict(release, skipped='testing bundle or automatic installation disabled during download')
+            expected = installation_artifacts(bundle / 'target/release', desktop)
             run(['python3', str(bundle / 'install-user.py'), '--build-root', str(bundle), '--prefix', str(prefix)]
                 + (['--desktop'] if desktop else []))
+            result = confirm_installation(release, prefix, expected)
         finally:
             os.close(preference_lock)
-        return dict(release, installed=release['latest'], delivery='testing-bundle', running_sessions='preserved')
+        return dict(result, delivery='testing-bundle')
     finally:
         shutil.rmtree(root)
         os.close(lock)
@@ -565,6 +656,51 @@ def installed_version(prefix, fallback):
     return installed
 
 
+def artifact_digest(path):
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or not 0 < info.st_size <= 256 * 1024 * 1024:
+            raise ValueError('Unsafe installed artifact size or type')
+        digest = hashlib.sha256()
+        remaining = info.st_size
+        while remaining:
+            block = os.read(fd, min(remaining, 1024 * 1024))
+            if not block:
+                raise ValueError('Artifact changed during verification')
+            digest.update(block)
+            remaining -= len(block)
+        after = os.fstat(fd)
+        if os.read(fd, 1) or any(getattr(after, field) != getattr(info, field)
+                                for field in ['st_dev', 'st_ino', 'st_size', 'st_mtime_ns', 'st_ctime_ns']):
+            raise ValueError('Artifact changed during verification')
+        return digest.hexdigest()
+    finally:
+        os.close(fd)
+
+
+def installation_artifacts(folder, desktop):
+    return {name: artifact_digest(folder / name)
+            for name in ['ruwac'] + (['ruwac-desktop'] if desktop else [])}
+
+
+def confirm_installation(release, prefix, expected):
+    if installed_version(prefix, '0.0.0') != release['latest']:
+        raise ValueError('Installer finished without installing the selected version')
+    current = prefix / 'lib/ruwac/current'
+    receipt = json.loads((current / 'installation.json').read_text())
+    if receipt.get('source_commit') != release['commit'] or receipt.get('artifacts') != expected:
+        raise ValueError('Installed receipt differs from the selected release')
+    for name, digest in expected.items():
+        link = prefix / 'bin' / name
+        if (not link.is_symlink() or str(link.readlink()) != '../lib/ruwac/current/' + name
+                or artifact_digest(current / name) != digest):
+            raise ValueError('Installed command differs from the verified artifact')
+    return dict(release, installed=release['latest'], installed_version=release['latest'],
+                user_installed=release['latest'], current=release['latest'], available=False,
+                running_sessions='preserved')
+
+
 def rollback(prefix):
     base = prefix / 'lib/ruwac'
     if base.is_symlink() or not base.is_dir() or base.stat().st_uid != os.geteuid():
@@ -621,6 +757,9 @@ def rollback(prefix):
 
 
 def install(release, prefix, cache, desktop=True, automatic=False, prebuilt=False):
+    reason = release_readiness(release, 'testing-bundle' if prebuilt or (desktop and testing_bundle_setting()) else 'source-build')
+    if reason:
+        return dict(release, skipped=reason, available=False, running_sessions='preserved')
     os_release = Path('/etc/os-release').read_text()
     os_info = dict(line.split('=', 1) for line in os_release.splitlines() if '=' in line)
     if os_info.get('ID', '').strip('"') != 'fedora' or os_info.get('VERSION_ID', '').strip('"') != '44':
@@ -665,11 +804,13 @@ def install(release, prefix, cache, desktop=True, automatic=False, prebuilt=Fals
         try:
             if automatic and not automatic_install_setting():
                 return dict(release, skipped='automatic updates disabled during build', running_sessions='preserved')
+            expected = installation_artifacts(target / 'release', desktop)
             run(args)
+            result = confirm_installation(release, prefix, expected)
         finally:
             if preference_lock is not None:
                 os.close(preference_lock)
-        return dict(release, installed=release['latest'], running_sessions='preserved')
+        return result
     finally:
         shutil.rmtree(root)
         os.close(lock)
@@ -691,6 +832,7 @@ def main():
     parser.add_argument('--current', default='0.0.0')
     parser.add_argument('--prefix', type=Path, default=Path.home() / '.local')
     parser.add_argument('--headless', action='store_true')
+    parser.add_argument('--running-executable', help=argparse.SUPPRESS)
     parser.add_argument('--managed-rpm', action='store_true', help=argparse.SUPPRESS)
     args = parser.parse_args()
     if not args.bootstrap and args.current == '0.0.0':
@@ -702,7 +844,14 @@ def main():
         elif args.install:
             result = rpm_operation('install')
         elif args.check:
-            result = latest(args.current)
+            query = subprocess.run(['/usr/bin/rpm', '-q', '--qf', '%{VERSION}', 'ruwac-desktop'],
+                                   capture_output=True, text=True, timeout=15)
+            if query.returncode:
+                raise ValueError('Unable to determine the installed desktop RPM version')
+            installed = query.stdout.strip()
+            version(installed)
+            result = verified_status(installed, 'testing-rpm')
+            result = installation_status(result, installation_identity(args.prefix.absolute(), args.current, args.running_executable), managed_rpm=True)
             result.update(distribution='rpm', running=args.current,
                           delivery='testing-rpm', update_method='Verified system updater or DNF',
                           updates_url='https://github.com/w3fans/RUWAC/releases/tag/' + result['tag'])
@@ -737,18 +886,9 @@ def main():
             os.close(lock)
     else:
         installed = installed_version(prefix, '0.0.0' if args.bootstrap else args.current)
-        result = latest(installed)
-        if args.install_auto and result['available'] and not automatic_release_verified(result):
-            # The newest tag is still in qualification: take the newest
-            # qualified release that is still newer than the installed one.
-            fallback = next((r for r in newer_releases(installed) if automatic_release_verified(r)), None)
-            if fallback is not None:
-                result = dict(fallback, newest_tag=result['tag'])
-            else:
-                result['skipped'] = 'waiting for successful source quality and privacy checks on the release commit'
-        result['running'] = args.current
-        if not args.headless and testing_bundle_setting():
-            result['delivery'] = 'testing-bundle'
+        delivery = 'testing-bundle' if args.prebuilt or (not args.headless and testing_bundle_setting()) else 'source-build'
+        result = verified_status(installed, delivery)
+        result = installation_status(result, installation_identity(prefix, args.current, args.running_executable))
         if 'skipped' not in result and (args.install or args.install_auto or args.bootstrap) and result['available']:
             cache = private_directory(Path(os.environ.get('XDG_CACHE_HOME', Path.home() / '.cache')) / 'RUWAC/updates')
             desktop = not args.headless

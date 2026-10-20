@@ -6,7 +6,7 @@ from spike import Client,eventually
 p=argparse.ArgumentParser();p.add_argument('--binary',required=True);p.add_argument('--gui',required=True);p.add_argument('--evidence',type=Path,required=True);a=p.parse_args()
 assert os.environ.get('WAYLAND_DISPLAY','').startswith('ruwac-')
 root=Path(tempfile.mkdtemp(prefix='native-host-actions-',dir=a.evidence));root.chmod(0o700)
-env={**os.environ,'GTK_A11Y':'none','GSETTINGS_BACKEND':'memory','SHELL':'/bin/bash'}
+env={**{k:v for k,v in os.environ.items()if k not in ['SSH_AUTH_SOCK','SSH_AGENT_PID','SSH_ASKPASS','SSH_ASKPASS_REQUIRE']},'GTK_A11Y':'none','GSETTINGS_BACKEND':'memory','SHELL':'/bin/bash'}
 for key,name in [('HOME','home'),('XDG_CONFIG_HOME','config'),('XDG_DATA_HOME','data'),('XDG_CACHE_HOME','cache')]:env[key]=str(root/name);Path(env[key]).mkdir(mode=0o700)
 profile=Path(env['XDG_CONFIG_HOME'])/'RUWAC/machines.json';profile.parent.mkdir(mode=0o700)
 def endpoint(i,name,protocol,last_used=0):
@@ -15,11 +15,29 @@ items=[endpoint(0,'Demo','RDP'),endpoint(1,'Recent generated','SSH',20),endpoint
 for index,name,host in [(3,'ZZ verified','verified.generated.test'),(4,'ZZ unknown trust','unknown.generated.test'),(5,'ZZ rejected key','rejected.generated.test')]:
  item=endpoint(index,name,'RDP');item['server']=host;items.append(item)
 profile.write_text(json.dumps({'schema':1,'items':items,'groups':[]}));profile.chmod(0o600)
-# A generated SSH peer models only the auto-probe boundary. Other SSH calls
-# remain real; actual key/trust interoperability is covered by ssh_access.py.
-wrappers=root/'bin';wrappers.mkdir();trace=root/'auto-ssh.jsonl'
-wrapper=wrappers/'ssh';real=shutil.which('ssh')
-wrapper.write_text('#!/usr/bin/python3\nimport os,sys,json\na=sys.argv[1:]\nh=a[a.index("--")+1]if"--"in a else""\nif "BatchMode=yes"in a and h.endswith(".generated.test"):\n with open('+repr(str(trace))+',"a")as f:f.write(json.dumps(a)+"\\n")\n if h=="verified.generated.test":sys.exit(0)\n print("Host key verification failed"if h.startswith("unknown")else"Permission denied (publickey)",file=sys.stderr);sys.exit(255)\nos.execv('+repr(real)+',["ssh"]+a)\n')
+# Generated OpenSSH-client boundary for GUI workflow only. Real OpenSSH
+# authentication, route and trust interoperability is tested by ssh_access.py.
+wrappers=root/'bin';wrappers.mkdir();trace=root/'explicit-ssh.jsonl'
+stall=root/'stall-generated-ssh';stalled_pids=root/'stalled-helper-pids'
+wrapper=wrappers/'ssh';known=root/'generated-known-hosts';known.write_text('');known.chmod(0o600)
+wrapper.write_text(f"""#!/usr/bin/python3
+import os,sys,json,subprocess,time
+from pathlib import Path
+a=sys.argv[1:]
+h=a[a.index("--")+1] if "--" in a else ""
+with open({str(trace)!r},"a") as f: f.write(json.dumps(a)+"\\n")
+if "-G" in a:
+ print("hostname "+h+"\\nport 22\\nuser generated-ssh\\nidentityagent none\\nuserknownhostsfile {known}\\nglobalknownhostsfile /dev/null")
+ sys.exit(0)
+if Path({str(stall)!r}).exists():
+ child=subprocess.Popen(["/usr/bin/sleep","60"])
+ with open({str(stalled_pids)!r},"a") as f: f.write(str(child.pid)+"\\n")
+ time.sleep(60)
+if "-E" in a:
+ with open(a[a.index("-E")+1],"a") as f:
+  f.write('Authenticated to generated using "publickey".\\n' if h=="verified.generated.test" else ("Host key verification failed\\n" if h.startswith("unknown") else "Permission denied (publickey)\\n"))
+sys.exit(0 if h=="verified.generated.test" else 255)
+""")
 wrapper.chmod(0o755);env['PATH']=str(wrappers)+os.pathsep+env['PATH']
 sock=root/'control.sock';fixture=root/'fixture';fixture.mkdir(mode=0o700);seq=0;children=[];checks=[]
 def start(argv,name):
@@ -36,14 +54,72 @@ try:
  start([a.binary,'--socket',str(sock),'serve'],'daemon');eventually(sock.exists)
  gui=start([a.gui,'--new-instance','--socket',str(sock),'--show-machines','--fixture-dir',str(fixture)],'gui');eventually(lambda:command('inspect').get('target'),20)
  command('chrome',width=1100,height=800,collapse=False);time.sleep(.4)
- eventually(lambda:any(x['machine_id']=='machine_demo3'and x['protocol']=='SSH'for x in json.loads(profile.read_text())['items']),15)
+ baseline=profile.read_bytes()
+ time.sleep(31.2)
+ assert not trace.exists(), 'Startup/periodic SSH commands are forbidden'
+ assert profile.read_bytes()==baseline, 'Idle inventory must remain unchanged'
+ checks.append('startup-and-former-periodic-interval-have-zero-SSH-commands-or-inventory-writes')
+ # Tools are lazily revealed. Use the existing real group-dialog action to
+ # expand that panel, then cancel without changing its defaults.
+ command('profile-editor',operation='group',response='cancel')
+ command('host-shortcuts',click='machines-detect-ssh')
+ assert 'SSH key access'in command('host-shortcuts')['dialogs']
+ assert not trace.exists() and profile.read_bytes()==baseline
+ checks.append('eligible-list-opens-before-any-network-or-key-command')
+ stall.touch()
+ command('host-shortcuts',click='ssh-access-check')
+ eventually(lambda:stalled_pids.exists() and stalled_pids.read_text().strip(),10)
+ responsive_started=time.monotonic();assert command('inspect')['target'];assert time.monotonic()-responsive_started < 2
+ command('host-shortcuts',close_ssh_review=True);stall.unlink()
+ def no_stalled_helpers():
+  for pid in stalled_pids.read_text().splitlines():
+   try:
+    if Path(f'/proc/{pid}/stat').read_text().split()[2]!='Z':return False
+   except FileNotFoundError:pass
+  return True
+ eventually(no_stalled_helpers,5)
+ assert profile.read_bytes()==baseline
+ checks.append('closing-active-check-keeps-GTK-responsive-and-terminates-owned-SSH-descendants')
+ command('host-shortcuts',click='machines-detect-ssh')
+ def checked():
+  info=command('host-shortcuts')
+  return info if any(w['name']=='ssh-access-check'and w['sensitive']for w in info['widgets'])else None
+ def check_and_select():
+  command('host-shortcuts',click='ssh-access-check')
+  info=eventually(checked,20)
+  assert any(w['name']=='ssh-access-result-3'and w.get('text','').startswith('SSH public-key login verified')for w in info['widgets']),info
+  assert all(not w.get('active')for w in info['widgets']if w['name'].startswith('ssh-access-pick-'))
+  assert not next(w for w in info['widgets']if w['name']=='ssh-access-add')['sensitive']
+  assert profile.read_bytes()==baseline
+  command('host-shortcuts',review_pick=3)
+  command('host-shortcuts',click='ssh-access-add')
+  assert 'Confirm SSH endpoint additions'in command('host-shortcuts')['dialogs']
+  assert profile.read_bytes()==baseline
+ check_and_select()
+ command('host-shortcuts',close_ssh_review=True)
+ assert profile.read_bytes()==baseline
+ checks.append('checks-do-not-add-or-preselect-endpoints-and-cancelled-confirmation-preserves-inventory')
+ command('host-shortcuts',click='machines-detect-ssh');check_and_select()
+ known.write_text('generated changed trust inputs\n')
+ command('host-shortcuts',click='ssh-access-confirm')
+ eventually(lambda:'Confirm SSH endpoint additions'not in command('host-shortcuts')['dialogs'])
+ assert profile.read_bytes()==baseline
+ command('host-shortcuts',close_ssh_review=True)
+ checks.append('changed-trust-between-check-and-confirmation-refuses-addition')
+ command('host-shortcuts',click='machines-detect-ssh');check_and_select()
+ command('host-shortcuts',click='ssh-access-confirm')
+ eventually(lambda:any(x['machine_id']=='machine_demo3'and x['protocol']=='SSH'for x in json.loads(profile.read_text())['items']))
  auto_items=json.loads(profile.read_text())['items']
+ assert len(auto_items)==len(items)+1
  assert not any(x['protocol']=='SSH'and x['machine_id']in ['machine_demo4','machine_demo5']for x in auto_items)
- auto=next(x for x in auto_items if x['machine_id']=='machine_demo3'and x['protocol']=='SSH')
- assert auto['username']=='' and auto['secret_reference']!='generated-reference3'
- calls=[json.loads(line)for line in trace.read_text().splitlines()]
- assert all('StrictHostKeyChecking=yes'in c and 'PasswordAuthentication=no'in c and c[-1]=='true'for c in calls)
- checks.append('generated-SSH-probe-auto-adds-only-verified-bookmark-no-unknown-trust-password-or-key-install')
+ added=next(x for x in auto_items if x['machine_id']=='machine_demo3'and x['protocol']=='SSH')
+ assert added['username']==''and added['secret_reference']!='generated-reference3'
+ def retained(before,after):
+  for k,v in before.items():
+   if isinstance(v,dict):retained(v,after[k])
+   else:assert after[k]==v,(k,v,after[k])
+ for original in items:retained(original,next(x for x in auto_items if x['id']==original['id']))
+ checks.append('explicit-selected-fresh-confirmation-adds-one-endpoint-and-preserves-all-existing-fields')
 
  # Key verification can rebuild rows asynchronously; wait for allocated widgets.
  def allocated_row():
@@ -55,15 +131,21 @@ try:
  actions=[v for k,v in first.items() if k!='machine-connect'];centers=[v['bounds'][1]+v['bounds'][3]/2 for v in actions];assert max(centers)-min(centers)<4,first
  assert min(v['bounds'][1] for v in actions)>=first['machine-connect']['bounds'][1]+first['machine-connect']['bounds'][3]-1,first
  checks.append('RDP-bookmark-configured-SSH-Codex-Claude-Kimi-labelled-on-one-line-below-name')
- # A connect icon connects: no setup form. The machine gets an SSH endpoint from its
- # address (account, port and route left to ~/.ssh/config) and a terminal opens.
- tabs_before=command('inspect')['tabs'];command('host-shortcuts',click='machine-terminal')
+ # Missing SSH endpoint opens a reviewable setup. Cancelling cannot create
+ # inventory entries or launch a connection.
+ tabs_before=command('inspect')['tabs'];before_setup=profile.read_bytes()
+ command('host-shortcuts',click='machine-terminal')
+ command('profile-editor',ssh_setup=True,operation='inspect',response='keep')
+ assert profile.read_bytes()==before_setup and command('inspect')['tabs']==tabs_before
+ command('profile-editor',ssh_setup=True,operation='inspect',response='cancel')
+ assert profile.read_bytes()==before_setup
+ command('host-shortcuts',click='machine-terminal')
+ command('profile-editor',ssh_setup=True,operation='inspect',response='save')
  eventually(lambda:any(x['machine_id']=='machine_demo0'and x['protocol']=='SSH'for x in json.loads(profile.read_text())['items']))
- eventually(lambda:command('inspect')['tabs']==tabs_before+1)
  items=json.loads(profile.read_text())['items'];ssh=next(x for x in items if x['machine_id']=='machine_demo0'and x['protocol']=='SSH');rdp=next(x for x in items if x['id']=='endpoint_demo0')
  assert ssh['username']=='' and rdp['username']=='generated-service'
  assert ssh['id']!=rdp['id']and ssh['secret_reference']!=rdp['secret_reference'];assert not ssh.get('preferences',{}).get('identity_file')
- checks.append('connect-icon-adds-ssh-endpoint-from-config-and-opens-terminal-without-setup-form')
+ checks.append('missing-SSH-shortcut-opens-explicit-setup-cancel-preserves-inventory-and-save-confirms')
  time.sleep(.4);header=command('host-shortcuts',operation='header');assert 'Saved agent hosts'in header['sections'];assert 'Agent sessions'in header['sections'];assert sum(x['name']=='saved-host-codex'for x in header['widgets'])>=3;assert sum(x['name']=='saved-host-claude'for x in header['widgets'])>=3
  assert sum(x['name']=='saved-host-kimi'for x in header['widgets'])>=3
  command('host-shortcuts',close=True)

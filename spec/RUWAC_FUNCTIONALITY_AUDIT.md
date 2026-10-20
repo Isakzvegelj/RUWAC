@@ -1,8 +1,8 @@
 # RUWAC purpose, functionality and implementation audit
 
 Review started: 2026-10-17; historical change review below covers v0.4.18.
-Current behavior was reconciled on 2026-10-20 after v0.4.29 and the file recovery
-identity preflight. This is a product requirements ledger and source review, not a claim
+Current behavior was reconciled on 2026-10-20 against v0.4.31 and the
+stabilization candidate's explicit SSH review and update-readiness changes. This is a product requirements ledger and source review, not a claim
 that all supported environments have passed acceptance.
 
 ## Purpose
@@ -40,7 +40,7 @@ results are distinguished from tests re-executed for the current batch in the
 | TUI status bar and window titles | Implemented | Clickable window bar, split commands, clipped/Unicode labels, foreground command names and a light-blue bar; custom names remain available. |
 | Native GTK/libadwaita desktop | Implemented | Tabs, multiple windows, split views, compact actions, theme/font choices and optional dock. |
 | Saved window geometry and workspaces | Implemented | Normal size, maximized/fullscreen state and saved mixed layouts; reopening a workspace can reconnect RDP rather than preserve its transport. |
-| Soft frontend replacement preserving RDP | Deferred | Terminal daemon survives; RDP lives in the GUI process. No verified seamless RDP process handoff. |
+| RDP lifetime across frontend replacement | Accepted boundary | The owner accepts reconnecting RDP after reopening. Terminal processes persist; seamless cross-process RDP transport preservation is not a current completion requirement. |
 | Shell startup, exit and reconnect | Implemented | Normal attached exit removes its completed window, including the final session. Explicit retained/restored history can be removed with `-wipe`; live processes are preserved. Saved SSH reconnect controls also cover children that ended before the frontend opened. |
 | Host identification in terminal tabs | Partial | Generic terminal tabs show the local daemon computer; saved remote/agent titles retain their host labels. Arbitrary manually typed or nested SSH is not reliably inferred. |
 | Keyboard tab shortcuts and fullscreen | Implemented | Alt+1–0 selects desktop tabs by default; AltGr toggles Map keys; Ctrl+Shift+T/R creates terminal/chooses RDP; Ctrl+Alt+Enter toggles fullscreen. |
@@ -58,7 +58,7 @@ results are distinguished from tests re-executed for the current batch in the
 | Machine/profile editor and Save & Connect | Implemented | Basic fields grouped first, advanced sections, endpoint identity, CRUD, favorites, search, groups and SQLite/JSON compatibility. |
 | Collapsible, scrollable groups | Implemented | Unpaginated desktop list, persisted group expansion and search reveal; list virtualization/very large inventory profiling is not established. |
 | Remmina import | Implemented | Default native/legacy/Flatpak discovery, bulk import, duplicate review and optional file chooser; reviewed Secret Service password copying preserves existing credentials. Source files remain read-only; certificate bypasses and private keys are excluded. |
-| Separate SSH identity and authentication | Implemented | Automatic existing-key checks create separate SSH bookmarks only after successful authenticated login; unknown trust and missing keys remain explicit setup. Current-user/config defaults, explicit username/key selection, saved password/passphrase references, host-key review and confirmed public-key authorization. |
+| Separate SSH identity and authentication | Implemented | The candidate lists eligible machines before contacting them, checks only on an explicit action, and requires selection plus fresh confirmation before adding a separate SSH endpoint. Strict public-key checks identify accepted fingerprints where available; unknown/changed trust and failed verification are explicit. Current-user/config defaults, explicit username/key selection, saved password/passphrase references, host-key review and confirmed public-key authorization. |
 | SSH routing | Partial | Jump aliases use OpenSSH configuration. Implicit image channels reuse the original authenticated connection; file recovery verifies the original server before authentication, and additional rsync channels require that same key. General RDP gateways and arbitrary gateway management are not implemented. |
 | Integrated SFTP file panel | Partial | Upload/download, integrity, progress, cancel and resumable transfer work; recursive/rsync and clean-environment qualification retain separate limits. Share enumeration does not constitute an integrated SMB file client. |
 | Codex/Claude/Kimi host actions | Implemented | Saved commands, compact shortcuts, header/context menus, recent SSH, RUWAC/Screen/tmux/direct backends; generated launch tests are not proof of every provider account. Other providers, including Grok, remain future work. |
@@ -70,7 +70,7 @@ results are distinguished from tests re-executed for the current batch in the
 | About, support and donations | Partial | Author attribution, QR and one dedicated optional-name/email bank handoff page delivered. Payment confirmation/invoice integration through the invoice API is deferred. |
 | macOS/native Windows builds | Deferred | Linux-specific IPC, credentials, process handling, packaging and updates need adapters and real platform validation. |
 
-The ledger tracks 39 capability areas: 21 implemented, 16 partial and 2 deferred. These are capability counts, not an acceptance percentage. A partly qualified complex protocol is not equivalent to a completed small UI action.
+Capability states are not an acceptance percentage. The accepted RDP lifetime boundary is distinct from a deferred feature. A partly qualified complex protocol is not equivalent to a completed small UI action.
 
 ## Recent change review
 
@@ -85,7 +85,7 @@ are tied to code and observable behavior.
 | New terminal tooltip changes invalidated exact-text GUI fixture actions | The real button still worked, but the login-shell regression could no longer click it; its tooltip also lost the action name. | Added a stable action widget identity, retained the tooltip action name and made fixture matching accept multiline tooltips. |
 | Broad GUI regression still expected preference schema 2 after the schema 3 spacing migration | A valid saved preference file failed the old assertion; font size and collapsed groups were correctly persisted. | Updated the regression to assert schema 3 while retaining checks for the actual saved settings. |
 | Broad GUI regression sent shell exit through an external control RPC | Recent GUI behavior closes locally interacted shells but intentionally retains externally ended output with a reconnect card; the old test bypassed local input tracking. | Exercise exit through the selected GTK terminal key path, keeping daemon/history assertions. |
-| Machine-action geometry test sampled a newly rebuilt row before GTK allocation | Automatic SSH discovery can refresh rows after the initial fixed sleep, producing zero-height widgets in the test snapshot. | Wait for all five controls to receive real allocation, then retain the existing alignment assertions. |
+| Machine-action geometry test sampled a newly rebuilt row before GTK allocation | Historical automatic SSH discovery could rebuild rows after the initial fixed sleep. The candidate removes that path; explicit inventory changes can still require waiting for GTK allocation. | Wait for all five controls to receive real allocation, then retain the existing alignment assertions. |
 | Shortcut help/comments still described a timed AltGr leader | Help contradicted the actual toggle implementation. | Corrected in this batch. |
 | Production tab timer called `fixture_inspect()` and `metadata()` every 100 ms per RDP tab | Allocated cadence/metrics JSON, locked connection state repeatedly and checked saved profile freshness unnecessarily. | Replaced with a small production summary; fixture inspection remains test-only. |
 | SSH key probe allowed configured connection multiplexing | Reusing a password-authenticated master could incorrectly count as proof of key login. | Disabled ControlMaster/ControlPath/ControlPersist for verification probes; ordinary terminal connections retain their configuration. |
@@ -117,8 +117,9 @@ new-launch persistent association and provider classification are implemented; t
    by physical Wayland keyboard, touchpad and clipboard-manager journeys.
 4. Qualify clean Fedora RPM installation/update and resolve upstream dependency
    security findings before claiming complete distribution readiness.
-5. Design an RDP process lifetime independent of GUI updates if seamless reload
-   remains a product requirement; preserve existing live connections meanwhile.
+5. Preserve terminal PIDs and workspace identity during frontend replacement;
+   verify honest RDP reconnection status. Reconnecting after reopening is accepted,
+   so seamless transport handoff is not an outstanding requirement.
 
 Detailed real-host evidence remains private. See also
 [product completion](RUWAC_PRODUCT_COMPLETION.md),

@@ -53,7 +53,8 @@ fn public_key(private: &Path) -> Option<Key> {
     if !meta.is_file() || meta.len() > 16 * 1024 || !private.is_file() {
         return None;
     }
-    let text = fs::read_to_string(&public).ok()?;
+    let bytes = crate::credentials::bounded_file(Path::new(&public), 16 * 1024).ok()?;
+    let text = std::str::from_utf8(&bytes).ok()?;
     let mut parts = text.split_whitespace();
     let kind = parts.next()?.to_owned();
     if !(kind.starts_with("ssh-") || kind.starts_with("ecdsa-") || kind.starts_with("sk-")) {
@@ -98,9 +99,12 @@ pub fn detect_in(home: &Path) -> Vec<Key> {
         .flatten()
         .map(|e| e.path())
         .filter(|p| p.extension().is_none_or(|e| e != "pub"))
+        .take(4096)
         .collect();
-    if let Ok(config) = fs::read_to_string(ssh.join("config")) {
-        candidates.extend(config_identities(&config, home));
+    if let Ok(bytes) = crate::credentials::bounded_file(&ssh.join("config"), 1024 * 1024) {
+        if let Ok(config) = std::str::from_utf8(&bytes) {
+            candidates.extend(config_identities(config, home).into_iter().take(4096));
+        }
     }
     let mut keys: Vec<Key> = candidates.iter().filter_map(|p| public_key(p)).collect();
     keys.sort_by_key(rank);

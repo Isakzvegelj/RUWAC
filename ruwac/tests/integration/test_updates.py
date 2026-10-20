@@ -27,6 +27,10 @@ class Updates(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.environment = patch.dict(os.environ, {'XDG_CONFIG_HOME': str(self.root / 'config'), 'XDG_CACHE_HOME': str(self.root / 'cache')})
         self.environment.start()
+        # Installation lifecycle fixtures supply an eligible release; the
+        # publication qualification policy has separate refusal regressions.
+        readiness = patch.object(updates, 'release_readiness', return_value=None)
+        readiness.start(); self.addCleanup(readiness.stop)
 
     def tearDown(self):
         self.environment.stop()
@@ -106,6 +110,31 @@ class Updates(unittest.TestCase):
             os.close(result['lock'])
         return source
 
+    def test_install_success_requires_actual_version_receipt_links_and_payload(self):
+        source = self.fixture_install('0.0.1')
+        prefix = self.root / 'prefix'
+        expected = updates.installation_artifacts(source / 'target/release', False)
+        release = {'latest': '0.0.1', 'commit': COMMIT, 'current': '0.0.0', 'available': True}
+        result = updates.confirm_installation(release, prefix, expected)
+        self.assertEqual(result['installed_version'], '0.0.1')
+        self.assertEqual(result['current'], '0.0.1')
+        self.assertFalse(result['available'])
+        with self.assertRaisesRegex(ValueError, 'without installing'):
+            updates.confirm_installation(dict(release, latest='0.0.2'), prefix, expected)
+        with self.assertRaisesRegex(ValueError, 'receipt'):
+            updates.confirm_installation(dict(release, commit='b' * 40), prefix, expected)
+        command = prefix / 'bin/ruwac'
+        command.unlink(); command.symlink_to('/bin/true')
+        with self.assertRaisesRegex(ValueError, 'command'):
+            updates.confirm_installation(release, prefix, expected)
+        command.unlink(); command.symlink_to('../lib/ruwac/current/ruwac')
+        (prefix / 'lib/ruwac/current/ruwac').write_bytes(b'changed installed payload')
+        with self.assertRaisesRegex(ValueError, 'command'):
+            updates.confirm_installation(release, prefix, expected)
+        fifo = self.root / 'fifo'; os.mkfifo(fifo)
+        with self.assertRaisesRegex(ValueError, 'size or type'):
+            updates.artifact_digest(fifo)
+
     def test_real_install_and_rollback_keep_running_executable_inode(self):
         self.fixture_install('0.0.1')
         prefix = self.root / 'prefix'
@@ -182,7 +211,7 @@ class Updates(unittest.TestCase):
         updates.rollback(prefix)
         self.assertEqual(updates.installed_version(prefix, '0.0.2'), '0.0.1')
         data = self.metadata(tag_name='v0.0.2', html_url='https://github.com/w3fans/RUWAC/releases/tag/v0.0.2')
-        with patch.object(sys, 'argv', ['updater', '--current', '0.0.2', '--check', '--prefix', str(prefix)]), patch.object(updates, 'api', side_effect=[data, {'object': {'type': 'commit', 'sha': COMMIT}}]), contextlib.redirect_stdout(io.StringIO()) as output:
+        with patch.object(sys, 'argv', ['updater', '--current', '0.0.2', '--check', '--prefix', str(prefix)]), patch.object(updates, 'api', side_effect=[data, {'object': {'type': 'commit', 'sha': COMMIT}}]), patch.object(updates, 'newer_releases', return_value=[]), contextlib.redirect_stdout(io.StringIO()) as output:
             updates.main()
         result = json.loads(output.getvalue())
         self.assertTrue(result['available'])
@@ -253,7 +282,7 @@ class Updates(unittest.TestCase):
         self.assertIn(['systemctl', '--user', 'enable', '--now', 'ruwac-update.timer'], [call.args[0] for call in run.call_args_list])
         self.assertIn('%%', updates.unit_quote('generated%prefix'))
         with self.assertRaises(ValueError): updates.unit_quote('generated\nUnit=foreign')
-        with patch.object(sys, 'argv', ['updater', '--current', '0.0.1', '--install-auto', '--prefix', str(self.root / 'prefix')]), patch.object(updates, 'latest', return_value={'available': True, 'latest': '0.0.2'}), patch.object(updates, 'automatic_release_verified', return_value=True), patch.object(updates, 'install', return_value={'installed': '0.0.2'}) as install, contextlib.redirect_stdout(io.StringIO()):
+        with patch.object(sys, 'argv', ['updater', '--current', '0.0.1', '--install-auto', '--prefix', str(self.root / 'prefix')]), patch.object(updates, 'verified_status', return_value={'available': True, 'latest': '0.0.2', 'latest_verified':'0.0.2'}), patch.object(updates, 'automatic_release_verified', return_value=True), patch.object(updates, 'install', return_value={'installed': '0.0.2'}) as install, contextlib.redirect_stdout(io.StringIO()):
             updates.main()
         self.assertFalse(install.call_args.args[3])
         self.assertTrue(install.call_args.kwargs['automatic'])
@@ -340,23 +369,22 @@ class Updates(unittest.TestCase):
 
     def test_pending_automatic_quality_gate_never_invokes_installer(self):
         data = updates.preferences(); data['automatic_install'] = True; updates.save_preferences(data)
-        with patch.object(sys, 'argv', ['updater', '--current', '0.0.1', '--install-auto']), patch.object(updates, 'latest', return_value={'available': True}), patch.object(updates, 'newer_releases', return_value=[{'available': True, 'tag': 'v0.0.2'}]), patch.object(updates, 'automatic_release_verified', return_value=False), patch.object(updates, 'install') as install, contextlib.redirect_stdout(io.StringIO()) as output:
+        with patch.object(sys, 'argv', ['updater', '--current', '0.0.1', '--install-auto']), patch.object(updates, 'verified_status', return_value={'available': False, 'skipped': 'waiting for quality: failure'}), patch.object(updates, 'install') as install, contextlib.redirect_stdout(io.StringIO()) as output:
             updates.main()
         install.assert_not_called()
         self.assertIn('waiting', json.loads(output.getvalue())['skipped'])
 
-
     def test_bootstrap_installs_without_a_preexisting_cli(self):
-        with patch.object(sys, 'argv', ['updater', '--bootstrap', '--prefix', str(self.root / 'prefix')]), patch.object(updates, 'latest', return_value={'available': True}) as latest, patch.object(updates, 'install', return_value={'installed': 'generated-release'}) as install, contextlib.redirect_stdout(io.StringIO()):
+        with patch.object(sys, 'argv', ['updater', '--bootstrap', '--prefix', str(self.root / 'prefix')]), patch.object(updates, 'verified_status', return_value={'available': True}) as status, patch.object(updates, 'install', return_value={'installed': 'generated-release'}) as install, contextlib.redirect_stdout(io.StringIO()):
             updates.main()
-        self.assertEqual(latest.call_args.args[0], '0.0.0')
+        self.assertEqual(status.call_args.args[0], '0.0.0')
         self.assertTrue(install.call_args.args[3])
 
     def test_bootstrap_respects_installed_version_and_does_not_downgrade(self):
         self.fixture_install('0.0.2')
-        with patch.object(sys, 'argv', ['updater', '--bootstrap', '--prefix', str(self.root / 'prefix')]), patch.object(updates, 'latest', return_value={'available': False}) as latest, patch.object(updates, 'install') as install, contextlib.redirect_stdout(io.StringIO()):
+        with patch.object(sys, 'argv', ['updater', '--bootstrap', '--prefix', str(self.root / 'prefix')]), patch.object(updates, 'verified_status', return_value={'available': False}) as status, patch.object(updates, 'install') as install, contextlib.redirect_stdout(io.StringIO()):
             updates.main()
-        self.assertEqual(latest.call_args.args[0], '0.0.2')
+        self.assertEqual(status.call_args.args[0], '0.0.2')
         install.assert_not_called()
 
 

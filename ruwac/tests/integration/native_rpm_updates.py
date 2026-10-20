@@ -41,7 +41,11 @@ if '--auto-install'in args:
  print(json.dumps({'distribution':'rpm','automatic_install':not file.exists()or file.read_text()=='on'}))
 elif '--install'in args:
  time.sleep(1.5);print(json.dumps({'distribution':'rpm','installed':'9.9.9'}))
-else:print(json.dumps({'distribution':'rpm','available':True,'latest':'9.9.9'}))
+else:print(json.dumps({'distribution':'rpm','available':True,'latest':'9.9.9',
+ 'latest_published':'9.9.10','latest_verified':'9.9.9','installed_version':'9.9.8',
+ 'running':args[args.index('--current')+1], 'running_executable':args[args.index('--running-executable')+1],
+ 'mixed_installation':True,'system_installed':'9.9.8','user_installed':'9.9.7',
+ 'skipped_releases':[{'tag':'v9.9.10','reason':'Exact-commit quality: failure'}]}))
 ''');stub.chmod(0o700)
     env['PATH']=str(helpers)+':'+env['PATH'];env['RUWAC_RPM_UI_FIXTURE']=str(root)
     children=[];seq=0;results=[]
@@ -63,6 +67,11 @@ else:print(json.dumps({'distribution':'rpm','available':True,'latest':'9.9.9'}))
         eventually(lambda:command('updates')['automatic_install_enabled'])
         eventually(lambda:command('updates')['install_enabled'])
         assert command('updates')['automatic_install']is True
+        text=command('updates')['status']
+        for label in ['Latest published tag: 9.9.10','Latest verified installable: 9.9.9','Installed version: 9.9.8','Running frontend:','Both installations detected:','Skipped v9.9.10: Exact-commit quality: failure']:
+            assert label in text,(label,text)
+        assert str(prefix/'bin/ruwac-desktop') in text
+        results.append('four-version-states-mixed-installation-running-path-and-precise-skip-reason')
         time.sleep(.3)
         calls=[json.loads(line)for line in (root/'calls.jsonl').read_text().splitlines()]
         assert not any(args[-2:]in [['--auto-install','on'],['--auto-install','off']]for args in calls),'Status initialization requested administrator authorization'

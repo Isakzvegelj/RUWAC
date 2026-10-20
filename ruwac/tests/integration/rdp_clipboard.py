@@ -71,6 +71,73 @@ try:
    started=time.perf_counter();command('gui','rdp-open',port=port);r=spike.eventually(lambda:r if (r:=command('gui','rdp-inspect',rdp=tab)).get('size')==([1280,720] if a.honor_client_size else [320,180]) else False,20);assert r['status'].startswith('Connected'),r;r['connect_to_decoded_frame_ms']=(time.perf_counter()-started)*1000;connections.append(r)
   return {'server':ready,'connections':connections,'authentication':'actual CredSSP/NLA','frames':'decoded live loopback server frames, generated desktop'}
  case('RDP-NATIVE-AUTH-3',lifecycle)
+ def idle_resources():
+  assert a.honor_client_size,'Resource measurement requires negotiated 1280×720 framebuffers'
+  original_tabs=command('gui','inspect')['tabs'];created=[]
+  try:
+   for _ in range(2):
+    before=command('gui','inspect')['tabs'];assert command('gui','new-terminal')['clicked']
+    spike.eventually(lambda:command('gui','inspect')['tabs']==before+1)
+    created.append(before)
+   spike.eventually(lambda:len(command('gui','inspect')['drawn'])==3)
+   def metrics():
+    data={}
+    for name,proc in [('gtk',gui),('daemon',daemon),('loopback_server',server),('clipboard_peer',peer)]:
+     fields=Path(f'/proc/{proc.pid}/stat').read_text().rsplit(')',1)[1].split()
+     status=dict(line.split(':',1)for line in Path(f'/proc/{proc.pid}/status').read_text().splitlines()if ':'in line)
+     data[name]={'pid':proc.pid,'starttime':fields[19],'cpu_seconds':(int(fields[11])+int(fields[12]))/os.sysconf('SC_CLK_TCK'),
+                 'rss_mib':int(status['VmRSS'].split()[0])/1024,'peak_rss_mib':int(status['VmHWM'].split()[0])/1024}
+    return data
+   with spike.Client(sock)as c:
+    identities={p['id']:p['pid']for s in c.call('session.list')for p in c.call('pane.list',{'session':s['id']})}
+   phases=[]
+   for selected in ['rdp','terminal']:
+    focus('gui')
+    if selected=='rdp':command('gui','rdp-switch',rdp=0)
+    else:command('gui','tab-select',tab=0);command('gui','focus-view')
+    time.sleep(.8)
+    before=metrics();terminal_before=command('gui','inspect')['drawn'];rdp_before=[command('gui','rdp-inspect',rdp=i)for i in range(3)]
+    started=time.monotonic();time.sleep(5);elapsed=time.monotonic()-started
+    after=metrics();terminal_after=command('gui','inspect')['drawn'];rdp_after=[command('gui','rdp-inspect',rdp=i)for i in range(3)]
+    terminal_delta=[y-x for x,y in zip(terminal_before,terminal_after)];rdp_delta=[y['draws']-x['draws']for x,y in zip(rdp_before,rdp_after)]
+    assert len(terminal_delta)==3 and max(rdp_delta)<=3,(terminal_delta,rdp_delta)
+    assert all(y['transport_id']==x['transport_id'] and y['status'].startswith('Connected')for x,y in zip(rdp_before,rdp_after))
+    if selected=='rdp':assert max(terminal_delta)<=1,terminal_delta
+    else:assert max(terminal_delta)<=15 and max(terminal_delta[1:])<=1,terminal_delta
+    phases.append({'selected':selected,'wall_seconds':elapsed,'before':before,'after':after,
+                   'cpu_percent_of_one_core':{name:(after[name]['cpu_seconds']-v['cpu_seconds'])*100/elapsed for name,v in before.items()},
+                   'terminal_redraws':terminal_delta,'rdp_redraws':rdp_delta,
+                   'full_frame_counter_delta':[y['metrics']['decoded_updates']-x['metrics']['decoded_updates']for x,y in zip(rdp_before,rdp_after)],
+                   'counter_scope':'Existing full-frame counter excludes independently decoded bitmap strips; redraw counts measure actual GTK paints.',
+                   'framebuffer_sizes':[x['size']for x in rdp_after]})
+   focus('gui');command('gui','rdp-switch',rdp=0);before=[command('gui','rdp-inspect',rdp=i)for i in range(3)]
+   (root/'resource-idle-phases.json').write_text(json.dumps(phases,indent=2))
+   started=time.monotonic();command('server-0','disconnect')
+   recovery_trace=[]
+   def recovered_frame():
+    value=command('gui','rdp-inspect',rdp=0);state=value['gnome_auto'];guards=state['guards']
+    recovery_trace.append({'seconds':time.monotonic()-started,'state':value})
+    if len(recovery_trace)>256:del recovery_trace[0]
+    return value if (value['status'].startswith('Connected') and state['generation']>before[0]['gnome_auto']['generation']
+                     and value['size']
+                     and guards['surface_generation']==guards['rendered_generation']==state['generation']) else False
+   try:recovered=spike.eventually(recovered_frame,20)
+   finally:(root/'resource-recovery-trace.json').write_text(json.dumps({'before':before,'observations':recovery_trace},indent=2))
+   recovery_ms=(time.monotonic()-started)*1000
+   assert [command('gui','rdp-inspect',rdp=i)['transport_id']for i in [1,2]]==[before[i]['transport_id']for i in [1,2]]
+   text=b'Generated resource recovery clipboard';(root/'resource-recovery.txt').write_bytes(text)
+   assert transfer_to_remote(0,'text','resource-recovery.txt')['sha256']==digest(text)
+   with spike.Client(sock)as c:
+    observed={p['id']:p['pid']for s in c.call('session.list')for p in c.call('pane.list',{'session':s['id']})}
+   assert observed==identities,'Reconnect changed a terminal process'
+   return {'terminals':3,'authenticated_RDP_views':3,'phases':phases,'reconnect_to_frame_ms':recovery_ms,
+           'neighbor_transports_and_terminal_PIDs_preserved':True,'clipboard_after_recovery':True,
+           'reconnected_generation':recovered['gnome_auto']['generation'],
+           'scope':'Owned software-rendered Mutter and generated loopback peers; no physical GPU, WAN or matched Remmina performance claim'}
+  finally:
+   for tab in reversed(created):command('gui','close-tab',tab=tab)
+   assert command('gui','inspect')['tabs']==original_tabs
+ case('RDP-NATIVE-IDLE-RESOURCES',idle_resources)
  def initial_size():
   assert a.honor_client_size,'Requires the real peer to honor initial desktop dimensions'
   fixture=root/'initial-size-server';fixture.mkdir(mode=0o700)

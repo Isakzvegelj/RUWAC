@@ -104,6 +104,7 @@ pub fn attach_ssh_menu(button: &gtk::Button) {
 pub fn fixture(window: &adw::ApplicationWindow, q: &serde_json::Value) -> serde_json::Value {
     let widgets = RefCell::new(Vec::new());
     let sections = RefCell::new(Vec::new());
+    let dialogs = RefCell::new(Vec::new());
     crate::chrome::walk(window.upcast_ref(), &|w| {
         if w.widget_name() == "agent-host-menu" && q["operation"] == "header" {
             if let Some(b) = w.downcast_ref::<gtk::MenuButton>() {
@@ -113,6 +114,20 @@ pub fn fixture(window: &adw::ApplicationWindow, q: &serde_json::Value) -> serde_
     });
     let clicked: RefCell<Option<gtk::Button>> = RefCell::new(None);
     for top in gtk::Window::list_toplevels() {
+        if let Some(window) = top.downcast_ref::<gtk::Window>() {
+            if let Some(title) = window.title() {
+                dialogs.borrow_mut().push(title.to_string());
+            }
+            if q["close_ssh_review"] == true
+                && matches!(
+                    window.title().as_deref(),
+                    Some("SSH key access" | "Confirm SSH endpoint additions")
+                )
+            {
+                window.close();
+                continue;
+            }
+        }
         if q["cancel_confirmation"] == true {
             if let Some(dialog) = top.downcast_ref::<gtk::Dialog>() {
                 if matches!(
@@ -136,6 +151,14 @@ pub fn fixture(window: &adw::ApplicationWindow, q: &serde_json::Value) -> serde_
                     sections.borrow_mut().push(label.text().to_string());
                 }
             }
+            if let Some(pick) = w.downcast_ref::<gtk::CheckButton>() {
+                if let Some(index) = q["review_pick"].as_u64() {
+                    if w.widget_name() == format!("ssh-access-pick-{index}") && pick.is_sensitive()
+                    {
+                        pick.set_active(q["active"].as_bool().unwrap_or(true));
+                    }
+                }
+            }
             if let Some(b) = w.downcast_ref::<gtk::Button>() {
                 if clicked.borrow().is_none()
                     && q["click"].as_str() == Some(w.widget_name().as_str())
@@ -149,7 +172,7 @@ pub fn fixture(window: &adw::ApplicationWindow, q: &serde_json::Value) -> serde_
                 || w.widget_name().starts_with("ssh-")
                 || w.widget_name() == "terminal-host-menu"
             {
-                widgets.borrow_mut().push(serde_json::json!({"name":w.widget_name().to_string(),"visible":w.is_visible(),"sensitive":w.is_sensitive(), "bounds":w.compute_bounds(window).map(|r| [r.x(),r.y(),r.width(),r.height()])}));
+                widgets.borrow_mut().push(serde_json::json!({"name":w.widget_name().to_string(),"visible":w.is_visible(),"sensitive":w.is_sensitive(), "active":w.downcast_ref::<gtk::CheckButton>().map(|p| p.is_active()), "text":w.downcast_ref::<gtk::Label>().map(|p| p.text().to_string()), "bounds":w.compute_bounds(window).map(|r| [r.x(),r.y(),r.width(),r.height()])}));
             }
         });
     }
@@ -163,5 +186,5 @@ pub fn fixture(window: &adw::ApplicationWindow, q: &serde_json::Value) -> serde_
             }
         });
     }
-    serde_json::json!({"widgets":widgets.into_inner(), "sections":sections.into_inner()})
+    serde_json::json!({"widgets":widgets.into_inner(), "sections":sections.into_inner(), "dialogs":dialogs.into_inner()})
 }

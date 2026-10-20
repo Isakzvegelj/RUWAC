@@ -1,10 +1,25 @@
-# Deterministic Fedora RPM assembly
+# Explicit SSH checks and reliable update readiness
 
-Fedora packages now record the source commit timestamp instead of the packaging
-machine's current time. The release workflow repeats assembly in a separate
-directory and requires identical complete core and desktop RPM bytes before
-publishing them.
+RUWAC contacts saved machines for key-access checks only after **Check now**.
+Checks use public-key-only OpenSSH authentication and existing host trust,
+including configured jump routes. Results identify the accepted SHA-256 key
+when known. Additions start unselected and require a separate confirmation;
+changed inventory, keys or trust invalidate the result. Closing the review
+cancels its owned helpers. Existing credentials and chosen identities are retained.
 
-This verifies packaging from fixed compiled inputs. Independent reproducible
-compilation, signed Fedora repository delivery and the documented desktop RSA
-dependency finding remain separate open qualifications.
+Update controls distinguish the latest published tag, latest eligible release,
+installed version and running frontend, including mixed installations. Failed
+quality/privacy checks or missing package/attestation assets hold installation
+with a specific reason. Downloaded hashes and provenance are verified before
+installation; installed receipts, command links and binary hashes are checked
+before reporting success. Publication requires artifact-bound frozen technical gates and
+exact-commit hosted quality/privacy checks.
+
+RPM directory modes are explicit, and repeated assembly varies the inherited
+default ACL. Running daemons and terminals are preserved by installation;
+reopen the frontend when ready. RDP reconnects after reopening are the accepted
+lifetime boundary.
+
+External Windows, physical input and provider-account qualification remain
+separate from generated fixtures. The documented RSA dependency advisory and
+signed Fedora repository qualification remain open.

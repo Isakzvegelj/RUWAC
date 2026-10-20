@@ -13,9 +13,10 @@ concurrency:
 jobs:
   release:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 30
     permissions:
       contents: write
+      actions: read
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
@@ -58,6 +59,10 @@ jobs:
           mkdir -p "$RUNNER_TEMP/privacy-tools"
           tar -xzf "$RUNNER_TEMP/gitleaks.tar.gz" -C "$RUNNER_TEMP/privacy-tools" gitleaks
           "$RUNNER_TEMP/privacy-tools/gitleaks" dir . --config scripts/gitleaks.toml --no-banner --redact > "$RUNNER_TEMP/private-scan.log" 2>&1 || { echo 'Secret scan failed; publication held. Raw matches are not uploaded.'; exit 1; }
+      - name: Require exact-commit quality and privacy before source publication
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 scripts/verified-quality.py
       - name: Publish source release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -90,7 +95,7 @@ jobs:
           printf 'CFLAGS=-ffile-prefix-map=%s=/usr/src/ruwac -ffile-prefix-map=%s=/usr/src/build-home\n' "$GITHUB_WORKSPACE" "$HOME" >> "$GITHUB_ENV"
           printf 'CXXFLAGS=-ffile-prefix-map=%s=/usr/src/ruwac -ffile-prefix-map=%s=/usr/src/build-home\n' "$GITHUB_WORKSPACE" "$HOME" >> "$GITHUB_ENV"
       - name: Install Fedora build and scanner dependencies
-        run: dnf install -y git cargo rust gcc gcc-c++ cmake perl openssl openssl-devel pkgconf-pkg-config gtk4-devel libadwaita-devel libssh2-devel sqlite-devel python3 curl tar gzip gh rpm-build desktop-file-utils
+        run: dnf install -y acl git cargo rust gcc gcc-c++ cmake perl openssl openssl-devel pkgconf-pkg-config gtk4-devel libadwaita-devel libssh2-devel sqlite-devel python3 curl tar gzip gh rpm-build desktop-file-utils
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           persist-credentials: false

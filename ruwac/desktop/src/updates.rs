@@ -14,6 +14,9 @@ fn request(args: &[&str]) -> Result<Value, String> {
     if managed {
         helper.arg("--managed-rpm");
     }
+    if let Ok(executable) = std::env::current_exe() {
+        helper.arg("--running-executable").arg(executable);
+    }
     let output = helper
         .args(["--current", env!("CARGO_PKG_VERSION")])
         .args(args)
@@ -30,6 +33,49 @@ fn request(args: &[&str]) -> Result<Value, String> {
             .unwrap_or("Update failed")
             .to_owned())
     }
+}
+
+fn readiness_label(value: &Value) -> String {
+    let mut text = format!(
+        "Latest published tag: {}\nLatest verified installable: {}\nInstalled version: {}\nRunning frontend: {}",
+        value["latest_published"].as_str().unwrap_or("unknown"),
+        value["latest_verified"].as_str().unwrap_or("none"),
+        value["installed_version"]
+            .as_str()
+            .unwrap_or("not installed"),
+        value["running"]
+            .as_str()
+            .unwrap_or(env!("CARGO_PKG_VERSION"))
+    );
+    if let Some(path) = value["running_executable"].as_str() {
+        text.push_str(&format!("\nRunning binary: {path}"));
+    }
+    if value["mixed_installation"] == true {
+        text.push_str(&format!(
+            "\nBoth installations detected: system RPM {} · per-user {}",
+            value["system_installed"].as_str().unwrap_or("unknown"),
+            value["user_installed"].as_str().unwrap_or("unknown")
+        ));
+    }
+    if let Some(pending) = value["skipped_releases"].as_array() {
+        for release in pending {
+            text.push_str(&format!(
+                "\nSkipped {}: {}",
+                release["tag"].as_str().unwrap_or("release"),
+                release["reason"].as_str().unwrap_or("not ready")
+            ));
+        }
+    }
+    if let Some(reason) = value["skipped"].as_str() {
+        text.push_str(&format!("\n{reason}"));
+    }
+    text.push_str(if value["available"] == true {
+        "\nVerified update available."
+    } else {
+        "\nNo newer eligible update."
+    });
+    text.push_str("\nEligibility checks build results and complete published assets. Downloaded hashes and provenance are verified during installation.");
+    text
 }
 
 fn task(args: &'static [&'static str], done: impl FnOnce(Result<Value, String>) + 'static) {
@@ -148,8 +194,7 @@ pub fn attach(header: &adw::HeaderBar, window: &adw::ApplicationWindow, automati
                 if let Some(install) = weak_install.upgrade() { install.set_sensitive(result.as_ref().is_ok_and(|value| value["available"] == true)); }
                 if let Some(label) = label.upgrade() {
                     label.set_text(&match result {
-                        Ok(value) if value["available"] == true => format!("RPM update {} is available. Open the release to download it.", value["latest"].as_str().unwrap_or("latest")),
-                        Ok(_) => "This running RPM version is current.".into(),
+                        Ok(value) => readiness_label(&value),
                         Err(error) => format!("Unable to check RPM releases: {error}"),
                     });
                 }
@@ -172,7 +217,8 @@ pub fn attach(header: &adw::HeaderBar, window: &adw::ApplicationWindow, automati
                 if result.is_err() || result.as_ref().is_ok_and(|v| v["skipped"].is_string()) { if let Some(button) = retry.upgrade() { button.set_sensitive(true); } }
                 if let Some(label) = label.upgrade() { label.set_text(&match result {
                     Ok(value) if value["skipped"].is_string() => format!("Update pending: {}", value["skipped"].as_str().unwrap()),
-                    Ok(value) => format!("Installed {}. Close and reopen the frontend when ready; terminal sessions remain running.", value["installed"].as_str().unwrap_or(value["latest"].as_str().unwrap_or("current version"))),
+                    Ok(value) if value["installed"].is_string() => format!("Installed {}. Close and reopen the frontend when ready; terminal sessions remain running.", value["installed"].as_str().unwrap()),
+                    Ok(value) => readiness_label(&value),
                     Err(error) => format!("Update failed: {error}\nPrevious installation remains available. Use ruwac update --install in a terminal for build diagnostics."),
                 }); }
             });
@@ -302,7 +348,7 @@ pub fn attach(header: &adw::HeaderBar, window: &adw::ApplicationWindow, automati
         task(&["--check"], move |result| { if let Some(label) = label.upgrade() { match result {
             Ok(value) => {
                 let available = value["available"] == true;
-                label.set_text(&format!("Running {} · Installed {} · GitHub {}{}", env!("CARGO_PKG_VERSION"), value["current"].as_str().unwrap_or("unknown"), value["latest"].as_str().unwrap_or("unknown"), if available { " — update available" } else { " — up to date" }));
+                label.set_text(&readiness_label(&value));
                 if let Some(install) = install.upgrade() { install.set_sensitive(available); }
             }
             Err(error) => label.set_text(&format!("Unable to check: {error}")),

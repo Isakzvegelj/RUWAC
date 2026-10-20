@@ -1329,6 +1329,7 @@ pub struct RdpView {
     pending_connect: RefCell<Option<PendingConnect>>,
     surface_generation: Cell<u64>,
     rendered_generation: Cell<u64>,
+    drawn: Cell<u64>,
     last_pixel: Cell<[u8; 4]>,
     reconnect: Cell<bool>,
     fullscreen: Cell<bool>,
@@ -1550,6 +1551,7 @@ impl RdpView {
             pending_connect: RefCell::new(None),
             surface_generation: Cell::new(0),
             rendered_generation: Cell::new(0),
+            drawn: Cell::new(0),
             last_pixel: Cell::new([0; 4]),
             reconnect: Cell::new(true),
             fullscreen: Cell::new(false),
@@ -1869,6 +1871,7 @@ impl RdpView {
         let w = Rc::downgrade(&v);
         v.area.set_draw_func(move |_, cr, width, height| {
             if let Some(v) = w.upgrade() {
+                v.drawn.set(v.drawn.get().saturating_add(1));
                 cr.set_source_rgb(0.03, 0.03, 0.04);
                 let _ = cr.paint();
                 let _ = cr.save();
@@ -2227,7 +2230,7 @@ impl RdpView {
                 .collect();
             serde_json::json!({"decoded_updates":s.frames,"decoded_sizes":s.decoded_sizes,"update_intervals_ms":times})
         });
-        serde_json::json!({"mouse_selection":self.primary_status.text().as_str(),"selection_paste_pending":self.primary_click.borrow().is_some(),"selection_sharing_ready":self.primary.borrow().as_ref().is_some_and(|b|b.ready),"connection_pending":self.pending_connect.borrow().is_some(),"transport_id":self.connection.borrow().as_ref().map(|c|c.id.as_str()),"requested_size":self.requested.get(),"display_mode":format!("{:?}",self.mode.get()),"reconnect_visible":self.disconnect_card.is_visible(),"metrics":metrics,"gnome_auto":{"armed":self.auto_gdm.borrow().armed,"step":format!("{:?}",self.auto_gdm.borrow().sequence.step),"input_epoch":self.assist_epoch.load(Ordering::Acquire),"guards":{"canvas_focus":self.area.has_focus(),"window_active":self.root.root().and_downcast::<gtk::Window>().is_some_and(|w|w.is_active()),"selected":self.selected.borrow().as_ref().is_some_and(|f|f()),"profile_current":self.profile_metadata.borrow().as_ref().is_some_and(crate::profiles::assist_profile_current),"rendered_generation":self.rendered_generation.get(),"surface_generation":self.surface_generation.get()},"generation":self.connection.borrow().as_ref().map(|c|c.state.lock().unwrap().generation),"handovers":self.connection.borrow().as_ref().map(|c|c.state.lock().unwrap().handovers)},"last_pixel":self.last_pixel.get(),"status":self.status.text().as_str(),"size":self.size.get(),"zoom":self.zoom.get(),"pan":[self.scroll.hadjustment().value(),self.scroll.vadjustment().value()],"viewport":[self.area.width(),self.area.height()],"window_width":self.root.root().and_then(|r|r.downcast::<gtk::Window>().ok()).map(|w|w.width()),"active":self.broker.borrow().active()==Some(self.id.as_str()),"epoch":self.broker.borrow().epoch(),"pending":self.pending.borrow().is_some(),"received_generation":self.received_generation.get(),"offers":self.offers_seen.get(),"policy":format!("{:?}",self.policy.get())})
+        serde_json::json!({"draws":self.drawn.get(),"mouse_selection":self.primary_status.text().as_str(),"selection_paste_pending":self.primary_click.borrow().is_some(),"selection_sharing_ready":self.primary.borrow().as_ref().is_some_and(|b|b.ready),"connection_pending":self.pending_connect.borrow().is_some(),"transport_id":self.connection.borrow().as_ref().map(|c|c.id.as_str()),"requested_size":self.requested.get(),"display_mode":format!("{:?}",self.mode.get()),"reconnect_visible":self.disconnect_card.is_visible(),"metrics":metrics,"gnome_auto":{"armed":self.auto_gdm.borrow().armed,"step":format!("{:?}",self.auto_gdm.borrow().sequence.step),"input_epoch":self.assist_epoch.load(Ordering::Acquire),"guards":{"canvas_focus":self.area.has_focus(),"window_active":self.root.root().and_downcast::<gtk::Window>().is_some_and(|w|w.is_active()),"selected":self.selected.borrow().as_ref().is_some_and(|f|f()),"profile_current":self.profile_metadata.borrow().as_ref().is_some_and(crate::profiles::assist_profile_current),"rendered_generation":self.rendered_generation.get(),"surface_generation":self.surface_generation.get()},"generation":self.connection.borrow().as_ref().map(|c|c.state.lock().unwrap().generation),"handovers":self.connection.borrow().as_ref().map(|c|c.state.lock().unwrap().handovers)},"last_pixel":self.last_pixel.get(),"status":self.status.text().as_str(),"size":self.size.get(),"zoom":self.zoom.get(),"pan":[self.scroll.hadjustment().value(),self.scroll.vadjustment().value()],"viewport":[self.area.width(),self.area.height()],"window_width":self.root.root().and_then(|r|r.downcast::<gtk::Window>().ok()).map(|w|w.width()),"active":self.broker.borrow().active()==Some(self.id.as_str()),"epoch":self.broker.borrow().epoch(),"pending":self.pending.borrow().is_some(),"received_generation":self.received_generation.get(),"offers":self.offers_seen.get(),"policy":format!("{:?}",self.policy.get())})
     }
     pub fn fixture_policy(&self, index: u32) {
         fn find(w: &gtk::Widget) -> Option<gtk::DropDown> {

@@ -1,6 +1,6 @@
 //! Verified atomic PNG publication over the profile's existing OpenSSH route.
 #[path = "bounded_process.rs"]
-mod bounded_process;
+pub(crate) mod bounded_process;
 use crate::profiles::Profile;
 use sha2::{Digest, Sha256};
 use std::{process::Command, sync::atomic::AtomicBool, time::Duration};

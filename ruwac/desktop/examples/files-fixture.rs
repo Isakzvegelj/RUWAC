@@ -155,14 +155,20 @@ fn main() {
         if args[1] == "ssh-argv" {
             return Ok(serde_json::json!({"argv": profiles::ssh_argv(&p)?}));
         }
+        if args[1] == "ssh-access-plan" {
+            let plan = ssh_probe::plan(&p, None, &AtomicBool::new(true))?;
+            return Ok(serde_json::json!({"argv": ssh_probe::probe_argv(&plan.argv, &[])}));
+        }
         if args[1] == "ssh-access" {
             let keys = ssh_probe::identities();
             let outcome = ssh_probe::probe(&p, &keys);
+            let snapshot = ssh_probe::inspect(&p, &keys, &AtomicBool::new(true));
             return Ok(serde_json::json!({
                 "access": outcome.access,
                 "accepted_key": outcome.accepted_key,
                 "description": outcome.describe(),
-                "inputs": ssh_probe::inputs(&p, &keys),
+                "inputs": snapshot.as_ref().map(|(hash,_)| hash.clone()).unwrap_or_default(),
+                "target": snapshot.map(|(_,target)| target),
                 "identities": keys.iter().map(|k| k.fingerprint.clone()).collect::<Vec<_>>(),
             }));
         }

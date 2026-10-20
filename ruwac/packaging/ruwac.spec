@@ -68,6 +68,7 @@ install -D -m 0644 ruwac.desktop %{buildroot}%{_datadir}/applications/si.z4.ruwa
 %endif
 
 %files
+%defattr(-,root,root,0755)
 %license LICENSE notices/core
 %doc TESTING.txt
 %{_bindir}/ruwac
@@ -82,6 +83,7 @@ install -D -m 0644 ruwac.desktop %{buildroot}%{_datadir}/applications/si.z4.ruwa
 
 %if %{with desktop}
 %files desktop
+%defattr(-,root,root,0755)
 %license LICENSE notices/desktop
 %doc TESTING.txt
 %{_bindir}/ruwac-desktop

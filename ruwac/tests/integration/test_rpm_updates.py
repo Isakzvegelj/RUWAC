@@ -38,6 +38,8 @@ class RPMUpdates(unittest.TestCase):
             automatic_release_verified=Mock(return_value=True),
             api=Mock(return_value=self.data), download_bundle=Mock(side_effect=lambda a,p:p.write_bytes(b'generated RPM')),
             verify_release_provenance=Mock())
+        self.helper.release_readiness = Mock(side_effect=lambda release, delivery:
+            None if self.helper.automatic_release_verified(release) else 'quality/privacy checks not passed yet')
         self.engine = rpm.Updater(self.helper,self.root/'state',self.config,self.owner)
         self.engine.installed = Mock(side_effect=lambda:(self.current[0],self.components.copy()))
         self.commands = []

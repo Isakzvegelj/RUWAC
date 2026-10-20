@@ -83,6 +83,120 @@ pub fn exchange(
     exchange_inner(command, input, allowed, timeout, None)
 }
 
+pub struct Capture {
+    pub status: std::process::ExitStatus,
+    pub stdout: Vec<u8>,
+    pub stderr: Vec<u8>,
+}
+
+/// Capture a short command without trusting it to close pipes or exit. The
+/// deadline and cancellation cover input, both output streams and descendants.
+pub fn capture(
+    command: &mut Command,
+    input: &[u8],
+    allowed: &AtomicBool,
+    timeout: Duration,
+    stdout_cap: usize,
+    stderr_cap: usize,
+) -> Result<Capture, String> {
+    let end = Instant::now() + timeout;
+    if !allowed.load(Ordering::Acquire) {
+        return Err("SSH check cancelled".into());
+    }
+    command
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .process_group(0);
+    let mut registry = OWNED.lock().unwrap_or_else(|e| e.into_inner());
+    if registry.0 {
+        return Err("SSH checks are shutting down".into());
+    }
+    #[cfg(target_os = "linux")]
+    unsafe {
+        let parent = std::process::id() as libc::pid_t;
+        command.pre_exec(move || {
+            if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL) != 0 || libc::getppid() != parent
+            {
+                return Err(io::Error::other("SSH check parent changed"));
+            }
+            Ok(())
+        });
+    }
+    let mut child = Owned(
+        command.spawn().map_err(|_| "SSH check could not start")?,
+        false,
+    );
+    registry.1.push(child.0.id());
+    drop(registry);
+    let (mut stdin, mut stdout, mut stderr) = (
+        child.0.stdin.take(),
+        child.0.stdout.take(),
+        child.0.stderr.take(),
+    );
+    nonblocking(stdin.as_ref().unwrap()).map_err(|_| "SSH input setup failed")?;
+    nonblocking(stdout.as_ref().unwrap()).map_err(|_| "SSH output setup failed")?;
+    nonblocking(stderr.as_ref().unwrap()).map_err(|_| "SSH error setup failed")?;
+    let (mut offset, mut out, mut err, mut status) = (0, Vec::new(), Vec::new(), None);
+    loop {
+        if !allowed.load(Ordering::Acquire) {
+            return Err("SSH check cancelled".into());
+        }
+        if Instant::now() >= end {
+            return Err("SSH check timed out".into());
+        }
+        if let Some(stream) = stdin.as_mut().filter(|_| offset < input.len()) {
+            match stream.write(&input[offset..(offset + 16384).min(input.len())]) {
+                Ok(0) => return Err("SSH check closed its input".into()),
+                Ok(n) => offset += n,
+                Err(e)
+                    if matches!(
+                        e.kind(),
+                        io::ErrorKind::WouldBlock | io::ErrorKind::Interrupted
+                    ) =>
+                {
+                    ()
+                }
+                Err(_) => return Err("SSH check input failed".into()),
+            }
+        }
+        if offset == input.len() {
+            stdin = None;
+        }
+        drain(&mut stdout, &mut out, stdout_cap)?;
+        drain(&mut stderr, &mut err, stderr_cap)?;
+        if status.is_none() {
+            let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
+            let observed = unsafe {
+                libc::waitid(
+                    libc::P_PID,
+                    child.0.id(),
+                    &mut info,
+                    libc::WEXITED | libc::WNOHANG | libc::WNOWAIT,
+                )
+            };
+            if observed < 0 {
+                return Err("SSH check status unavailable".into());
+            }
+            if unsafe { info.si_pid() } != 0 {
+                // Reap only after killing this owned group. A background proxy
+                // cannot retain our pipes after its foreground command exits.
+                status = Some(child.finish().map_err(|_| "SSH check status unavailable")?);
+            }
+        }
+        if stdout.is_none() && stderr.is_none() {
+            if let Some(status) = status {
+                return Ok(Capture {
+                    status,
+                    stdout: out,
+                    stderr: err,
+                });
+            }
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
 pub fn exchange_confirmed(
     command: &mut Command,
     input: &[u8],
@@ -263,6 +377,78 @@ mod tests {
         let mut c = Command::new("python3");
         c.args(["-c", code]);
         c
+    }
+    #[test]
+    fn capture_drains_both_streams_before_waiting_for_exit() {
+        let result = capture(
+            &mut python("import os,sys; os.write(1,b'o'*131072); os.write(2,b'e'*131072); assert len(sys.stdin.buffer.read())==65536; sys.exit(7)"),
+            &[0; 65536], &AtomicBool::new(true), Duration::from_secs(5), 262144, 262144,
+        ).unwrap();
+        assert_eq!(result.status.code(), Some(7));
+        assert_eq!(result.stdout, vec![b'o'; 131072]);
+        assert_eq!(result.stderr, vec![b'e'; 131072]);
+    }
+    #[test]
+    fn capture_refuses_flooding_output_and_obeys_one_deadline() {
+        let start = Instant::now();
+        let error = capture(
+            &mut python("import os;\nwhile True: os.write(2,b'e'*65536)"),
+            &[],
+            &AtomicBool::new(true),
+            Duration::from_secs(3),
+            4096,
+            8192,
+        )
+        .err()
+        .unwrap();
+        assert!(error.contains("exceeded"));
+        assert!(start.elapsed() < Duration::from_secs(2));
+        let error = capture(
+            &mut python("import time; time.sleep(60)"),
+            &[],
+            &AtomicBool::new(true),
+            Duration::from_millis(100),
+            4096,
+            4096,
+        )
+        .err()
+        .unwrap();
+        assert!(error.contains("timed out"));
+    }
+    #[test]
+    fn capture_cancels_and_cleans_a_background_pipe_holder() {
+        let allowed = AtomicBool::new(true);
+        std::thread::scope(|scope| {
+            scope.spawn(|| {
+                std::thread::sleep(Duration::from_millis(100));
+                allowed.store(false, Ordering::Release);
+            });
+            let error = capture(
+                &mut python("import time; time.sleep(60)"),
+                &[],
+                &allowed,
+                Duration::from_secs(3),
+                4096,
+                4096,
+            )
+            .err()
+            .unwrap();
+            assert!(error.contains("cancelled"));
+        });
+        let start = Instant::now();
+        let result = capture(
+            &mut python("import os,subprocess; p=subprocess.Popen(['sleep','60']); print(p.pid,flush=True); os._exit(0)"),
+            &[], &AtomicBool::new(true), Duration::from_secs(3), 4096, 4096,
+        ).unwrap();
+        assert!(result.status.success());
+        let pid = String::from_utf8(result.stdout)
+            .unwrap()
+            .trim()
+            .parse::<u32>()
+            .unwrap();
+        let state = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok();
+        assert!(state.is_none_or(|s| s.rsplit(')').next().unwrap().trim_start().starts_with('Z')));
+        assert!(start.elapsed() < Duration::from_secs(2));
     }
     #[test]
     fn publication_commit_waits_for_verified_peer_readiness() {

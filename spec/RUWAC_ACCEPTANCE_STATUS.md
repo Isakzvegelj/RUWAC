@@ -4,13 +4,33 @@ Public results summarize qualification without publishing host identities, accou
 network topology, credential references or operational troubleshooting. Detailed
 receipts and original reports are archived privately outside Git.
 
+Stabilization reconciliation (2026-10-20): this table retains historical evidence
+through v0.4.31; historical PASS rows do not qualify the changed candidate.
+Changed candidates require a complete final source/binary-frozen stabilization
+run. Historical rows alone leave that candidate run **NOT RUN**; the project
+release adapter requires its current executed receipt before publication.
+Unexecuted preflight work is not a pass. External Windows, physical Wayland input and live provider
+acceptance remain **BLOCKED** until the corresponding authorized resource and
+executed evidence are available. Generated loopback controls cannot satisfy them.
+RDP reconnection after GUI reopening is explicitly accepted; cross-process RDP
+transport preservation is not a completion requirement.
+
+The project release adapter requires a configured frozen acceptance runner and
+its receipt before publication. `scripts/acceptance-gate.py` checks every required
+technical gate, hashes of the current source and compiled applications, executed
+evidence hashes, and the staged source again before commit. Missing, failed,
+blocked or preflight-only required gates hold publication. External/physical
+resource gates remain separate and can keep full product acceptance incomplete.
+Hosted source publication also waits for exact-commit quality/privacy checks;
+dependency advisories remain separate and unsuppressed.
+
 | Area | Result | Scope |
 | --- | --- | --- |
-| SSH terminal image-paste delivery | PASS (preflight) | Thirteen existing real SSH/GDK delivery and cancellation groups remain covered. Private launch preflight adds saved-action capture, frontend restart, local-split isolation, real ended-connection Reconnect and daemon replacement: 18 groups each for agent, plain SSH and agent with an older engine. Synthetic key-event probes establish actual owned-seat focus before claiming clipboard or testing deactivation. Owner-confirmed provider use remains separate from generated receivers. |
-| Persistent SSH/agent launch identities | PASS (preflight); final frozen gates required for publication | Six storage/recipe units and three 18-group native journeys cover daemon-bound private records, original pane/PID, explicit provider metadata, real SSH, restart, reconstructed reconnect and replaced engines. The final frozen suite additionally exercises selecting the saved agent pane from a local split and the worker's membership refusal test. No retroactive binding of legacy sessions or external OpenSSH-configuration tracking is claimed. |
+| SSH terminal image-paste delivery | NOT RUN (final stabilization candidate) | Thirteen existing real SSH/GDK delivery and cancellation groups remain covered. Private launch preflight adds saved-action capture, frontend restart, local-split isolation, real ended-connection Reconnect and daemon replacement: 18 groups each for agent, plain SSH and agent with an older engine. Synthetic key-event probes establish actual owned-seat focus before claiming clipboard or testing deactivation. Owner-confirmed provider use remains separate from generated receivers. |
+| Persistent SSH/agent launch identities | NOT RUN (final stabilization candidate) | Six storage/recipe units and three 18-group native journeys cover daemon-bound private records, original pane/PID, explicit provider metadata, real SSH, restart, reconstructed reconnect and replaced engines. The final frozen suite additionally exercises selecting the saved agent pane from a local split and the worker's membership refusal test. No retroactive binding of legacy sessions or external OpenSSH-configuration tracking is claimed. |
 | Quick host menus, tab identity and status | PASS | Ten preflight native GTK/Wayland groups, including actual synthetic-seat Alt+M/Alt+A in both Map keys modes with collapsed actions, hostname tab titles and cached full-colour indicators. Final stamped qualification repeats these groups with an added idle-redraw guard. |
 | Installation discovery and manual | PASS | 28 generated bundle/installer contracts, owned legacy-launcher migration, resource collisions and real `man` rendering; final RPM payload/lifecycle checks verify installed manual and app icon. |
-| Automatic SSH endpoint discovery | PASS (generated boundary) | Generated SSH success, unknown-trust and rejected-key outcomes drive the native bookmark flow. Only a successful, current result adds a separate SSH endpoint, without copying RDP service credentials. Existing real loopback SSH access regression remains separate; no new external account/key installation claimed. |
+| Explicit SSH key-access review | NOT RUN (final stabilization candidate) | Implicit startup/periodic probes and endpoint creation have been removed in the candidate. The explicit review requires Check, selection, confirmation and fresh source/trust/key inputs. Current OpenSSH and native GUI qualification is required; prior automatic-discovery evidence does not qualify this replacement. |
 | Compact machine and saved-host agent actions | PASS | Eight real GTK/Wayland groups: one-row SSH/Codex/Claude/Kimi actions, explicit separate SSH setup, cancellation, saved-host/recent menus, install/key-authorization confirmations, real synthetic-seat keyboard chords, close/reopen geometry and session identities, and separator pixels after pane repaint. No external connection or key grant in this fixture. |
 | Agent installation bootstrap | PASS | Nine generated download/availability/failure contracts and real official Codex, Claude and Kimi installation in separate disposable user homes, each followed only by `--version`. No provider login, model request or external-host deployment claimed. |
 | CLI split dividers and status colour | PASS | Real kernel PTYs and nested RUWAC rendering, horizontal/vertical divider glyphs, intact application corners and canonical light-blue status colours. New engines reserve divider cells; preserved older engines keep their original layout. |
